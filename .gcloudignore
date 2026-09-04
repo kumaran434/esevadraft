@@ -1,0 +1,12 @@
+﻿node_modules
+node_modules/**
+uploads/**
+scratch/**
+compressed/**
+chrome_session_data/**
+public/recordings/**
+public/previews/**
+public/receipts/**
+*.log
+*.zip
+.env

@@ -1,0 +1,27 @@
+﻿{
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "previews/**",
+      "receipts/**",
+      "recordings/**",
+      "logs/**",
+      "**/*.png",
+      "**/*.jpeg",
+      "**/*.jpg",
+      "**/*.pdf"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "esevadraft",
+          "region": "asia-south1"
+        }
+      }
+    ]
+  }
+}

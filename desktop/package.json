@@ -1,0 +1,38 @@
+{
+  "name": "esevadraft-desktop",
+  "version": "1.0.0",
+  "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "build:protect": "node build-protected.js",
+    "pack": "electron-builder --dir",
+    "dist": "npm run build:protect && electron-builder --win --x64"
+  },
+  "author": "eSevaDraft AI Governance Team",
+  "license": "Commercial-Proprietary",
+  "dependencies": {
+    "bytenode": "^1.5.5",
+    "playwright-core": "^1.50.0"
+  },
+  "devDependencies": {
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "javascript-obfuscator": "^4.1.1"
+  },
+  "build": {
+    "appId": "in.esevadraft.desktop",
+    "productName": "eSevaDraft Desktop",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "asar": true
+  }
+}

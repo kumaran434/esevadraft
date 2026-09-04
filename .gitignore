@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+desktop/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secrets (Never push to public/private Git)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+serviceAccountKey.json
+
+# Temporary / Session / Local Data
+chrome_session_data/
+uploads/
+compressed/
+recordings/
+scratch/
+scratch_*.png
+data/
+.firebase/
+
+# Build outputs
+desktop/dist/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log

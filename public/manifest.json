@@ -1,0 +1,21 @@
+{
+  "name": "eSevaDraft - தமிழ்நாடு அரசு சேவைகள் ஏஐ",
+  "short_name": "eSevaDraft",
+  "description": "தமிழ்நாடு புதிய ஸ்மார்ட் ரேஷன் கார்டு மற்றும் இ-சேவை ஏஐ தானியங்கி தளம்",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0d5c3a",
+  "theme_color": "#0d5c3a",
+  "icons": [
+    {
+      "src": "/previews/step1_photo_1788170270830.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/previews/step1_photo_1788170270830.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

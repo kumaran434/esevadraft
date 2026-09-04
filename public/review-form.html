@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TNPDS புதிய ஸ்மார்ட் கார்டு விண்ணப்ப படிவம் - ஆபரேட்டர் சரிபார்ப்பு (Review & Submit)</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Tamil:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #065f46;
+            --primary-dark: #022c22;
+            --primary-light: #ecfdf5;
+            --accent: #f59e0b;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', 'Noto Sans Tamil', sans-serif; }
+        body { background-color: #f1f5f9; color: var(--text-dark); padding-bottom: 90px; }
+
+        /* Top Government Header */
+        .govt-header {
+            background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+            color: white;
+            padding: 16px 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .govt-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .govt-emblem {
+            font-size: 34px;
+            background: rgba(255,255,255,0.15);
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        .govt-title h1 {
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+        }
+        .govt-title p {
+            font-size: 12px;
+            color: #a7f3d0;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+        .govt-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .badge-live {
+            background: rgba(16, 185, 129, 0.25);
+            color: #6ee7b7;
+            border: 1px solid #10b981;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 11.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-live span.dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px #10b981;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } }
+
+        /* Container Layout */
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 16px;
+        }
+
+        /* Top Notification Banner */
+        .top-banner {
+            background: white;
+            border-radius: 12px;
+            padding: 14px 20px;
+            margin-bottom: 20px;
+            border: 1px solid #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+        .customer-pill {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+        }
+        .customer-pill strong { color: #065f46; font-size: 15px; }
+
+        /* Live Automation Stream & Monitor Card */
+        .live-monitor-card {
+            background: #0f172a;
+            color: white;
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            border: 1px solid #334155;
+        }
+        .monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .monitor-header h3 {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .progress-track {
+            background: #1e293b;
+            height: 10px;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #10b981 0%, #38bdf8 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+        .monitor-telemetry {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .live-screen-container {
+            margin-top: 14px;
+            background: black;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #334155;
+            text-align: center;
+            position: relative;
+            min-height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .live-screen-container img {
+            width: 100%;
+            max-height: 480px;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* OTP Alert Prompt Box */
+        .otp-box {
+            display: none;
+            background: #fffbeb;
+            border: 2px solid #f59e0b;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-top: 14px;
+            color: #78350f;
+        }
+        .otp-box.active { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+        .otp-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .otp-input-group input {
+            font-size: 20px;
+            letter-spacing: 6px;
+            font-weight: 800;
+            padding: 8px 14px;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            width: 160px;
+            text-align: center;
+        }
+
+        /* Form Sections */
+        .form-section {
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 22px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--primary-light);
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+        .section-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+
+        .form-field { margin-bottom: 14px; }
+        .form-field label {
+            display: block;
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .form-field input, .form-field select, .form-field textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #0f172a;
+            background: #f8fafc;
+            transition: all 0.2s ease;
+        }
+        .form-field input:focus, .form-field select:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.15);
+        }
+
+        /* Head Profile Photo & Aadhaar Card Box */
+        .head-media-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 18px;
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        .passport-photo-box {
+            width: 120px;
+            height: 140px;
+            border-radius: 8px;
+            background: white;
+            border: 2px dashed #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .passport-photo-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .media-details {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 8px;
+        }
+        .doc-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #dcfce7;
+            color: #15803d;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid #86efac;
+            width: fit-content;
+        }
+
+        /* Members Table */
+        .members-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .members-table th {
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 11.5px;
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 2px solid #cbd5e1;
+            font-weight: 700;
+        }
+        .members-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 13px;
+            color: #0f172a;
+        }
+        .members-table tr:hover { background: #f8fafc; }
+
+        /* Sticky Bottom Toolbar */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #cbd5e1;
+            padding: 12px 24px;
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .btn-action {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13.5px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            transition: all 0.2s ease;
+        }
+        .btn-submit {
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            color: white;
+            box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
+        }
+        .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(22, 163, 74, 0.45); }
+        .btn-save {
+            background: #0284c7;
+            color: white;
+        }
+        .btn-outline {
+            background: white;
+            border: 1.5px solid #cbd5e1;
+            color: #475569;
+        }
+        .btn-outline:hover { background: #f8fafc; border-color: #94a3b8; }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+            .govt-actions { display: none; }
+            .bottom-bar { flex-direction: column; gap: 8px; }
+            .bottom-bar .btn-action { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Official Header -->
+    <header class="govt-header">
+        <div class="govt-brand">
+            <div class="govt-emblem">🌾</div>
+            <div class="govt-title">
+                <h1>தமிழ்நாடு அரசு — TNPDS புதிய ரேஷன் கார்டு படிவம்</h1>
+                <p>Civil Supplies & Consumer Protection Department | ஆபரேட்டர் நேரலை சரிபார்ப்பு சாளரம்</p>
+            </div>
+        </div>
+        <div class="govt-actions">
+            <div class="badge-live">
+                <span class="dot"></span> கிளவுட் சர்வர் நேரலை இணைப்பு
+            </div>
+            <button class="btn-action btn-outline" onclick="window.print()" style="padding: 6px 14px; font-size: 12px; color: white; border-color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.1);">
+                <i class="fa-solid fa-print"></i> அச்சிடு (Print)
+            </button>
+        </div>
+    </header>
+
+    <div class="container">
+
+        <!-- Top Customer Pill Banner -->
+        <div class="top-banner">
+            <div class="customer-pill">
+                <div>👤 விண்ணப்பதாரர்: <strong id="bannerName">ஏற்றப்படுகிறது...</strong></div>
+                <div>📱 மொபைல்: <strong id="bannerMobile">—</strong></div>
+                <div>🏛️ தாலுகா: <strong id="bannerLocation">—</strong></div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn-action btn-outline" onclick="openOfficialPortal()" style="font-size: 12px; padding: 6px 12px;">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> tnpds.gov.in போர்ட்டல்
+                </button>
+            </div>
+        </div>
+
+        <!-- Official Portal Direct Link Card -->
+        <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(6,95,70,0.18); flex-wrap: wrap; gap: 14px;">
+            <div>
+                <div style="font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-building-columns"></i> அதிகாரப்பூர்வ தமிழ்நாடு அரசு TNPDS போர்ட்டல் (Official Portal)
+                </div>
+                <div style="font-size: 12px; color: #a7f3d0; margin-top: 4px;">
+                    அரசு இணையதளத்தில் நேரடியாகப் பதிவு செய்ய <strong>tnpds.gov.in</strong> தளத்தைத் திறக்கவும்.
+                </div>
+            </div>
+            <a href="https://www.tnpds.gov.in/pages/register/cardreg-home.xhtml" target="_blank" class="btn-action" style="background: white; color: #065f46; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-weight: 800; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: inline-flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> 🌐 tnpds.gov.in தளத்தைத் திற
+            </a>
+        </div>
+
+        <!-- 0. Live TNPDS Screen & Telemetry Monitor (only shown when automation active) -->
+        <div class="live-monitor-card" id="liveMonitorCard" style="display: none;">
+            <div class="monitor-header">
+                <h3><i class="fa-solid fa-desktop"></i> நேரலை TNPDS போர்ட்டல் நிலை & ஆட்டோமேஷன் திரை (Live Screen Stream)</h3>
+                <span id="monitorStatusBadge" style="background: #1e293b; color: #38bdf8; padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700;">
+                    ஆட்டோமேஷன் தயாராக உள்ளது
+                </span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+            <div class="monitor-telemetry">
+                <span id="currentStepText">விவரங்களைச் சரிபார்த்துவிட்டு கீழே உள்ள 'TNPDS-ல் விண்ணப்பி' பொத்தானை அழுத்தவும்.</span>
+                <span id="stepCounterText">படி 0/51</span>
+            </div>
+
+            <!-- Live OTP Box (Appears when Government sends OTP) -->
+            <div class="otp-box" id="otpBox">
+                <div>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 800;"><i class="fa-solid fa-key"></i> அரசு போர்ட்டலில் OTP சரிபார்ப்பு தேவைப்படுகிறது!</h4>
+                    <p style="font-size: 11.5px; margin-top: 3px;" id="otpPromptDesc">வாடிக்கையாளர் மொபைல் எண்ணிற்கு வந்துள்ள 6-இலக்க OTP உள்ளிடவும்.</p>
+                </div>
+                <div class="otp-input-group">
+                    <input type="text" id="otpInput" maxlength="6" placeholder="______">
+                    <button class="btn-action btn-submit" onclick="submitOtpFromReview()" style="padding: 8px 16px; font-size: 12.5px;">
+                        OTP அனுப்பு
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Screenshot Frame -->
+            <div class="live-screen-container" id="screenContainer">
+                <img id="livePortalImg" src="/previews/latest.png" alt="TNPDS நேரலை திரை" onerror="this.style.display='none'; document.getElementById('screenPlaceholder').style.display='block';" onload="this.style.display='block'; document.getElementById('screenPlaceholder').style.display='none';">
+                <div id="screenPlaceholder" style="padding: 40px; color: #94a3b8; font-size: 13px;">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 28px; margin-bottom: 10px; display: block; color: #38bdf8;"></i>
+                    TNPDS ஆட்டோமேஷன் தொடங்கப்பட்டவுடன் நேரலை உலாவித் திரை இங்கே தோன்றும்.
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. Head of Family Details -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-user-tie"></i> பிரிவு 1: குடும்பத் தலைவர் விவரங்கள் (Head of Family)
+                </div>
+                <span class="doc-badge"><i class="fa-solid fa-check"></i> ஆதார் ஆவணம் சரிபார்க்கப்பட்டது</span>
+            </div>
+
+            <div class="head-media-row">
+                <div class="passport-photo-box" id="headPhotoContainer">
+                    <img id="headPhotoImg" src="" alt="தலைவர் புகைப்படம்" onerror="this.src='https://ui-avatars.com/api/?name=Head&background=065f46&color=fff'">
+                </div>
+                <div class="media-details">
+                    <h4 style="font-size: 13px; font-weight: 700; color: #065f46;">பாஸ்போர்ட் அளவு வெள்ளை பின்னணி புகைப்படம் (White Background)</h4>
+                    <p style="font-size: 11.5px; color: #64748b;">அரசு TNPDS அளவுகோல்: 300x350 பிக்சல், 40 KB முதல் 85 KB வரம்பிற்குள் ஏஐ ஸ்டுடியோ மூலம் தானாக மாற்றப்பட்டது.</p>
+                    <div style="display: flex; gap: 8px; margin-top: 4px;">
+                        <span class="doc-badge" id="aadhaarBadge">📄 ஆதார் அட்டை தயார் (< 240 KB)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="form-field">
+                    <label>குடும்பத் தலைவர் பெயர் (தமிழ்)</label>
+                    <input type="text" id="headNameTam" placeholder="தமிழில் பெயர் உள்ளிடவும்">
+                </div>
+                <div class="form-field">
+                    <label>Name of the Head of Family (English)</label>
+                    <input type="text" id="headNameEng" placeholder="Enter name in English">
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="form-field">
+                    <label>தந்தை / கணவர் பெயர் (தமிழ்)</label>
+                    <input type="text" id="fatherNameTam" placeholder="தமிழில் தந்தை/கணவர் பெயர்">
+                </div>
+                <div class="form-field">
+                    <label>Father's / Husband's Name (English)</label>
+                    <input type="text" id="fatherNameEng" placeholder="Enter father/husband name in English">
+                </div>
+            </div>
+
+            <div class="grid-4">
+                <div class="form-field">
+                    <label>பிறந்த தேதி (DOB)</label>
+                    <input type="text" id="headDob" placeholder="DD/MM/YYYY">
+                </div>
+                <div class="form-field">
+                    <label>பாலினம் (Gender)</label>
+                    <select id="headGender">
+                        <option value="Female">பெண் (Female)</option>
+                        <option value="Male">ஆண் (Male)</option>
+                        <option value="Transgender">மூன்றாம் பாலினம் (Transgender)</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label>தொழில் (Profession)</label>
+                    <input type="text" id="headProfession" value="தனியார் ஊழியர்">
+                </div>
+                <div class="form-field">
+                    <label>மாத வருமானம் (Monthly Income)</label>
+                    <input type="text" id="monthlyIncome" value="3000">
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="form-field">
+                    <label>12-இலக்க ஆதார் எண் (Aadhaar Number)</label>
+                    <input type="text" id="headAadhaar" maxlength="14" placeholder="XXXX XXXX XXXX">
+                </div>
+                <div class="form-field">
+                    <label>அட்டை வகை (Card Option)</label>
+                    <select id="cardType">
+                        <option value="Rice Card">அரிசி அட்டை (அரிசி மற்றும் அனைத்துப் பொருட்கள்)</option>
+                        <option value="Sugar Card">சர்க்கரை அட்டை (சர்க்கரை மட்டும்)</option>
+                        <option value="No Commodity">பொருளற்ற அட்டை (அடையாள அட்டை மட்டும்)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Residential Address -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-house-chimney"></i> பிரிவு 2: குடியிருப்பு முகவரி விவரங்கள் (Residential Address)
+                </div>
+                <span class="doc-badge" id="residenceBadge"><i class="fa-solid fa-file-pdf"></i> முகவரிச் சான்று தயார்</span>
+            </div>
+
+            <div class="grid-3">
+                <div class="form-field">
+                    <label>கதவு எண் (Door No)</label>
+                    <input type="text" id="doorNo" placeholder="கதவு எண்">
+                </div>
+                <div class="form-field">
+                    <label>தெருப் பெயர் (தமிழ்)</label>
+                    <input type="text" id="streetTam" placeholder="தெருப் பெயர் தமிழில்">
+                </div>
+                <div class="form-field">
+                    <label>Street Name (English)</label>
+                    <input type="text" id="streetEng" placeholder="Street name in English">
+                </div>
+            </div>
+
+            <div class="grid-4">
+                <div class="form-field">
+                    <label>பகுதி / கிராமம் (Area / Village)</label>
+                    <input type="text" id="areaTam" placeholder="கிராமம் அல்லது பகுதி">
+                </div>
+                <div class="form-field">
+                    <label>மாவட்டம் (District)</label>
+                    <input type="text" id="district" placeholder="மாவட்டம்">
+                </div>
+                <div class="form-field">
+                    <label>வட்டம் (Taluk)</label>
+                    <input type="text" id="taluk" placeholder="வட்டம்">
+                </div>
+                <div class="form-field">
+                    <label>அஞ்சல் குறியீட்டு எண் (Pincode)</label>
+                    <input type="text" id="pincode" maxlength="6" placeholder="600001">
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Gas Connection Details -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-fire-burner"></i> பிரிவு 3: எரிவாயு இணைப்பு விவரங்கள் (LPG Details)
+                </div>
+                <span class="doc-badge" id="gasBadge">🔥 எரிவாயு விவரங்கள்</span>
+            </div>
+
+            <div class="grid-4">
+                <div class="form-field">
+                    <label>எரிவாயு இணைப்பு உள்ளதா?</label>
+                    <select id="hasGas" onchange="toggleGasFields()">
+                        <option value="true">உள்ளது (Yes)</option>
+                        <option value="false">இல்லை (No Gas Connection)</option>
+                    </select>
+                </div>
+                <div class="form-field gas-dependent">
+                    <label>எண்ணெய் நிறுவனம் (Oil Company)</label>
+                    <select id="gasCompany">
+                        <option value="IOCL">IOCL (Indane)</option>
+                        <option value="BPCL">BPCL (Bharat)</option>
+                        <option value="HPCL">HPCL (HP Gas)</option>
+                    </select>
+                </div>
+                <div class="form-field gas-dependent">
+                    <label>சிலிண்டர் எண்ணிக்கை (Cylinders)</label>
+                    <select id="gasCylinders">
+                        <option value="1">1 சிலிண்டர்</option>
+                        <option value="2">2 சிலிண்டர்கள்</option>
+                    </select>
+                </div>
+                <div class="form-field gas-dependent">
+                    <label>நுகர்வோர் எண் (Consumer No)</label>
+                    <input type="text" id="gasConsumerNumber" placeholder="நுகர்வோர் எண்">
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Family Members Table -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-users"></i> பிரிவு 4: குடும்ப உறுப்பினர்கள் விவரங்கள் (Family Members)
+                </div>
+                <span class="doc-badge" id="membersCountBadge">👥 1 உறுப்பினர்</span>
+            </div>
+
+            <table class="members-table">
+                <thead>
+                    <tr>
+                        <th>வ.எண்</th>
+                        <th>பெயர் (தமிழ் & ஆங்கிலம்)</th>
+                        <th>உறவுமுறை</th>
+                        <th>பாலினம்</th>
+                        <th>பிறந்த தேதி</th>
+                        <th>12-இலக்க ஆதார் எண்</th>
+                        <th>ஆவணம்</th>
+                    </tr>
+                </thead>
+                <tbody id="membersTableBody">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #94a3b8; padding: 20px;">உறுப்பினர்கள் விவரங்கள் ஏற்றப்படுகின்றன...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <!-- Sticky Bottom Action Bar -->
+    <div class="bottom-bar">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-action btn-outline" onclick="saveProfileChanges()">
+                <i class="fa-solid fa-floppy-disk"></i> விவரங்களைச் சேமி (Save)
+            </button>
+            <span id="saveStatusText" style="font-size: 12px; color: #16a34a; font-weight: 600;"></span>
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+            <a href="https://www.tnpds.gov.in/pages/register/cardreg-home.xhtml" target="_blank" class="btn-action btn-outline" style="text-decoration: none; color: #065f46; border-color: #10b981; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> 🌐 tnpds.gov.in அரசு தளம்
+            </a>
+            <button class="btn-action btn-submit" onclick="startTnpdsAutomation(false)" id="btnMainSubmit">
+                <i class="fa-solid fa-paper-plane"></i> 🚀 தானியங்கி விண்ணப்பம் (Auto Submit)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        let activeMobile = urlParams.get('mobile') || localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+        let operatorUid = urlParams.get('operatorUid') || localStorage.getItem('eseva_operator_uid') || '';
+        let currentProfile = {};
+        let monitorInterval = null;
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            if (!activeMobile) {
+                activeMobile = prompt('சரிபார்க்க வேண்டிய வாடிக்கையாளரின் 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்:');
+            }
+            if (activeMobile) {
+                await loadCitizenData(activeMobile);
+                startMonitoring();
+            }
+        });
+
+        async function loadCitizenData(mobile) {
+            try {
+                const res = await fetch(`/api/chat/history?mobile=${mobile}`, {
+                    headers: { 'x-session-mobile': mobile, 'x-operator-uid': operatorUid }
+                });
+                const data = await res.json();
+                if (data && data.citizenProfile) {
+                    currentProfile = data.citizenProfile;
+                    populateForm(currentProfile);
+                }
+            } catch (e) {
+                console.error('Failed to load profile:', e);
+            }
+        }
+
+        function populateForm(prof) {
+            document.getElementById('bannerName').innerText = prof.fullNameTam || prof.fullNameEng || 'விண்ணப்பதாரர்';
+            document.getElementById('bannerMobile').innerText = '+91 ' + (prof.mobileNumber || activeMobile);
+            document.getElementById('bannerLocation').innerText = `${prof.taluk || '—'}, ${prof.district || '—'}`;
+
+            // Head details
+            document.getElementById('headNameTam').value = prof.fullNameTam || '';
+            document.getElementById('headNameEng').value = prof.fullNameEng || '';
+            document.getElementById('fatherNameTam').value = prof.fatherNameTam || '';
+            document.getElementById('fatherNameEng').value = prof.fatherNameEng || '';
+            document.getElementById('headDob').value = prof.headDob || '';
+            if (prof.headGender) document.getElementById('headGender').value = prof.headGender;
+            document.getElementById('headProfession').value = prof.headProfessionTam || prof.headProfession || 'தனியார் ஊழியர்';
+            document.getElementById('monthlyIncome').value = prof.monthlyIncome || '3000';
+            document.getElementById('headAadhaar').value = prof.headAadhaar ? prof.headAadhaar.replace(/(\d{4})/g, '$1 ').trim() : '';
+
+            // Head Photo
+            if (prof.headPhotoPath) {
+                const photoName = prof.headPhotoPath.split('\\').pop().split('/').pop();
+                document.getElementById('headPhotoImg').src = `/previews/${photoName}?t=${Date.now()}`;
+            }
+
+            // Address
+            document.getElementById('doorNo').value = prof.doorNo || '';
+            document.getElementById('streetTam').value = prof.streetTam || '';
+            document.getElementById('streetEng').value = prof.streetEng || '';
+            document.getElementById('areaTam').value = prof.areaTam || '';
+            document.getElementById('district').value = prof.district || '';
+            document.getElementById('taluk').value = prof.taluk || '';
+            document.getElementById('pincode').value = prof.pincode || '';
+
+            // Gas
+            const hasGas = !!(prof.gasDetails && prof.gasDetails.hasGas && prof.gasDetails.consumerNumber);
+            document.getElementById('hasGas').value = hasGas ? 'true' : 'false';
+            if (prof.gasDetails) {
+                if (prof.gasDetails.oilCompany) document.getElementById('gasCompany').value = prof.gasDetails.oilCompany;
+                if (prof.gasDetails.cylinders) document.getElementById('gasCylinders').value = prof.gasDetails.cylinders;
+                document.getElementById('gasConsumerNumber').value = prof.gasDetails.consumerNumber || '';
+            }
+            toggleGasFields();
+
+            // Members Table
+            renderMembersTable(prof.members || []);
+        }
+
+        function toggleGasFields() {
+            const hasGas = document.getElementById('hasGas').value === 'true';
+            document.querySelectorAll('.gas-dependent').forEach(el => {
+                el.style.display = hasGas ? 'block' : 'none';
+            });
+        }
+
+        function renderMembersTable(members) {
+            const tbody = document.getElementById('membersTableBody');
+            document.getElementById('membersCountBadge').innerText = `👥 ${members.length || 1} உறுப்பினர்(கள்)`;
+            if (!members || members.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 14px;">தலைவர் மட்டுமே பதிவு செய்யப்பட்டுள்ளார்.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = members.map((m, idx) => `
+                <tr>
+                    <td><b>${idx + 1}</b></td>
+                    <td>
+                        <div style="font-weight: 700; color: #0f172a;">${m.nameTam || m.nameEng}</div>
+                        <div style="font-size: 11px; color: #64748b;">${m.nameEng || ''}</div>
+                    </td>
+                    <td><span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11.5px;">${m.relationshipTam || (idx === 0 ? 'தலைவர்' : 'உறுப்பினர்')}</span></td>
+                    <td>${m.genderTam || m.gender || '—'}</td>
+                    <td>${m.dob || '—'}</td>
+                    <td><b>${m.aadhaarNumber ? m.aadhaarNumber.replace(/(\d{4})/g, '$1 ').trim() : '—'}</b></td>
+                    <td><span class="doc-badge" style="font-size: 11px;">✅ A4 PDF</span></td>
+                </tr>
+            `).join('');
+        }
+
+        async function saveProfileChanges() {
+            const updated = {
+                ...currentProfile,
+                fullNameTam: document.getElementById('headNameTam').value.trim(),
+                fullNameEng: document.getElementById('headNameEng').value.trim(),
+                fatherNameTam: document.getElementById('fatherNameTam').value.trim(),
+                fatherNameEng: document.getElementById('fatherNameEng').value.trim(),
+                headDob: document.getElementById('headDob').value.trim(),
+                headGender: document.getElementById('headGender').value,
+                headProfessionTam: document.getElementById('headProfession').value.trim(),
+                monthlyIncome: document.getElementById('monthlyIncome').value.trim(),
+                headAadhaar: document.getElementById('headAadhaar').value.replace(/\s/g, ''),
+                doorNo: document.getElementById('doorNo').value.trim(),
+                streetTam: document.getElementById('streetTam').value.trim(),
+                streetEng: document.getElementById('streetEng').value.trim(),
+                areaTam: document.getElementById('areaTam').value.trim(),
+                district: document.getElementById('district').value.trim(),
+                taluk: document.getElementById('taluk').value.trim(),
+                pincode: document.getElementById('pincode').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/profile/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': activeMobile },
+                    body: JSON.stringify(updated)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('saveStatusText').innerText = '✅ விவரங்கள் சேமிக்கப்பட்டன!';
+                    setTimeout(() => { document.getElementById('saveStatusText').innerText = ''; }, 3000);
+                }
+            } catch (e) {
+                alert('சேமிப்பதில் பிழை: ' + e.message);
+            }
+        }
+
+        async function startTnpdsAutomation(isMock = false) {
+            const confirmed = confirm(isMock 
+                ? '🧪 TNPDS சுயகற்றல் சோதனை முறையை (Mock Sandbox) தொடங்க விரும்புகிறீர்களா?' 
+                : '🚀 தமிழ்நாடு அரசு TNPDS போர்ட்டலில் நேரலை விண்ணப்பத்தைத் தொடங்க விரும்புகிறீர்களா?\n\nஅனைத்து விவரங்களையும் சரிபார்த்துவிட்டீர்களா?');
+            if (!confirmed) return;
+
+            // First save any unsaved form edits
+            await saveProfileChanges();
+
+            try {
+                const res = await fetch('/api/automation/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': activeMobile },
+                    body: JSON.stringify({ mobileNumber: activeMobile, isMock })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('btnMainSubmit').disabled = true;
+                    document.getElementById('btnMainSubmit').innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> TNPDS ஆட்டோமேஷன் இயங்குகிறது...`;
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            } catch (e) {
+                alert('ஆட்டோமேஷன் தொடங்குவதில் பிழை: ' + e.message);
+            }
+        }
+
+        function startMonitoring() {
+            if (monitorInterval) clearInterval(monitorInterval);
+            monitorInterval = setInterval(checkAutomationStatus, 2000);
+        }
+
+        async function checkAutomationStatus() {
+            try {
+                const res = await fetch(`/api/automation/live-status?mobile=${activeMobile}`);
+                const data = await res.json();
+
+                if (data) {
+                    const pct = data.percentage || 0;
+                    document.getElementById('progressBarFill').style.width = pct + '%';
+                    document.getElementById('stepCounterText').innerText = `படி ${data.step || 0}/${data.total || 51} (${pct}%)`;
+
+                    if (data.lastProgressMsg) {
+                        document.getElementById('currentStepText').innerText = data.lastProgressMsg.replace(/\*\*/g, '');
+                    }
+
+                    const monitorCard = document.getElementById('liveMonitorCard');
+                    if (data.isRunning || (data.step && data.step > 0)) {
+                        monitorCard.style.display = 'block';
+                        document.getElementById('monitorStatusBadge').innerHTML = `<i class="fa-solid fa-gear fa-spin"></i> நேரலை போர்ட்டலில் படிவம் நிரப்பப்படுகிறது...`;
+                        document.getElementById('monitorStatusBadge').style.color = '#10b981';
+                    }
+
+                    // Live Screenshot refresh
+                    if (data.latestSnapshotUrl) {
+                        const img = document.getElementById('livePortalImg');
+                        img.src = data.latestSnapshotUrl;
+                    }
+
+                    // OTP prompt
+                    const otpBox = document.getElementById('otpBox');
+                    if (data.isWaitingForOtp) {
+                        otpBox.classList.add('active');
+                        if (data.otpSeconds) {
+                            document.getElementById('otpPromptDesc').innerText = `டைமர்: ${data.otpSeconds} விநாடிகள் மீதமுள்ளன. வாடிக்கையாளர் SMS OTP உள்ளிடவும்.`;
+                        }
+                    } else {
+                        otpBox.classList.remove('active');
+                    }
+
+                    // Completed application
+                    if (data.applicationNumber) {
+                        document.getElementById('monitorStatusBadge').innerHTML = `✅ சமர்ப்பிக்கப்பட்டது! எண்: ${data.applicationNumber}`;
+                        document.getElementById('btnMainSubmit').disabled = false;
+                        document.getElementById('btnMainSubmit').innerHTML = `<i class="fa-solid fa-check"></i> விண்ணப்பம் முடிந்தது (${data.applicationNumber})`;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function submitOtpFromReview() {
+            const otpVal = document.getElementById('otpInput').value.trim();
+            if (otpVal.length !== 6 || !/^\d+$/.test(otpVal)) {
+                alert('சரியான 6-இலக்க OTP எண்ணை உள்ளிடவும்.');
+                return;
+            }
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': activeMobile },
+                    body: JSON.stringify({ text: otpVal, mobileNumber: activeMobile })
+                });
+                const data = await res.json();
+                document.getElementById('otpInput').value = '';
+                document.getElementById('otpBox').classList.remove('active');
+            } catch (e) {
+                alert('OTP சமர்ப்பிப்பதில் பிழை: ' + e.message);
+            }
+        }
+
+        function openOfficialPortal() {
+            window.open('https://www.tnpds.gov.in/pages/register/cardreg-home.xhtml', '_blank');
+        }
+    </script>
+</body>
+</html>
