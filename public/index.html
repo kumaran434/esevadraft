@@ -106,7 +106,11 @@
             display: block; 
         }
 
-        .nav-actions { display: flex; align-items: center; gap: 8px; }
+        .nav-actions { 
+            display: flex; 
+            align-items: center; 
+            gap: 8px; 
+        }
 
         .live-status-pill {
             display: inline-flex;
@@ -135,41 +139,96 @@
             100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
         }
 
-        .nav-tabs { display: flex; gap: 4px; background: rgba(0,0,0,0.22); padding: 3px; border-radius: 8px; }
+        /* International Standard Unified Header Actions */
+        .nav-header-btn,
         .nav-tab {
-            background: transparent;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 11.5px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
+            height: 34px !important;
+            min-height: 34px !important;
+            max-height: 34px !important;
+            box-sizing: border-box !important;
+            border-radius: 8px !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 6px !important;
+            padding: 0 14px !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            white-space: nowrap !important;
+            line-height: 1 !important;
+            cursor: pointer !important;
+            border: 1px solid transparent !important;
+        }
+
+        .nav-profile-badge {
+            background: rgba(255, 255, 255, 0.12) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.22) !important;
+            cursor: default !important;
+        }
+
+        .nav-btn-accent {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3) !important;
+        }
+        .nav-btn-accent:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+        .nav-btn-download {
+            background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%) !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3) !important;
+        }
+
+        .nav-btn-logout {
+            background: rgba(239, 68, 68, 0.18) !important;
+            color: #fca5a5 !important;
+            border: 1px solid rgba(239, 68, 68, 0.35) !important;
+            width: 34px !important;
+            min-width: 34px !important;
+            max-width: 34px !important;
+            padding: 0 !important;
+        }
+        .nav-btn-logout:hover {
+            background: #dc2626 !important;
+            color: #ffffff !important;
+            border-color: #ef4444 !important;
+        }
+
+        .nav-tabs { 
+            display: flex; 
             align-items: center;
-            gap: 5px;
+            gap: 6px; 
+            background: transparent !important; 
+            padding: 0 !important; 
+            margin: 0 !important;
+        }
+
+        .nav-tab {
+            background: rgba(255, 255, 255, 0.12) !important;
+            color: #f1f5f9 !important;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        }
+        .nav-tab:hover {
+            background: rgba(255, 255, 255, 0.22) !important;
+            color: #ffffff !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
         }
         .nav-tab.active { 
-            background: white; 
-            color: var(--primary); 
-            font-weight: 700;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+            background: #ffffff !important; 
+            color: var(--primary) !important; 
+            font-weight: 700 !important;
+            border-color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
         }
 
         .btn-view-toggle {
-            background: #f59e0b;
-            color: #1e293b;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            box-shadow: 0 2px 6px rgba(245,158,11,0.3);
+            background: #f59e0b !important;
+            color: #1e293b !important;
+            font-weight: 700 !important;
+            box-shadow: 0 2px 6px rgba(245,158,11,0.3) !important;
         }
 
         /* Main Container */
@@ -1013,35 +1072,38 @@
             </div>
 
             <div class="nav-actions">
-                <span id="authProfileBadge" style="display: none; align-items: center; gap: 6px; background: rgba(255,255,255,0.18); padding: 6px 14px; border-radius: 20px; font-size: 11.5px; color: white; font-weight: 700; border: 1px solid rgba(255,255,255,0.25);">
+                <span id="authProfileBadge" class="nav-header-btn nav-profile-badge" style="display: none;">
                     <i class="fa-solid fa-circle-user"></i> <span id="authProfileName">ஆபரேட்டர்</span>
                 </span>
 
-                <button id="btnNewCustomerNav" onclick="openNewCustomerModal()" style="display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(16,185,129,0.35);">
+                <button id="btnNewCustomerNav" class="nav-header-btn nav-btn-accent" onclick="openNewCustomerModal()" style="display: none;">
                     <i class="fa-solid fa-user-plus"></i> + புதிய வாடிக்கையாளர்
                 </button>
 
-                <button id="btnDraftsNav" onclick="switchTab('operator')" style="display: none; background: rgba(255,255,255,0.14); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 7px; backdrop-filter: blur(6px);">
-                    <i class="fa-solid fa-folder-open"></i> <span>வாடிக்கையாளர்கள்</span> <span id="opDraftCountBadge" style="background: #f59e0b; color: #451a03; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 800;">0</span>
+                <button id="btnDraftsNav" class="nav-header-btn" onclick="switchTab('operator')" style="display: none; background: rgba(255,255,255,0.14); color: white; border: 1px solid rgba(255,255,255,0.25);">
+                    <i class="fa-solid fa-folder-open"></i> <span>வாடிக்கையாளர்கள்</span> <span id="opDraftCountBadge" style="background: #f59e0b; color: #451a03; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 800;">0</span>
                 </button>
 
-                <button id="btnDesktopAppNav" onclick="openDesktopDownloadModal()" style="display: none; background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%); color: white; border: none; padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(79,70,229,0.35);">
-                    <i class="fa-brands fa-windows"></i> <span>ஆப் டவுன்லோட் (App Download)</span>
+                <button id="btnDesktopAppNav" class="nav-header-btn nav-btn-download" onclick="openDesktopDownloadModal()" style="display: none;">
+                    <i class="fa-brands fa-windows"></i> <span>ஆப் டவுன்லோட்</span>
                 </button>
 
-                <button class="btn-view-toggle" id="viewToggleBtn" onclick="toggleMobileMockupMode()">
+                <button class="nav-header-btn btn-view-toggle" id="viewToggleBtn" onclick="toggleMobileMockupMode()" style="display: none;">
                     <i class="fa-solid fa-mobile-screen"></i> <span>மொபைல் பார்வை</span>
                 </button>
 
-                <div class="nav-tabs" id="mainNavTabs">
+                <div class="nav-tabs" id="mainNavTabs" style="display: none;">
                     <button class="nav-tab active" id="tabBtnCitizen" onclick="switchTab('citizen')"><i class="fa-solid fa-user"></i> பொதுமக்கள்</button>
                     <button class="nav-tab" id="tabBtnOperator" onclick="switchTab('operator')"><i class="fa-solid fa-store"></i> மையம் பணிப்பகுதி</button>
-                    <button class="nav-tab" id="tabBtnPortal" onclick="openOfficialPortal()" title="அதிகாரப்பூர்வ TNPDS அரசு இணையதளம் (tnpds.gov.in)" style="background: rgba(16,185,129,0.25); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);"><i class="fa-solid fa-arrow-up-right-from-square"></i> TNPDS அரசு தளம்</button>
+                    <button class="nav-tab" id="tabBtnPortal" onclick="openOfficialPortal()" title="அதிகாரப்பூர்வ TNPDS அரசு இணையதளம் (tnpds.gov.in)"><i class="fa-solid fa-arrow-up-right-from-square"></i> TNPDS அரசு தளம்</button>
                     <button class="nav-tab" id="tabBtnLocker" onclick="switchTab('locker')"><i class="fa-solid fa-folder-open"></i> பெட்டகம்</button>
                     <button class="nav-tab" id="tabBtnAdmin" onclick="switchTab('admin')"><i class="fa-solid fa-shield-halved"></i> அட்மின்</button>
-                    <button class="nav-tab" onclick="resetIntakeChat()" title="மீண்டும் தொடங்கு (Reset)" style="background: rgba(245,158,11,0.25); color: #fef08a;"><i class="fa-solid fa-rotate-left"></i> புதியது</button>
-                    <button class="nav-tab" onclick="logoutUser()" title="வெளியேறு (Logout)" style="background: rgba(220,38,38,0.3);"><i class="fa-solid fa-power-off"></i></button>
+                    <button class="nav-tab" id="tabBtnReset" onclick="resetIntakeChat()" title="மீண்டும் தொடங்கு (Reset)"><i class="fa-solid fa-rotate-left"></i> புதியது</button>
                 </div>
+
+                <button class="nav-header-btn nav-btn-logout" id="btnLogoutNav" onclick="logoutUser()" title="வெளியேறு (Logout)" style="display: none;">
+                    <i class="fa-solid fa-power-off"></i>
+                </button>
             </div>
         </div>
 
@@ -1417,48 +1479,78 @@
                 </div>
             </div>
 
-            <!-- 2. OPERATOR MODE (இ-சேவை மைய வாடிக்கையாளர் மேலாண்மை) -->
+            <!-- 2. OPERATOR MODE -->
             <div id="panel-operator" class="tab-panel" style="padding: 18px; overflow-y: auto; background: #f8fafc;">
-                <div style="max-width: 960px; margin: 0 auto;">
-                    <!-- Operator Desktop App Hub Banner (When on Web Browser) -->
-                    <div id="operatorDesktopHubBanner" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%); border-radius: 14px; padding: 20px 22px; color: white; box-shadow: 0 10px 25px -5px rgba(49, 46, 129, 0.35); margin-bottom: 18px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,0.15);">
-                        <div style="position: absolute; right: -20px; top: -20px; width: 140px; height: 140px; background: rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none;"></div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; position: relative; z-index: 2;">
-                            <div style="flex: 1; min-width: 280px;">
-                                <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(34,197,94,0.2); border: 1px solid rgba(74,222,128,0.4); padding: 4px 12px; border-radius: 20px; font-size: 11.5px; font-weight: 700; color: #86efac; margin-bottom: 8px;">
-                                    <i class="fa-solid fa-bolt"></i> <span>இ-சேவை மையங்களுக்கான சிறப்பு ஆப்</span>
-                                </div>
-                                <h3 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 800; letter-spacing: -0.2px;">
-                                    ⚡ வேகமான வேலைக்கு எங்களின் கம்ப்யூட்டர் ஆப்பைப் பயன்படுத்தவும்!
-                                </h3>
-                                <p style="margin: 0; font-size: 13px; color: #e0e7ff; line-height: 1.6; max-width: 620px;">
-                                    இணையதளத்தை விட, உங்கள் கணினியில் ஆப்பை இன்ஸ்டால் செய்து பயன்படுத்தினால் அனைத்து வேலைகளும் மிக வேகமாகவும், தடையின்றியும் நடக்கும்.
-                                </p>
+                
+                <!-- A. OPERATOR WEB DOWNLOAD VIEW (When on Web Browser) -->
+                <div id="operatorWebDownloadView" style="display: none; padding: 30px 16px; max-width: 660px; margin: 0 auto; text-align: center;">
+                    <div style="background: white; border-radius: 20px; padding: 36px 32px; border: 1px solid #e2e8f0; box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(0,0,0,0.03);">
+                        <!-- Windows Fluent Icon -->
+                        <div style="width: 72px; height: 72px; border-radius: 18px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; display: inline-flex; align-items: center; justify-content: center; font-size: 36px; box-shadow: 0 10px 20px rgba(2,132,199,0.3); margin-bottom: 20px;">
+                            <i class="fa-brands fa-windows"></i>
+                        </div>
+
+                        <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px;">
+                            eSevaDraft விண்டோஸ் ஆப் (Desktop App)
+                        </h2>
+                        
+                        <p style="margin: 0 0 24px 0; font-size: 14.5px; color: #475569; line-height: 1.6; max-width: 520px; margin-left: auto; margin-right: auto;">
+                            இ-சேவை மைய வேலைகளை மிக வேகமாகவும், தடையின்றியும் செய்ய உங்கள் கம்ப்யூட்டரில் எங்களின் ஆப்பை டவுன்லோட் செய்து பயன்படுத்தவும்.
+                        </p>
+
+                        <!-- Big Download Button -->
+                        <div style="margin-bottom: 20px;">
+                            <a id="hubDownloadBtn" href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 32px; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; border-radius: 12px; font-weight: 800; font-size: 16px; text-decoration: none; box-shadow: 0 6px 18px rgba(22,163,74,0.35); transition: transform 0.2s;">
+                                <i class="fa-brands fa-windows" style="font-size: 20px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (Download App)
+                            </a>
+                        </div>
+
+                        <!-- Already Installed Prompt -->
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 16px; margin-bottom: 28px; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: #166534; font-weight: 600;">
+                            <i class="fa-solid fa-circle-check" style="color: #22c55e;"></i>
+                            <span>ஏற்கனவே இன்ஸ்டால் செய்துள்ளீர்களா? உங்கள் கம்ப்யூட்டர் Desktop-ல் உள்ள <b>eSevaDraft</b> ஆப்பைத் திறந்து உள்நுழையவும்.</span>
+                        </div>
+
+                        <!-- 3 Simple Steps -->
+                        <div style="border-top: 1px solid #f1f5f9; padding-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; text-align: left;">
+                            <div style="background: #f8fafc; border-radius: 10px; padding: 14px; border: 1px solid #e2e8f0;">
+                                <div style="font-size: 12px; font-weight: 800; color: #0284c7; margin-bottom: 4px;">படி 1</div>
+                                <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 2px;">பதிவிறக்கம்</div>
+                                <div style="font-size: 11.5px; color: #64748b;">மேலே உள்ள பட்டனைக் கிளிக் செய்து Setup பைலைப் பெறவும்.</div>
                             </div>
-                            <div style="display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 250px;">
-                                <a id="hubDownloadBtn" href="/api/download/desktop-app" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: #22c55e; color: #052e16; font-weight: 800; font-size: 14px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 14px rgba(34,197,94,0.4); transition: transform 0.2s;">
-                                    <i class="fa-brands fa-windows" style="font-size: 16px;"></i> 📥 ஆப் டவுன்லோட் செய்க (Download App)
-                                </a>
-                                <span style="font-size: 11.5px; color: #c7d2fe; text-align: center;">
-                                    <i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> ஏற்கனவே உள்ளதா? உங்கள் கம்ப்யூட்டரில் உள்ள <b>eSevaDraft</b> ஆப்பைத் திறக்கவும்
-                                </span>
+                            <div style="background: #f8fafc; border-radius: 10px; padding: 14px; border: 1px solid #e2e8f0;">
+                                <div style="font-size: 12px; font-weight: 800; color: #16a34a; margin-bottom: 4px;">படி 2</div>
+                                <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 2px;">இன்ஸ்டால்</div>
+                                <div style="font-size: 11.5px; color: #64748b;">டவுன்லோட் ஆன பைலை ஒருமுறை திறந்து இன்ஸ்டால் செய்யவும்.</div>
+                            </div>
+                            <div style="background: #f8fafc; border-radius: 10px; padding: 14px; border: 1px solid #e2e8f0;">
+                                <div style="font-size: 12px; font-weight: 800; color: #8b5cf6; margin-bottom: 4px;">படி 3</div>
+                                <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 2px;">உள்நுழைக</div>
+                                <div style="font-size: 11.5px; color: #64748b;">உங்கள் மொபைல் எண் மற்றும் பாஸ்வேர்ட் மூலம் வேலை தொடங்குங்கள்.</div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Operator Desktop App Active Banner (When inside Electron App) -->
-                    <div id="operatorDesktopAppActiveBanner" style="display: none; background: linear-gradient(135deg, #064e3b 0%, #047857 100%); border-radius: 14px; padding: 16px 20px; color: white; margin-bottom: 18px; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 4px 14px rgba(6,78,59,0.25);">
+                        <div style="margin-top: 20px; font-size: 11px; color: #94a3b8;">
+                            Windows 10 / 11 (64-bit) • 100% அதிகாரப்பூர்வ மற்றும் பாதுகாப்பானது
+                        </div>
+                    </div>
+                </div>
+
+                <!-- B. OPERATOR DESKTOP WORK AREA (When inside Electron Desktop App) -->
+                <div id="operatorDesktopWorkArea" style="max-width: 960px; margin: 0 auto; display: none;">
+                    <!-- Active Banner in Desktop App -->
+                    <div id="operatorDesktopAppActiveBanner" style="background: linear-gradient(135deg, #064e3b 0%, #047857 100%); border-radius: 14px; padding: 16px 20px; color: white; margin-bottom: 18px; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 4px 14px rgba(6,78,59,0.25);">
                         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
                             <div style="display: flex; align-items: center; gap: 12px;">
                                 <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(74,222,128,0.2); display: flex; align-items: center; justify-content: center; color: #4ade80; font-size: 20px;">
                                     <i class="fa-solid fa-circle-check"></i>
                                 </div>
                                 <div>
-                                    <h4 style="margin: 0; font-size: 14.5px; font-weight: 800;">eSevaDraft கம்ப்யூட்டர் ஆப் இயங்குகிறது</h4>
+                                    <h4 style="margin: 0; font-size: 14.5px; font-weight: 800;">eSevaDraft கம்ப்யூட்டர் ஆப் தயார் நிலையில் உள்ளது</h4>
                                     <p style="margin: 2px 0 0 0; font-size: 12px; color: #a7f3d0;">அனைத்து வேலைகளையும் மிக வேகமாகவும் எளிதாகவும் செய்யலாம்.</p>
                                 </div>
                             </div>
-                            <span style="background: rgba(255,255,255,0.18); padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;">🟢 ஆப் தயார் நிலை</span>
+                            <span style="background: rgba(255,255,255,0.18); padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;">🟢 Online</span>
                         </div>
                     </div>
 
@@ -2451,78 +2543,94 @@
             const portalNavBtn = document.getElementById('tabBtnPortal');
             const lockerNavBtn = document.getElementById('tabBtnLocker');
             const adminNavBtn = document.getElementById('tabBtnAdmin');
+            const resetNavBtn = document.getElementById('tabBtnReset');
             const viewToggleBtn = document.getElementById('viewToggleBtn');
             const btnNewCustomerNav = document.getElementById('btnNewCustomerNav');
             const btnDraftsNav = document.getElementById('btnDraftsNav');
             const btnDesktopAppNav = document.getElementById('btnDesktopAppNav');
+            const btnLogoutNav = document.getElementById('btnLogoutNav');
             const badge = document.getElementById('authProfileBadge');
             const nameEl = document.getElementById('authProfileName');
             const backBtn = document.getElementById('btnBackToOperator');
             const saveDraftBtn = document.getElementById('btnSaveDraftTop');
+            const navTabs = document.getElementById('mainNavTabs');
+            const webDlView = document.getElementById('operatorWebDownloadView');
+            const workArea = document.getElementById('operatorDesktopWorkArea');
 
             const name = displayName || localStorage.getItem('eseva_user_name') || (isOp ? 'மையம்' : 'பொதுமக்கள்');
+            const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+
+            // Profile Badge & Logout
+            if (badge && nameEl) {
+                nameEl.innerHTML = isOp ? `<i class="fa-solid fa-store" style="color: #fde047;"></i> ${name} (இ-சேவை)` : `<i class="fa-solid fa-circle-user"></i> ${name}`;
+                badge.style.display = 'inline-flex';
+            }
+            if (btnLogoutNav) btnLogoutNav.style.display = 'inline-flex';
 
             if (isOp) {
-                // OPERATOR MODE: Streamlined, dedicated workspace directly guiding to Desktop App
-                if (btnNewCustomerNav) btnNewCustomerNav.style.display = 'inline-flex';
-                if (btnDraftsNav) btnDraftsNav.style.display = 'none';
-                if (btnDesktopAppNav) btnDesktopAppNav.style.display = 'inline-flex';
-                if (citizenNavBtn) {
-                    citizenNavBtn.innerHTML = '<i class="fa-solid fa-file-signature"></i> <span>படிவம் நிரப்பு</span>';
-                    citizenNavBtn.style.display = 'inline-flex';
-                }
-                if (opNavBtn) {
-                    opNavBtn.innerHTML = '<i class="fa-solid fa-store"></i> <span>மையம் பணிப்பகுதி</span>';
-                    opNavBtn.style.display = 'inline-flex';
-                }
-                if (portalNavBtn) portalNavBtn.style.display = 'inline-flex';
-                if (lockerNavBtn) lockerNavBtn.style.display = 'none';
-                if (adminNavBtn) adminNavBtn.style.display = 'none';
-                if (viewToggleBtn) viewToggleBtn.style.display = 'none';
-                if (backBtn) backBtn.style.display = 'none';
-                if (saveDraftBtn) saveDraftBtn.style.display = 'inline-flex';
-
-                if (badge && nameEl) {
-                    nameEl.innerHTML = `<i class="fa-solid fa-store" style="color: #fde047;"></i> ${name} (இ-சேவை)`;
-                    badge.style.display = 'inline-flex';
-                }
-
-                // Check Desktop Bridge status
-                const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
-                const hubBanner = document.getElementById('operatorDesktopHubBanner');
-                const activeBanner = document.getElementById('operatorDesktopAppActiveBanner');
                 if (isDesktop) {
-                    if (hubBanner) hubBanner.style.display = 'none';
-                    if (activeBanner) activeBanner.style.display = 'block';
-                    if (btnDesktopAppNav) btnDesktopAppNav.innerHTML = '<i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> <span>ஆப் இயங்குகிறது</span>';
-                } else {
-                    if (hubBanner) hubBanner.style.display = 'block';
-                    if (activeBanner) activeBanner.style.display = 'none';
-                    if (btnDesktopAppNav) btnDesktopAppNav.innerHTML = '<i class="fa-brands fa-windows"></i> <span>ஆப் டவுன்லோட்</span>';
-                }
+                    // 1. DESKTOP APP: Full unified operator workspace with matching 34px buttons
+                    if (navTabs) navTabs.style.display = 'flex';
+                    if (btnNewCustomerNav) btnNewCustomerNav.style.display = 'inline-flex';
+                    if (btnDraftsNav) btnDraftsNav.style.display = 'none';
+                    if (btnDesktopAppNav) btnDesktopAppNav.style.display = 'none';
+                    if (viewToggleBtn) viewToggleBtn.style.display = 'none';
+                    if (backBtn) backBtn.style.display = 'none';
+                    if (saveDraftBtn) saveDraftBtn.style.display = 'inline-flex';
 
-                switchTab('operator');
-                fetchOperatorDrafts();
+                    if (opNavBtn) {
+                        opNavBtn.innerHTML = '<i class="fa-solid fa-store"></i> <span>மையம் பணிப்பகுதி</span>';
+                        opNavBtn.style.display = 'inline-flex';
+                    }
+                    if (citizenNavBtn) {
+                        citizenNavBtn.innerHTML = '<i class="fa-solid fa-file-signature"></i> <span>படிவம் நிரப்பு</span>';
+                        citizenNavBtn.style.display = 'inline-flex';
+                    }
+                    if (portalNavBtn) portalNavBtn.style.display = 'inline-flex';
+                    if (resetNavBtn) resetNavBtn.style.display = 'inline-flex';
+                    if (lockerNavBtn) lockerNavBtn.style.display = 'none';
+                    if (adminNavBtn) adminNavBtn.style.display = 'none';
+
+                    if (webDlView) webDlView.style.display = 'none';
+                    if (workArea) workArea.style.display = 'block';
+
+                    switchTab('operator');
+                    fetchOperatorDrafts();
+                } else {
+                    // 2. WEB BROWSER: Completely clean download page only (no clutter, no tabs, no extra buttons)
+                    if (navTabs) navTabs.style.display = 'none';
+                    if (btnNewCustomerNav) btnNewCustomerNav.style.display = 'none';
+                    if (btnDraftsNav) btnDraftsNav.style.display = 'none';
+                    if (btnDesktopAppNav) btnDesktopAppNav.style.display = 'none';
+                    if (viewToggleBtn) viewToggleBtn.style.display = 'none';
+                    if (backBtn) backBtn.style.display = 'none';
+                    if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+
+                    if (webDlView) webDlView.style.display = 'block';
+                    if (workArea) workArea.style.display = 'none';
+
+                    switchTab('operator');
+                }
             } else {
-                // CITIZEN MODE: Clean, simple, personal flow
+                // 3. CITIZEN MODE: Clean personal assistance flow
+                if (navTabs) navTabs.style.display = 'flex';
                 if (btnNewCustomerNav) btnNewCustomerNav.style.display = 'none';
                 if (btnDraftsNav) btnDraftsNav.style.display = 'none';
                 if (btnDesktopAppNav) btnDesktopAppNav.style.display = 'none';
-                if (opNavBtn) opNavBtn.style.display = 'none';
-                if (adminNavBtn) adminNavBtn.style.display = 'none';
                 if (viewToggleBtn) viewToggleBtn.style.display = 'none';
                 if (backBtn) backBtn.style.display = 'none';
                 if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+
+                if (opNavBtn) opNavBtn.style.display = 'none';
+                if (adminNavBtn) adminNavBtn.style.display = 'none';
                 if (lockerNavBtn) lockerNavBtn.style.display = 'inline-flex';
                 if (portalNavBtn) portalNavBtn.style.display = 'inline-flex';
+                if (resetNavBtn) resetNavBtn.style.display = 'inline-flex';
                 if (citizenNavBtn) {
                     citizenNavBtn.innerHTML = '<i class="fa-solid fa-comments"></i> <span>உரையாடல்</span>';
                     citizenNavBtn.style.display = 'inline-flex';
                 }
-                if (badge && nameEl) {
-                    nameEl.innerHTML = `<i class="fa-solid fa-circle-user"></i> ${name} (பொதுமக்கள்)`;
-                    badge.style.display = 'inline-flex';
-                }
+
                 switchTab('citizen');
             }
         }
@@ -2908,6 +3016,16 @@
             localStorage.removeItem('eseva_user_mobile');
             localStorage.removeItem('eseva_user_name');
             localStorage.removeItem('eseva_user_role');
+
+            const badge = document.getElementById('authProfileBadge');
+            if (badge) badge.style.display = 'none';
+            const navTabs = document.getElementById('mainNavTabs');
+            if (navTabs) navTabs.style.display = 'none';
+            const btnNewCustomer = document.getElementById('btnNewCustomerNav');
+            if (btnNewCustomer) btnNewCustomer.style.display = 'none';
+            const btnLogout = document.getElementById('btnLogoutNav');
+            if (btnLogout) btnLogout.style.display = 'none';
+
             const screen = document.getElementById('authScreen');
             if (screen) screen.style.display = 'flex';
         }
@@ -2924,16 +3042,20 @@
 
             if (tabId === 'operator') {
                 const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
-                const hubBanner = document.getElementById('operatorDesktopHubBanner');
-                const activeBanner = document.getElementById('operatorDesktopAppActiveBanner');
-                if (isDesktop) {
-                    if (hubBanner) hubBanner.style.display = 'none';
-                    if (activeBanner) activeBanner.style.display = 'block';
+                const isOp = localStorage.getItem('eseva_user_role') === 'operator';
+                const navTabs = document.getElementById('mainNavTabs');
+                const webDlView = document.getElementById('operatorWebDownloadView');
+                const workArea = document.getElementById('operatorDesktopWorkArea');
+
+                if (isOp && !isDesktop) {
+                    if (navTabs) navTabs.style.display = 'none';
+                    if (webDlView) webDlView.style.display = 'block';
+                    if (workArea) workArea.style.display = 'none';
                 } else {
-                    if (hubBanner) hubBanner.style.display = 'block';
-                    if (activeBanner) activeBanner.style.display = 'none';
+                    if (webDlView) webDlView.style.display = 'none';
+                    if (workArea) workArea.style.display = 'block';
+                    fetchOperatorDrafts();
                 }
-                fetchOperatorDrafts();
             } else if (tabId === 'citizen') {
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
                 const activeCustMob = localStorage.getItem('eseva_active_customer_mobile');
