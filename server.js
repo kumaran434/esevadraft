@@ -2206,19 +2206,20 @@ app.get('/api/admin/stats', (req, res) => {
 // ==========================================
 app.get('/api/download/desktop-app', (req, res) => {
     const candidates = [
+        path.join(__dirname, 'desktop', 'dist', 'eSevaDraft-Desktop-Setup-1.0.1.exe'),
+        path.join(__dirname, 'desktop', 'dist', 'eSevaDraft-Setup-1.0.1.exe'),
         path.join(__dirname, 'desktop', 'dist', 'eSevaDraft-Setup-1.0.0.exe'),
-        path.join(__dirname, 'desktop', 'dist', 'eSevaDraft Desktop Setup 1.0.0.exe'),
-        path.join(__dirname, 'downloads', 'eSevaDraft-Setup-1.0.0.exe')
+        path.join(__dirname, 'downloads', 'eSevaDraft-Desktop-Setup-1.0.1.exe')
     ];
 
     for (const exePath of candidates) {
         if (fs.existsSync(exePath)) {
-            return res.download(exePath, 'eSevaDraft-Setup-1.0.0.exe');
+            return res.download(exePath, 'eSevaDraft-Desktop-Setup-1.0.1.exe');
         }
     }
 
     // Fallback: Redirect directly to official GitHub Release CDN
-    return res.redirect('https://github.com/kumaran434/esevadraft/releases/latest/download/eSevaDraft-Setup-1.0.0.exe');
+    return res.redirect('https://github.com/kumaran434/esevadraft/releases/download/v1.0.1/eSevaDraft-Desktop-Setup-1.0.1.exe');
 });
 
 // Periodic session persist (every 30 seconds)

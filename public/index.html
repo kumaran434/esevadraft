@@ -1021,12 +1021,12 @@
                     <i class="fa-solid fa-user-plus"></i> + புதிய வாடிக்கையாளர்
                 </button>
 
-                <button id="btnDraftsNav" onclick="openOperatorDraftsModal()" style="display: none; background: rgba(255,255,255,0.14); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 7px; backdrop-filter: blur(6px);">
+                <button id="btnDraftsNav" onclick="switchTab('operator')" style="display: none; background: rgba(255,255,255,0.14); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 7px; backdrop-filter: blur(6px);">
                     <i class="fa-solid fa-folder-open"></i> <span>வாடிக்கையாளர்கள்</span> <span id="opDraftCountBadge" style="background: #f59e0b; color: #451a03; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 800;">0</span>
                 </button>
 
                 <button id="btnDesktopAppNav" onclick="openDesktopDownloadModal()" style="display: none; background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%); color: white; border: none; padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(79,70,229,0.35);">
-                    <i class="fa-brands fa-windows"></i> <span>டெஸ்க்டாப் ஆப்</span>
+                    <i class="fa-brands fa-windows"></i> <span>டெஸ்க்டாப் ஆப் (v1.0.1)</span>
                 </button>
 
                 <button class="btn-view-toggle" id="viewToggleBtn" onclick="toggleMobileMockupMode()">
@@ -1035,7 +1035,7 @@
 
                 <div class="nav-tabs" id="mainNavTabs">
                     <button class="nav-tab active" id="tabBtnCitizen" onclick="switchTab('citizen')"><i class="fa-solid fa-user"></i> பொதுமக்கள்</button>
-                    <button class="nav-tab" id="tabBtnOperator" onclick="openOperatorDraftsModal()"><i class="fa-solid fa-store"></i> மையம்</button>
+                    <button class="nav-tab" id="tabBtnOperator" onclick="switchTab('operator')"><i class="fa-solid fa-store"></i> மையம் பணிப்பகுதி</button>
                     <button class="nav-tab" id="tabBtnPortal" onclick="openOfficialPortal()" title="அதிகாரப்பூர்வ TNPDS அரசு இணையதளம் (tnpds.gov.in)" style="background: rgba(16,185,129,0.25); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4);"><i class="fa-solid fa-arrow-up-right-from-square"></i> TNPDS அரசு தளம்</button>
                     <button class="nav-tab" id="tabBtnLocker" onclick="switchTab('locker')"><i class="fa-solid fa-folder-open"></i> பெட்டகம்</button>
                     <button class="nav-tab" id="tabBtnAdmin" onclick="switchTab('admin')"><i class="fa-solid fa-shield-halved"></i> அட்மின்</button>
@@ -1420,6 +1420,48 @@
             <!-- 2. OPERATOR MODE (இ-சேவை மைய வாடிக்கையாளர் மேலாண்மை) -->
             <div id="panel-operator" class="tab-panel" style="padding: 18px; overflow-y: auto; background: #f8fafc;">
                 <div style="max-width: 960px; margin: 0 auto;">
+                    <!-- Operator Desktop App Hub Banner (When on Web Browser) -->
+                    <div id="operatorDesktopHubBanner" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%); border-radius: 14px; padding: 22px 24px; color: white; box-shadow: 0 10px 25px -5px rgba(49, 46, 129, 0.35); margin-bottom: 18px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,0.15);">
+                        <div style="position: absolute; right: -20px; top: -20px; width: 140px; height: 140px; background: rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; position: relative; z-index: 2;">
+                            <div style="flex: 1; min-width: 280px;">
+                                <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25); padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #c7d2fe; margin-bottom: 10px;">
+                                    <i class="fa-brands fa-windows"></i> <span>eSevaDraft Desktop App (Windows) • v1.0.1</span>
+                                </div>
+                                <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 800; letter-spacing: -0.2px;">
+                                    🚀 நேரடி அரசு போர்ட்டல் ஆட்டோமேஷன் மையம்
+                                </h3>
+                                <p style="margin: 0; font-size: 12.5px; color: #e0e7ff; line-height: 1.6; max-width: 650px;">
+                                    உங்கள் கம்ப்யூட்டரிலேயே <b>Chrome பிரவுசர் திறந்து</b> அரசு இணையதளத்தில் விண்ணப்பிக்க மற்றும் <b>Dual System Listener</b> (அரசு தளத்திலோ அல்லது ஆப்பிலோ எங்கு OTP உள்ளிட்டாலும் உடனடியாகக் கண்டறியும் தொழில்நுட்பம்) பயன்படுத்த டெஸ்க்டாப் ஆப்பை இயக்கவும்.
+                                </p>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 8px; align-items: stretch;">
+                                <a id="hubDownloadBtn" href="/api/download/desktop-app" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 22px; background: #22c55e; color: #052e16; font-weight: 800; font-size: 13.5px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 14px rgba(34,197,94,0.4); transition: transform 0.2s;">
+                                    <i class="fa-brands fa-windows" style="font-size: 16px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (v1.0.1)
+                                </a>
+                                <span style="font-size: 11px; color: #c7d2fe; text-align: center;">
+                                    <i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> ஏற்கனவே உள்ளதா? Desktop-ல் <b>eSevaDraft</b> திறக்கவும்
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Operator Desktop App Active Banner (When inside Electron App) -->
+                    <div id="operatorDesktopAppActiveBanner" style="display: none; background: linear-gradient(135deg, #064e3b 0%, #047857 100%); border-radius: 14px; padding: 16px 20px; color: white; margin-bottom: 18px; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 4px 14px rgba(6,78,59,0.25);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(74,222,128,0.2); display: flex; align-items: center; justify-content: center; color: #4ade80; font-size: 20px;">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0; font-size: 14.5px; font-weight: 800;">eSevaDraft Desktop App இணைக்கப்பட்டுள்ளது (Connected)</h4>
+                                    <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #a7f3d0;">Dual System Listener & நேரடி Chrome ஆட்டோமேஷன் தயார் நிலையில் உள்ளது.</p>
+                                </div>
+                            </div>
+                            <span style="background: rgba(255,255,255,0.18); padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;">v1.0.1 Active</span>
+                        </div>
+                    </div>
+
                     <!-- Operator Header & Action Bar -->
                     <div style="background: white; border-radius: 12px; padding: 18px 20px; border: 1px solid #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.04); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                         <div>
@@ -1921,7 +1963,7 @@
                     </div>
                     <div>
                         <h3 style="margin: 0; color: #1e1b4b; font-size: 16px; font-weight: 800;">eSevaDraft Desktop App</h3>
-                        <span style="font-size: 11.5px; color: #64748b;">விண்டோஸ் 10 / 11 அதிகாரப்பூர்வ பதிப்பு • v1.0.0</span>
+                        <span style="font-size: 11.5px; color: #64748b;">விண்டோஸ் 10 / 11 அதிகாரப்பூர்வ பதிப்பு • v1.0.1</span>
                     </div>
                 </div>
                 <button onclick="closeDesktopDownloadModal()" style="background: #f1f5f9; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 14px; cursor: pointer; color: #64748b;">✕</button>
@@ -1930,6 +1972,10 @@
             <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
                 <h4 style="margin: 0 0 10px 0; color: #334155; font-size: 13px; font-weight: 700;">இ-சேவை மையங்களுக்கு டெஸ்க்டாப் ஆப் ஏன் சிறந்தது?</h4>
                 <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #475569;">
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                        <i class="fa-solid fa-code-compare" style="color: #06b6d4; margin-top: 3px;"></i>
+                        <span><b>Dual System Listener:</b> உங்கள் கம்ப்யூட்டரில் திறக்கும் Chrome அரசு தளத்திலோ அல்லது ஆப்பிலோ எங்கு OTP உள்ளிட்டாலும் இரண்டையுமே உடனுக்குடன் கண்டறிந்து இயங்கும்.</span>
+                    </div>
                     <div style="display: flex; align-items: flex-start; gap: 8px;">
                         <i class="fa-solid fa-eye" style="color: #4f46e5; margin-top: 3px;"></i>
                         <span><b>நேரடிக் கண் பார்வை:</b> கம்ப்யூட்டர் திரையிலேயே அரசு போர்ட்டல் திறந்து ஆட்டோமேட்டிக்காக ஃபார்ம் நிரம்புவதை நேரில் பார்க்கலாம்.</span>
@@ -1950,8 +1996,8 @@
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 10px;">
-                <a href="https://github.com/kumaran434/esevadraft/releases/latest/download/eSevaDraft-Setup-1.0.0.exe" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); color: white; border-radius: 10px; font-weight: 800; font-size: 13.5px; text-decoration: none; box-shadow: 0 4px 14px rgba(79,70,229,0.35);">
-                    <i class="fa-brands fa-windows"></i> Windows Installer (.exe) பதிவிறக்கம் செய்க (v1.0.0)
+                <a href="/api/download/desktop-app" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 10px; font-weight: 800; font-size: 13.5px; text-decoration: none; box-shadow: 0 4px 14px rgba(16,185,129,0.35);">
+                    <i class="fa-brands fa-windows"></i> Windows Installer (.exe) பதிவிறக்கம் செய்க (v1.0.1)
                 </a>
                 <button onclick="closeDesktopDownloadModal()" style="padding: 9px; background: transparent; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer;">
                     பின்னர் செய்கிறேன் (Close)
@@ -2418,13 +2464,19 @@
             const name = displayName || localStorage.getItem('eseva_user_name') || (isOp ? 'மையம்' : 'பொதுமக்கள்');
 
             if (isOp) {
-                // OPERATOR MODE: Streamlined, single workspace, no confusing extra tabs
+                // OPERATOR MODE: Streamlined, dedicated workspace directly guiding to Desktop App
                 if (btnNewCustomerNav) btnNewCustomerNav.style.display = 'inline-flex';
-                if (btnDraftsNav) btnDraftsNav.style.display = 'inline-flex';
+                if (btnDraftsNav) btnDraftsNav.style.display = 'none';
                 if (btnDesktopAppNav) btnDesktopAppNav.style.display = 'inline-flex';
-                if (citizenNavBtn) citizenNavBtn.style.display = 'none';
-                if (opNavBtn) opNavBtn.style.display = 'none';
-                if (portalNavBtn) portalNavBtn.style.display = 'none';
+                if (citizenNavBtn) {
+                    citizenNavBtn.innerHTML = '<i class="fa-solid fa-file-signature"></i> <span>படிவம் நிரப்பு</span>';
+                    citizenNavBtn.style.display = 'inline-flex';
+                }
+                if (opNavBtn) {
+                    opNavBtn.innerHTML = '<i class="fa-solid fa-store"></i> <span>மையம் பணிப்பகுதி</span>';
+                    opNavBtn.style.display = 'inline-flex';
+                }
+                if (portalNavBtn) portalNavBtn.style.display = 'inline-flex';
                 if (lockerNavBtn) lockerNavBtn.style.display = 'none';
                 if (adminNavBtn) adminNavBtn.style.display = 'none';
                 if (viewToggleBtn) viewToggleBtn.style.display = 'none';
@@ -2436,7 +2488,20 @@
                     badge.style.display = 'inline-flex';
                 }
 
-                switchTab('citizen');
+                // Check Desktop Bridge status
+                const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+                const hubBanner = document.getElementById('operatorDesktopHubBanner');
+                const activeBanner = document.getElementById('operatorDesktopAppActiveBanner');
+                if (isDesktop) {
+                    if (hubBanner) hubBanner.style.display = 'none';
+                    if (activeBanner) activeBanner.style.display = 'block';
+                    if (btnDesktopAppNav) btnDesktopAppNav.innerHTML = '<i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> <span>டெஸ்க்டாப் ஆப் ஆன்லைனில்</span>';
+                } else {
+                    if (hubBanner) hubBanner.style.display = 'block';
+                    if (activeBanner) activeBanner.style.display = 'none';
+                }
+
+                switchTab('operator');
                 fetchOperatorDrafts();
             } else {
                 // CITIZEN MODE: Clean, simple, personal flow
@@ -2744,7 +2809,7 @@
                         } else {
                             renderDefaultWelcomeMessage();
                         }
-                        switchTab('citizen');
+                        switchTab('operator');
                         fetchOperatorDrafts();
                     } else {
                         if (data.resumedSession) {
@@ -2791,6 +2856,16 @@
             if (panel) panel.classList.add('active-panel');
 
             if (tabId === 'operator') {
+                const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+                const hubBanner = document.getElementById('operatorDesktopHubBanner');
+                const activeBanner = document.getElementById('operatorDesktopAppActiveBanner');
+                if (isDesktop) {
+                    if (hubBanner) hubBanner.style.display = 'none';
+                    if (activeBanner) activeBanner.style.display = 'block';
+                } else {
+                    if (hubBanner) hubBanner.style.display = 'block';
+                    if (activeBanner) activeBanner.style.display = 'none';
+                }
                 fetchOperatorDrafts();
             } else if (tabId === 'citizen') {
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
@@ -3281,6 +3356,14 @@
 
         function proceedConfirmedSubmit() {
             closePreSubmitModal();
+            const isOp = localStorage.getItem('eseva_user_role') === 'operator';
+            const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+
+            if (isOp && !isDesktop) {
+                // Operator is on web browser: guide them to Desktop App for real Chrome automation & Dual System Listener!
+                openDesktopDownloadModal();
+                return;
+            }
             sendTextMessage('Start', true);
         }
 
