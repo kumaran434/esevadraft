@@ -3,6 +3,7 @@
 // Commercial-Grade Intellectual Property Protection Enabled
 // =========================================================================
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
@@ -109,9 +110,72 @@ ipcMain.handle('scan-document-direct', async () => {
     };
 });
 
+// ==========================================
+// AUTOMATIC UPDATES (GitHub Releases Pipeline)
+// ==========================================
+function setupAutoUpdater() {
+    if (!app.isPackaged && process.env.NODE_ENV !== 'production') {
+        console.log('[AutoUpdater] Development mode: skipping automatic update check.');
+        return;
+    }
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+        console.log('[AutoUpdater] Checking GitHub Releases for updates...');
+    });
+
+    autoUpdater.on('update-available', (info) => {
+        console.log('[AutoUpdater] New update available:', info.version);
+    });
+
+    autoUpdater.on('update-not-available', () => {
+        console.log('[AutoUpdater] Desktop app is up to date.');
+    });
+
+    autoUpdater.on('error', (err) => {
+        console.warn('[AutoUpdater] Update check notice:', err ? err.message : err);
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+        console.log('[AutoUpdater] New update downloaded:', info.version);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'புதிய பதிப்பு தயார் (Update Ready)',
+                message: `eSevaDraft புதிய பதிப்பு (v${info.version}) தயார் நிலையில் உள்ளது.`,
+                detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பிற்கு மாறவா?',
+                buttons: ['இப்போதே Restart செய் (Restart Now)', 'பின்னர் (Later)'],
+                defaultId: 0,
+                cancelId: 1
+            }).then((result) => {
+                if (result.response === 0) {
+                    autoUpdater.quitAndInstall();
+                }
+            });
+        }
+    });
+
+    // Check 5 seconds after launch
+    setTimeout(() => {
+        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+            console.warn('[AutoUpdater] Check notice:', err.message);
+        });
+    }, 5000);
+
+    // Check periodically every hour
+    setInterval(() => {
+        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+            console.warn('[AutoUpdater] Periodic check notice:', err.message);
+        });
+    }, 60 * 60 * 1000);
+}
+
 // App Lifecycle
 app.whenReady().then(() => {
     createMainWindow();
+    setupAutoUpdater();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
