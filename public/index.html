@@ -1195,16 +1195,18 @@
                             </button>
                         </div>
 
+                        <div id="authErrorMsg" style="display: none; color: #dc2626; background: #fee2e2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-bottom: 14px; text-align: left; font-weight: 700; box-shadow: 0 2px 6px rgba(220,38,38,0.15);"></div>
+
                         <!-- 1. SIGN IN FORM -->
                         <div id="authFormLogin">
                             <div class="auth-input-group">
                                 <label><i class="fa-solid fa-mobile-screen"></i> கைபேசி எண் அல்லது மின்னஞ்சல்:</label>
-                                <input type="text" id="loginIdentifier" placeholder="10-இலக்க மொபைல் எண் அல்லது மின்னஞ்சல்" autocomplete="username">
+                                <input type="text" id="loginIdentifier" placeholder="10-இலக்க மொபைல் எண் அல்லது மின்னஞ்சல்" autocomplete="username" onkeypress="if(event.key==='Enter') handleFirebaseLogin()">
                             </div>
                             <div class="auth-input-group">
                                 <label><i class="fa-solid fa-lock"></i> ரகசியக் கடவுச்சொல் (Password):</label>
                                 <div class="password-input-wrap">
-                                    <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+                                    <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" onkeypress="if(event.key==='Enter') handleFirebaseLogin()">
                                     <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('loginPassword', this)" title="கடவுச்சொல்லைக் காட்டு/மறை" tabindex="-1">
                                         <i class="fa-solid fa-eye"></i>
                                     </button>
@@ -1290,8 +1292,6 @@
                                 <i class="fa-brands fa-google" style="color: #ea4335;"></i> Google மூலம் பதிவு செய்
                             </button>
                         </div>
-
-                        <div id="authErrorMsg" style="display: none; color: #dc2626; background: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; font-size: 11.5px; margin-top: 12px; text-align: left; font-weight: 600;"></div>
                     </div>
                 </div>
             </div>
@@ -2041,12 +2041,12 @@
         onAuthStateChanged(fbAuth, async (user) => {
             if (user) {
                 console.log('Firebase user state active:', user.email || user.uid);
-                let mob = localStorage.getItem('eseva_user_mobile');
+                let mob = localStorage.getItem('eseva_user_mobile') || localStorage.getItem('eseva_operator_mobile');
                 if (!mob && user.email && user.email.includes('@esevadraft.in')) {
                     mob = user.email.split('@')[0];
                 }
                 if (!mob) mob = '9876543210';
-                const dispName = localStorage.getItem('eseva_user_name') || user.displayName || user.email || 'பயனர்';
+                const dispName = localStorage.getItem('eseva_user_name') || localStorage.getItem('eseva_operator_name') || user.displayName || 'மையம்';
 
                 const badge = document.getElementById('authProfileBadge');
                 const nameEl = document.getElementById('authProfileName');
@@ -2529,12 +2529,22 @@
 
         async function checkSession() {
             try {
-                const res = await fetch('/api/auth/session');
+                const opUid = localStorage.getItem('eseva_operator_uid') || '';
+                const opMobile = localStorage.getItem('eseva_operator_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+                const queryStr = opMobile ? `?mobile=${encodeURIComponent(opMobile)}` : '';
+                const res = await fetch(`/api/auth/session${queryStr}`, {
+                    headers: {
+                        'x-operator-uid': opUid,
+                        'x-session-mobile': opMobile
+                    }
+                });
                 const data = await res.json();
                 if (data.isLoggedIn) {
-                    authScreen.style.display = 'none';
+                    const screen = document.getElementById('authScreen');
+                    if (screen) screen.style.display = 'none';
                     const role = data.role || localStorage.getItem('eseva_user_role') || 'citizen';
-                    applyRoleUi(role);
+                    const name = data.displayName || localStorage.getItem('eseva_operator_name') || localStorage.getItem('eseva_user_name');
+                    applyRoleUi(role, name);
                     if (data.resumedSession) {
                         const rBanner = document.getElementById('resumeBanner');
                         if (rBanner) rBanner.classList.add('show');
@@ -2546,7 +2556,10 @@
                     }
                     fetchHistory();
                 } else {
-                    authScreen.style.display = 'flex';
+                    if (!window.fbAuth || !window.fbAuth.currentUser) {
+                        const screen = document.getElementById('authScreen');
+                        if (screen) screen.style.display = 'flex';
+                    }
                 }
             } catch (e) {
                 console.error('Check session failed:', e);
@@ -2655,6 +2668,9 @@
 
             let authEmail = rawInput;
             const cleanMobile = rawInput.replace(/\D/g, '');
+            let detectedRole = null;
+            let detectedName = null;
+
             if (!rawInput.includes('@')) {
                 if (cleanMobile.length !== 10) {
                     showAuthError('சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.');
@@ -2666,20 +2682,50 @@
                 try {
                     const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${cleanMobile}`);
                     const lData = await lRes.json();
-                    if (lData.found && lData.authEmail) {
-                        authEmail = lData.authEmail;
+                    if (lData.found) {
+                        if (lData.authEmail) authEmail = lData.authEmail;
+                        if (lData.role) detectedRole = lData.role;
+                        if (lData.displayName) detectedName = lData.displayName;
                     }
                 } catch (e) {}
             }
 
             const btn = document.getElementById('btnLoginSubmit');
-            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சரிபார்க்கிறது...';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சரிபார்க்கிறது...';
+            }
             try {
                 if (!window.signInWithEmailAndPassword || !window.fbAuth) {
                     throw new Error('Firebase Auth தயாராகவில்லை. சிறிது நேரத்தில் மீண்டும் முயலவும்.');
                 }
-                const userCred = await window.signInWithEmailAndPassword(window.fbAuth, authEmail, password);
+
+                let userCred;
+                try {
+                    userCred = await window.signInWithEmailAndPassword(window.fbAuth, authEmail, password);
+                } catch (firstErr) {
+                    if (firstErr.code === 'auth/user-not-found') {
+                        try {
+                            userCred = await window.createUserWithEmailAndPassword(window.fbAuth, authEmail, password);
+                        } catch (createErr) {
+                            throw firstErr;
+                        }
+                    } else {
+                        throw firstErr;
+                    }
+                }
+
                 console.log('Firebase login success:', userCred.user.email);
+                const user = userCred.user;
+                const uid = user.uid;
+                const email = user.email;
+                const dispName = detectedName || user.displayName || localStorage.getItem('eseva_user_name') || 'மையம்';
+                if (cleanMobile) localStorage.setItem('eseva_user_mobile', cleanMobile);
+                if (detectedRole) localStorage.setItem('eseva_user_role', detectedRole);
+
+                // DIRECTLY COMPLETE AUTH SESSION AND TRANSITION UI!
+                await completeAuthSession(cleanMobile, dispName, email, uid);
+
             } catch (e) {
                 console.error('Login error:', e);
                 let msg = e.message;
@@ -2690,7 +2736,10 @@
                 }
                 showAuthError(msg);
             } finally {
-                if (btn) btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> உள்நுழைக (Sign In)';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> உள்நுழைக (Sign In)';
+                }
             }
         }
 
@@ -2712,7 +2761,10 @@
             const authEmail = `${cleanMobile}@esevadraft.in`;
 
             const btn = document.getElementById('btnSignupSubmit');
-            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> கணக்கு உருவாக்குகிறது...';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> கணக்கு உருவாக்குகிறது...';
+            }
 
             try {
                 if (!window.createUserWithEmailAndPassword || !window.fbAuth) {
@@ -2724,7 +2776,7 @@
 
                 const userCred = await window.createUserWithEmailAndPassword(window.fbAuth, authEmail, password);
                 console.log('Firebase signup success:', userCred.user.email);
-                alert('🎉 புதிய கணக்கு வெற்றிகரமாக உருவாக்கப்பட்டது!\n\nஉங்கள் கைபேசி எண் மற்றும் கடவுச்சொல் மூலம் உங்கள் தகவல்கள் முழுமையாகப் பாதுகாக்கப்பட்டுள்ளன.');
+                await completeAuthSession(cleanMobile, name, userCred.user.email, userCred.user.uid);
             } catch (e) {
                 console.error('Signup error:', e);
                 let msg = e.message;
@@ -2735,7 +2787,10 @@
                 }
                 showAuthError(msg);
             } finally {
-                if (btn) btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> புதிய கணக்கை உருவாக்கு (Sign Up)';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> புதிய கணக்கை உருவாக்கு (Sign Up)';
+                }
             }
         }
 
@@ -2746,7 +2801,10 @@
                     throw new Error('Firebase Auth தயாராகவில்லை.');
                 }
                 const provider = new window.GoogleAuthProvider();
-                await window.signInWithPopup(window.fbAuth, provider);
+                const result = await window.signInWithPopup(window.fbAuth, provider);
+                const user = result.user;
+                const mobile = user.phoneNumber ? user.phoneNumber.replace(/\D/g, '').slice(-10) : '';
+                await completeAuthSession(mobile || '9876543210', user.displayName || 'Google பயனர்', user.email, user.uid);
             } catch (e) {
                 console.error('Google login error:', e);
                 showAuthError(e.message || 'Google உள்நுழைவில் பிழை ஏற்பட்டது.');
@@ -2795,15 +2853,17 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    authScreen.style.display = 'none';
+                    const screen = document.getElementById('authScreen');
+                    if (screen) screen.style.display = 'none';
                     const actualRole = data.role || storedRole || 'citizen';
                     localStorage.setItem('eseva_user_role', actualRole);
-                    applyRoleUi(actualRole, displayName);
+                    const finalName = data.displayName || displayName || 'பயனர்';
+                    applyRoleUi(actualRole, finalName);
 
                     if (actualRole === 'operator') {
                         localStorage.removeItem('eseva_active_customer_mobile');
                         localStorage.removeItem('eseva_active_customer_name');
-                        resetSidebarToOperatorView(displayName);
+                        resetSidebarToOperatorView(finalName);
                         if (data.chatHistory && data.chatHistory.length > 0) {
                             renderMessages(data.chatHistory);
                         } else {
@@ -2842,7 +2902,14 @@
                 }
                 await fetch('/api/auth/logout', { method: 'POST' });
             } catch (e) {}
-            authScreen.style.display = 'flex';
+            localStorage.removeItem('eseva_operator_uid');
+            localStorage.removeItem('eseva_operator_mobile');
+            localStorage.removeItem('eseva_operator_name');
+            localStorage.removeItem('eseva_user_mobile');
+            localStorage.removeItem('eseva_user_name');
+            localStorage.removeItem('eseva_user_role');
+            const screen = document.getElementById('authScreen');
+            if (screen) screen.style.display = 'flex';
         }
 
         function switchTab(tabId) {
