@@ -75,10 +75,50 @@ function requestApprovalFromOperator(promptMsg, onProgress) {
     isWaitingForApproval = true;
     return new Promise((resolve) => {
         onProgress(promptMsg);
-        pendingApprovalResolver = (approved) => {
+
+        let portalApprovalTimer = null;
+        let isResolved = false;
+
+        const cleanupAndResolve = (approved, source = 'ui') => {
+            if (isResolved) return;
+            isResolved = true;
+            if (portalApprovalTimer) clearInterval(portalApprovalTimer);
             isWaitingForApproval = false;
+            pendingApprovalResolver = null;
+            if (source === 'portal') {
+                onProgress('⚡ [Dual Listener] ஆபரேட்டர் நிஜ அரசு குரோம் பிரவுசரிலேயே நேரடியாக சப்மிட் செய்துவிட்டார்! ஆட்டோமேஷன் தானாக தொடர்கிறது...');
+            }
             resolve(approved);
         };
+
+        pendingApprovalResolver = (approved) => {
+            cleanupAndResolve(approved, 'ui');
+        };
+
+        // Dual Listener: Watch real government portal in Chrome for direct submit/confirm
+        if (page && !page.isClosed()) {
+            portalApprovalTimer = setInterval(async () => {
+                if (isResolved || !page || page.isClosed()) {
+                    if (portalApprovalTimer) clearInterval(portalApprovalTimer);
+                    return;
+                }
+                try {
+                    const isSubmittedDirectly = await page.evaluate(() => {
+                        const confirmModal = document.querySelector('div.modal.show, div[role="dialog"]');
+                        if (confirmModal && (confirmModal.innerText.includes('உறுதி') || confirmModal.innerText.includes('Confirm') || confirmModal.innerText.includes('பதிவு எண்'))) {
+                            return true;
+                        }
+                        const resultEl = document.querySelector('span.ref-number, div:has-text("குறிப்பு எண்"), div:has-text("விண்ணப்ப எண்")');
+                        if (resultEl) return true;
+                        return false;
+                    }).catch(() => false);
+
+                    if (isSubmittedDirectly) {
+                        cleanupAndResolve(true, 'portal');
+                    }
+                } catch (e) {}
+            }, 600);
+        }
     });
 }
 
@@ -162,11 +202,73 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'otp') {
     currentOtpType = otpType;
     return new Promise((resolve) => {
         onProgress(promptMsg);
-        pendingOtpResolver = (val) => {
+
+        let portalOtpTimer = null;
+        let isResolved = false;
+
+        const cleanupAndResolve = (otpVal, source = 'chat') => {
+            if (isResolved) return;
+            isResolved = true;
+            if (portalOtpTimer) clearInterval(portalOtpTimer);
             isWaitingForOtp = false;
             currentOtpType = '';
-            resolve(val);
+            pendingOtpResolver = null;
+            if (source === 'portal') {
+                onProgress(`⚡ [Dual Listener] ஆபரேட்டர் நிஜ அரசு குரோம் பிரவுசரிலேயே நேரடியாக OTP (${otpVal}) உள்ளிட்டுவிட்டார்! ஆட்டோமேஷன் தானாகத் தொடர்கிறது...`);
+            }
+            resolve(otpVal);
         };
+
+        // Channel 1: Chat / UI Resolver
+        pendingOtpResolver = (val) => {
+            cleanupAndResolve(val, 'chat');
+        };
+
+        // Channel 2: Watch real government portal in Chrome
+        if (page && !page.isClosed()) {
+            portalOtpTimer = setInterval(async () => {
+                if (isResolved || !page || page.isClosed()) {
+                    if (portalOtpTimer) clearInterval(portalOtpTimer);
+                    return;
+                }
+                try {
+                    const detectedOtp = await page.evaluate((type) => {
+                        // 1. Check if success alert/toast already appeared
+                        const toasts = Array.from(document.querySelectorAll('.toast, .alert, .snack, .alert-success, div[role="alert"]'));
+                        const successAlert = toasts.find(t => {
+                            const txt = t.innerText || '';
+                            return txt.includes('வெற்றிகரமாக') || txt.includes('சரிபார்க்கப்பட்டது') || txt.includes('Success');
+                        });
+                        if (successAlert) {
+                            return 'ALREADY_VERIFIED_ON_PORTAL';
+                        }
+
+                        // 2. Check input fields on portal
+                        let inputs = [];
+                        if (type === 'aadhaar_otp') {
+                            const modal = document.querySelector('.modal.show, div[role="dialog"]');
+                            if (modal) {
+                                inputs = Array.from(modal.querySelectorAll('input[type="text"], input[type="number"], input[type="password"]'));
+                            }
+                        } else {
+                            inputs = Array.from(document.querySelectorAll('input[placeholder*="OTP" i], input[formcontrolname*="otp" i], .form-control.form-control-sm.mt-1'));
+                        }
+
+                        for (const inp of inputs) {
+                            const val = (inp.value || '').trim();
+                            if (/^\d{6}$/.test(val)) {
+                                return val;
+                            }
+                        }
+                        return null;
+                    }, otpType).catch(() => null);
+
+                    if (detectedOtp) {
+                        cleanupAndResolve(detectedOtp, 'portal');
+                    }
+                } catch (e) {}
+            }, 500);
+        }
     });
 }
 
@@ -698,20 +800,27 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
     );
 
     // படி 21: மொபைல் OTP சரிபார்த்தல்
-    onProgress(`📍 [படி 21/51] மொபைல் OTP (${receivedOtp}) சரிபார்க்கப்படுகிறது...`);
-    const otpInput = page.locator('.form-control.form-control-sm.mt-1, input[placeholder*="OTP"]').first();
-    if (await otpInput.count() > 0) {
-        await otpInput.scrollIntoViewIfNeeded().catch(() => {});
-        await otpInput.click({ force: true }).catch(() => {});
-        await otpInput.fill(receivedOtp);
-        await page.waitForTimeout(500);
-    }
+    onProgress(`📍 [படி 21/51] மொபைல் OTP சரிபார்க்கப்படுகிறது...`);
+    if (receivedOtp !== 'ALREADY_VERIFIED_ON_PORTAL') {
+        const otpInput = page.locator('.form-control.form-control-sm.mt-1, input[placeholder*="OTP"]').first();
+        if (await otpInput.count() > 0) {
+            const currentVal = (await otpInput.inputValue().catch(() => '')).trim();
+            if (currentVal !== receivedOtp) {
+                await otpInput.scrollIntoViewIfNeeded().catch(() => {});
+                await otpInput.click({ force: true }).catch(() => {});
+                await otpInput.fill(receivedOtp);
+                await page.waitForTimeout(500);
+            }
+        }
 
-    const verifyOtpBtn = page.getByRole('button', { name: /பதிவு செய்|Verify|Submit/i }).last()
-        .or(page.locator('button:has-text("பதிவு செய்"), button:has-text("Verify")').last());
-    await verifyOtpBtn.scrollIntoViewIfNeeded().catch(() => {});
-    await verifyOtpBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(3000);
+        const verifyOtpBtn = page.getByRole('button', { name: /பதிவு செய்|Verify|Submit/i }).last()
+            .or(page.locator('button:has-text("பதிவு செய்"), button:has-text("Verify")').last());
+        if (await verifyOtpBtn.count() > 0 && await verifyOtpBtn.isVisible().catch(() => false)) {
+            await verifyOtpBtn.scrollIntoViewIfNeeded().catch(() => {});
+            await verifyOtpBtn.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(3000);
+        }
+    }
     await scanAndBroadcastToasts();
 
     if (isMockSandboxMode) {
@@ -944,14 +1053,21 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
             'aadhaar_otp'
         );
 
-        await aadhaarOtpInput.click({ force: true }).catch(() => {});
-        await aadhaarOtpInput.fill(aadhaarOtp);
-        await page.waitForTimeout(500);
+        if (aadhaarOtp !== 'ALREADY_VERIFIED_ON_PORTAL') {
+            const curVal = (await aadhaarOtpInput.inputValue().catch(() => '')).trim();
+            if (curVal !== aadhaarOtp) {
+                await aadhaarOtpInput.click({ force: true }).catch(() => {});
+                await aadhaarOtpInput.fill(aadhaarOtp);
+                await page.waitForTimeout(500);
+            }
 
-        // படி 36: ஆதார் OTP சமர்ப்பிக்கவும் கிளிக்
-        onProgress('📍 [படி 36/71] ஆதார் OTP சமர்ப்பிக்கப்பட்டு உறுப்பினர் சேர்க்கை உறுதி செய்யப்படுகிறது...');
-        const submitOtpBtn = page.locator('div.modal.show button:has-text("சமர்ப்பிக்கவும்"), div.modal.show button:has-text("Submit"), button:has-text("சமர்ப்பிக்கவும்"), button:has-text("Submit")').first();
-        await submitOtpBtn.click({ force: true }).catch(() => {});
+            // படி 36: ஆதார் OTP சமர்ப்பிக்கவும் கிளிக்
+            onProgress('📍 [படி 36/71] ஆதார் OTP சமர்ப்பிக்கப்பட்டு உறுப்பினர் சேர்க்கை உறுதி செய்யப்படுகிறது...');
+            const submitOtpBtn = page.locator('div.modal.show button:has-text("சமர்ப்பிக்கவும்"), div.modal.show button:has-text("Submit"), button:has-text("சமர்ப்பிக்கவும்"), button:has-text("Submit")').first();
+            if (await submitOtpBtn.count() > 0 && await submitOtpBtn.isVisible().catch(() => false)) {
+                await submitOtpBtn.click({ force: true }).catch(() => {});
+            }
+        }
         await page.locator('div.modal.show').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
         await page.waitForTimeout(3000);
         await scanAndBroadcastToasts();
@@ -1295,8 +1411,16 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
                 onProgress,
                 'aadhaar_otp'
             );
-            await memAadhaarOtpInput.fill(memOtp);
-            await page.locator('div.modal.show button:has-text("சமர்ப்பிக்கவும்"), div.modal.show button:has-text("Submit"), button:has-text("சமர்ப்பிக்கவும்"), button:has-text("Submit")').last().click({ force: true });
+            if (memOtp !== 'ALREADY_VERIFIED_ON_PORTAL') {
+                const curVal = (await memAadhaarOtpInput.inputValue().catch(() => '')).trim();
+                if (curVal !== memOtp) {
+                    await memAadhaarOtpInput.fill(memOtp);
+                }
+                const memSubBtn = page.locator('div.modal.show button:has-text("சமர்ப்பிக்கவும்"), div.modal.show button:has-text("Submit"), button:has-text("சமர்ப்பிக்கவும்"), button:has-text("Submit")').last();
+                if (await memSubBtn.count() > 0 && await memSubBtn.isVisible().catch(() => false)) {
+                    await memSubBtn.click({ force: true }).catch(() => {});
+                }
+            }
             await page.locator('div.modal.show').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
             await page.waitForTimeout(3000);
             await scanAndBroadcastToasts();

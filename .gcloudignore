@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 node_modules/**
 uploads/**
 scratch/**
@@ -10,3 +10,6 @@ public/receipts/**
 *.log
 *.zip
 .env
+desktop/**
+downloads/**
+*.exe

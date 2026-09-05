@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>தமிழ்நாடு அரசு — வருமானச் சான்றிதழ் (REV-103)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Mukta+Malar:wght@400;600;700;800&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #065f46;
+            --primary-dark: #064e3b;
+            --primary-light: #ecfdf5;
+            --accent: #d97706;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --border: #cbd5e1;
+            --bg-page: #f1f5f9;
+            --white: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Mukta Malar', 'Inter', system-ui, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 20px;
+        }
+        .portal-header {
+            background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            max-width: 900px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 15px rgba(6, 95, 70, 0.25);
+        }
+        .header-title { display: flex; align-items: center; gap: 16px; }
+        .emblem { width: 50px; height: 50px; background: rgba(255,255,255,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .header-title h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
+        .header-title p { margin: 2px 0 0; font-size: 12.5px; opacity: 0.9; }
+        .service-badge { background: #fef3c7; color: #92400e; padding: 6px 12px; border-radius: 20px; font-weight: 800; font-size: 12px; }
+
+        .form-card {
+            background: var(--white);
+            max-width: 900px;
+            margin: 0 auto 30px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .section-header {
+            background: #f8fafc;
+            border-bottom: 1.5px solid #e2e8f0;
+            padding: 12px 24px;
+            font-weight: 800;
+            font-size: 14.5px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-body { padding: 20px 24px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        .form-group { margin-bottom: 14px; }
+        label { display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 5px; }
+        label .required { color: #dc2626; font-weight: 900; }
+        input[type="text"], input[type="number"], select {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.2s;
+            outline: none;
+            background: #ffffff;
+        }
+        input:focus, select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.15);
+        }
+        .highlighted-field {
+            border-color: #f59e0b !important;
+            box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3) !important;
+            background-color: #fffbeb !important;
+        }
+        .filled-success {
+            border-color: #10b981 !important;
+            background-color: #f0fdf4 !important;
+        }
+        .upload-box {
+            border: 1.5px dashed var(--border);
+            padding: 14px;
+            border-radius: 8px;
+            background: #fbfcfe;
+            text-align: center;
+        }
+        .upload-box input[type="file"] { font-size: 12px; color: var(--text-muted); }
+        .total-box {
+            background: #ecfdf5;
+            border: 1.5px solid #a7f3d0;
+            padding: 14px 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        .total-box span { font-weight: 800; font-size: 14px; color: #065f46; }
+        .total-box strong { font-size: 18px; color: #047857; font-family: 'Inter', sans-serif; }
+        .btn-submit-container {
+            padding: 16px 24px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .btn-submit {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-submit:hover { background: #047857; }
+
+        /* Success receipt modal */
+        #receiptModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .receipt-card {
+            background: white;
+            width: 520px;
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        }
+        .success-icon {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            background: #dcfce7;
+            color: #16a34a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin: 0 auto 16px;
+        }
+        .ref-pill {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            font-family: monospace;
+            margin: 14px 0;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="portal-header">
+        <div class="header-title">
+            <div class="emblem"><i class="fa-solid fa-landmark"></i></div>
+            <div>
+                <h1>தமிழ்நாடு அரசு வருவாய்த் துறை (e-Sevai Portal)</h1>
+                <p>REV-103: வருமானச் சான்றிதழ் விண்ணப்பப் படிவம் (Income Certificate)</p>
+            </div>
+        </div>
+        <div class="service-badge">REV-103 Official Mock</div>
+    </div>
+
+    <!-- Main Application Form -->
+    <div class="form-card">
+        <form id="incomeCertForm" onsubmit="submitForm(event)">
+            
+            <!-- SECTION 1: CAN & Applicant Details -->
+            <div class="section-header">
+                <i class="fa-solid fa-user-check"></i>
+                1. விண்ணப்பதாரர் விவரங்கள் (Applicant & CAN Details)
+            </div>
+            <div class="section-body">
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="canNumber">கேன் எண் (CAN Number) <span class="required">*</span></label>
+                        <input type="text" id="canNumber" placeholder="1330XXXXXXXXXXX" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="salutation">பட்டப் பெயர் (Salutation) <span class="required">*</span></label>
+                        <select id="salutation" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Thiru">திரு / Thiru</option>
+                            <option value="Tmt">திருமதி / Tmt</option>
+                            <option value="Selvi">செல்வி / Selvi</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="gender">பாலினம் (Gender) <span class="required">*</span></label>
+                        <select id="gender" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Male">ஆண் / Male</option>
+                            <option value="Female">பெண் / Female</option>
+                            <option value="Transgender">மூன்றாம் பாலினம்</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="applicantNameEn">விண்ணப்பதாரர் பெயர் (ஆங்கிலத்தில்) <span class="required">*</span></label>
+                        <input type="text" id="applicantNameEn" placeholder="KUMARAN M" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="applicantNameTa">விண்ணப்பதாரர் பெயர் (தமிழில்) <span class="required">*</span></label>
+                        <input type="text" id="applicantNameTa" placeholder="குமரன் எம்" required>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="relationshipType">உறவு முறை (Relationship) <span class="required">*</span></label>
+                        <select id="relationshipType" required>
+                            <option value="Father">தந்தை / Father</option>
+                            <option value="Husband">கணவர் / Husband</option>
+                            <option value="Guardian">பாதுகாவலர் / Guardian</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="relationNameEn">உறவினர் பெயர் (ஆங்கிலத்தில்) <span class="required">*</span></label>
+                        <input type="text" id="relationNameEn" placeholder="MUTHUKUMAR R" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="relationNameTa">உறவினர் பெயர் (தமிழில்) <span class="required">*</span></label>
+                        <input type="text" id="relationNameTa" placeholder="முத்துக்குமார் ஆர்" required>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="motherNameEn">தாய் பெயர் (ஆங்கிலத்தில்) <span class="required">*</span></label>
+                        <input type="text" id="motherNameEn" placeholder="LAKSHMI M" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="motherNameTa">தாய் பெயர் (தமிழில்) <span class="required">*</span></label>
+                        <input type="text" id="motherNameTa" placeholder="லட்சுமி எம்" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="dob">பிறந்த தேதி (DOB) <span class="required">*</span></label>
+                        <input type="text" id="dob" placeholder="DD/MM/YYYY" required>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="religion">மதம் (Religion) <span class="required">*</span></label>
+                        <select id="religion" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Hindu">இந்து / Hindu</option>
+                            <option value="Muslim">இஸ்லாம் / Muslim</option>
+                            <option value="Christian">கிறிஸ்தவம் / Christian</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="community">சமூகப் பிரிவு (Community) <span class="required">*</span></label>
+                        <select id="community" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="OC">OC (பொது)</option>
+                            <option value="BC">BC (பிற்படுத்தப்பட்டோர்)</option>
+                            <option value="MBC">MBC (மிகவும் பிற்படுத்தப்பட்டோர்)</option>
+                            <option value="SC">SC (ஆதிதிராவிடர்)</option>
+                            <option value="ST">ST (பழங்குடியினர்)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="maritalStatus">திருமண நிலை (Marital Status) <span class="required">*</span></label>
+                        <select id="maritalStatus" required>
+                            <option value="Married">திருமணமானவர் / Married</option>
+                            <option value="Unmarried">திருமணமாகாதவர் / Unmarried</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: Current Address -->
+            <div class="section-header">
+                <i class="fa-solid fa-map-location-dot"></i>
+                2. தற்போதைய முகவரி விவரங்கள் (Address Details)
+            </div>
+            <div class="section-body">
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="district">மாவட்டம் (District) <span class="required">*</span></label>
+                        <select id="district" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Tiruvallur">திருவள்ளூர் / Tiruvallur</option>
+                            <option value="Chennai">சென்னை / Chennai</option>
+                            <option value="Kanchipuram">காஞ்சிபுரம் / Kanchipuram</option>
+                            <option value="Coimbatore">கோயம்புத்தூர் / Coimbatore</option>
+                            <option value="Madurai">மதுரை / Madurai</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="taluk">வட்டம் (Taluk) <span class="required">*</span></label>
+                        <select id="taluk" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Poonamallee">பூந்தமல்லி / Poonamallee</option>
+                            <option value="Avadi">ஆவடி / Avadi</option>
+                            <option value="Ambattur">அம்பத்தூர் / Ambattur</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="revenueVillage">வருவாய் கிராமம் (Revenue Village) <span class="required">*</span></label>
+                        <select id="revenueVillage" required>
+                            <option value="">தேர்ந்தெடுக்கவும்</option>
+                            <option value="Kattupakkam">காட்டுப்பாக்கம் / Kattupakkam</option>
+                            <option value="Porur">போரூர் / Porur</option>
+                            <option value="Mangadu">மாங்காடு / Mangadu</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="streetDoorEn">கதவு எண் / தெருப் பெயர் (ஆங்கிலத்தில்) <span class="required">*</span></label>
+                        <input type="text" id="streetDoorEn" placeholder="No. 12, Gandhi Street" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="streetDoorTa">கதவு எண் / தெருப் பெயர் (தமிழில்) <span class="required">*</span></label>
+                        <input type="text" id="streetDoorTa" placeholder="எண். 12, காந்தி தெரு" required>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label for="pincode">அஞ்சல் குறியீட்டு எண் (Pincode) <span class="required">*</span></label>
+                        <input type="text" id="pincode" placeholder="600056" maxlength="6" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: Annual Income Details -->
+            <div class="section-header">
+                <i class="fa-solid fa-indian-rupee-sign"></i>
+                3. குடும்ப ஆண்டு வருமான விவரங்கள் (Annual Income Breakdown)
+            </div>
+            <div class="section-body">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="incomeSalary">மாத சம்பள / கூலி வருமானம் (Salary/Wages Annual) (₹)</label>
+                        <input type="number" id="incomeSalary" value="0" oninput="calculateTotalIncome()">
+                    </div>
+                    <div class="form-group">
+                        <label for="incomeAgri">விவசாய வருமானம் (Agriculture Annual) (₹)</label>
+                        <input type="number" id="incomeAgri" value="0" oninput="calculateTotalIncome()">
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="incomeBusiness">வணிகம் / தொழில் வருமானம் (Business/Trade) (₹)</label>
+                        <input type="number" id="incomeBusiness" value="0" oninput="calculateTotalIncome()">
+                    </div>
+                    <div class="form-group">
+                        <label for="incomeOther">இதர வழிகளில் வரும் வருமானம் (Other Sources) (₹)</label>
+                        <input type="number" id="incomeOther" value="0" oninput="calculateTotalIncome()">
+                    </div>
+                </div>
+
+                <div class="total-box">
+                    <span><i class="fa-solid fa-coins"></i> மொத்த குடும்ப ஆண்டு வருமானம் (Total Annual Income):</span>
+                    <strong id="totalIncomeDisplay">₹ 0</strong>
+                </div>
+
+                <div class="form-group" style="margin-top: 14px;">
+                    <label for="purpose">சான்றிதழ் தேவைப்படும் நோக்கம் (Purpose of Certificate) <span class="required">*</span></label>
+                    <select id="purpose" required>
+                        <option value="">தேர்ந்தெடுக்கவும்</option>
+                        <option value="Education / Scholarship">கல்வி உதவித்தொகை / உயர்கல்வி சேர்க்கை (Education/Scholarship)</option>
+                        <option value="Government Scheme">அரசு நலத்திட்ட உதவி (Govt Welfare Scheme)</option>
+                        <option value="Job Application">வேலைவாய்ப்பு / அரசு பணி நியமனம் (Employment)</option>
+                        <option value="Other">இதர தேவைகள் (Other)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- SECTION 4: Mandatory Document Uploads -->
+            <div class="section-header">
+                <i class="fa-solid fa-file-arrow-up"></i>
+                4. ஆவணங்கள் பதிவேற்றம் (Mandatory Documents)
+            </div>
+            <div class="section-body">
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label>புகைப்படம் (Photo - Max 50KB) <span class="required">*</span></label>
+                        <div class="upload-box" id="boxPhoto">
+                            <input type="file" id="uploadPhoto" accept="image/jpeg,image/png">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>முகவரிச் சான்று (Aadhaar/Ration) <span class="required">*</span></label>
+                        <div class="upload-box" id="boxAddress">
+                            <input type="file" id="uploadAddressProof" accept="image/jpeg,image/png,application/pdf">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>சம்பளச் சான்று / உறுதிமொழி <span class="required">*</span></label>
+                        <div class="upload-box" id="boxIncome">
+                            <input type="file" id="uploadIncomeProof" accept="image/jpeg,image/png,application/pdf">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="btn-submit-container">
+                <button type="submit" id="btnSubmitIncomeForm" class="btn-submit">
+                    <i class="fa-solid fa-check-circle"></i>
+                    விண்ணப்பத்தை சமர்ப்பிக்கவும் (Submit Application)
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Success Acknowledgement Modal -->
+    <div id="receiptModal">
+        <div class="receipt-card">
+            <div class="success-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <h2 style="margin: 0; color: #065f46; font-size: 20px;">விண்ணப்பம் வெற்றிகரமாகப் பெறப்பட்டது!</h2>
+            <p style="color: #64748b; font-size: 13.5px; margin: 8px 0;">தமிழ்நாடு அரசு வருவாய்த் துறை இ-சேவை ஒப்புகைச் சீட்டு</p>
+            
+            <div class="ref-pill" id="ackNumber">TN-REV-103-2026-00892</div>
+            
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; font-size: 13px; text-align: left; line-height: 1.6; margin-bottom: 16px;">
+                <div><b>விண்ணப்பதாரர்:</b> <span id="ackName"></span></div>
+                <div><b>சேவை:</b> வருமானச் சான்றிதழ் (REV-103)</div>
+                <div><b>ஆண்டு வருமானம்:</b> <span id="ackIncome"></span></div>
+                <div><b>நிலை:</b> வருவாய் ஆய்வாளர் (RI) ஆய்வுக்கு அனுப்பப்பட்டுள்ளது</div>
+            </div>
+            
+            <button onclick="document.getElementById('receiptModal').style.display = 'none'" style="background: #065f46; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 700; cursor: pointer;">
+                சரி (Done)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function calculateTotalIncome() {
+            const salary = parseFloat(document.getElementById('incomeSalary').value) || 0;
+            const agri = parseFloat(document.getElementById('incomeAgri').value) || 0;
+            const business = parseFloat(document.getElementById('incomeBusiness').value) || 0;
+            const other = parseFloat(document.getElementById('incomeOther').value) || 0;
+            const total = salary + agri + business + other;
+            document.getElementById('totalIncomeDisplay').innerText = '₹ ' + total.toLocaleString('en-IN');
+            return total;
+        }
+
+        function submitForm(event) {
+            event.preventDefault();
+            const total = calculateTotalIncome();
+            const applicantName = document.getElementById('applicantNameTa').value || document.getElementById('applicantNameEn').value;
+            const randomNum = Math.floor(10000 + Math.random() * 90000);
+            const refNo = 'TN-REV-103-2026-' + randomNum;
+
+            document.getElementById('ackNumber').innerText = refNo;
+            document.getElementById('ackName').innerText = applicantName;
+            document.getElementById('ackIncome').innerText = '₹ ' + total.toLocaleString('en-IN');
+            document.getElementById('receiptModal').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 npm-debug.log
 .git
 .gitignore
@@ -9,3 +9,6 @@ public/previews
 public/receipts
 *.zip
 *.log
+desktop
+downloads
+*.exe
