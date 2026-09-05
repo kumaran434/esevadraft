@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eSevaDraft Developer Studio — டெவலப்பர் மையம்</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --bg-surface: #111827;
+            --bg-card: #162032;
+            --bg-card-hover: #1e293b;
+            --border-color: #26354a;
+            --primary: #10b981;
+            --primary-hover: #059669;
+            --accent-blue: #0284c7;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --btn-height: 34px;
+            --btn-radius: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top Header Navigation */
+        .dev-header {
+            background: rgba(17, 24, 39, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .dev-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dev-brand-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .dev-brand-text h1 {
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.3px;
+        }
+
+        .dev-brand-text span {
+            font-size: 11px;
+            color: #34d399;
+            font-weight: 600;
+        }
+
+        .dev-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Standard 34px Buttons */
+        .dev-btn {
+            height: var(--btn-height) !important;
+            min-height: var(--btn-height) !important;
+            max-height: var(--btn-height) !important;
+            box-sizing: border-box !important;
+            border-radius: var(--btn-radius) !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 6px !important;
+            padding: 0 14px !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            white-space: nowrap !important;
+            line-height: 1 !important;
+            cursor: pointer !important;
+            border: 1px solid transparent !important;
+            text-decoration: none !important;
+        }
+
+        .dev-btn-primary {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            color: white !important;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+        }
+        .dev-btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+        .dev-btn-blue {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+            color: white !important;
+            box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3) !important;
+        }
+        .dev-btn-blue:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+        .dev-btn-secondary {
+            background: rgba(255, 255, 255, 0.08) !important;
+            color: #e2e8f0 !important;
+            border: 1px solid var(--border-color) !important;
+        }
+        .dev-btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.14) !important;
+            color: white !important;
+        }
+
+        .dev-badge-status {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #6ee7b7;
+            padding: 0 10px;
+            height: var(--btn-height);
+            border-radius: var(--btn-radius);
+            font-size: 11.5px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+
+        /* Main Studio Layout */
+        .dev-container {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            flex: 1;
+            width: 100%;
+        }
+
+        /* Tab Navigation */
+        .dev-tabs {
+            display: flex;
+            gap: 8px;
+            background: var(--bg-surface);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 24px;
+            overflow-x: auto;
+        }
+
+        .dev-tab {
+            height: var(--btn-height);
+            padding: 0 16px;
+            border-radius: var(--btn-radius);
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .dev-tab:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .dev-tab.active {
+            background: var(--primary);
+            color: #064e3b;
+            font-weight: 800;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+        }
+
+        /* Panel Container */
+        .dev-panel {
+            display: none;
+            animation: fadeIn 0.2s ease;
+        }
+        .dev-panel.active-panel {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Card Elements */
+        .dev-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .dev-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .dev-card-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dev-card-desc {
+            font-size: 12.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        /* Inputs & Form Groups */
+        .dev-form-group {
+            margin-bottom: 16px;
+        }
+        .dev-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+        }
+        .dev-input, .dev-select {
+            width: 100%;
+            height: 38px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #ffffff;
+            padding: 0 12px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .dev-input:focus, .dev-select:focus {
+            border-color: var(--primary);
+        }
+
+        /* Terminal Console Output Box */
+        .dev-console-box {
+            background: #060911;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px;
+            font-family: 'Consolas', 'Courier New', Courier, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #38bdf8;
+            max-height: 320px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 14px;
+        }
+
+        /* Error Snapshots Grid */
+        .snapshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .snapshot-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .snapshot-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-blue);
+        }
+        .snapshot-thumb {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            background: #020617;
+            display: block;
+            cursor: pointer;
+        }
+        .snapshot-info {
+            padding: 12px;
+        }
+        .snapshot-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .snapshot-time {
+            font-size: 10.5px;
+            color: var(--text-muted);
+        }
+
+        /* Simple Lightbox */
+        .lightbox-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.88);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .lightbox-content {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="dev-header">
+        <div class="dev-brand">
+            <div class="dev-brand-icon"><i class="fa-solid fa-code"></i></div>
+            <div class="dev-brand-text">
+                <h1>eSevaDraft Developer Studio</h1>
+                <span>டெவலப்பர் மையம் • Train & Test Sandbox</span>
+            </div>
+        </div>
+
+        <div class="dev-header-actions">
+            <div class="dev-badge-status">
+                <span class="pulse-dot"></span>
+                <span>Local Sandbox (Port 3000)</span>
+            </div>
+            <a href="/" target="_blank" class="dev-btn dev-btn-secondary">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Test App
+            </a>
+            <a href="https://esevadraft.in" target="_blank" class="dev-btn dev-btn-secondary">
+                <i class="fa-solid fa-globe"></i> Live esevadraft.in
+            </a>
+        </div>
+    </header>
+
+    <div class="dev-container">
+
+        <!-- 4 Primary Station Tabs -->
+        <div class="dev-tabs">
+            <button class="dev-tab active" onclick="switchDevTab('trainer')">
+                <i class="fa-solid fa-graduation-cap"></i> 1. Service Trainer (பயிற்சி அரங்கம்)
+            </button>
+            <button class="dev-tab" onclick="switchDevTab('simulator')">
+                <i class="fa-solid fa-flask"></i> 2. Test Simulator (சோதனை மையம்)
+            </button>
+            <button class="dev-tab" onclick="switchDevTab('inspector')">
+                <i class="fa-solid fa-bug"></i> 3. Operator Errors (பிழை ஆய்வு)
+            </button>
+            <button class="dev-tab" onclick="switchDevTab('publisher')">
+                <i class="fa-solid fa-rocket"></i> 4. Safe Publisher (நேரலைப் பதிவேற்றம்)
+            </button>
+        </div>
+
+        <!-- STATION 1: SERVICE TRAINER -->
+        <div id="panel-trainer" class="dev-panel active-panel">
+            <div class="dev-card">
+                <div class="dev-card-header">
+                    <div class="dev-card-title">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--primary);"></i>
+                        நிஜ அரசு தளங்களைத் திறந்து பயிற்சி செய்தல் (Visual Trainer)
+                    </div>
+                </div>
+
+                <p class="dev-card-desc">
+                    எந்த அரசு தளத்திற்கான ஃபார்மையும் எளிதாக AI-க்கு பழக்கலாம். கீழே URL-ஐத் தேர்ந்தெடுத்து <b>"பயிற்சியைத் தொடங்கு"</b> பட்டனைக் கிளிக் செய்யுங்கள். உங்கள் திரையில் கூகுள் குரோம் பிரவுசர் திறக்கும். நீங்கள் செய்யும் கிளிக் மற்றும் தட்டச்சுகள் தானாகவே பதிவாகும்!
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="dev-form-group">
+                        <label class="dev-label">🏛️ அரசு தளம் / போர்ட்டல் தேர்வு செய்க:</label>
+                        <select id="trainPortalSelect" class="dev-select" onchange="handlePortalPreset(this.value)">
+                            <option value="https://www.tnesevai.tn.gov.in/">TN e-Sevai Revenue Portal (வருவாய்த் துறை)</option>
+                            <option value="https://edistricts.tn.gov.in/">TN e-District Portal</option>
+                            <option value="https://eservices.tn.gov.in/">TN AnyGov / Patta Chitta (பட்டா சிட்டா)</option>
+                            <option value="https://www.tnpds.gov.in/pages/register/cardreg-home.xhtml">TNPDS ரேஷன் கார்டு தளம்</option>
+                            <option value="custom">✏️ மற்ற தனிப்பயன் URL (Custom URL)...</option>
+                        </select>
+                    </div>
+
+                    <div class="dev-form-group">
+                        <label class="dev-label">🌐 இலக்கு வலைத்தள URL (Target URL):</label>
+                        <input type="text" id="trainUrlInput" class="dev-input" value="https://www.tnesevai.tn.gov.in/">
+                    </div>
+                </div>
+
+                <div class="dev-form-group">
+                    <label class="dev-label">🏷️ சேவையின் பெயர் (Service Code Name):</label>
+                    <input type="text" id="trainServiceName" class="dev-input" placeholder="உதா: income_certificate, patta_chitta, community_cert" value="income_certificate">
+                </div>
+
+                <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center;">
+                    <button id="btnStartTraining" onclick="startVisualTraining()" class="dev-btn dev-btn-primary" style="height: 38px !important; padding: 0 20px !important;">
+                        <i class="fa-solid fa-play"></i> குரோம் பிரவுசரைத் திறந்து பயிற்சியைத் தொடங்கு (Start Training)
+                    </button>
+                    <span id="trainStatusIndicator" style="font-size: 12px; color: var(--text-muted);"></span>
+                </div>
+
+                <!-- Live Training Instruction Steps -->
+                <div style="margin-top: 24px; padding: 16px; background: rgba(16,185,129,0.06); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;">
+                    <h4 style="color: #6ee7b7; font-size: 13px; font-weight: 700; margin-bottom: 8px;">📌 நீங்கள் செய்ய வேண்டிய 3 எளிய வழிகள்:</h4>
+                    <ol style="margin-left: 20px; font-size: 12px; color: #cbd5e1; line-height: 1.7;">
+                        <li>மேலே உள்ள பட்டனைக் கிளிக் செய்ததும் உங்கள் கம்ப்யூட்டர் திரையிலேயே <b>கூகுள் குரோம்</b> திறக்கும்.</li>
+                        <li>நீங்கள் வழக்கம்போல அரசு தளத்தில் ஃபார்ம் புலங்களில் கிளிக் செய்து மாதிரி தகவல்களை நிரப்பவும்.</li>
+                        <li>முடித்ததும் குரோம் பிரவுசரை மூடினால் போதும்; ஃபார்ம் வழிகள் தானாகவே <code>recordings/</code> ஃபோல்டரில் பாதுகாப்பாக சேமிக்கப்படும்!</li>
+                    </ol>
+                </div>
+
+                <div class="dev-console-box" id="trainConsoleOutput" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- STATION 2: TEST SIMULATOR -->
+        <div id="panel-simulator" class="dev-panel">
+            <div class="dev-card">
+                <div class="dev-card-header">
+                    <div class="dev-card-title">
+                        <i class="fa-solid fa-flask" style="color: var(--accent-blue);"></i>
+                        லோக்கல் ஆட்டோமேஷன் சோதனை (Real Browser Test)
+                    </div>
+                </div>
+
+                <p class="dev-card-desc">
+                    நிஜ இணையதளம் (esevadraft.in) பாதிக்கப்படாமல், உங்கள் சொந்த கம்ப்யூட்டரில் தானியங்கி எவ்வாறு இயங்குகிறது என்று கண் முன்னே பார்க்கலாம்.
+                </p>
+
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <button onclick="runLocalTest('tnpds')" class="dev-btn dev-btn-primary">
+                        <i class="fa-solid fa-id-card"></i> 1. TNPDS Ration Card ஆட்டோமேஷன் டெஸ்ட்
+                    </button>
+                    <button onclick="runLocalTest('income')" class="dev-btn dev-btn-blue">
+                        <i class="fa-solid fa-file-invoice"></i> 2. Income Certificate REV-103 டெஸ்ட்
+                    </button>
+                    <button onclick="clearConsole('simConsoleOutput')" class="dev-btn dev-btn-secondary">
+                        <i class="fa-solid fa-eraser"></i> அழிக்க
+                    </button>
+                </div>
+
+                <div class="dev-label">🖥️ நேரலை கன்சோல் பதிவு (Live Execution Log):</div>
+                <div class="dev-console-box" id="simConsoleOutput">காத்திருக்கிறது... மேலே உள்ள ஏதேனும் ஒரு டெஸ்ட் பட்டனைக் கிளிக் செய்யவும்.</div>
+            </div>
+        </div>
+
+        <!-- STATION 3: OPERATOR ERROR INSPECTOR -->
+        <div id="panel-inspector" class="dev-panel">
+            <div class="dev-card">
+                <div class="dev-card-header">
+                    <div class="dev-card-title">
+                        <i class="fa-solid fa-shield-virus" style="color: var(--accent-amber);"></i>
+                        ஆபரேட்டர் பிழைகள் & ஸ்கிரீன்ஷாட் ஆய்வு (Error Inspector)
+                    </div>
+                    <button onclick="loadOperatorErrors()" class="dev-btn dev-btn-secondary">
+                        <i class="fa-solid fa-rotate"></i> புதுப்பி (Refresh)
+                    </button>
+                </div>
+
+                <p class="dev-card-desc">
+                    ஆபரேட்டர்கள் பணி செய்யும்போது ஏதேனும் சிக்கல் ஏற்பட்டால், அந்தத் தருணத்தில் அரசு தளத்தில் எடுக்கப்பட்ட ஸ்கிரீன்ஷாட்கள் மற்றும் விவரங்களை இங்கே நேரில் பார்க்கலாம்.
+                </p>
+
+                <div id="inspectorLoading" style="font-size: 12.5px; color: var(--text-muted);">பிழைகளைப் பெறுகிறது...</div>
+                <div id="snapshotContainer" class="snapshot-grid"></div>
+            </div>
+        </div>
+
+        <!-- STATION 4: SAFE 1-CLICK PUBLISHER -->
+        <div id="panel-publisher" class="dev-panel">
+            <div class="dev-card">
+                <div class="dev-card-header">
+                    <div class="dev-card-title">
+                        <i class="fa-solid fa-cloud-arrow-up" style="color: var(--primary);"></i>
+                        1-கிளிக் நேரலைப் பதிவேற்றம் (Safe Live Publisher)
+                    </div>
+                    <button onclick="loadGitStatus()" class="dev-btn dev-btn-secondary">
+                        <i class="fa-solid fa-rotate"></i> நிலையைச் சரிபார்
+                    </button>
+                </div>
+
+                <p class="dev-card-desc">
+                    உங்கள் லோக்கல் கம்ப்யூட்டரில் மாற்றங்களைச் செய்து திருப்தி அடைந்தவுடன், ஒரே ஒரு கிளிக்கில் GitHub மற்றும் Firebase Hosting-க்கு பாதுகாப்பாக லைவ் ஏற்றலாம்.
+                </p>
+
+                <div style="background: var(--bg-card); border-radius: 8px; padding: 16px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 13px; font-weight: 700; color: #cbd5e1;">தற்போதைய கிளை (Branch): <b style="color: var(--primary);" id="gitBranchDisplay">main</b></span>
+                        <span style="font-size: 11px; background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 6px;" id="gitCommitHash">Loading...</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted);" id="gitStatusSummary">மாற்றங்களைச் சரிபார்க்கிறது...</div>
+                </div>
+
+                <div class="dev-form-group">
+                    <label class="dev-label">📝 பதிவேற்றக் குறிப்பு (Commit Message):</label>
+                    <input type="text" id="publishCommitMsg" class="dev-input" value="feat: update automation workflows and UI improvements">
+                </div>
+
+                <div style="margin-top: 18px; display: flex; gap: 12px; align-items: center;">
+                    <button id="btnPublishLive" onclick="executeSafePublish()" class="dev-btn dev-btn-primary" style="height: 40px !important; padding: 0 24px !important; font-size: 13.5px !important;">
+                        <i class="fa-solid fa-rocket"></i> நேரலைக்கு ஏற்று (Publish to Live Server)
+                    </button>
+                    <span id="publishStatusIndicator" style="font-size: 12px; color: var(--text-muted);"></span>
+                </div>
+
+                <div class="dev-console-box" id="publishConsoleOutput" style="display: none;"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Lightbox Modal for Snapshot Viewing -->
+    <div id="imgLightbox" class="lightbox-modal" onclick="closeLightbox()">
+        <img id="lightboxImg" class="lightbox-content" src="" alt="Snapshot Full View">
+    </div>
+
+    <script>
+        function switchDevTab(tabName) {
+            document.querySelectorAll('.dev-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.dev-panel').forEach(p => p.classList.remove('active-panel'));
+
+            const btn = Array.from(document.querySelectorAll('.dev-tab')).find(b => b.getAttribute('onclick').includes(tabName));
+            if (btn) btn.classList.add('active');
+
+            const panel = document.getElementById('panel-' + tabName);
+            if (panel) panel.classList.add('active-panel');
+
+            if (tabName === 'inspector') loadOperatorErrors();
+            if (tabName === 'publisher') loadGitStatus();
+        }
+
+        function handlePortalPreset(val) {
+            const urlInput = document.getElementById('trainUrlInput');
+            const svcInput = document.getElementById('trainServiceName');
+            if (val === 'custom') {
+                urlInput.value = '';
+                urlInput.focus();
+            } else {
+                urlInput.value = val;
+                if (val.includes('tnesevai')) svcInput.value = 'revenue_certificate';
+                else if (val.includes('edistricts')) svcInput.value = 'edistrict_service';
+                else if (val.includes('eservices')) svcInput.value = 'patta_chitta';
+                else if (val.includes('tnpds')) svcInput.value = 'ration_card';
+            }
+        }
+
+        async function startVisualTraining() {
+            const url = document.getElementById('trainUrlInput').value.trim();
+            const serviceName = document.getElementById('trainServiceName').value.trim() || 'custom_service';
+            const btn = document.getElementById('btnStartTraining');
+            const status = document.getElementById('trainStatusIndicator');
+            const consoleBox = document.getElementById('trainConsoleOutput');
+
+            if (!url) return alert('சரியான இணையதள URL-ஐ உள்ளிடவும்.');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> கூகுள் குரோம் திறக்கிறது...';
+            status.innerText = 'Chrome திறக்கப்படுகிறது... நீங்கள் முடித்ததும் பிரவுசரை மூடவும்.';
+            consoleBox.style.display = 'block';
+            consoleBox.innerText = 'Starting Playwright Recorder session for: ' + url + '...\n';
+
+            try {
+                const res = await fetch('/api/dev/train-start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, serviceName })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    consoleBox.innerText += '\n✅ பயிற்சி முடிவடைந்தது! பதிவான கோப்பு: ' + data.outputFile + '\n';
+                    status.innerText = '✅ பயிற்சி முடிந்தது!';
+                } else {
+                    consoleBox.innerText += '\n❌ பிழை: ' + data.error + '\n';
+                    status.innerText = 'பிழை ஏற்பட்டது.';
+                }
+            } catch (e) {
+                consoleBox.innerText += '\n❌ இணைப்புப் பிழை: ' + e.message + '\n';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> குரோம் பிரவுசரைத் திறந்து பயிற்சியைத் தொடங்கு (Start Training)';
+            }
+        }
+
+        async function runLocalTest(type) {
+            const consoleBox = document.getElementById('simConsoleOutput');
+            consoleBox.innerText = '🚀 Starting local visible test [' + type + ']...\nஉங்கள் கணினித் திரையில் பிரவுசர் திறக்கும், கவனியுங்கள்...\n';
+
+            try {
+                const res = await fetch('/api/dev/test-run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type })
+                });
+                const data = await res.json();
+                consoleBox.innerText += (data.output || data.message || JSON.stringify(data)) + '\n';
+            } catch (e) {
+                consoleBox.innerText += '❌ டெஸ்ட் தோல்வியடைந்தது: ' + e.message + '\n';
+            }
+        }
+
+        function clearConsole(id) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = '';
+        }
+
+        async function loadOperatorErrors() {
+            const container = document.getElementById('snapshotContainer');
+            const loading = document.getElementById('inspectorLoading');
+            if (loading) loading.style.display = 'block';
+
+            try {
+                const res = await fetch('/api/dev/errors');
+                const data = await res.json();
+                if (loading) loading.style.display = 'none';
+
+                if (!data.errors || data.errors.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">பிழைகள் எதுவும் கண்டறியப்படவில்லை. அனைத்தும் சீராக இயங்குகிறது! ✅</p>';
+                    return;
+                }
+
+                container.innerHTML = data.errors.map(err => `
+                    <div class="snapshot-card">
+                        <img class="snapshot-thumb" src="${err.imageUrl}" alt="Error Snapshot" onclick="openLightbox('${err.imageUrl}')">
+                        <div class="snapshot-info">
+                            <div class="snapshot-title" title="${err.title}">${err.title}</div>
+                            <div class="snapshot-time">📅 ${err.time}</div>
+                            <div style="margin-top: 6px; font-size: 11.5px; color: #fca5a5;">${err.message || 'பிழை விவரம்'}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                if (loading) loading.style.display = 'none';
+                container.innerHTML = '<p style="color: #f87171;">பிழைகளைப் பெறுவதில் தோல்வி: ' + e.message + '</p>';
+            }
+        }
+
+        function openLightbox(url) {
+            const modal = document.getElementById('imgLightbox');
+            const img = document.getElementById('lightboxImg');
+            if (modal && img) {
+                img.src = url;
+                modal.style.display = 'flex';
+            }
+        }
+
+        function closeLightbox() {
+            const modal = document.getElementById('imgLightbox');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function loadGitStatus() {
+            try {
+                const res = await fetch('/api/dev/status');
+                const data = await res.json();
+                document.getElementById('gitBranchDisplay').innerText = data.branch || 'main';
+                document.getElementById('gitCommitHash').innerText = data.commitHash || '—';
+                document.getElementById('gitStatusSummary').innerHTML = data.isClean 
+                    ? '<span style="color: #4ade80;">✅ அனைத்து மாற்றங்களும் சேமிக்கப்பட்டுள்ளன (Working tree clean)</span>' 
+                    : '<span style="color: #fbbf24;">⚠️ ' + (data.modifiedCount || 'சில') + ' புதிய மாற்றங்கள் பதிவேற்றத்திற்கு தயார் நிலையில் உள்ளன.</span>';
+            } catch (e) {}
+        }
+
+        async function executeSafePublish() {
+            const commitMsg = document.getElementById('publishCommitMsg').value.trim() || 'chore: live update';
+            const btn = document.getElementById('btnPublishLive');
+            const status = document.getElementById('publishStatusIndicator');
+            const consoleBox = document.getElementById('publishConsoleOutput');
+
+            const confirmed = confirm('🚀 நீங்கள் செய்த மாற்றங்களை Git-ல் சேமித்து Firebase Live Server-க்கு உடனே ஏற்ற விரும்புகிறீர்களா?');
+            if (!confirmed) return;
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> நேரலையில் பதிவேற்றப்படுகிறது... காத்திருக்கவும்';
+            status.innerText = 'Publishing to GitHub and Firebase Hosting...';
+            consoleBox.style.display = 'block';
+            consoleBox.innerText = 'Starting Safe Publish Pipeline...\n';
+
+            try {
+                const res = await fetch('/api/dev/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: commitMsg })
+                });
+                const data = await res.json();
+                consoleBox.innerText += data.output || JSON.stringify(data);
+                if (data.success) {
+                    status.innerHTML = '<span style="color: #4ade80; font-weight: 700;">🎉 நேரலையில் வெற்றிகரமாக பதிவேற்றப்பட்டது!</span>';
+                    loadGitStatus();
+                } else {
+                    status.innerHTML = '<span style="color: #f87171;">❌ பதிவேற்றத்தில் பிழை ஏற்பட்டது.</span>';
+                }
+            } catch (e) {
+                consoleBox.innerText += '\n❌ Error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-rocket"></i> நேரலைக்கு ஏற்று (Publish to Live Server)';
+            }
+        }
+
+        // Initialize status on load
+        loadGitStatus();
+    </script>
+</body>
+</html>
