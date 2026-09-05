@@ -1,4 +1,4 @@
-﻿{
+{
   "hosting": {
     "public": "public",
     "ignore": [
@@ -13,6 +13,18 @@
       "**/*.jpeg",
       "**/*.jpg",
       "**/*.pdf"
+    ],
+    "redirects": [
+      {
+        "source": "/api/download/desktop-app",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.0.1/eSevaDraft-Desktop-Setup-1.0.1.exe",
+        "type": 302
+      },
+      {
+        "source": "/download/desktop-app",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.0.1/eSevaDraft-Desktop-Setup-1.0.1.exe",
+        "type": 302
+      }
     ],
     "rewrites": [
       {
