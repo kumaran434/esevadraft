@@ -2536,6 +2536,14 @@
             }
         }
 
+        function isRunningInDesktopApp() {
+            if (window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp) return true;
+            const ua = (navigator.userAgent || '').toLowerCase();
+            if (ua.includes('electron') || ua.includes('esevadraft') || ua.includes('esevadraft desktop')) return true;
+            if (typeof window.process === 'object' && window.process && window.process.versions && window.process.versions.electron) return true;
+            return false;
+        }
+
         function applyRoleUi(role, displayName) {
             const isOp = (role === 'operator');
             const citizenNavBtn = document.getElementById('tabBtnCitizen');
@@ -2558,7 +2566,7 @@
             const workArea = document.getElementById('operatorDesktopWorkArea');
 
             const name = displayName || localStorage.getItem('eseva_user_name') || (isOp ? 'மையம்' : 'பொதுமக்கள்');
-            const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+            const isDesktop = isRunningInDesktopApp();
 
             // Profile Badge & Logout
             if (badge && nameEl) {
@@ -3041,7 +3049,7 @@
             if (panel) panel.classList.add('active-panel');
 
             if (tabId === 'operator') {
-                const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+                const isDesktop = isRunningInDesktopApp();
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
                 const navTabs = document.getElementById('mainNavTabs');
                 const webDlView = document.getElementById('operatorWebDownloadView');
@@ -3546,7 +3554,7 @@
         function proceedConfirmedSubmit() {
             closePreSubmitModal();
             const isOp = localStorage.getItem('eseva_user_role') === 'operator';
-            const isDesktop = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
+            const isDesktop = isRunningInDesktopApp();
 
             if (isOp && !isDesktop) {
                 // Operator is on web browser: guide them to Desktop App for real Chrome automation & Dual System Listener!
