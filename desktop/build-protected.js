@@ -29,7 +29,8 @@ async function protectSourceCode() {
         await bytenode.compileFile({
             filename: fullSrcPath,
             output: fullDistPath,
-            compileAsModule: true
+            compileAsModule: true,
+            electron: true
         });
 
         console.log(`✅ [Step 2] Binary generated: ${item.dist} (${fs.statSync(fullDistPath).size} bytes)`);

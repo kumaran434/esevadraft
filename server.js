@@ -2205,43 +2205,20 @@ app.get('/api/admin/stats', (req, res) => {
 // DESKTOP APP DOWNLOAD & DISTRIBUTION
 // ==========================================
 app.get('/api/download/desktop-app', (req, res) => {
-    const desktopDistPath = path.join(__dirname, 'desktop', 'dist', 'eSevaDraft-Setup-1.0.0.exe');
-    const localExePath = path.join(__dirname, 'downloads', 'eSevaDraft-Setup-1.0.0.exe');
+    const candidates = [
+        path.join(__dirname, 'desktop', 'dist', 'eSevaDraft-Setup-1.0.0.exe'),
+        path.join(__dirname, 'desktop', 'dist', 'eSevaDraft Desktop Setup 1.0.0.exe'),
+        path.join(__dirname, 'downloads', 'eSevaDraft-Setup-1.0.0.exe')
+    ];
 
-    if (fs.existsSync(desktopDistPath)) {
-        return res.download(desktopDistPath, 'eSevaDraft-Setup-1.0.0.exe');
-    }
-    if (fs.existsSync(localExePath)) {
-        return res.download(localExePath, 'eSevaDraft-Setup-1.0.0.exe');
+    for (const exePath of candidates) {
+        if (fs.existsSync(exePath)) {
+            return res.download(exePath, 'eSevaDraft-Setup-1.0.0.exe');
+        }
     }
 
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>eSevaDraft Windows Desktop App</title>
-            <style>
-                body { font-family: system-ui, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-                .card { background: #1e293b; border: 1.5px solid #334155; border-radius: 16px; max-width: 500px; padding: 28px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-                h2 { color: #818cf8; margin-top: 0; }
-                p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-                .badge { background: rgba(79, 70, 229, 0.2); color: #a5b4fc; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; margin-bottom: 12px; }
-                .btn { display: inline-block; background: #4f46e5; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 700; margin-top: 15px; }
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <span class="badge">🚀 v1.0.0 Windows Official Release</span>
-                <h2>eSevaDraft Desktop App</h2>
-                <p>இ-சேவை மையங்களுக்கான அதிவேக விண்டோஸ் டெஸ்க்டாப் அப்ளிகேஷன் பைனரி உருவாக்கம் நிறைவடைந்தது. உங்கள் கணினியில் கண் முன்னாடி அரசு தளம் திறந்து லைவ்வாக ஃபார்ம் நிரம்பும்.</p>
-                <p style="font-size: 12px; color: #64748b;">(Bytenode V8 மெஷின் பைட்கோடு & AES-256 என்க்ரிப்ஷன் மூலம் பாதுகாக்கப்பட்டது)</p>
-                <a href="/" class="btn">இணையதளத்திற்குத் திரும்பு (Back to Website)</a>
-            </div>
-        </body>
-        </html>
-    `);
+    // Fallback: Redirect directly to official GitHub Release CDN
+    return res.redirect('https://github.com/kumaran434/esevadraft/releases/latest/download/eSevaDraft-Setup-1.0.0.exe');
 });
 
 // Periodic session persist (every 30 seconds)

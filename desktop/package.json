@@ -24,8 +24,7 @@
     "appId": "in.esevadraft.desktop",
     "productName": "eSevaDraft Desktop",
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,

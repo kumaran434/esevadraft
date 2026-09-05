@@ -27,6 +27,8 @@ data/
 desktop/dist/
 dist/
 build/
+downloads/
+*.exe
 
 # OS files
 .DS_Store
