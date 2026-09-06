@@ -3190,6 +3190,7 @@
                     if (aBanner) aBanner.classList.remove('show');
 
                     switchTab('citizen');
+                    if (typeof citizenSwitchSubTab === 'function') citizenSwitchSubTab('chat');
                     const titleEl = document.getElementById('activeCustomerTitle');
                     if (titleEl) {
                         titleEl.innerHTML = `<i class="fa-solid fa-bolt" style="color: #eab308;"></i> நேரடி விரைவு விண்ணப்பம் (Direct Apply) — ${serviceName || 'புதிய ரேஷன் கார்டு'}`;
