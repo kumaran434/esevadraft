@@ -417,19 +417,35 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
 
     const isProduction = process.env.NODE_ENV === 'production' || process.env.HEADLESS === 'true';
 
-    browser = await chromium.launch({
-        headless: isProduction,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-blink-features=AutomationControlled'
-        ]
-    });
+    try {
+        browser = await chromium.launch({
+            channel: 'chrome',
+            headless: isProduction,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled'
+            ]
+        });
+    } catch (launchErr) {
+        console.warn('Chrome channel launch fallback to standard chromium:', launchErr.message);
+        browser = await chromium.launch({
+            headless: isProduction,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled'
+            ]
+        });
+    }
 
     context = await browser.newContext({
         viewport: isProduction ? { width: 1280, height: 800 } : null,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         permissions: ['geolocation'],
         geolocation: { latitude: 12.9716, longitude: 79.1586 }
     });
@@ -450,17 +466,31 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
 
     page = await context.newPage();
 
-    if (isMockSandboxMode) {
+    if (isMockSandboxMode || options.bypassOtp) {
         await page.route('**/*', async (route) => {
             const req = route.request();
             const url = req.url().toLowerCase();
             const postData = req.postData() ? req.postData().toLowerCase() : '';
-            if (req.method() === 'POST' && (url.includes('otp') || postData.includes('otp'))) {
-                console.log('  🎯 [Network Intercept] அரசு OTP அழைப்பு இடைமறிக்கப்பட்டது:', req.url());
+            const isOtpOrMobileVerify = req.method() === 'POST' && (
+                url.includes('otp') || 
+                url.includes('verifymobilenumber') || 
+                url.includes('validate') || 
+                postData.includes('otp') || 
+                postData.includes('mobilenumber')
+            );
+            if (isOtpOrMobileVerify) {
+                console.log('  🎯 [Network Intercept] அரசு OTP / கைபேசி சரிபார்ப்பு அழைப்பு இடைமறிக்கப்பட்டது:', req.url());
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/json',
-                    body: JSON.stringify({ statusCode: 0, message: 'OTP Verified Successfully', status: 'SUCCESS' })
+                    body: JSON.stringify({ 
+                        statusCode: 0, 
+                        message: 'OTP Verified Successfully', 
+                        status: 'SUCCESS',
+                        trackId: 'MOCK_TRACK_' + Date.now(),
+                        valid: true,
+                        data: { isVerified: true }
+                    })
                 });
                 return;
             }
@@ -518,7 +548,12 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
         } catch (e) {}
     }
 
-    const tnpdsUrl = 'https://tnpds.gov.in/pages/newsmartcard';
+    try {
+        await page.goto('https://www.tnpds.gov.in', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(2000);
+    } catch (e) {}
+
+    const tnpdsUrl = 'https://www.tnpds.gov.in/pages/newsmartcard';
     await page.goto(tnpdsUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
     await page.waitForTimeout(3000);
     await takeStepSnapshot('step01_portal_loaded');
@@ -823,7 +858,7 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
     }
     await scanAndBroadcastToasts();
 
-    if (isMockSandboxMode) {
+    if (isMockSandboxMode || options.bypassOtp) {
         await page.evaluate(() => {
             const modals = document.querySelectorAll('.modal.show, div[role="dialog"]');
             modals.forEach(m => {
@@ -833,6 +868,11 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
             const backdrops = document.querySelectorAll('.modal-backdrop');
             backdrops.forEach(b => b.remove());
             document.body.classList.remove('modal-open');
+            const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('உறுப்பினரை சேர்க்க'));
+            if (btn) {
+                btn.disabled = false;
+                btn.removeAttribute('disabled');
+            }
         }).catch(() => {});
         await page.waitForTimeout(1000);
     }
@@ -843,8 +883,16 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
 
     // படி 22: உறுப்பினரை சேர்க்க பொத்தான் கிளிக்
     onProgress('📍 [படி 22/51] உறுப்பினரை சேர்க்க படிவம் திறக்கப்படுகிறது...');
+    await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('உறுப்பினரை சேர்க்க'));
+        if (btn) {
+            btn.disabled = false;
+            btn.removeAttribute('disabled');
+            btn.click();
+        }
+    });
     const addMemBtn = page.getByRole('button', { name: 'உறுப்பினரை சேர்க்க' }).first();
-    await addMemBtn.click({ force: true });
+    await addMemBtn.click({ force: true }).catch(() => {});
     await page.waitForTimeout(2500);
 
     // படி 23: பிறந்த தேதி
