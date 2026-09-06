@@ -765,6 +765,44 @@
             flex-direction: column;
             background: white;
             border-right: 1px solid #cbd5e1;
+            position: relative;
+        }
+
+        #chatScrollBottomBtn {
+            display: none;
+            position: absolute;
+            bottom: 66px;
+            right: 20px;
+            z-index: 45;
+            height: 34px;
+            padding: 0 14px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(4px);
+            color: #f8fafc;
+            border: 1px solid #475569;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            cursor: pointer;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+        #chatScrollBottomBtn:hover {
+            background: #1e293b;
+            border-color: #64748b;
+        }
+        #chatScrollBottomBtn.has-new-msg {
+            background: #0284c7 !important;
+            border-color: #38bdf8 !important;
+            color: white !important;
+            box-shadow: 0 4px 16px rgba(2, 132, 199, 0.45) !important;
+            animation: bounceSoft 2s infinite ease-in-out;
+        }
+        @keyframes bounceSoft {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
         }
 
         .chat-messages {
@@ -1838,6 +1876,9 @@
                     </div>
 
                     <div class="chat-messages" id="chatMessages"></div>
+                    <button id="chatScrollBottomBtn" onclick="scrollToChatBottom(true)" title="கீழே செல்ல கிளிக் செய்யவும்">
+                        <i class="fa-solid fa-arrow-down" style="color: #38bdf8;"></i> <span id="chatScrollBottomText">கீழே செல்</span>
+                    </button>
                     <div class="chat-input-box">
                         <input type="file" id="fileUploadInput" accept="image/*,.pdf" style="display: none;" onchange="handleFileUpload(event)">
                         <button class="btn-icon" onclick="document.getElementById('fileUploadInput').click()" title="ஆவணத்தைப் பதிவேற்றுக"><i class="fa-solid fa-paperclip"></i></button>
@@ -3146,7 +3187,9 @@
                     if (titleEl) {
                         titleEl.innerHTML = `<i class="fa-solid fa-user-check" style="color: #16a34a;"></i> வாடிக்கையாளர்: <b>+91 ${mob}</b>`;
                     }
-                    if (data.chatHistory) renderMessages(data.chatHistory);
+                    lastRenderedChatHistoryJson = '';
+                    lastRenderedChatHistoryLength = 0;
+                    if (data.chatHistory) renderMessages(data.chatHistory, true);
                     resetSidebarToOperatorView();
                     updateSidebar({ citizenProfile: data.citizenProfile });
 
@@ -3195,7 +3238,9 @@
                     if (titleEl) {
                         titleEl.innerHTML = `<i class="fa-solid fa-bolt" style="color: #eab308;"></i> நேரடி விரைவு விண்ணப்பம் (Direct Apply) — ${serviceName || 'புதிய ரேஷன் கார்டு'}`;
                     }
-                    if (data.chatHistory) renderMessages(data.chatHistory);
+                    lastRenderedChatHistoryJson = '';
+                    lastRenderedChatHistoryLength = 0;
+                    if (data.chatHistory) renderMessages(data.chatHistory, true);
                     resetSidebarToOperatorView();
                     updateSidebar({ citizenProfile: data.citizenProfile });
                 } else {
@@ -3446,7 +3491,7 @@
                     body: JSON.stringify({ message: serviceName, mobileNumber: userMob })
                 });
                 const data = await res.json();
-                renderMessages(data.chatHistory);
+                renderMessages(data.chatHistory, true);
                 updateSidebar(data);
             } catch (e) {
                 console.error('Failed to start service:', e);
@@ -3809,7 +3854,7 @@
                         if (rBanner) rBanner.classList.add('show');
                     }
                     if (data.chatHistory && data.chatHistory.length > 0) {
-                        renderMessages(data.chatHistory);
+                        renderMessages(data.chatHistory, true);
                     } else if (!chatMessages || chatMessages.children.length === 0) {
                         renderDefaultWelcomeMessage();
                     }
@@ -4145,7 +4190,7 @@
                         localStorage.removeItem('eseva_active_customer_name');
                         resetSidebarToOperatorView(finalName);
                         if (data.chatHistory && data.chatHistory.length > 0) {
-                            renderMessages(data.chatHistory);
+                            renderMessages(data.chatHistory, true);
                         } else {
                             renderDefaultWelcomeMessage();
                         }
@@ -4160,7 +4205,7 @@
                             if (rBanner) rBanner.classList.remove('show');
                         }
                         if (data.chatHistory && data.chatHistory.length > 0) {
-                            renderMessages(data.chatHistory);
+                            renderMessages(data.chatHistory, true);
                         } else {
                             renderDefaultWelcomeMessage();
                         }
@@ -4265,7 +4310,7 @@
             if (tabId === 'admin') fetchAdminStats();
         }
 
-        async function fetchHistory() {
+        async function fetchHistory(forceScroll = false) {
             try {
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
                 const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
@@ -4298,7 +4343,7 @@
                     }
                 });
                 const data = await res.json();
-                if (data.chatHistory) renderMessages(data.chatHistory);
+                if (data.chatHistory) renderMessages(data.chatHistory, forceScroll);
                 updateSidebar(data);
                 if (data.applicationNumber) {
                     const banner = document.getElementById('appNumberBanner');
@@ -4357,6 +4402,8 @@
                 if (pBar) pBar.classList.remove('active');
 
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
+                lastRenderedChatHistoryJson = '';
+                lastRenderedChatHistoryLength = 0;
                 if (isOp) {
                     // Start a 100% fresh new application directly at Question 1
                     await startDirectApplyService('புதிய ரேஷன் கார்டு');
@@ -4364,7 +4411,7 @@
                     const res = await fetch('/api/chat/reset', { method: 'POST' });
                     const data = await res.json();
                     currentCitizenData = null;
-                    renderMessages(data.chatHistory);
+                    renderMessages(data.chatHistory, true);
                     updateSidebar({ citizenProfile: null });
                 }
             } catch (e) {
@@ -4374,6 +4421,8 @@
         }
 
         function renderDefaultWelcomeMessage() {
+            lastRenderedChatHistoryJson = '';
+            lastRenderedChatHistoryLength = 0;
             renderMessages([
                 {
                     sender: 'bot',
@@ -4387,12 +4436,73 @@
                         { label: "🗳️ புதிய வாக்காளர் அட்டை (New Voter ID)", value: "புதிய வாக்காளர் அட்டை" }
                     ]
                 }
-            ]);
+            ], true);
         }
 
-        function renderMessages(history) {
+        let lastRenderedChatHistoryJson = '';
+        let lastRenderedChatHistoryLength = 0;
+        let isUserScrolledUp = false;
+
+        function setupChatScrollListener() {
+            const chatBox = document.getElementById('chatMessages');
+            if (!chatBox) return;
+            chatBox.addEventListener('scroll', () => {
+                const distFromBottom = chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight;
+                const threshold = 45;
+                const btn = document.getElementById('chatScrollBottomBtn');
+                if (distFromBottom > threshold) {
+                    isUserScrolledUp = true;
+                    if (btn) btn.style.display = 'inline-flex';
+                } else {
+                    isUserScrolledUp = false;
+                    if (btn) {
+                        btn.style.display = 'none';
+                        btn.classList.remove('has-new-msg');
+                        const txt = document.getElementById('chatScrollBottomText');
+                        if (txt) txt.innerText = 'கீழே செல்';
+                    }
+                }
+            });
+        }
+
+        function scrollToChatBottom(smooth = true) {
+            const chatBox = document.getElementById('chatMessages');
+            if (!chatBox) return;
+            if (smooth) {
+                chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
+            } else {
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+            isUserScrolledUp = false;
+            const btn = document.getElementById('chatScrollBottomBtn');
+            if (btn) {
+                btn.style.display = 'none';
+                btn.classList.remove('has-new-msg');
+                const txt = document.getElementById('chatScrollBottomText');
+                if (txt) txt.innerText = 'கீழே செல்';
+            }
+        }
+
+        function renderMessages(history, forceScroll = false) {
             if (!history) return;
-            chatMessages.innerHTML = '';
+            const chatBox = document.getElementById('chatMessages') || chatMessages;
+            if (!chatBox) return;
+
+            const historyJson = JSON.stringify(history);
+            // If the history has NOT changed at all and forceScroll is false, do NOT wipe DOM or hijack user scroll!
+            if (historyJson === lastRenderedChatHistoryJson && !forceScroll) {
+                return;
+            }
+
+            const distFromBottom = chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight;
+            const wasNearBottom = distFromBottom <= 45;
+            const prevScrollTop = chatBox.scrollTop;
+            const isNewMessageAdded = (history.length > lastRenderedChatHistoryLength) && lastRenderedChatHistoryLength > 0;
+
+            lastRenderedChatHistoryJson = historyJson;
+            lastRenderedChatHistoryLength = history.length;
+
+            chatBox.innerHTML = '';
 
             let hasActiveOtpPrompt = false;
             let activeOtpPromptText = '';
@@ -4581,7 +4691,26 @@
                 stopOtpTimer();
             }
 
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (forceScroll || wasNearBottom || lastRenderedChatHistoryLength <= 1) {
+                chatBox.scrollTop = chatBox.scrollHeight;
+                const btn = document.getElementById('chatScrollBottomBtn');
+                if (btn) {
+                    btn.style.display = 'none';
+                    btn.classList.remove('has-new-msg');
+                }
+            } else {
+                // User was reading scrolled-up messages; preserve their scroll view!
+                chatBox.scrollTop = prevScrollTop;
+                const btn = document.getElementById('chatScrollBottomBtn');
+                if (btn) {
+                    btn.style.display = 'inline-flex';
+                    if (isNewMessageAdded) {
+                        btn.classList.add('has-new-msg');
+                        const txt = document.getElementById('chatScrollBottomText');
+                        if (txt) txt.innerText = '⬇️ புதிய செய்தி (கீழே பார்க்கவும்)';
+                    }
+                }
+            }
         }
 
         function startOtpTimer(initialSecs) {
@@ -4872,7 +5001,7 @@
                 if (data.activeMobile && /^[6-9]\d{9}$/.test(data.activeMobile)) {
                     localStorage.setItem('eseva_active_customer_mobile', data.activeMobile);
                 }
-                renderMessages(data.chatHistory);
+                renderMessages(data.chatHistory, true);
                 updateSidebar(data);
             } catch (e) {
                 console.error('Send message failed:', e);
@@ -5011,7 +5140,7 @@
                 // Short delay so user clearly experiences the completed state
                 setTimeout(() => {
                     if (modal) modal.style.display = 'none';
-                    renderMessages(data.chatHistory);
+                    renderMessages(data.chatHistory, true);
                     updateSidebar(data);
                 }, 600);
 
@@ -5607,6 +5736,7 @@
 
         // Initialize session check & poll history
         checkSession();
+        setupChatScrollListener();
         setInterval(fetchHistory, 2500);
         setInterval(syncPortalOtpTimer, 2000);
         setInterval(syncAutomationProgress, 1500);
