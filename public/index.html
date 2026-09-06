@@ -2003,7 +2003,7 @@
                             </p>
                         </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                            <button id="btnDirectApplyDesk" onclick="startDirectApplyService('புதிய ரேஷன் கார்டு')" style="height: 34px; padding: 0 16px; background: #16a34a; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 5px rgba(22,163,74,0.3);">
+                            <button id="btnDirectApplyDesk" onclick="startDirectApplyService()" style="height: 34px; padding: 0 16px; background: #16a34a; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 5px rgba(22,163,74,0.3);">
                                 <i class="fa-solid fa-bolt" style="color: #fde047;"></i> ⚡ புதிய விண்ணப்பம் (Direct Apply)
                             </button>
                             <button onclick="openNewCustomerModal()" style="height: 34px; padding: 0 14px; background: white; border: 1.5px solid #cbd5e1; border-radius: 8px; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: #334155;">
@@ -2013,6 +2013,25 @@
                                 <i class="fa-solid fa-rotate"></i>
                             </button>
                         </div>
+                    </div>
+
+                    <!-- Direct Quick Service Shortcuts for Operators -->
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; background: white; padding: 8px 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
+                        <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 4px;">
+                            <i class="fa-solid fa-bolt" style="color: #eab308;"></i> நேரடி சேவைகள்:
+                        </span>
+                        <button onclick="startDirectApplyService('புதிய ரேஷன் கார்டு')" style="height: 28px; padding: 0 12px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;">
+                            🏛️ புதிய ரேஷன் கார்டு
+                        </button>
+                        <button onclick="startDirectApplyService('வருமானச் சான்றிதழ்')" style="height: 28px; padding: 0 12px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;">
+                            📜 வருமானச் சான்றிதழ்
+                        </button>
+                        <button onclick="startDirectApplyService('இருப்பிடச் சான்றிதழ்')" style="height: 28px; padding: 0 12px; background: #fef3c7; border: 1px solid #fde68a; color: #92400e; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;">
+                            🏠 இருப்பிடச் சான்றிதழ்
+                        </button>
+                        <button onclick="startDirectApplyService('புதிய வாக்காளர் அட்டை')" style="height: 28px; padding: 0 12px; background: #f3e8ff; border: 1px solid #e9d5ff; color: #6b21a8; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;">
+                            🗳️ வாக்காளர் அட்டை
+                        </button>
                     </div>
 
                     <!-- Search and Status Filters -->
@@ -3012,6 +3031,7 @@
                     body: JSON.stringify({
                         customerMobile: mob,
                         customerName: '',
+                        serviceName: window.pendingSelectedService || null,
                         operatorUid: opUid,
                         operatorName: opName,
                         operatorMobile: opMob

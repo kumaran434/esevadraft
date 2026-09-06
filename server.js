@@ -372,7 +372,7 @@ app.get('/api/auth/lookup-mobile', async (req, res) => {
 });
 
 app.post('/api/operator/new-customer', async (req, res) => {
-    const { customerMobile, customerName, operatorUid, operatorName, operatorMobile, isWalkin } = req.body;
+    const { customerMobile, customerName, operatorUid, operatorName, operatorMobile, isWalkin, serviceName } = req.body;
     let cleanMobile = (customerMobile || '').replace(/\D/g, '');
     let isTempWalkin = false;
 
@@ -401,7 +401,6 @@ app.post('/api/operator/new-customer', async (req, res) => {
     sess.citizenProfile.fullNameTam = initialName;
     sess.citizenProfile.fullNameEng = initialName;
     sess.citizenProfile.mobileNumber = isTempWalkin ? '' : cleanMobile;
-    sess.intakeState = 'MEMBER_COUNT';
     sess.targetMemberCount = 1;
     sess.currentMemberIdx = 1;
     sess.step = 'intake';
@@ -411,14 +410,54 @@ app.post('/api/operator/new-customer', async (req, res) => {
 
     const phoneDisplay = isTempWalkin ? '' : ` (+91 ${cleanMobile})`;
     const displayName = initialName ? `திரு/திருமதி **${initialName}**` : `வாடிக்கையாளர்`;
-    sess.chatHistory = [{
-        sender: 'bot',
-        text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
-              `🏛️ **புதிய ரேஷன் கார்டு (New Ration Card) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
-              `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
-              `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
-        options: MEMBER_COUNT_OPTIONS
-    }];
+
+    if (serviceName === 'புதிய ரேஷன் கார்டு' || serviceName === 'ration') {
+        sess.intakeState = 'MEMBER_COUNT';
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+                  `🏛️ **புதிய ரேஷன் கார்டு (New Ration Card) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                  `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                  `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
+            options: MEMBER_COUNT_OPTIONS
+        }];
+    } else if (serviceName === 'வருமானச் சான்றிதழ்' || serviceName === 'income') {
+        sess.intakeState = 'INCOME_INTAKE';
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+                  `📜 **வருமானச் சான்றிதழ் (Income Certificate) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                  `விண்ணப்பதாரரின் குடும்ப ஆண்டு வருமானத்தை தட்டச்சு செய்யவும் அல்லது ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+            options: [
+                { label: "₹60,000க்கு கீழ்", value: "₹60,000" },
+                { label: "₹72,000", value: "₹72,000" },
+                { label: "₹1,00,000", value: "₹1,00,000" },
+                { label: "₹1,20,000", value: "₹1,20,000" }
+            ]
+        }];
+    } else if (serviceName === 'இருப்பிடச் சான்றிதழ்' || serviceName === 'residence') {
+        sess.intakeState = 'RESIDENCE_INTAKE';
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+                  `🏠 **இருப்பிடச் சான்றிதழ் (Residence Certificate) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                  `விண்ணப்பதாரரின் ஆதார் அட்டை அல்லது முகவரிச் சான்றைப் பதிவேற்றவும்:`,
+            options: [
+                { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "UPLOAD_AADHAAR" }
+            ]
+        }];
+    } else {
+        // DEFAULT: ALWAYS ASK WHICH SERVICE THEY WANT TO APPLY FOR!
+        sess.intakeState = 'SERVICE_SELECTION';
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+                  `🏛️ **eSevaDraft தமிழ்நாடு அரசு சேவைகள் ஏஐ நேரடி மையத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                  `வாடிக்கையாளர் இன்று எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறார்?\n\n` +
+                  `கீழே உள்ள அரசு சேவைகளில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
+            options: SERVICE_OPTIONS
+        }];
+    }
 
     // Only persist as draft upfront if it's a real 10-digit customer.
     // Walk-in sessions must NOT be saved as drafts until actual customer details are entered!
