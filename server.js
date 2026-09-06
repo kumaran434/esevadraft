@@ -277,6 +277,9 @@ async function resetActiveSession() {
     if (mob && sessions.has(mob)) {
         sessions.delete(mob);
     }
+    if (mob && mob.startsWith('walkin_')) {
+        try { await deleteCitizenDraft(mob); } catch (e) {}
+    }
     const freshProfile = createFreshProfile(mob);
     const freshSession = {
         intakeState: 'SERVICE_SELECTION',
@@ -300,14 +303,27 @@ async function resetActiveSession() {
 // ==========================================
 // 1. AUTHENTICATION & SESSION MANAGEMENT
 // ==========================================
-app.get('/api/auth/session', (req, res) => {
-    const isOpReq = !!(req.headers['x-operator-uid'] || req.query.role === 'operator');
+app.get('/api/auth/session', async (req, res) => {
+    const opUid = req.headers['x-operator-uid'] || null;
+    const isOpReq = !!(opUid || req.query.role === 'operator');
     const targetMobile = (req.query.mobile || req.headers['x-session-mobile'] || '').trim();
 
-    if (isOpReq && !targetMobile) {
+    let opProfile = null;
+    if (opUid) {
+        try { opProfile = await getUserProfile(opUid); } catch (e) {}
+    }
+
+    const isOpOwnPhone = opProfile && opProfile.mobileNumber && (targetMobile === opProfile.mobileNumber);
+    const isExplicitCustomer = req.query.isCustomerSession === 'true';
+
+    if (isOpReq && (!targetMobile || isOpOwnPhone || !isExplicitCustomer)) {
+        if (!opUid) {
+            return res.json({ isLoggedIn: false, role: 'operator' });
+        }
         return res.json({
-            isLoggedIn: true,
-            mobileNumber: null,
+            isLoggedIn: !!opProfile,
+            mobileNumber: opProfile ? opProfile.mobileNumber : null,
+            displayName: (opProfile && opProfile.displayName) ? opProfile.displayName : 'இ-சேவை மையம்',
             role: 'operator',
             citizenProfile: null,
             resumedSession: false,
@@ -356,42 +372,52 @@ app.get('/api/auth/lookup-mobile', async (req, res) => {
 });
 
 app.post('/api/operator/new-customer', async (req, res) => {
-    const { customerMobile, customerName, operatorUid, operatorName, operatorMobile } = req.body;
-    const cleanMobile = (customerMobile || '').replace(/\D/g, '');
-    if (cleanMobile.length !== 10) {
+    const { customerMobile, customerName, operatorUid, operatorName, operatorMobile, isWalkin } = req.body;
+    let cleanMobile = (customerMobile || '').replace(/\D/g, '');
+    let isTempWalkin = false;
+
+    if (!cleanMobile) {
+        if (isWalkin || !customerMobile) {
+            cleanMobile = `walkin_${Date.now()}`;
+            isTempWalkin = true;
+        } else {
+            return res.status(400).json({ error: 'சரியான 10-இலக்க வாடிக்கையாளர் மொபைல் எண்ணை உள்ளிடவும்.' });
+        }
+    } else if (cleanMobile.length !== 10) {
         return res.status(400).json({ error: 'சரியான 10-இலக்க வாடிக்கையாளர் மொபைல் எண்ணை உள்ளிடவும்.' });
     }
 
+    const initialName = (customerName || '').trim();
+    if (cleanMobile && sessions.has(cleanMobile)) {
+        sessions.delete(cleanMobile);
+    }
     const sess = setActiveSession(cleanMobile);
     sess.operatorUid = operatorUid || null;
     sess.operatorName = operatorName || null;
     sess.operatorMobile = operatorMobile || null;
     sess.role = 'citizen';
+    sess.isTempWalkin = isTempWalkin;
     sess.citizenProfile = createFreshProfile(cleanMobile);
-    sess.citizenProfile.fullNameTam = customerName || '';
-    sess.citizenProfile.fullNameEng = customerName || '';
-    sess.citizenProfile.mobileNumber = cleanMobile;
-    sess.intakeState = 'READY_TO_APPLY';
-    sess.step = 'draft';
+    sess.citizenProfile.fullNameTam = initialName;
+    sess.citizenProfile.fullNameEng = initialName;
+    sess.citizenProfile.mobileNumber = isTempWalkin ? '' : cleanMobile;
+    sess.intakeState = 'MEMBER_COUNT';
+    sess.targetMemberCount = 1;
+    sess.currentMemberIdx = 1;
+    sess.step = 'intake';
     sess.tempUploads = {};
+    sess.tempMember = null;
     sess.applicationNumber = null;
+
+    const phoneDisplay = isTempWalkin ? '' : ` (+91 ${cleanMobile})`;
+    const displayName = initialName ? `திரு/திருமதி **${initialName}**` : `வாடிக்கையாளர்`;
     sess.chatHistory = [{
         sender: 'bot',
-        text: `வணக்கம் திரு/திருமதி **${customerName || 'வாடிக்கையாளர்'}**! (+91 ${cleanMobile}) 🙏\n\n` +
-              `புதிய ஸ்மார்ட் ரேஷன் கார்டு விண்ணப்பத்திற்கான அமர்வு தொடங்கப்பட்டது.\n\n` +
-              `📄 விண்ணப்பத்தைத் தொடங்க, கீழே உள்ள பொத்தானை அழுத்தி குடும்பத் தலைவரின் ஆதார் அட்டை அல்லது புகைப்படத்தைப் பதிவேற்றவும்:`,
-        actionRequired: 'upload',
-        uploadPrompt: '📸 குடும்பத் தலைவர் ஆதார் அட்டை பதிவேற்றுக (Upload Aadhaar)',
-        options: [
-            {
-                label: '📸 ஆதார் அட்டை பதிவேற்றுக',
-                value: 'TRIGGER_FILE_UPLOAD'
-            },
-            {
-                label: '🏛️ புதிய ரேஷன் கார்டு',
-                value: 'புதிய ரேஷன் கார்டு'
-            }
-        ]
+        text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+              `🏛️ **புதிய ரேஷன் கார்டு (New Ration Card) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+              `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+              `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
+        options: MEMBER_COUNT_OPTIONS
     }];
 
     try {
@@ -402,6 +428,7 @@ app.post('/api/operator/new-customer', async (req, res) => {
             citizenProfile: sess.citizenProfile,
             documents: {},
             chatHistory: sess.chatHistory,
+            intakeState: 'MEMBER_COUNT',
             status: 'DRAFT_SAVED'
         });
         persistSessions();
@@ -410,10 +437,50 @@ app.post('/api/operator/new-customer', async (req, res) => {
     res.json({
         success: true,
         customerMobile: cleanMobile,
-        customerName: customerName,
+        isWalkin: isTempWalkin,
+        customerName: initialName,
         citizenProfile: sess.citizenProfile,
         chatHistory: sess.chatHistory
     });
+});
+
+// Silent Crash & Error Telemetry Endpoint
+app.post('/api/operator/telemetry-log', (req, res) => {
+    try {
+        const errData = req.body || {};
+        const clientLogsDir = path.join(__dirname, 'public', 'logs');
+        if (!fs.existsSync(clientLogsDir)) fs.mkdirSync(clientLogsDir, { recursive: true });
+        const logLine = `[${new Date().toISOString()}] [CLIENT_TELEMETRY] ${JSON.stringify(errData)}\n`;
+        fs.appendFileSync(path.join(clientLogsDir, 'client_errors.log'), logLine);
+        console.error('📡 [CLIENT TELEMETRY ERROR LOGGED]:', errData.message || errData.type || errData);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+
+// Operator Profile Update Endpoint
+app.post('/api/operator/profile', async (req, res) => {
+    try {
+        const { operatorUid, displayName, mobileNumber } = req.body;
+        if (!operatorUid) {
+            return res.status(400).json({ error: 'Operator UID required' });
+        }
+        const existingProf = (await getUserProfile(operatorUid)) || {};
+        const updated = {
+            ...existingProf,
+            role: 'operator',
+            displayName: (displayName || '').trim() || existingProf.displayName || 'குமரன் இ-சேவை மையம்',
+            mobileNumber: mobileNumber ? String(mobileNumber).replace(/\D/g, '') : existingProf.mobileNumber
+        };
+        await saveUserProfile(operatorUid, updated);
+        console.log(`[PROFILE UPDATE] Operator ${operatorUid} updated name to "${updated.displayName}"`);
+        res.json({ success: true, profile: updated });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -429,15 +496,19 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(400).json({ error: 'சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.' });
     }
 
-    let userRole = role;
+    let userRole = role || 'citizen';
+    let storedProfile = null;
     if (firebaseUid) {
         try {
-            const prof = await getUserProfile(firebaseUid);
-            if (prof && prof.role) {
-                userRole = prof.role;
-            } else if (role) {
+            storedProfile = await getUserProfile(firebaseUid);
+            if (role) {
                 userRole = role;
-                await saveUserProfile(firebaseUid, { role, displayName, email, mobileNumber: cleanMobile });
+                const savedName = (storedProfile && storedProfile.displayName) || displayName || (role === 'operator' ? 'குமரன் இ-சேவை மையம்' : 'பயனர்');
+                if (!storedProfile || storedProfile.role !== role) {
+                    await saveUserProfile(firebaseUid, { role, displayName: savedName, email, mobileNumber: cleanMobile });
+                }
+            } else if (storedProfile && storedProfile.role) {
+                userRole = storedProfile.role;
             }
         } catch (e) {
             if (role) userRole = role;
@@ -456,12 +527,14 @@ app.post('/api/auth/login', async (req, res) => {
         try {
             drafts = await listAllDrafts(firebaseUid || operatorUid);
         } catch (e) {}
+
+        const finalOperatorName = (storedProfile && storedProfile.displayName) || (displayName && displayName !== 'பயனர்' && displayName !== 'மையம்' ? displayName : 'குமரன் இ-சேவை மையம்');
         return res.json({
             success: true,
             isOperatorOnly: true,
             role: 'operator',
-            displayName: displayName || 'மையம்',
-            operatorName: displayName || 'மையம்',
+            displayName: finalOperatorName,
+            operatorName: finalOperatorName,
             operatorUid: firebaseUid || operatorUid,
             operatorMobile: cleanMobile,
             chatHistory: [getInitialWelcomeMessage()],
@@ -504,7 +577,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (draft && hasDraftData) {
         sess.citizenProfile = { ...createFreshProfile(cleanMobile), ...sess.citizenProfile, ...draft.citizenProfile };
-        sess.intakeState = draft.intakeState || 'READY_TO_APPLY';
+        sess.intakeState = draft.intakeState || 'MEMBER_COUNT';
         sess.step = draft.step || 'draft';
         sess.tempUploads = draft.documents || sess.tempUploads || {};
         sess.applicationNumber = draft.applicationNumber || null;
@@ -515,7 +588,16 @@ app.post('/api/auth/login', async (req, res) => {
             sess.chatHistory = draft.chatHistory;
         }
 
-        // If not submitted yet, offer instant 1-click submit
+        // Check if profile has all required fields to submit
+        const isProfileComplete = (draft.intakeState === 'READY_TO_APPLY') &&
+            prof.headAadhaar &&
+            (prof.headPhotoPath || (sess.tempUploads && sess.tempUploads.headPhoto)) &&
+            prof.residenceProof &&
+            prof.doorNo &&
+            prof.pincode &&
+            (prof.members && prof.members.length > 0);
+
+        // If not submitted yet, offer appropriate continuation
         if (draft.status !== 'SUBMITTED' && !draft.applicationNumber) {
             const headName = sess.citizenProfile.fullNameTam || sess.citizenProfile.fullNameEng || 'விண்ணப்பதாரர்';
             const memCount = sess.citizenProfile.members ? sess.citizenProfile.members.length : 1;
@@ -524,20 +606,35 @@ app.post('/api/auth/login', async (req, res) => {
 
             const lastMsg = sess.chatHistory[sess.chatHistory.length - 1];
             if (!lastMsg || !lastMsg.text.includes('முந்தைய விண்ணப்ப வரைவு')) {
-                sess.chatHistory.push({
-                    sender: 'bot',
-                    text: `🔄 **முந்தைய விண்ணப்ப வரைவு மீட்கப்பட்டது! (Draft Restored)** 💾\n\n` +
-                          `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
-                          `• 👥 **மொத்த உறுப்பினர்கள்:** ${memCount} நபர்(கள்)\n` +
-                          `• 🏛️ **இருப்பிடம்:** ${tlk}, ${dist}\n` +
-                          `• 📄 **ஆவணங்கள்:** புகைப்படங்கள் & ஆதார் சான்றிதழ்கள் அனைத்தும் ஏற்கெனவே தயார்!\n\n` +
-                          `💡 *வாடிக்கையாளர் OTP சொல்லத் தயாராக இருந்தால், கீழே உள்ள பொத்தானை அழுத்தி உடனடியாக TNPDS போர்ட்டலில் விண்ணப்பிக்கலாம்.*`,
-                    options: [
-                        { label: "🚀 TNPDS-ல் இப்போது விண்ணப்பி (Submit to Portal)", value: "CONFIRM_SUBMIT" },
-                        { label: "👁️ தனி தாவலில் படிவத்தைத் திற (Review in New Tab)", value: "OPEN_REVIEW_TAB" },
-                        { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review Details)", value: "TRIGGER_EDIT_MODAL" }
-                    ]
-                });
+                if (isProfileComplete) {
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🔄 **முந்தைய விண்ணப்ப வரைவு மீட்கப்பட்டது! (Draft Restored)** 💾\n\n` +
+                              `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+                              `• 👥 **மொத்த உறுப்பினர்கள்:** ${memCount} நபர்(கள்)\n` +
+                              `• 🏛️ **இருப்பிடம்:** ${tlk}, ${dist}\n` +
+                              `• 📄 **ஆவணங்கள்:** புகைப்படங்கள் & ஆதார் சான்றிதழ்கள் அனைத்தும் ஏற்கெனவே தயார்!\n\n` +
+                              `💡 *வாடிக்கையாளர் OTP சொல்லத் தயாராக இருந்தால், கீழே உள்ள பொத்தானை அழுத்தி உடனடியாக TNPDS போர்ட்டலில் விண்ணப்பிக்கலாம்.*`,
+                        options: [
+                            { label: "🚀 TNPDS-ல் இப்போது விண்ணப்பி (Submit to Portal)", value: "CONFIRM_SUBMIT" },
+                            { label: "👁️ தனி தாவலில் படிவத்தைத் திற (Review in New Tab)", value: "OPEN_REVIEW_TAB" },
+                            { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review Details)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                } else {
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🔄 **முந்தைய விண்ணப்ப வரைவு மீட்கப்பட்டது! (Draft Restored)** 💾\n\n` +
+                              `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+                              `• 👥 **மொத்த உறுப்பினர்கள்:** ${memCount} நபர்(கள்)\n` +
+                              `• 📝 **நிலை:** விண்ணப்பம் பாதி நிரப்பப்பட்டுள்ளது.\n\n` +
+                              `💡 *விண்ணப்பத்தைத் தொடர்ந்து நிரப்ப கீழே உள்ள விருப்பத்தைத் தேர்ந்தெடுக்கவும்:*`,
+                        options: [
+                            { label: "▶️ விட்ட இடத்திலிருந்து தொடர்க (Continue Intake)", value: "CONTINUE_INTAKE" },
+                            { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review Details)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                }
             }
         }
     } else if (!isMemoryResume) {
@@ -619,17 +716,20 @@ app.post('/api/drafts/save', async (req, res) => {
 });
 
 app.delete('/api/drafts/:mobileNumber', async (req, res) => {
-    const { mobileNumber } = req.params;
-    const cleanMobile = (mobileNumber || '').replace(/\D/g, '');
-    if (!cleanMobile) {
-        return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
+    const rawKey = req.params.mobileNumber || '';
+    const draftKey = String(rawKey).trim();
+    if (!draftKey) {
+        return res.status(400).json({ error: 'வரைவு அடையாளம் அல்லது மொபைல் எண் தேவை.' });
     }
     try {
-        await deleteCitizenDraft(cleanMobile);
-        if (sessions.has(cleanMobile)) {
-            sessions.delete(cleanMobile);
+        await deleteCitizenDraft(draftKey);
+        const cleanDigits = draftKey.replace(/\D/g, '');
+        if (cleanDigits && cleanDigits !== draftKey) {
+            await deleteCitizenDraft(cleanDigits).catch(() => {});
         }
-        if (activeMobile === cleanMobile) {
+        if (sessions.has(draftKey)) sessions.delete(draftKey);
+        if (cleanDigits && sessions.has(cleanDigits)) sessions.delete(cleanDigits);
+        if (activeMobile === draftKey || (cleanDigits && activeMobile === cleanDigits)) {
             activeMobile = null;
             sessionState = null;
         }
@@ -641,17 +741,20 @@ app.delete('/api/drafts/:mobileNumber', async (req, res) => {
 });
 
 app.post('/api/drafts/delete', async (req, res) => {
-    const { mobileNumber } = req.body;
-    const cleanMobile = (mobileNumber || '').replace(/\D/g, '');
-    if (!cleanMobile) {
-        return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
+    const rawKey = req.body?.mobileNumber || '';
+    const draftKey = String(rawKey).trim();
+    if (!draftKey) {
+        return res.status(400).json({ error: 'வரைவு அடையாளம் அல்லது மொபைல் எண் தேவை.' });
     }
     try {
-        await deleteCitizenDraft(cleanMobile);
-        if (sessions.has(cleanMobile)) {
-            sessions.delete(cleanMobile);
+        await deleteCitizenDraft(draftKey);
+        const cleanDigits = draftKey.replace(/\D/g, '');
+        if (cleanDigits && cleanDigits !== draftKey) {
+            await deleteCitizenDraft(cleanDigits).catch(() => {});
         }
-        if (activeMobile === cleanMobile) {
+        if (sessions.has(draftKey)) sessions.delete(draftKey);
+        if (cleanDigits && sessions.has(cleanDigits)) sessions.delete(cleanDigits);
+        if (activeMobile === draftKey || (cleanDigits && activeMobile === cleanDigits)) {
             activeMobile = null;
             sessionState = null;
         }
@@ -730,6 +833,108 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
         if (text) {
             sessionState.chatHistory.push({ sender: 'user', text: text });
+        }
+
+        // ==========================================
+        // 0. WALKIN DIRECT SESSION: BIND 10-DIGIT MOBILE NUMBER & SAVE DRAFT
+        // ==========================================
+        let cleanPhoneDigits = text.replace(/\D/g, '');
+        if (cleanPhoneDigits.length === 12 && cleanPhoneDigits.startsWith('91')) {
+            cleanPhoneDigits = cleanPhoneDigits.slice(2);
+        }
+        const is10DigitMobile = cleanPhoneDigits.length === 10 && ['6', '7', '8', '9'].includes(cleanPhoneDigits[0]);
+        const isWalkinSession = (!activeMobile || activeMobile.startsWith('walkin_') || !sessionState.citizenProfile?.mobileNumber || sessionState.citizenProfile?.mobileNumber.startsWith('walkin_'));
+
+        if (is10DigitMobile && isWalkinSession) {
+            const oldKey = activeMobile;
+            const newMobile = cleanPhoneDigits;
+            sessionState.citizenProfile.mobileNumber = newMobile;
+            sessions.set(newMobile, sessionState);
+            if (oldKey && oldKey !== newMobile && sessions.has(oldKey)) {
+                sessions.delete(oldKey);
+            }
+            activeMobile = newMobile;
+            targetMobile = newMobile;
+            saveCitizenProfile(newMobile, sessionState.citizenProfile);
+
+            try {
+                await saveCitizenDraft(newMobile, {
+                    operatorUid: reqOpUid || sessionState.operatorUid || null,
+                    operatorName: sessionState.operatorName || null,
+                    operatorMobile: sessionState.operatorMobile || null,
+                    citizenProfile: sessionState.citizenProfile,
+                    documents: {},
+                    chatHistory: sessionState.chatHistory,
+                    intakeState: sessionState.intakeState,
+                    status: 'DRAFT_SAVED'
+                });
+            } catch (e) {
+                console.error('Draft save failed on phone bind:', e);
+            }
+
+            const currentName = sessionState.citizenProfile.fullNameTam 
+                ? `${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng || ''})` 
+                : (sessionState.citizenProfile.fullNameEng || '');
+
+            let nextMsg = '';
+            let nextOpts = null;
+            let nextAct = null;
+            let nextPrompt = null;
+
+            if (sessionState.intakeState === 'SERVICE_SELECTION') {
+                sessionState.intakeState = 'MEMBER_COUNT';
+                nextMsg = `🏛️ **புதிய ரேஷன் கார்டு (New Ration Card) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                          `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                          `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`;
+                nextOpts = MEMBER_COUNT_OPTIONS;
+            } else if (sessionState.intakeState === 'MEMBER_COUNT') {
+                nextMsg = `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                          `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`;
+                nextOpts = MEMBER_COUNT_OPTIONS;
+            } else if (sessionState.intakeState === 'HEAD_PHOTO') {
+                nextMsg = `📸 **படி 1/6: குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம்**\n\n` +
+                          `குடும்பத் தலைவரின் பாஸ்போர்ட் அளவிலான புகைப்படத்தைப் பதிவேற்றவும் (அல்லது ஆதார் அட்டை பதிவேற்றவும்):`;
+                nextAct = 'upload';
+                nextPrompt = 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்';
+            } else if (sessionState.intakeState === 'HEAD_AADHAAR_FRONT') {
+                nextMsg = `🪪 **படி 2/6: குடும்பத் தலைவரின் ஆதார் அட்டை**\n\n` +
+                          `குடும்பத் தலைவரின் ஆதார் அட்டையைப் பதிவேற்றவும்:`;
+                nextAct = 'upload';
+                nextPrompt = 'குடும்பத் தலைவர் ஆதார் பதிவேற்றவும்';
+            } else if (sessionState.intakeState === 'HEAD_DETAILS_VERIFY') {
+                nextMsg = `🔍 குடும்பத் தலைவரின் விவரங்களைச் சரிபார்த்து உறுதிப்படுத்தவும்:`;
+                nextOpts = [
+                    { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
+                ];
+            } else if (sessionState.intakeState === 'MOBILE_NUMBER') {
+                sessionState.intakeState = 'RESIDENCE_PROOF_TYPE';
+                nextMsg = `🏠 **படி 5/6: குடும்பத்தின் குடியிருப்புச் சான்று (Residence Proof)**\n\n` +
+                          `உங்கள் குடும்பத்தின் முகவரிச் சான்றாக கீழே உள்ளவற்றில் எந்த ஆவணத்தைப் பதிவேற்ற விரும்புகிறீர்கள்?`;
+                nextOpts = RESIDENCE_PROOF_OPTIONS;
+            } else {
+                nextMsg = `தொடர்ந்து விவரங்களை உள்ளிடலாம்.`;
+            }
+
+            sessionState.chatHistory.push({
+                sender: 'bot',
+                text: `📱 **வாடிக்கையாளர் கைபேசி எண் (+91 ${newMobile}) வெற்றிகரமாகப் பதிவு செய்யப்பட்டது!** ✅\n\n` +
+                      (currentName ? `• வாடிக்கையாளர்: **${currentName}**\n` : '') +
+                      `• வரைவு நிலை: **சேமிக்கப்பட்டது (Draft Saved)**\n\n` +
+                      nextMsg,
+                options: nextOpts,
+                actionRequired: nextAct,
+                uploadPrompt: nextPrompt
+            });
+            persistSessions();
+
+            return res.json({
+                chatHistory: sessionState.chatHistory,
+                citizenProfile: sessionState.citizenProfile,
+                step: sessionState.intakeState,
+                customerMobile: newMobile,
+                activeMobile: newMobile
+            });
         }
 
         // ==========================================
@@ -814,6 +1019,50 @@ app.post('/api/chat', upload.any(), async (req, res) => {
         // ==========================================
         const isMockTest = text.toLowerCase().includes('mock') || text.includes('சோதனை');
         if (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === 'fill' || isMockTest) {
+            const hasHead = sessionState.citizenProfile && (
+                sessionState.citizenProfile.headAadhaar || 
+                (sessionState.citizenProfile.members && sessionState.citizenProfile.members.length > 0)
+            );
+
+            // Gate: If citizen profile is not ready or intake not finished, DO NOT attempt automation!
+            if (!hasHead || sessionState.intakeState !== 'READY_TO_APPLY') {
+                sessionState.intakeState = 'MEMBER_COUNT';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `⚠️ **ரேஷன் கார்டு விண்ணப்ப விவரங்கள் இன்னும் முழுமையாகப் பெறப்படவில்லை!**\n\n` +
+                          `அரசு இணையதளத்தில் விண்ணப்பிக்கத் தொடங்குவதற்கு முன், குடும்ப உறுப்பினர்களின் எண்ணிக்கை மற்றும் ஆவணங்களைச் சேகரிக்க வேண்டும்.\n\n` +
+                          `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                          `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
+                    options: MEMBER_COUNT_OPTIONS
+                });
+                persistSessions();
+                return res.json({
+                    chatHistory: sessionState.chatHistory,
+                    citizenProfile: sessionState.citizenProfile,
+                    step: sessionState.intakeState
+                });
+            }
+
+            // Mobile Number Gate: Ensure valid 10-digit mobile exists for portal OTP
+            let finalMobile = (sessionState.citizenProfile?.mobileNumber || activeMobile || '').replace(/\D/g, '');
+            if (finalMobile.length === 12 && finalMobile.startsWith('91')) finalMobile = finalMobile.slice(2);
+            const hasValidMobile = finalMobile.length === 10 && ['6','7','8','9'].includes(finalMobile[0]);
+
+            if (!hasValidMobile) {
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `📱 **வாடிக்கையாளர் கைபேசி எண் தேவை (Customer Mobile Required)!**\n\n` +
+                          `அரசு TNPDS போர்ட்டலில் விண்ணப்பிக்க மற்றும் நேரலை OTP பெற, வாடிக்கையாளரின் 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.\n\n` +
+                          `*(கீழே உள்ள உள்ளீட்டுப் பெட்டியில் 10-இலக்க மொபைல் எண்ணைத் தட்டச்சு செய்து அனுப்பவும் அல்லது விவரங்கள் திருத்து பொத்தானைப் பயன்படுத்தவும்)*`
+                });
+                persistSessions();
+                return res.json({
+                    chatHistory: sessionState.chatHistory,
+                    citizenProfile: sessionState.citizenProfile,
+                    step: sessionState.intakeState
+                });
+            }
+
             const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை முறை (Live Production)';
             sessionState.chatHistory.push({
                 sender: 'bot',
@@ -892,7 +1141,7 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
         // STATE 1: SERVICE_SELECTION
         if (sessionState.intakeState === 'SERVICE_SELECTION') {
-            if (text.includes('ரேஷன்') || text.toLowerCase().includes('ration') || text.includes('1')) {
+            if (text.includes('ரேஷன்') || text.toLowerCase().includes('ration') || text.includes('1') || text.includes('புதிய')) {
                 sessionState.intakeState = 'MEMBER_COUNT';
                 sessionState.chatHistory.push({
                     sender: 'bot',
@@ -911,32 +1160,164 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                     ]
                 });
             }
+            persistSessions();
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
         }
 
         // STATE 2: MEMBER_COUNT
         if (sessionState.intakeState === 'MEMBER_COUNT') {
-            const match = text.match(/\d+/);
-            const count = match ? parseInt(match[0], 10) : 2;
-            sessionState.targetMemberCount = Math.max(1, count);
-            sessionState.intakeState = 'HEAD_PHOTO';
-            sessionState.tempUploads = {};
+            if (uploadedFile) {
+                const extracted = await inspectAndExtractDocument(uploadedFile.path);
+                const isAadhaar = extracted && (
+                    extracted.aadhaarNumber || 
+                    (extracted.documentType && extracted.documentType.startsWith('AADHAAR')) || 
+                    extracted.isFullAadhaar || 
+                    extracted.hasAddress
+                );
 
-            if (!sessionState.citizenProfile) {
-                sessionState.citizenProfile = { mobileNumber: activeMobile, members: [] };
-            } else {
-                sessionState.citizenProfile.members = [];
+                if (!sessionState.citizenProfile) {
+                    sessionState.citizenProfile = createFreshProfile(activeMobile);
+                }
+
+                if (isAadhaar) {
+                    if (extracted.fullNameEng) sessionState.citizenProfile.fullNameEng = extracted.fullNameEng;
+                    if (extracted.fullNameTam) sessionState.citizenProfile.fullNameTam = extracted.fullNameTam;
+                    if (extracted.fatherNameEng) sessionState.citizenProfile.fatherNameEng = extracted.fatherNameEng;
+                    if (extracted.fatherNameTam) sessionState.citizenProfile.fatherNameTam = extracted.fatherNameTam;
+                    if (extracted.dob) sessionState.citizenProfile.headDob = extracted.dob;
+                    if (extracted.gender) {
+                        sessionState.citizenProfile.headGender = extracted.gender;
+                        sessionState.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
+                    }
+                    if (extracted.aadhaarNumber) sessionState.citizenProfile.headAadhaar = extracted.aadhaarNumber;
+                    if (extracted.doorNo) sessionState.citizenProfile.doorNo = extracted.doorNo;
+                    if (extracted.streetEng) sessionState.citizenProfile.streetEng = extracted.streetEng;
+                    if (extracted.streetTam) sessionState.citizenProfile.streetTam = extracted.streetTam;
+                    if (extracted.pincode) sessionState.citizenProfile.pincode = extracted.pincode;
+                    if (extracted.district) sessionState.citizenProfile.district = extracted.district;
+                    if (extracted.taluk) sessionState.citizenProfile.taluk = extracted.taluk;
+                    if (extracted.village) sessionState.citizenProfile.village = extracted.village;
+
+                    const fullPdf = await produceCompliantDocument(uploadedFile.path);
+                    sessionState.tempUploads = sessionState.tempUploads || {};
+                    sessionState.tempUploads.headAadhaarFront = uploadedFile.path;
+                    sessionState.citizenProfile.members = [{
+                        nameEng: sessionState.citizenProfile.fullNameEng,
+                        nameTam: sessionState.citizenProfile.fullNameTam,
+                        dob: sessionState.citizenProfile.headDob,
+                        gender: sessionState.citizenProfile.headGender,
+                        genderTam: sessionState.citizenProfile.headGenderTam,
+                        relationship: "Family Head",
+                        relationshipTam: "குடும்ப தலைவர்",
+                        relationshipIndex: 0,
+                        profession: "Private",
+                        monthlyIncome: "3000",
+                        aadhaarNumber: sessionState.citizenProfile.headAadhaar,
+                        docType: "AADHAAR_CARD",
+                        docPath: fullPdf
+                    }];
+                    if (activeMobile) saveCitizenProfile(activeMobile, sessionState.citizenProfile);
+                    persistSessions();
+
+                    sessionState.chatHistory.push({
+                        sender: 'bot',
+                        text: `🪪 **குடும்பத் தலைவர் ஆதார் அட்டை விவரங்கள் வெற்றிகரமாகப் பெறப்பட்டன!** ✅\n\n` +
+                              `💡 **ஆதார் பெயர் சரிபார்ப்பு:** வாடிக்கையாளர் பெயர் ஆதார் அட்டையின்படி **${sessionState.citizenProfile.fullNameTam || ''} (${sessionState.citizenProfile.fullNameEng || ''})** எனத் தானாகவே துல்லியமாகப் புதுப்பிக்கப்பட்டது! ✅\n\n` +
+                              `• 👤 **பெயர்:** ${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng})\n` +
+                              `• 🪪 **ஆதார் எண்:** ${(sessionState.citizenProfile.headAadhaar || '').replace(/(\d{4})/g, '$1 ').trim()}\n` +
+                              `• 🏠 **முகவரி:** ${sessionState.citizenProfile.doorNo ? sessionState.citizenProfile.doorNo + ', ' : ''}${sessionState.citizenProfile.streetTam || sessionState.citizenProfile.streetEng || ''}\n\n` +
+                              `இப்போது, உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                              `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும்:`,
+                        options: MEMBER_COUNT_OPTIONS
+                    });
+                    return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+                } else {
+                    const studioPhoto = await produceCompliantPassportPhoto(uploadedFile.path);
+                    sessionState.citizenProfile.headPhotoPath = studioPhoto;
+                    if (activeMobile) saveCitizenProfile(activeMobile, sessionState.citizenProfile);
+                    persistSessions();
+
+                    sessionState.chatHistory.push({
+                        sender: 'bot',
+                        text: `✨ **குடும்பத் தலைவர் புகைப்படம் வெள்ளை பின்னணியுடன் சேமிக்கப்பட்டது!** 📸\n\n` +
+                              `இப்போது, உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                              `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும்:`,
+                        options: MEMBER_COUNT_OPTIONS
+                    });
+                    return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+                }
             }
 
-            sessionState.chatHistory.push({
-                sender: 'bot',
-                text: `📸 **படி 1/6: குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம்**\n\n` +
-                      `மொத்தம் **${sessionState.targetMemberCount} உறுப்பினர்கள்** தேர்ந்தெடுக்கப்பட்டுள்ளனர்.\n\n` +
-                      `முதலில் குடும்பத் தலைவரின் பாஸ்போர்ட் அளவிலான புகைப்படத்தைப் பதிவேற்றவும் (அல்லது கேமரா மூலம் செல்ஃபி எடுக்கவும்).\n\n` +
-                      `💡 **ஏஐ போட்டோ ஸ்டுடியோ:** உங்கள் புகைப்படத்தை அரசு விதிகளுக்கு ஏற்ப **வெள்ளை பின்னணியுடன் (Solid White Background)** எங்களின் AI தானாகவே செப்பனிட்டு சேமிக்கும்!`,
-                actionRequired: 'upload',
-                uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
-            });
+            const hasExplicitNumber = text.match(/\b([1-9]|10)\b/);
+            const isSingleHead = text.includes('தலைவர் மட்டும்') || text.includes('ஒரு நபர்') || text.includes('1 உறுப்பினர்');
+            const hasMemberKeyword = text.includes('உறுப்பினர்') || text.includes('நபர்') || text.includes('member');
+
+            if (!hasExplicitNumber && !isSingleHead && !hasMemberKeyword) {
+                // User re-clicked service or sent greeting, keep at question 1!
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
+                          `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
+                    options: MEMBER_COUNT_OPTIONS
+                });
+                persistSessions();
+                return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+            }
+
+            let count = 1;
+            if (hasExplicitNumber) {
+                count = parseInt(hasExplicitNumber[0], 10);
+            } else if (text.includes('2') || text.includes('இரண்டு')) {
+                count = 2;
+            } else if (text.includes('3') || text.includes('மூன்று')) {
+                count = 3;
+            } else if (text.includes('4') || text.includes('நான்கு')) {
+                count = 4;
+            } else if (text.includes('5') || text.includes('ஐந்து')) {
+                count = 5;
+            }
+            sessionState.targetMemberCount = Math.max(1, count);
+            sessionState.tempUploads = sessionState.tempUploads || {};
+
+            if (!sessionState.citizenProfile) {
+                sessionState.citizenProfile = createFreshProfile(activeMobile);
+            }
+
+            // If head photo & aadhaar are already provided
+            if (sessionState.citizenProfile.headPhotoPath && sessionState.citizenProfile.headAadhaar) {
+                sessionState.intakeState = 'HEAD_DETAILS_VERIFY';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `✅ மொத்தம் **${sessionState.targetMemberCount} உறுப்பினர்கள்** தேர்ந்தெடுக்கப்பட்டுள்ளனர்.\n\nகுடும்பத் தலைவரின் விவரங்களைச் சரிபார்த்து உறுதிப்படுத்தவும்:`,
+                    options: [
+                        { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
+                        { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+            } else if (sessionState.citizenProfile.headAadhaar && !sessionState.citizenProfile.headPhotoPath) {
+                sessionState.intakeState = 'HEAD_PHOTO';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `📸 **படி 1/6: குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம்**\n\n` +
+                          `மொத்தம் **${sessionState.targetMemberCount} உறுப்பினர்கள்** தேர்ந்தெடுக்கப்பட்டுள்ளனர்.\n\n` +
+                          `குடும்பத் தலைவரின் பாஸ்போர்ட் அளவிலான புகைப்படத்தைப் பதிவேற்றவும் (அல்லது செல்ஃபி எடுக்கவும்).\n\n` +
+                          `💡 **ஏஐ போட்டோ ஸ்டுடியோ:** உங்கள் புகைப்படத்தை அரசு விதிகளுக்கு ஏற்ப **வெள்ளை பின்னணியுடன் (Solid White Background)** எங்களின் AI தானாகவே செப்பனிட்டு சேமிக்கும்!`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
+                });
+            } else {
+                sessionState.intakeState = 'HEAD_PHOTO';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `📸 **படி 1/6: குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம்**\n\n` +
+                          `மொத்தம் **${sessionState.targetMemberCount} உறுப்பினர்கள்** தேர்ந்தெடுக்கப்பட்டுள்ளனர்.\n\n` +
+                          `முதலில் குடும்பத் தலைவரின் பாஸ்போர்ட் அளவிலான புகைப்படத்தைப் பதிவேற்றவும் (அல்லது கேமரா மூலம் செல்ஃபி எடுக்கவும்).\n\n` +
+                          `💡 **ஏஐ போட்டோ ஸ்டுடியோ:** உங்கள் புகைப்படத்தை அரசு விதிகளுக்கு ஏற்ப **வெள்ளை பின்னணியுடன் (Solid White Background)** எங்களின் AI தானாகவே செப்பனிட்டு சேமிக்கும்!`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
+                });
+            }
+            persistSessions();
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
         }
 
@@ -952,16 +1333,79 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                 return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
             }
 
-            // Inspect photo quality with Gemini
+            // Inspect document with Gemini
             const qualityCheck = await inspectAndExtractDocument(uploadedFile.path);
             if (qualityCheck && qualityCheck.isQualityAcceptable === false) {
                 sessionState.chatHistory.push({
                     sender: 'bot',
-                    text: `⚠️ **புகைப்படம் தெளிவாக இல்லை (Photo Quality Issue):**\n\n` +
-                          `${qualityCheck.feedbackTamil || 'பதிவேற்றப்பட்ட புகைப்படம் மங்கலாக அல்லது நிழல் விழுந்து உள்ளது.'}\n\n` +
-                          `🛑 அரசு இணையதளத்தில் நிராகரிக்கப்படாமல் இருக்க, உங்கள் முகம் மற்றும் கண்கள் தெளிவாகத் தெரியும்படி நல்ல வெளிச்சத்தில் எடுக்கப்பட்ட **புதிய பாஸ்போர்ட் புகைப்படத்தை** மீண்டும் பதிவேற்றவும்:`,
+                    text: `⚠️ **ஆவணம் / புகைப்படம் தெளிவாக இல்லை:**\n\n` +
+                          `${qualityCheck.feedbackTamil || 'பதிவேற்றப்பட்ட ஆவணம் மங்கலாக அல்லது நிழல் விழுந்து உள்ளது.'}\n\n` +
+                          `🛑 அரசு இணையதளத்தில் நிராகரிக்கப்படாமல் இருக்க, உங்கள் முகம் மற்றும் விவரங்கள் தெளிவாகத் தெரியும்படி நல்ல வெளிச்சத்தில் எடுக்கப்பட்ட **தெளிவான ஆவணத்தை** மீண்டும் பதிவேற்றவும்:`,
                     actionRequired: 'upload',
                     uploadPrompt: 'தெளிவான பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்'
+                });
+                return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+            }
+
+            const isAadhaar = qualityCheck && (
+                qualityCheck.aadhaarNumber || 
+                (qualityCheck.documentType && qualityCheck.documentType.startsWith('AADHAAR')) || 
+                qualityCheck.isFullAadhaar || 
+                qualityCheck.hasAddress
+            );
+
+            if (isAadhaar) {
+                // User uploaded their Aadhaar card at HEAD_PHOTO! Extract details immediately
+                if (qualityCheck.fullNameEng) sessionState.citizenProfile.fullNameEng = qualityCheck.fullNameEng;
+                if (qualityCheck.fullNameTam) sessionState.citizenProfile.fullNameTam = qualityCheck.fullNameTam;
+                if (qualityCheck.fatherNameEng) sessionState.citizenProfile.fatherNameEng = qualityCheck.fatherNameEng;
+                if (qualityCheck.fatherNameTam) sessionState.citizenProfile.fatherNameTam = qualityCheck.fatherNameTam;
+                if (qualityCheck.dob) sessionState.citizenProfile.headDob = qualityCheck.dob;
+                if (qualityCheck.gender) {
+                    sessionState.citizenProfile.headGender = qualityCheck.gender;
+                    sessionState.citizenProfile.headGenderTam = qualityCheck.gender === 'Female' ? 'பெண்' : 'ஆண்';
+                }
+                if (qualityCheck.aadhaarNumber) sessionState.citizenProfile.headAadhaar = qualityCheck.aadhaarNumber;
+                if (qualityCheck.doorNo) sessionState.citizenProfile.doorNo = qualityCheck.doorNo;
+                if (qualityCheck.streetEng) sessionState.citizenProfile.streetEng = qualityCheck.streetEng;
+                if (qualityCheck.streetTam) sessionState.citizenProfile.streetTam = qualityCheck.streetTam;
+                if (qualityCheck.pincode) sessionState.citizenProfile.pincode = qualityCheck.pincode;
+                if (qualityCheck.district) sessionState.citizenProfile.district = qualityCheck.district;
+                if (qualityCheck.taluk) sessionState.citizenProfile.taluk = qualityCheck.taluk;
+                if (qualityCheck.village) sessionState.citizenProfile.village = qualityCheck.village;
+
+                const fullPdf = await produceCompliantDocument(uploadedFile.path);
+                sessionState.tempUploads = sessionState.tempUploads || {};
+                sessionState.tempUploads.headAadhaarFront = uploadedFile.path;
+                sessionState.citizenProfile.members = [{
+                    nameEng: sessionState.citizenProfile.fullNameEng,
+                    nameTam: sessionState.citizenProfile.fullNameTam,
+                    dob: sessionState.citizenProfile.headDob,
+                    gender: sessionState.citizenProfile.headGender,
+                    genderTam: sessionState.citizenProfile.headGenderTam,
+                    relationship: "Family Head",
+                    relationshipTam: "குடும்ப தலைவர்",
+                    relationshipIndex: 0,
+                    profession: "Private",
+                    monthlyIncome: "3000",
+                    aadhaarNumber: sessionState.citizenProfile.headAadhaar,
+                    docType: "AADHAAR_CARD",
+                    docPath: fullPdf
+                }];
+                if (activeMobile) saveCitizenProfile(activeMobile, sessionState.citizenProfile);
+                persistSessions();
+
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `🪪 **குடும்பத் தலைவர் ஆதார் அட்டை விவரங்கள் வெற்றிகரமாகப் பெறப்பட்டன!** ✅\n\n` +
+                          `💡 **ஆதார் பெயர் சரிபார்ப்பு:** வாடிக்கையாளர் பெயர் ஆதார் அட்டையின்படி **${sessionState.citizenProfile.fullNameTam || ''} (${sessionState.citizenProfile.fullNameEng || ''})** எனத் தானாகவே துல்லியமாகப் புதுப்பிக்கப்பட்டது! ✅\n\n` +
+                          `• 👤 **பெயர்:** ${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng})\n` +
+                          `• 🪪 **ஆதார் எண்:** ${(sessionState.citizenProfile.headAadhaar || '').replace(/(\d{4})/g, '$1 ').trim()}\n` +
+                          `• 🏠 **முகவரி:** ${sessionState.citizenProfile.doorNo ? sessionState.citizenProfile.doorNo + ', ' : ''}${sessionState.citizenProfile.streetTam || sessionState.citizenProfile.streetEng || ''}\n\n` +
+                          `📸 **அடுத்து: குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம்**\n\n` +
+                          `குடும்பத் தலைவரின் பாஸ்போர்ட் அளவிலான புகைப்படத்தைப் பதிவேற்றவும் (அல்லது செல்ஃபி எடுக்கவும்):`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
                 });
                 return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
             }
@@ -970,16 +1414,34 @@ app.post('/api/chat', upload.any(), async (req, res) => {
             sessionState.citizenProfile.headPhotoPath = studioPhoto;
             saveCitizenProfile(activeMobile, sessionState.citizenProfile);
 
-            sessionState.intakeState = 'HEAD_AADHAAR_FRONT';
-            sessionState.chatHistory.push({
-                sender: 'bot',
-                text: `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** குடும்பத் தலைவர் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப **வெள்ளை பின்னணியுடன் (White Background)** செப்பனிடப்பட்டு சேமிக்கப்பட்டது! 100% ஏற்றுக்கொள்ளப்படும்.\n\n` +
-                      `🪪 **படி 2/6: குடும்பத் தலைவரின் ஆதார் அட்டை**\n\n` +
-                      `குடும்பத் தலைவரின் ஆதார் அட்டையைப் பதிவேற்றவும்.\n` +
-                      `*(முழு ஆதார் அட்டை / பதிவிறக்கம் செய்த e-Aadhaar ஆவணமாக இருந்தால் அதையே பதிவேற்றலாம்; முன்பக்கம் மட்டுமே உள்ள கார்டாக இருந்தால் முன்பக்கத்தைப் பதிவேற்றவும்)*:`,
-                actionRequired: 'upload',
-                uploadPrompt: 'ஆதார் அட்டை பதிவேற்றவும்'
-            });
+            // If head aadhaar was already extracted, move directly to verification!
+            if (sessionState.citizenProfile.headAadhaar) {
+                sessionState.intakeState = 'HEAD_DETAILS_VERIFY';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** குடும்பத் தலைவர் புகைப்படம் வெள்ளை பின்னணியுடன் சேமிக்கப்பட்டது! 📸\n\n` +
+                          `🔍 **குடும்பத் தலைவரின் விவரங்கள் சரிபார்ப்பு:**\n` +
+                          `• 👤 **பெயர்:** ${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng})\n` +
+                          `• 🪪 **ஆதார் எண்:** ${(sessionState.citizenProfile.headAadhaar || '').replace(/(\d{4})/g, '$1 ').trim()}\n\n` +
+                          `விவரங்கள் சரியாக இருந்தால் **'விவரங்கள் அனைத்தும் சரி'** என்பதைத் தொடரவும்:`,
+                    options: [
+                        { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
+                        { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+            } else {
+                sessionState.intakeState = 'HEAD_AADHAAR_FRONT';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** குடும்பத் தலைவர் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப **வெள்ளை பின்னணியுடன் (White Background)** செப்பனிடப்பட்டு சேமிக்கப்பட்டது! 100% ஏற்றுக்கொள்ளப்படும்.\n\n` +
+                          `🪪 **படி 2/6: குடும்பத் தலைவரின் ஆதார் அட்டை**\n\n` +
+                          `குடும்பத் தலைவரின் ஆதார் அட்டையைப் பதிவேற்றவும்.\n` +
+                          `*(முழு ஆதார் அட்டை / பதிவிறக்கம் செய்த e-Aadhaar ஆவணமாக இருந்தால் அதையே பதிவேற்றலாம்; முன்பக்கம் மட்டுமே உள்ள கார்டாக இருந்தால் முன்பக்கத்தைப் பதிவேற்றவும்)*:`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'ஆதார் அட்டை பதிவேற்றவும்'
+                });
+            }
+            persistSessions();
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
         }
 
@@ -1059,10 +1521,11 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
                 const formattedAadhaar = (sessionState.citizenProfile.headAadhaar || '').replace(/(\d{4})/g, '$1 ').trim();
                 sessionState.intakeState = 'HEAD_DETAILS_VERIFY';
-                sessionState.chatHistory.push({
+                    sessionState.chatHistory.push({
                     sender: 'bot',
                     text: `📄 **முழு ஆதார் அட்டை (முன்பக்கம் மற்றும் முகவரி இரண்டும் உள்ள ஆவணம்) வெற்றிகரமாகக் கண்டறியப்பட்டது!**\n\n` +
                           `💡 *ஒரே ஆவணத்தில் அனைத்து விவரங்களும் உள்ளதால், பின்பக்கத்தை மீண்டும் பதிவேற்றத் தேவையில்லை.* ✅\n\n` +
+                          `💡 **ஆதார் பெயர் சரிபார்ப்பு:** வாடிக்கையாளர் பெயர் ஆதார் அட்டையின்படி **${sessionState.citizenProfile.fullNameTam || ''} (${sessionState.citizenProfile.fullNameEng || ''})** எனத் தானாகவே துல்லியமாகப் புதுப்பிக்கப்பட்டது! ✅\n\n` +
                           `🔍 **படி 2/6: ஆவணத்திலிருந்து பெறப்பட்ட விவரங்கள் (Verification & Spelling Check):**\n\n` +
                           `• 👤 **பெயர் (தமிழ்):** ${sessionState.citizenProfile.fullNameTam || '—'}\n` +
                           `• 🔤 **Name (English):** ${sessionState.citizenProfile.fullNameEng || '—'}\n` +
@@ -1072,11 +1535,10 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                           `• 🪪 **ஆதார் எண்:** ${formattedAadhaar || '—'}\n` +
                           `• 🏠 **முகவரி:** ${sessionState.citizenProfile.doorNo ? sessionState.citizenProfile.doorNo + ', ' : ''}${sessionState.citizenProfile.streetTam || sessionState.citizenProfile.streetEng || '—'}, ${sessionState.citizenProfile.pincode || '—'}\n` +
                           `• 🏛️ **மாவட்டம் / வட்டம் / கிராமம்:** ${sessionState.citizenProfile.district}, ${sessionState.citizenProfile.taluk}, ${sessionState.citizenProfile.village}\n\n` +
-                          `💡 **எழுத்துப் பிழைகள் (Spelling Mistakes) ஏதேனும் உள்ளதா?**\n` +
-                          `விவரங்கள் சரியாக இருந்தால் **'விவரங்கள் அனைத்தும் சரி'** என்பதைத் தொடரவும்:`,
+                          `விவரங்கள் சரியாக இருந்தால் **'விவரங்கள் அனைத்தும் சரி'** என்பதைத் தொடரவும், அல்லது ஏதேனும் மாற்றங்கள் இருந்தால் **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
                     options: [
                         { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
-                        { label: "✏️ எழுத்துப் பிழையைத் திருத்து (Edit / Fix Spelling)", value: "TRIGGER_EDIT_MODAL" }
+                        { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                     ]
                 });
                 return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1092,11 +1554,23 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                 sessionState.citizenProfile.headGender = extracted.gender;
                 sessionState.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
             }
+            if (sessionState.citizenProfile.members && sessionState.citizenProfile.members.length > 0) {
+                sessionState.citizenProfile.members[0].nameEng = sessionState.citizenProfile.fullNameEng;
+                sessionState.citizenProfile.members[0].nameTam = sessionState.citizenProfile.fullNameTam;
+                sessionState.citizenProfile.members[0].aadhaarNumber = sessionState.citizenProfile.headAadhaar;
+                sessionState.citizenProfile.members[0].dob = sessionState.citizenProfile.headDob;
+                sessionState.citizenProfile.members[0].gender = sessionState.citizenProfile.headGender;
+                sessionState.citizenProfile.members[0].genderTam = sessionState.citizenProfile.headGenderTam;
+            }
+            if (activeMobile) saveCitizenProfile(activeMobile, sessionState.citizenProfile);
+            persistSessions();
 
             sessionState.intakeState = 'HEAD_AADHAAR_BACK';
+            const detectedFrontName = sessionState.citizenProfile.fullNameTam ? `${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng})` : (sessionState.citizenProfile.fullNameEng || '');
             sessionState.chatHistory.push({
                 sender: 'bot',
-                text: `✅ **குடும்பத் தலைவர் ஆதார் முன்பக்கம் பெறப்பட்டது!** ${extracted.fullNameTam || extracted.fullNameEng ? `(${extracted.fullNameTam || extracted.fullNameEng})` : ''}\n\n` +
+                text: `✅ **குடும்பத் தலைவர் ஆதார் முன்பக்கம் பெறப்பட்டது!**\n\n` +
+                      (detectedFrontName ? `💡 **ஆதார் பெயர் சரிபார்ப்பு:** வாடிக்கையாளர் பெயர் ஆதார் அட்டையின்படி **${detectedFrontName}** எனத் தானாகவே புதுப்பிக்கப்பட்டது! ✅\n\n` : '') +
                       `🔄 **இது முன்பக்கம் மட்டுமே என்பதால், முகவரி மற்றும் தந்தை/கணவர் பெயர் உள்ள பின்பக்கத்தைப் (Back Side) பதிவேற்றவும்:**`,
                 actionRequired: 'upload',
                 uploadPrompt: 'ஆதார் பின்பக்கம் பதிவேற்றவும்'
@@ -1167,6 +1641,7 @@ app.post('/api/chat', upload.any(), async (req, res) => {
             sessionState.chatHistory.push({
                 sender: 'bot',
                 text: `📄 **குடும்பத் தலைவர் ஆதார் அட்டை வெற்றிகரமாக 2-in-1 அரசு A4 PDF-ஆக இணைக்கப்பட்டது!**\n\n` +
+                      `💡 **ஆதார் பெயர் சரிபார்ப்பு:** வாடிக்கையாளர் பெயர் ஆதார் அட்டையின்படி **${sessionState.citizenProfile.fullNameTam || ''} (${sessionState.citizenProfile.fullNameEng || ''})** எனத் தானாகவே துல்லியமாகப் புதுப்பிக்கப்பட்டது! ✅\n\n` +
                       `🔍 **படி 2/6: ஆவணத்திலிருந்து பெறப்பட்ட விவரங்கள் (Verification & Spelling Check):**\n\n` +
                       `• 👤 **பெயர் (தமிழ்):** ${sessionState.citizenProfile.fullNameTam || '—'}\n` +
                       `• 🔤 **Name (English):** ${sessionState.citizenProfile.fullNameEng || '—'}\n` +
@@ -1175,11 +1650,10 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                       `• ⚧️ **பாலினம் (Gender):** ${sessionState.citizenProfile.headGenderTam || '—'} (${sessionState.citizenProfile.headGender || '—'})\n` +
                       `• 🪪 **ஆதார் எண்:** ${formattedAadhaar || '—'}\n` +
                       `• 🏠 **முகவரி:** ${sessionState.citizenProfile.doorNo ? sessionState.citizenProfile.doorNo + ', ' : ''}${sessionState.citizenProfile.streetTam || sessionState.citizenProfile.streetEng || '—'}, ${sessionState.citizenProfile.pincode || '—'}\n\n` +
-                      `💡 **எழுத்துப் பிழைகள் (Spelling Mistakes) ஏதேனும் உள்ளதா?**\n` +
-                      `பெயரிலோ அல்லது முகவரியிலோ பிழை இருந்தால் கீழே உள்ள **'எழுத்துப் பிழையைத் திருத்து'** பட்டனை அழுத்தி உடனே திருத்திக் கொள்ளலாம்!`,
+                      `விவரங்கள் சரியாக இருந்தால் **'விவரங்கள் அனைத்தும் சரி'** என்பதைத் தொடரவும், அல்லது ஏதேனும் மாற்றங்கள் இருந்தால் **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
                 options: [
                     { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
-                    { label: "✏️ எழுத்துப் பிழையைத் திருத்து (Edit / Fix Spelling)", value: "TRIGGER_EDIT_MODAL" }
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1216,14 +1690,14 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                     });
                 } else {
                     sessionState.intakeState = 'MOBILE_NUMBER';
+                    const hasValidCurrentMob = activeMobile && /^[6-9]\d{9}$/.test(activeMobile);
                     sessionState.chatHistory.push({
                         sender: 'bot',
                         text: `✅ **குடும்பத் தலைவர் விவரங்கள் 100% உறுதி செய்யப்பட்டன!**\n\n` +
                               `📱 **படி 4/6: ரேஷன் கார்டு பதிவு கைபேசி எண்**\n\n` +
-                              `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்.\n\n` +
-                              `💡 *நீங்கள் மற்றவருக்கு விண்ணப்பித்துத் தருகிறீர்கள் என்றால், அவர்களின் குடும்ப ரேஷன் மொபைல் எண்ணைத் தட்டச்சு செய்யவும்:*` +
-                              (activeMobile ? `\n*(உள்நுழைந்த எண்: +91 ${activeMobile})*` : ``),
-                        options: activeMobile ? [{ label: `+91 ${activeMobile} (உள்நுழைந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
+                              `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்:\n\n` +
+                              (hasValidCurrentMob ? `*(உள்நுழைந்த எண்: +91 ${activeMobile})*` : `*(10 இலக்க மொபைல் எண்ணைத் தட்டச்சு செய்யவும்)*`),
+                        options: hasValidCurrentMob ? [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
                     });
                 }
                 return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1231,10 +1705,10 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
             sessionState.chatHistory.push({
                 sender: 'bot',
-                text: `விவரங்களைச் சரிபார்த்து **'விவரங்கள் அனைத்தும் சரி'** அல்லது **'எழுத்துப் பிழையைத் திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
+                text: `விவரங்களைச் சரிபார்த்து **'விவரங்கள் அனைத்தும் சரி'** அல்லது **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
                 options: [
                     { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
-                    { label: "✏️ எழுத்துப் பிழையைத் திருத்து (Edit / Fix Spelling)", value: "TRIGGER_EDIT_MODAL" }
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1425,11 +1899,10 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                       `• 🎂 **பிறந்த தேதி:** ${sessionState.tempMember.dob || '—'}\n` +
                       `• ⚧️ **பாலினம்:** ${sessionState.tempMember.genderTam || '—'} (${sessionState.tempMember.gender || '—'})\n` +
                       `• 🪪 **ஆதார் எண்:** ${formattedMemberAadhaar || '—'}\n\n` +
-                      `💡 **எழுத்துப் பிழைகள் ஏதேனும் உள்ளதா?**\n` +
-                      `விவரங்கள் சரியாக இருந்தால் **'உறுப்பினர் விவரங்கள் சரி'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
+                      `விவரங்கள் சரியாக இருந்தால் **'உறுப்பினர் விவரங்கள் சரி'** என்பதைத் தேர்ந்தெடுக்கவும், அல்லது ஏதேனும் மாற்றங்கள் இருந்தால் **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
                 options: [
                     { label: "✅ உறுப்பினர் விவரங்கள் சரி (Details Correct - Continue)", value: "MEMBER_DETAILS_CONFIRMED" },
-                    { label: "✏️ எழுத்துப் பிழையைத் திருத்து (Edit / Fix Spelling)", value: "TRIGGER_EDIT_MODAL" }
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1457,7 +1930,7 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                 const isHusband = sessionState.tempMember.relationship === 'Husband' || sessionState.tempMember.relationshipTam === 'கணவர்';
                 const isFemaleHead = sessionState.citizenProfile.headGender === 'Female';
 
-                if (isHusband || isFemaleHead) {
+                if (isHusband && isFemaleHead) {
                     sessionState.intakeState = 'ADDRESS_CHOICE';
 
                     const memAddr = sessionState.tempMember.address || {};
@@ -1495,12 +1968,14 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                     });
                 } else {
                     sessionState.intakeState = 'MOBILE_NUMBER';
+                    const hasValidCurrentMob = activeMobile && /^[6-9]\d{9}$/.test(activeMobile);
                     sessionState.chatHistory.push({
                         sender: 'bot',
                         text: `🎉 **அனைத்து ${sessionState.targetMemberCount} உறுப்பினர்களின் ஆதார் ஆவணங்களும் வெற்றிகரமாகச் சேர்க்கப்பட்டன!**\n\n` +
                               `📱 **படி 4/6: ரேஷன் கார்டு பதிவு கைபேசி எண்**\n\n` +
-                              `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்.`,
-                        options: activeMobile ? [{ label: `+91 ${activeMobile} (உள்நுழைந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
+                              `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்:\n\n` +
+                              (hasValidCurrentMob ? `*(உள்நுழைந்த எண்: +91 ${activeMobile})*` : `*(10 இலக்க மொபைல் எண்ணைத் தட்டச்சு செய்யவும்)*`),
+                        options: hasValidCurrentMob ? [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
                     });
                 }
                 return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1508,10 +1983,10 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
             sessionState.chatHistory.push({
                 sender: 'bot',
-                text: `உறுப்பினர் விவரங்களைச் சரிபார்த்து **'உறுப்பினர் விவரங்கள் சரி'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
+                text: `உறுப்பினர் விவரங்களைச் சரிபார்த்து **'உறுப்பினர் விவரங்கள் சரி'** அல்லது **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
                 options: [
                     { label: "✅ உறுப்பினர் விவரங்கள் சரி (Details Correct - Continue)", value: "MEMBER_DETAILS_CONFIRMED" },
-                    { label: "✏️ எழுத்துப் பிழையைத் திருத்து (Edit / Fix Spelling)", value: "TRIGGER_EDIT_MODAL" }
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1581,12 +2056,14 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                 });
             } else {
                 sessionState.intakeState = 'MOBILE_NUMBER';
+                const hasValidCurrentMob = activeMobile && /^[6-9]\d{9}$/.test(activeMobile);
                 sessionState.chatHistory.push({
                     sender: 'bot',
                     text: `🎉 **அனைத்து ${sessionState.targetMemberCount} உறுப்பினர்களின் ஆதார் ஆவணங்களும் வெற்றிகரமாகச் சேர்க்கப்பட்டன!**\n\n` +
                           `📱 **படி 4/6: ரேஷன் கார்டு பதிவு கைபேசி எண்**\n\n` +
-                          `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்.`,
-                    options: activeMobile ? [{ label: `+91 ${activeMobile} (உள்நுழைந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
+                          `ரேஷன் கடை பொருட்கள் தகவல், மாதாந்திர OTP மற்றும் அரசு அறிவிப்புகள் வர வேண்டிய **குடும்பத் தலைவரின் 10-இலக்க மொபைல் எண்ணை** உள்ளிடவும்:\n\n` +
+                          (hasValidCurrentMob ? `*(உள்நுழைந்த எண்: +91 ${activeMobile})*` : `*(10 இலக்க மொபைல் எண்ணைத் தட்டச்சு செய்யவும்)*`),
+                    options: hasValidCurrentMob ? [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
                 });
             }
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
@@ -1594,11 +2071,35 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
         // STATE 9: MOBILE_NUMBER
         if (sessionState.intakeState === 'MOBILE_NUMBER') {
-            const cleanDigits = text.replace(/\D/g, '');
+            let cleanDigits = text.replace(/\D/g, '');
+            if (cleanDigits.length === 12 && cleanDigits.startsWith('91')) {
+                cleanDigits = cleanDigits.slice(2);
+            }
             if (cleanDigits.length === 10 && /^[6-9]\d{9}$/.test(cleanDigits)) {
+                const oldKey = activeMobile;
                 activeMobile = cleanDigits;
                 sessionState.citizenProfile.mobileNumber = cleanDigits;
+                sessions.set(cleanDigits, sessionState);
+                if (oldKey && oldKey !== cleanDigits && sessions.has(oldKey)) {
+                    sessions.delete(oldKey);
+                }
                 saveCitizenProfile(activeMobile, sessionState.citizenProfile);
+
+                try {
+                    await saveCitizenDraft(cleanDigits, {
+                        operatorUid: reqOpUid || sessionState.operatorUid || null,
+                        operatorName: sessionState.operatorName || null,
+                        operatorMobile: sessionState.operatorMobile || null,
+                        citizenProfile: sessionState.citizenProfile,
+                        documents: {},
+                        chatHistory: sessionState.chatHistory,
+                        intakeState: 'RESIDENCE_PROOF_TYPE',
+                        status: 'DRAFT_SAVED'
+                    });
+                } catch (e) {
+                    console.error('Draft save failed:', e);
+                }
+                persistSessions();
 
                 sessionState.intakeState = 'RESIDENCE_PROOF_TYPE';
                 sessionState.chatHistory.push({
@@ -1609,13 +2110,14 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                     options: RESIDENCE_PROOF_OPTIONS
                 });
             } else {
+                const hasValidCurrentMob = activeMobile && /^[6-9]\d{9}$/.test(activeMobile);
                 sessionState.chatHistory.push({
                     sender: 'bot',
                     text: `⚠️ சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும் (எ.கா: 9876543210):`,
-                    options: [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }]
+                    options: hasValidCurrentMob ? [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
                 });
             }
-            return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+            return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState, activeMobile: activeMobile });
         }
 
         // STATE 10: RESIDENCE_PROOF_TYPE
@@ -1709,15 +2211,84 @@ app.post('/api/chat', upload.any(), async (req, res) => {
             return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
         }
 
-        sessionState.chatHistory.push({
+        let fallbackMsg = '';
+        let fallbackOptions = null;
+        let fallbackAction = null;
+        let fallbackPrompt = null;
+
+        switch (sessionState.intakeState) {
+            case 'MEMBER_COUNT':
+                fallbackMsg = `🏛️ **புதிய ரேஷன் கார்டு விண்ணப்பம்:**\n\nஉங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\nகீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`;
+                fallbackOptions = MEMBER_COUNT_OPTIONS;
+                break;
+            case 'HEAD_PHOTO':
+                fallbackMsg = `📸 தயவுசெய்து குடும்பத் தலைவரின் **பாஸ்போர்ட் புகைப்படத்தைப்** பதிவேற்றவும் (அல்லது கேமரா மூலம் செல்ஃபி எடுக்கவும்).`;
+                fallbackAction = 'upload';
+                fallbackPrompt = 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்';
+                break;
+            case 'HEAD_AADHAAR_FRONT':
+                fallbackMsg = `🪪 தயவுசெய்து குடும்பத் தலைவரின் **ஆதார் அட்டைப் புகைப்படத்தை (முன்பக்கம் அல்லது முழு ஆதார் அட்டை)** பதிவேற்றவும்.`;
+                fallbackAction = 'upload';
+                fallbackPrompt = 'ஆதார் அட்டை பதிவேற்றவும்';
+                break;
+            case 'HEAD_AADHAAR_BACK':
+                fallbackMsg = `🔄 தயவுசெய்து குடும்பத் தலைவரின் ஆதார் அட்டையின் **பின்பக்கப் புகைப்படத்தைப்** பதிவேற்றவும்.`;
+                fallbackAction = 'upload';
+                fallbackPrompt = 'ஆதார் பின்பக்கம் பதிவேற்றவும்';
+                break;
+            case 'HEAD_DETAILS_VERIFY':
+                fallbackMsg = `🔍 குடும்பத் தலைவரின் விவரங்களைச் சரிபார்த்து உறுதிப்படுத்தவும்:`;
+                fallbackOptions = [
+                    { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
+                ];
+                break;
+            case 'MEMBER_AADHAAR_FRONT':
+                fallbackMsg = `👥 தயவுசெய்து குடும்ப உறுப்பினர் ${sessionState.currentMemberIdx + 1}-ன் **ஆதார் அட்டையைப்** பதிவேற்றவும்.`;
+                fallbackAction = 'upload';
+                fallbackPrompt = `உறுப்பினர் ${sessionState.currentMemberIdx + 1} ஆதார்`;
+                break;
+            case 'MEMBER_AADHAAR_BACK':
+                fallbackMsg = `🔄 தயவுசெய்து குடும்ப உறுப்பினர் ${sessionState.currentMemberIdx + 1}-ன் ஆதார் அட்டையின் **பின்பக்கத்தைப்** பதிவேற்றவும்.`;
+                fallbackAction = 'upload';
+                fallbackPrompt = `உறுப்பினர் ${sessionState.currentMemberIdx + 1} ஆதார் பின்பக்கம்`;
+                break;
+            case 'MEMBER_RELATIONSHIP':
+                fallbackMsg = `🤝 குடும்ப உறுப்பினர் ${sessionState.currentMemberIdx + 1}-ன் உறவுமுறை என்ன? கீழே உள்ளதில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`;
+                fallbackOptions = getRelationshipOptions(sessionState.citizenProfile?.headGender);
+                break;
+            case 'READY_TO_APPLY':
+                fallbackMsg = `🚀 **அனைத்து விவரங்களும் தயார்!** அரசு TNPDS இணையதளத்தில் விண்ணப்பிக்க கீழே உள்ள **'விண்ணப்பிக்கத் தொடங்கு'** பொத்தானை அழுத்தவும்:`;
+                fallbackOptions = [
+                    { label: "🚀 அரசு TNPDS போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கு", value: "Start" },
+                    { label: "🧪 சுயகற்றல் சோதனை முறை (Run Mock Test)", value: "Mock Test" },
+                    { label: "👁️ தனி தாவலில் படிவத்தைச் சரிபார் (Review in New Tab)", value: "OPEN_REVIEW_TAB" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Any Details)", value: "TRIGGER_EDIT_MODAL" }
+                ];
+                break;
+            default:
+                fallbackMsg = `வணக்கம்! 🙏 புதிய ரேஷன் கார்டு விண்ணப்பத்தைத் தொடங்க கீழே உள்ள விருப்பத்தைத் தேர்ந்தெடுக்கவும்:`;
+                fallbackOptions = SERVICE_OPTIONS;
+                break;
+        }
+
+        const fallbackItem = {
             sender: 'bot',
-            text: 'விண்ணப்பத்தைத் தொடங்க **\'Start\'** என்று தட்டச்சு செய்யவும் அல்லது அரசு அனுப்பிய **OTP எண்ணை** உள்ளிடவும்.'
-        });
+            text: fallbackMsg
+        };
+        if (fallbackOptions) fallbackItem.options = fallbackOptions;
+        if (fallbackAction) {
+            fallbackItem.actionRequired = fallbackAction;
+            fallbackItem.uploadPrompt = fallbackPrompt;
+        }
+
+        sessionState.chatHistory.push(fallbackItem);
+        persistSessions();
 
         return res.json({
             chatHistory: sessionState.chatHistory,
             citizenProfile: sessionState.citizenProfile,
-            step: sessionState.step
+            step: sessionState.intakeState || sessionState.step
         });
 
     } catch (err) {
@@ -1755,17 +2326,36 @@ app.get('/api/chat/otp-status', async (req, res) => {
 
 // Reset endpoint
 app.post('/api/chat/reset', async (req, res) => {
-    await resetActiveSession();
+    const targetMobile = (req.body?.mobileNumber || req.headers['x-session-mobile'] || activeMobile || '').trim();
+    if (targetMobile && sessions.has(targetMobile)) {
+        sessions.delete(targetMobile);
+    }
+    const freshSession = {
+        intakeState: 'SERVICE_SELECTION',
+        targetMemberCount: 1,
+        currentMemberIdx: 1,
+        tempUploads: {},
+        tempMember: null,
+        step: 'READY',
+        citizenProfile: createFreshProfile(targetMobile),
+        chatHistory: [getInitialWelcomeMessage()],
+        applicationNumber: null
+    };
+    if (targetMobile) {
+        sessions.set(targetMobile, freshSession);
+    }
+    sessionState = freshSession;
+    persistSessions();
     res.json({
         success: true,
-        chatHistory: sessionState.chatHistory,
-        citizenProfile: sessionState.citizenProfile,
-        step: sessionState.intakeState
+        chatHistory: freshSession.chatHistory,
+        citizenProfile: freshSession.citizenProfile,
+        step: freshSession.intakeState
     });
 });
 
 // Profile update endpoint (for user correcting spelling mistakes & details)
-app.post('/api/profile/update', (req, res) => {
+app.post('/api/profile/update', async (req, res) => {
     try {
         const updated = req.body;
         if (!sessionState.citizenProfile) {
@@ -1816,32 +2406,63 @@ app.post('/api/profile/update', (req, res) => {
             sessionState.citizenProfile.members[0].aadhaarNumber = sessionState.citizenProfile.headAadhaar;
         }
 
-        const targetMobile = req.headers['x-session-mobile'] || req.body?.mobileNumber || activeMobile;
-        if (targetMobile) {
-            saveCitizenProfile(targetMobile, sessionState.citizenProfile);
-            saveCitizenDraft(targetMobile, {
-                operatorUid: sessionState.operatorUid || null,
-                operatorName: sessionState.operatorName || null,
-                operatorMobile: sessionState.operatorMobile || null,
-                citizenProfile: sessionState.citizenProfile,
-                documents: sessionState.tempUploads || {},
-                chatHistory: sessionState.chatHistory,
-                intakeState: sessionState.intakeState,
-                step: sessionState.step || 'draft',
-                status: sessionState.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
-            }).catch(e => console.warn('Draft sync on profile update error:', e.message));
+        const rawNewMobile = updated.mobileNumber || updated.mobile || '';
+        let cleanNewMobile = String(rawNewMobile).replace(/\D/g, '');
+        if (cleanNewMobile.length === 12 && cleanNewMobile.startsWith('91')) {
+            cleanNewMobile = cleanNewMobile.slice(2);
+        }
+        const is10Digit = cleanNewMobile.length === 10 && ['6', '7', '8', '9'].includes(cleanNewMobile[0]);
+        const currentTarget = req.headers['x-session-mobile'] || activeMobile || '';
+
+        let activeCustKey = currentTarget;
+        if (is10Digit) {
+            sessionState.citizenProfile.mobileNumber = cleanNewMobile;
+            if (currentTarget && currentTarget !== cleanNewMobile) {
+                sessions.set(cleanNewMobile, sessionState);
+                if (sessions.has(currentTarget)) {
+                    sessions.delete(currentTarget);
+                }
+                if (currentTarget.startsWith('walkin_')) {
+                    await deleteCitizenDraft(currentTarget).catch(() => {});
+                }
+                if (activeMobile === currentTarget) {
+                    activeMobile = cleanNewMobile;
+                }
+                activeCustKey = cleanNewMobile;
+            }
+        }
+
+        if (activeCustKey) {
+            saveCitizenProfile(activeCustKey, sessionState.citizenProfile);
+            try {
+                await saveCitizenDraft(activeCustKey, {
+                    operatorUid: sessionState.operatorUid || null,
+                    operatorName: sessionState.operatorName || null,
+                    operatorMobile: sessionState.operatorMobile || null,
+                    citizenProfile: sessionState.citizenProfile,
+                    documents: sessionState.tempUploads || {},
+                    chatHistory: sessionState.chatHistory,
+                    intakeState: sessionState.intakeState,
+                    step: sessionState.step || 'draft',
+                    status: sessionState.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
+                });
+            } catch (e) {
+                console.warn('Draft sync on profile update error:', e.message);
+            }
             persistSessions();
         }
 
         const confirmValue = (sessionState.intakeState === 'HEAD_DETAILS_VERIFY' ? 'HEAD_DETAILS_CONFIRMED' : (sessionState.intakeState === 'MEMBER_DETAILS_VERIFY' ? 'MEMBER_DETAILS_CONFIRMED' : 'Start'));
 
+        const phoneLine = is10Digit ? `• 📱 **கைபேசி எண்:** +91 ${cleanNewMobile}\n` : '';
         sessionState.chatHistory.push({
             sender: 'bot',
             text: `✏️ **விவரங்கள் வெற்றிகரமாகத் திருத்தப்பட்டு சேமிக்கப்பட்டன!** 💾\n\n` +
                   `• 👤 **பெயர்:** ${sessionState.citizenProfile.fullNameTam} (${sessionState.citizenProfile.fullNameEng})\n` +
+                  phoneLine +
                   `• 🎂 **பிறந்த தேதி:** ${sessionState.citizenProfile.headDob || '—'}\n` +
                   `• 🏠 **முகவரி:** ${sessionState.citizenProfile.doorNo ? sessionState.citizenProfile.doorNo + ', ' : ''}${sessionState.citizenProfile.streetTam || sessionState.citizenProfile.streetEng || '—'}, ${sessionState.citizenProfile.pincode || ''}\n\n` +
-                  `அனைத்து எழுத்துப் பிழைகளும் சரியாக உள்ளதா என உறுதிப்படுத்தவும்:`,
+                  `விவரங்கள் அனைத்தும் சரியாக உள்ளதா என உறுதிப்படுத்தவும்:`,
             options: [
                 { label: "✅ விவரங்கள் அனைத்தும் சரி (Confirmed - Continue)", value: confirmValue },
                 { label: "✏️ மீண்டும் திருத்து (Edit Again)", value: "TRIGGER_EDIT_MODAL" }
@@ -1850,6 +2471,7 @@ app.post('/api/profile/update', (req, res) => {
 
         res.json({
             success: true,
+            updatedMobile: is10Digit ? cleanNewMobile : null,
             chatHistory: sessionState.chatHistory,
             citizenProfile: sessionState.citizenProfile,
             step: sessionState.intakeState

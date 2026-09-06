@@ -355,7 +355,7 @@ async function lookupUserByMobile(mobileNumber) {
             for (const f of files) {
                 if (f.endsWith('.json')) {
                     const data = JSON.parse(fs.readFileSync(path.join(LOCAL_USERS_DIR, f), 'utf8'));
-                    if (data.mobileNumber === cleanMobile) {
+                    if (data.mobileNumber === cleanMobile || (data.email && data.email.includes(cleanMobile))) {
                         return data;
                     }
                 }
