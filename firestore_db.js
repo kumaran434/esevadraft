@@ -57,6 +57,22 @@ async function saveCitizenDraft(mobileNumber, draftData) {
     if (!mobileNumber) return;
     const cleanMob = String(mobileNumber).trim();
 
+    const docPackage = { ...(draftData.documents || {}) };
+
+    // STRICT GATING: Never save empty walk-in sessions to disk or Firestore!
+    if (cleanMob.startsWith('walkin_')) {
+        const prof = draftData.citizenProfile || {};
+        const hasRealName = !!((prof.fullNameTam && prof.fullNameTam.trim()) || (prof.fullNameEng && prof.fullNameEng.trim()));
+        const hasAadhaar = !!(prof.headAadhaar && prof.headAadhaar.trim());
+        const hasRealMobile = !!(prof.mobileNumber && /^[6-9]\d{9}$/.test(prof.mobileNumber));
+        const hasMembers = Array.isArray(prof.members) && prof.members.length > 0;
+        const hasDocs = Object.keys(docPackage).some(k => !!docPackage[k]);
+        if (!hasRealName && !hasAadhaar && !hasRealMobile && !hasMembers && !hasDocs) {
+            console.log(`[DRAFT GATE] Skipping save for empty walkin session ${cleanMob} (no actual details provided).`);
+            return null;
+        }
+    }
+
     // Preserve existing operator details if not explicitly provided
     let existingOperatorUid = null;
     let existingOperatorName = null;
@@ -76,7 +92,6 @@ async function saveCitizenDraft(mobileNumber, draftData) {
     const resolvedOperatorName = draftData.operatorName || existingOperatorName || null;
     const resolvedOperatorMobile = draftData.operatorMobile || existingOperatorMobile || null;
 
-    const docPackage = { ...(draftData.documents || {}) };
     const base64Docs = {};
 
     if (docPackage.profilePhoto) {
@@ -202,6 +217,23 @@ async function getCitizenDraft(mobileNumber) {
     return data;
 }
 
+function isMeaningfulDraft(d) {
+    if (!d || !d.mobileNumber) return false;
+    // Standard 10-digit citizen mobile numbers are valid drafts
+    if (!d.mobileNumber.startsWith('walkin_')) return true;
+
+    // For walk-in sessions, they must have actual citizen data to be considered a draft
+    const prof = d.citizenProfile || {};
+    const hasName = !!((prof.fullNameTam && prof.fullNameTam.trim()) || (prof.fullNameEng && prof.fullNameEng.trim()));
+    const hasAadhaar = !!(prof.headAadhaar && prof.headAadhaar.trim());
+    const hasRealPhone = !!(prof.mobileNumber && /^[6-9]\d{9}$/.test(prof.mobileNumber));
+    const hasMembers = Array.isArray(prof.members) && prof.members.length > 0;
+    const hasDocs = (d.documents && Object.keys(d.documents).some(k => !!d.documents[k])) ||
+                    (d.base64Docs && Object.keys(d.base64Docs).length > 0);
+
+    return hasName || hasAadhaar || hasRealPhone || hasMembers || hasDocs;
+}
+
 async function listAllDrafts(operatorUid = null) {
     const drafts = [];
     const seenMobiles = new Set();
@@ -217,6 +249,13 @@ async function listAllDrafts(operatorUid = null) {
             }
             snapshot.forEach(doc => {
                 const d = doc.data();
+                if (!isMeaningfulDraft(d)) {
+                    // Auto purge empty walk-in draft
+                    if (d.mobileNumber && d.mobileNumber.startsWith('walkin_')) {
+                        deleteCitizenDraft(d.mobileNumber).catch(() => {});
+                    }
+                    return;
+                }
                 seenMobiles.add(d.mobileNumber);
                 const prof = d.citizenProfile || {};
                 const name = prof.fullNameTam || prof.fullNameEng || (d.mobileNumber ? `வாடிக்கையாளர் (+91 ${d.mobileNumber})` : '—');
@@ -245,6 +284,11 @@ async function listAllDrafts(operatorUid = null) {
                 if (!seenMobiles.has(mob)) {
                     try {
                         const d = JSON.parse(fs.readFileSync(path.join(LOCAL_DRAFTS_DIR, f), 'utf8'));
+                        if (!isMeaningfulDraft(d)) {
+                            // Auto purge empty walk-in draft file
+                            try { fs.unlinkSync(path.join(LOCAL_DRAFTS_DIR, f)); } catch (err) {}
+                            return;
+                        }
                         if (!operatorUid || d.operatorUid === operatorUid) {
                             const prof = d.citizenProfile || {};
                             const name = prof.fullNameTam || prof.fullNameEng || (d.mobileNumber ? `வாடிக்கையாளர் (+91 ${d.mobileNumber})` : '—');

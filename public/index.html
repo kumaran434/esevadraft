@@ -3093,9 +3093,27 @@
         }
 
         async function backToOperatorDashboard() {
-            try {
-                await saveCurrentDraftManually();
-            } catch (e) {}
+            const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
+            const isWalkin = activeCustMob.startsWith('walkin_');
+            const hasData = currentCitizenData && (
+                (currentCitizenData.fullNameTam && currentCitizenData.fullNameTam.trim()) ||
+                (currentCitizenData.fullNameEng && currentCitizenData.fullNameEng.trim()) ||
+                (currentCitizenData.headAadhaar && currentCitizenData.headAadhaar.trim()) ||
+                (currentCitizenData.mobileNumber && /^[6-9]\d{9}$/.test(currentCitizenData.mobileNumber)) ||
+                (currentCitizenData.members && currentCitizenData.members.length > 0)
+            );
+
+            if (isWalkin && !hasData) {
+                // Silently purge empty walk-in session from server memory/drafts
+                try {
+                    await fetch(`/api/drafts/${activeCustMob}`, { method: 'DELETE' });
+                } catch (e) {}
+            } else if (activeCustMob) {
+                try {
+                    await saveCurrentDraftManually();
+                } catch (e) {}
+            }
+
             localStorage.removeItem('eseva_active_customer_mobile');
             localStorage.removeItem('eseva_active_customer_name');
             currentCitizenData = null;
@@ -3139,6 +3157,18 @@
             const opMob = localStorage.getItem('eseva_operator_mobile') || '';
 
             if (!activeCustMob) return;
+
+            // Gating: Do not save empty walkin session with no data
+            if (activeCustMob.startsWith('walkin_')) {
+                const hasData = currentCitizenData && (
+                    (currentCitizenData.fullNameTam && currentCitizenData.fullNameTam.trim()) ||
+                    (currentCitizenData.fullNameEng && currentCitizenData.fullNameEng.trim()) ||
+                    (currentCitizenData.headAadhaar && currentCitizenData.headAadhaar.trim()) ||
+                    (currentCitizenData.mobileNumber && /^[6-9]\d{9}$/.test(currentCitizenData.mobileNumber)) ||
+                    (currentCitizenData.members && currentCitizenData.members.length > 0)
+                );
+                if (!hasData) return;
+            }
 
             try {
                 const res = await fetch('/api/drafts/save', { 

@@ -420,19 +420,23 @@ app.post('/api/operator/new-customer', async (req, res) => {
         options: MEMBER_COUNT_OPTIONS
     }];
 
-    try {
-        await saveCitizenDraft(cleanMobile, {
-            operatorUid,
-            operatorName,
-            operatorMobile,
-            citizenProfile: sess.citizenProfile,
-            documents: {},
-            chatHistory: sess.chatHistory,
-            intakeState: 'MEMBER_COUNT',
-            status: 'DRAFT_SAVED'
-        });
-        persistSessions();
-    } catch (e) {}
+    // Only persist as draft upfront if it's a real 10-digit customer.
+    // Walk-in sessions must NOT be saved as drafts until actual customer details are entered!
+    if (!isTempWalkin) {
+        try {
+            await saveCitizenDraft(cleanMobile, {
+                operatorUid,
+                operatorName,
+                operatorMobile,
+                citizenProfile: sess.citizenProfile,
+                documents: {},
+                chatHistory: sess.chatHistory,
+                intakeState: 'MEMBER_COUNT',
+                status: 'DRAFT_SAVED'
+            });
+            persistSessions();
+        } catch (e) {}
+    }
 
     res.json({
         success: true,
@@ -691,6 +695,20 @@ app.post('/api/drafts/save', async (req, res) => {
     // If client sent updated profile from UI, merge it
     if (req.body.citizenProfile && typeof req.body.citizenProfile === 'object') {
         sess.citizenProfile = { ...sess.citizenProfile, ...req.body.citizenProfile };
+    }
+
+    // Gate saving empty walk-in sessions
+    if (targetMobile.startsWith('walkin_')) {
+        const prof = sess.citizenProfile || {};
+        const hasRealName = !!((prof.fullNameTam && prof.fullNameTam.trim()) || (prof.fullNameEng && prof.fullNameEng.trim()));
+        const hasAadhaar = !!(prof.headAadhaar && prof.headAadhaar.trim());
+        const hasRealMobile = !!(prof.mobileNumber && /^[6-9]\d{9}$/.test(prof.mobileNumber));
+        const hasMembers = Array.isArray(prof.members) && prof.members.length > 0;
+        const hasDocs = sess.tempUploads && Object.keys(sess.tempUploads).some(k => !!sess.tempUploads[k]);
+        if (!hasRealName && !hasAadhaar && !hasRealMobile && !hasMembers && !hasDocs) {
+            console.log(`[DRAFT GATE] /api/drafts/save skipping empty walkin ${targetMobile}`);
+            return res.json({ success: true, message: 'Skipped saving empty walkin', citizenProfile: sess.citizenProfile });
+        }
     }
 
     try {
