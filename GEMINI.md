@@ -5,6 +5,11 @@
 - Only prompt user for real-time mobile and Aadhaar SMS OTPs.
 - Strictly gate and verify all form fields.
 
+## Zero-Regression Policy (பூஜ்ஜிய பிழை கொள்கை & தானியங்கி சோதனை)
+- **Feature Lock Contract**: Strictly follow all frozen behaviors documented in `FEATURE_LOCK.md`. Core entrypoint must ALWAYS start with `SERVICE_SELECTION` (Question: "வாடிக்கையாளர் இன்று எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறார்?").
+- **Mandatory Quality Gate**: Run `npm.cmd test` (which executes `tests/regression_suite.js`) before ANY git commit or deployment.
+- **Fail-Safe Rule**: If any regression test fails, DO NOT COMMIT OR DEPLOY under any circumstances until the regression is resolved.
+
 ## UI/UX Design Specialist Agent
 - Dedicated agent: `ui_designer`
 - For any visual styling, layout changes, CSS refactoring, or UI polish, delegate to or follow the standards of the `ui_designer` agent.

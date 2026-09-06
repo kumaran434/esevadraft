@@ -483,7 +483,8 @@ app.post('/api/operator/new-customer', async (req, res) => {
         isWalkin: isTempWalkin,
         customerName: initialName,
         citizenProfile: sess.citizenProfile,
-        chatHistory: sess.chatHistory
+        chatHistory: sess.chatHistory,
+        intakeState: sess.intakeState
     });
 });
 
@@ -875,7 +876,7 @@ app.post('/api/chat', upload.any(), async (req, res) => {
         console.log(`\n💬 Received - Text: "${text}", File: ${uploadedFile ? uploadedFile.filename : 'None'}`);
 
         const reqOpUid = req.headers['x-operator-uid'] || req.body.operatorUid;
-        let targetMobile = (req.body.mobileNumber || req.headers['x-session-mobile'] || '').trim();
+        let targetMobile = (req.body.mobileNumber || req.body.mobile || req.headers['x-session-mobile'] || '').trim();
 
         if (!targetMobile && reqOpUid) {
             targetMobile = `walkin_${String(reqOpUid).substring(0, 8)}`;
@@ -1198,7 +1199,7 @@ app.post('/api/chat', upload.any(), async (req, res) => {
 
         // STATE 1: SERVICE_SELECTION
         if (sessionState.intakeState === 'SERVICE_SELECTION') {
-            if (text.includes('ரேஷன்') || text.toLowerCase().includes('ration') || text.includes('1') || text.includes('புதிய')) {
+            if (text.includes('ரேஷன்') || text.toLowerCase().includes('ration') || text.includes('1') || text.includes('புதிய ரேஷன்')) {
                 sessionState.intakeState = 'MEMBER_COUNT';
                 sessionState.chatHistory.push({
                     sender: 'bot',
@@ -1206,6 +1207,39 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                           `உங்கள் குடும்பத்தில் மொத்தம் எத்தனை நபர்களை (குடும்பத் தலைவர் உட்பட) உறுப்பினர்களாகச் சேர்க்க வேண்டும்?\n\n` +
                           `கீழே உள்ள எண்ணிக்கையைத் தேர்வு செய்யவும் அல்லது தட்டச்சு செய்யவும்:`,
                     options: MEMBER_COUNT_OPTIONS
+                });
+            } else if (text.includes('வருமான') || text.toLowerCase().includes('income')) {
+                sessionState.intakeState = 'INCOME_INTAKE';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `📜 **வருமானச் சான்றிதழ் (Income Certificate) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                          `விண்ணப்பதாரரின் குடும்ப ஆண்டு வருமானத்தை தட்டச்சு செய்யவும் அல்லது ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                    options: [
+                        { label: "₹60,000க்கு கீழ்", value: "₹60,000" },
+                        { label: "₹72,000", value: "₹72,000" },
+                        { label: "₹1,00,000", value: "₹1,00,000" },
+                        { label: "₹1,20,000", value: "₹1,20,000" }
+                    ]
+                });
+            } else if (text.includes('இருப்பிட') || text.toLowerCase().includes('residence')) {
+                sessionState.intakeState = 'RESIDENCE_INTAKE';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `🏠 **இருப்பிடச் சான்றிதழ் (Residence Certificate) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                          `விண்ணப்பதாரரின் ஆதார் அட்டை அல்லது முகவரிச் சான்றைப் பதிவேற்றவும்:`,
+                    options: [
+                        { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "UPLOAD_AADHAAR" }
+                    ]
+                });
+            } else if (text.includes('வாக்காளர்') || text.toLowerCase().includes('voter')) {
+                sessionState.intakeState = 'VOTER_INTAKE';
+                sessionState.chatHistory.push({
+                    sender: 'bot',
+                    text: `🗳️ **புதிய வாக்காளர் அட்டை (New Voter ID) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
+                          `விண்ணப்பதாரரின் ஆதார் அட்டை அல்லது பிறப்புச் சான்றிதழைப் பதிவேற்றவும்:`,
+                    options: [
+                        { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "UPLOAD_AADHAAR" }
+                    ]
                 });
             } else if (text) {
                 sessionState.chatHistory.push({
@@ -1218,7 +1252,14 @@ app.post('/api/chat', upload.any(), async (req, res) => {
                 });
             }
             persistSessions();
-            return res.json({ chatHistory: sessionState.chatHistory, citizenProfile: sessionState.citizenProfile, step: sessionState.intakeState });
+            const lastBotMsg = sessionState.chatHistory[sessionState.chatHistory.length - 1];
+            return res.json({
+                chatHistory: sessionState.chatHistory,
+                citizenProfile: sessionState.citizenProfile,
+                step: sessionState.intakeState,
+                intakeState: sessionState.intakeState,
+                botResponse: lastBotMsg ? lastBotMsg.text : ''
+            });
         }
 
         // STATE 2: MEMBER_COUNT
