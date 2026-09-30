@@ -5687,6 +5687,7 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
             await page.waitForTimeout(2000);
         }
         let otpVal = '';
+        let autoSolvedCaptcha = false;
 
         // Wait up to 15s for mobInput to be visible if page is finishing load
         let mobInput = page.locator('input[placeholder*="கைபேசி"], input[formcontrolname="mobNumber"]:not([disabled]), input[formcontrolname="mobileno"], input[name*="mobNumber"], input[type="tel"]').first();
@@ -5727,7 +5728,7 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
 
             const sendOtpBtn = page.locator('input[value="பதிவு செய்ய"], button:has-text("பதிவு செய்ய"), button:has-text("OTP"), input[type="submit"].btn-success, #btnSendOtp').first();
 
-            let autoSolvedCaptcha = false;
+            autoSolvedCaptcha = false;
             const hasCaptchaInput = (await captchaInput.count() > 0 && await captchaInput.isVisible());
 
             if (hasCaptchaInput) {
