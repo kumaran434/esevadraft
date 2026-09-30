@@ -4978,13 +4978,21 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
                 await curCaptchaInput.dispatchEvent('change', { bubbles: true }).catch(() => {});
                 await page.waitForTimeout(400);
 
-                // Auto-click submit button immediately
-                const submitBtn = page.locator('input[type="submit"][value="பதிவு செய்ய"], input.btn-success[value*="பதிவு"], button:has-text("பதிவு செய்ய")').first();
-                if (await submitBtn.count() > 0 && await submitBtn.isVisible().catch(() => false)) {
-                    const hClicked = await humanClick(page, submitBtn);
-                    if (!hClicked) {
-                        await submitBtn.click({ force: true, delay: 80 }).catch(() => {});
+                // Enterprise Pre-Flight Value Guard: Ensure Mobile is 10 digits and distinct from Captcha
+                const mobInput = page.locator('input[formcontrolname="mobNumber"]:not([disabled]), input[placeholder*="கைபேசி"]').first();
+                const curMobVal = (await mobInput.inputValue().catch(() => '')).replace(/\D/g, '');
+                const curCapVal = (await curCaptchaInput.inputValue().catch(() => '')).trim();
+
+                if (curMobVal.length >= 10 && curMobVal !== curCapVal && curCapVal.length >= 4) {
+                    const submitBtn = page.locator('input[type="submit"][value="பதிவு செய்ய"], input.btn-success[value*="பதிவு"], button:has-text("பதிவு செய்ய")').first();
+                    if (await submitBtn.count() > 0 && await submitBtn.isVisible().catch(() => false)) {
+                        const hClicked = await humanClick(page, submitBtn);
+                        if (!hClicked) {
+                            await submitBtn.click({ force: true, delay: 80 }).catch(() => {});
+                        }
                     }
+                } else {
+                    console.warn(`[Value Guard] Pre-submit guard halted: mobile="${curMobVal}", captcha="${curCapVal}"`);
                 }
                 return code;
             }
