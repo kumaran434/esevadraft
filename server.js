@@ -4381,9 +4381,12 @@ app.post(['/api/ocr/captcha', '/api/operator/solve-captcha'], async (req, res) =
         const ai = new GoogleGenAI({ apiKey });
 
         const rawBase64 = imageBase64.includes('base64,') ? imageBase64.split('base64,')[1] : imageBase64;
+        const isJpeg = rawBase64.startsWith('/9j/') || imageBase64.toLowerCase().includes('image/jpeg') || imageBase64.toLowerCase().includes('image/jpg');
+        const mimeType = isJpeg ? 'image/jpeg' : 'image/png';
 
         let detectedCode = '';
-        for (const mName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+        const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+        for (const mName of candidateModels) {
             try {
                 const ocrRes = await ai.models.generateContent({
                     model: mName,
@@ -4391,7 +4394,7 @@ app.post(['/api/ocr/captcha', '/api/operator/solve-captcha'], async (req, res) =
                         {
                             role: 'user',
                             parts: [
-                                { inlineData: { mimeType: 'image/png', data: rawBase64 } },
+                                { inlineData: { mimeType, data: rawBase64 } },
                                 { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
                             ]
                         }

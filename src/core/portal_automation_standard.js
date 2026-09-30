@@ -54,22 +54,38 @@ async function applyStandardStealth(context) {
  */
 async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) {
     try {
-        let curCaptchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
+        let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
         if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
             const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-            if (await allInputs.count() >= 2) curCaptchaInput = allInputs.nth(1);
+            if (await allInputs.count() >= 3) curCaptchaInput = allInputs.nth(2);
+            else if (await allInputs.count() >= 2) curCaptchaInput = allInputs.nth(1);
         }
         if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) return null;
 
-        let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img, .captcha-container img').first();
+        let captchaImg = page.locator('img[src^="data:image"], img[title*="கேப்ட்சா"], img[alt="Captcha Code"], img[src*="captcha"]:not([src*="perfdrive"]), .captcha-img, .captcha-container img').first();
         if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) {
-            const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
+            const formImgs = page.locator('form img:not([src*="logo"]):not([src*="perfdrive"]), .card img:not([src*="logo"]):not([src*="perfdrive"])');
             if (await formImgs.count() > 0 && await formImgs.first().isVisible().catch(() => false)) captchaImg = formImgs.first();
         }
         if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) return null;
 
-        const imgBuf = await captchaImg.screenshot();
-        const rawB64 = imgBuf.toString('base64');
+        let rawB64 = '';
+        let isJpeg = false;
+        try {
+            const srcAttr = await captchaImg.getAttribute('src');
+            if (srcAttr && srcAttr.startsWith('data:image')) {
+                rawB64 = srcAttr.includes('base64,') ? srcAttr.split('base64,')[1] : srcAttr;
+                isJpeg = srcAttr.toLowerCase().includes('jpeg') || srcAttr.toLowerCase().includes('jpg') || rawB64.startsWith('/9j/');
+            }
+        } catch (_) {}
+
+        if (!rawB64) {
+            const imgBuf = await captchaImg.screenshot();
+            rawB64 = imgBuf.toString('base64');
+            isJpeg = rawB64.startsWith('/9j/');
+        }
+
+        const mimeType = isJpeg ? 'image/jpeg' : 'image/png';
 
         // Strategy 1: Local Gemini SDK
         const apiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
@@ -77,21 +93,26 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
             try {
                 const { GoogleGenAI } = require('@google/genai');
                 const ai = new GoogleGenAI({ apiKey });
-                for (const mName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+                for (const mName of ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash']) {
                     try {
                         const ocrRes = await ai.models.generateContent({
                             model: mName,
                             contents: [{
                                 role: 'user',
                                 parts: [
-                                    { inlineData: { mimeType: 'image/png', data: rawB64 } },
+                                    { inlineData: { mimeType, data: rawB64 } },
                                     { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
                                 ]
-                            }]
+                            }],
+                            config: {
+                                systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
+                            }
                         });
                         if (ocrRes && ocrRes.text) {
                             const match = ocrRes.text.trim().match(/(\*\*|`|"|')?([a-zA-Z0-9]{4,8})(\*\*|`|"|')?/);
                             if (match && match[2]) return match[2];
+                            const stripped = ocrRes.text.trim().replace(/[^a-zA-Z0-9]/g, '');
+                            if (stripped.length >= 4 && stripped.length <= 8) return stripped;
                         }
                     } catch (mErr) {}
                 }

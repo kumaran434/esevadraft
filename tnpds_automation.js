@@ -4824,14 +4824,28 @@ function getActiveGeminiApiKey(options = {}) {
     return process.env.GEMINI_API_KEY || '';
 }
 
-async function solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options = {}) {
+async function solveCaptchaWithMultiLayerAi(imgInput, apiKey, options = {}) {
+    let rawB64 = '';
+    let isJpeg = false;
+
+    if (typeof imgInput === 'string') {
+        rawB64 = imgInput.includes('base64,') ? imgInput.split('base64,')[1] : imgInput;
+        isJpeg = imgInput.toLowerCase().includes('jpeg') || imgInput.toLowerCase().includes('jpg') || rawB64.startsWith('/9j/');
+    } else if (Buffer.isBuffer(imgInput)) {
+        rawB64 = imgInput.toString('base64');
+        isJpeg = rawB64.startsWith('/9j/');
+    }
+
+    if (!rawB64) return null;
+    const mimeType = isJpeg ? 'image/jpeg' : 'image/png';
+
     // Strategy 1: Local Gemini SDK (if apiKey present in env/options)
     if (apiKey) {
         try {
             const { GoogleGenAI } = require('@google/genai');
             const ai = new GoogleGenAI({ apiKey });
 
-            for (const mName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+            for (const mName of ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash']) {
                 try {
                     const ocrRes = await ai.models.generateContent({
                         model: mName,
@@ -4839,7 +4853,7 @@ async function solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options = {}) {
                             {
                                 role: 'user',
                                 parts: [
-                                    { inlineData: { mimeType: 'image/png', data: imgBuf.toString('base64') } },
+                                    { inlineData: { mimeType, data: rawB64 } },
                                     { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
                                 ]
                             }
@@ -4866,7 +4880,6 @@ async function solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options = {}) {
     targetUrls.push('https://esevadraft.in/api/ocr/captcha');
     targetUrls.push('http://localhost:3000/api/ocr/captcha');
 
-    const rawB64 = imgBuf.toString('base64');
     for (const url of targetUrls) {
         try {
             if (typeof fetch === 'function') {
@@ -4874,7 +4887,7 @@ async function solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options = {}) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ imageBase64: rawB64 }),
-                    signal: AbortSignal.timeout(6000)
+                    signal: AbortSignal.timeout(8000)
                 });
                 if (resp.ok) {
                     const data = await resp.json();
@@ -4893,10 +4906,12 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
     const apiKey = getActiveGeminiApiKey(options);
 
     // 1. Locate Captcha Input (Tamil and English attributes)
-    let curCaptchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
+    let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
     if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
         const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-        if (await allInputs.count() >= 2) {
+        if (await allInputs.count() >= 3) {
+            curCaptchaInput = allInputs.nth(2);
+        } else if (await allInputs.count() >= 2) {
             curCaptchaInput = allInputs.nth(1);
         }
     }
@@ -4905,10 +4920,10 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
         return null;
     }
 
-    // 2. Locate Captcha Image
-    let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img, .captcha-container img').first();
+    // 2. Locate Captcha Image (Strictly exclude perfdrive / radware challenge badges)
+    let captchaImg = page.locator('img[src^="data:image"], img[title*="கேப்ட்சா"], img[alt="Captcha Code"], img[src*="captcha"]:not([src*="perfdrive"]), .captcha-img, .captcha-container img').first();
     if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) {
-        const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
+        const formImgs = page.locator('form img:not([src*="logo"]):not([src*="perfdrive"]), .card img:not([src*="logo"]):not([src*="perfdrive"])');
         if (await formImgs.count() > 0 && await formImgs.first().isVisible().catch(() => false)) {
             captchaImg = formImgs.first();
         }
@@ -4919,31 +4934,38 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
     }
 
     // 3. Highlight captcha input in green on screen to show active AI solver
-    await page.evaluate(() => {
-        const inps = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"])'));
-        if (inps.length >= 2) {
-            const el = inps[1];
-            el.style.border = '3px solid #22c55e';
-            el.style.boxShadow = '0 0 14px rgba(34, 197, 94, 0.7)';
-            el.focus();
-        }
+    await curCaptchaInput.evaluate((el) => {
+        el.style.border = '3px solid #22c55e';
+        el.style.boxShadow = '0 0 14px rgba(34, 197, 94, 0.7)';
+        el.focus();
     }).catch(() => {});
 
     // 4. Multimodal OCR via Multi-Layer AI (Local Gemini or Cloud Backend)
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             onProgress(`🤖 [AI Captcha OCR] TNPDS கேப்ட்சா படம் பகுப்பாய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)...`);
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(400);
 
             if (!(await captchaImg.isVisible().catch(() => false))) {
-                const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
+                const formImgs = page.locator('form img:not([src*="logo"]):not([src*="perfdrive"]), .card img:not([src*="logo"]):not([src*="perfdrive"])');
                 if (await formImgs.count() > 0 && await formImgs.first().isVisible().catch(() => false)) {
                     captchaImg = formImgs.first();
                 }
             }
 
-            const imgBuf = await captchaImg.screenshot();
-            const code = await solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options);
+            let imgPayload = null;
+            try {
+                const srcAttr = await captchaImg.getAttribute('src');
+                if (srcAttr && srcAttr.startsWith('data:image')) {
+                    imgPayload = srcAttr;
+                }
+            } catch (_) {}
+
+            if (!imgPayload) {
+                imgPayload = await captchaImg.screenshot();
+            }
+
+            const code = await solveCaptchaWithMultiLayerAi(imgPayload, apiKey, options);
 
             if (code) {
                 onProgress(`🤖 [AI Captcha OCR] கேப்ட்சா குறியீடு தானாகக் கண்டறியப்பட்டது: "${code}"`);
@@ -4956,7 +4978,16 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
                 }, code).catch(() => {});
                 await curCaptchaInput.dispatchEvent('input', { bubbles: true }).catch(() => {});
                 await curCaptchaInput.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                await page.waitForTimeout(500);
+                await page.waitForTimeout(400);
+
+                // Auto-click submit button immediately
+                const submitBtn = page.locator('input[type="submit"][value="பதிவு செய்ய"], input.btn-success[value*="பதிவு"], button:has-text("பதிவு செய்ய")').first();
+                if (await submitBtn.count() > 0 && await submitBtn.isVisible().catch(() => false)) {
+                    const hClicked = await humanClick(page, submitBtn);
+                    if (!hClicked) {
+                        await submitBtn.click({ force: true, delay: 80 }).catch(() => {});
+                    }
+                }
                 return code;
             }
         } catch (eSolve) {
@@ -5707,20 +5738,22 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
             await page.waitForTimeout(1000);
 
             // Strategy 1: Named attributes
-            let captchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
+            let captchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
 
-            // Strategy 2: Second visible input in the login card (Input 0 = mobile, Input 1 = captcha)
+            // Strategy 2: Third or second visible input in the login card (+91 = 0, mobile = 1, captcha = 2)
             if (await captchaInput.count() === 0 || !(await captchaInput.isVisible())) {
                 const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-                if (await allInputs.count() >= 2) {
+                if (await allInputs.count() >= 3) {
+                    captchaInput = allInputs.nth(2);
+                } else if (await allInputs.count() >= 2) {
                     captchaInput = allInputs.nth(1);
                 }
             }
 
             // Locate Captcha Image
-            let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img').first();
+            let captchaImg = page.locator('img[src^="data:image"], img[title*="கேப்ட்சா"], img[alt="Captcha Code"], img[src*="captcha"]:not([src*="perfdrive"]), .captcha-img').first();
             if (await captchaImg.count() === 0 || !(await captchaImg.isVisible())) {
-                const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
+                const formImgs = page.locator('form img:not([src*="logo"]):not([src*="perfdrive"]), .card img:not([src*="logo"]):not([src*="perfdrive"])');
                 if (await formImgs.count() > 0 && await formImgs.first().isVisible()) {
                     captchaImg = formImgs.first();
                 }
@@ -5746,34 +5779,27 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
                         const code = await autoSolveCaptcha(page, onProgress, options);
 
                         if (code) {
-                            await ensureMobileNumberFilled();
-                            const curSendOtpBtn = page.locator('input[value="பதிவு செய்ய"], button:has-text("பதிவு செய்ய"), button:has-text("OTP"), input[type="submit"].btn-success, #btnSendOtp').first();
-
-                            if (await curSendOtpBtn.count() > 0) {
-                                const hClicked = await humanClick(page, curSendOtpBtn);
-                                if (!hClicked) {
-                                    await curSendOtpBtn.click({ force: true, delay: 80 }).catch(() => {});
+                            autoSolvedCaptcha = true;
+                            // Wait up to 6s for OTP or error alert
+                            let otpDetected = false;
+                            for (let chk = 0; chk < 6; chk++) {
+                                await page.waitForTimeout(1000);
+                                const otpNow = await page.evaluate(() => {
+                                    return Boolean(document.querySelector('input[formcontrolname="otp"], input[placeholder*="OTP"], input[name*="otp"], #otp'));
+                                }).catch(() => false);
+                                if (otpNow) {
+                                    otpDetected = true;
+                                    onProgress('✅ [AI OCR] கேப்ட்சா வெற்றிகரமாக ஏற்றுக்கொள்ளப்பட்டது! அரசு SMS OTP உருவாக்கப்பட்டது.');
+                                    await captureTelemetry(2, 'CAPTCHA_ACCEPTED_OTP_SENT', 'SUCCESS', { code });
+                                    break;
                                 }
-                                await page.waitForTimeout(2000);
+                                const midAlert = await page.evaluate(() => {
+                                    const el = document.querySelector('.alert-danger, .text-danger, .error-msg, .toast-error, snack-bar-container, .alert, .toast');
+                                    return el ? el.innerText.trim() : '';
+                                }).catch(() => '');
+                                if (midAlert) break;
                             }
-
-                            // Check if Radware challenge triggered upon submit
-                            const challengeTriggered = await handleStep2Radware();
-                            if (challengeTriggered) {
-                                await ensureMobileNumberFilled();
-                            }
-
-                            // Check if OTP field appeared (indicates captcha accepted)
-                            const otpNow = await page.evaluate(() => {
-                                return Boolean(document.querySelector('input[formcontrolname="otp"], input[placeholder*="OTP"], input[name*="otp"], #otp'));
-                            }).catch(() => false);
-
-                            if (otpNow) {
-                                autoSolvedCaptcha = true;
-                                onProgress('✅ [AI OCR] கேப்ட்சா வெற்றிகரமாக ஏற்றுக்கொள்ளப்பட்டது! அரசு SMS OTP உருவாக்கப்பட்டது.');
-                                await captureTelemetry(2, 'CAPTCHA_ACCEPTED_OTP_SENT', 'SUCCESS', { code });
-                                break;
-                            }
+                            if (otpDetected) break;
                         }
 
                         const errAlert = await page.evaluate(() => {
@@ -6057,7 +6083,7 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
 
                             // Multi-strategy Captcha Auto-Solve with Fallback
                             const autoCode = await autoSolveCaptcha(page, onProgress, options);
-                            const reCaptchaInp = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
+                            const reCaptchaInp = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
 
                             // STRICT ZERO-EMPTY-CAPTCHA INVARIANT:
                             // Check if captcha input actually has a valid value before attempting to submit!
@@ -8299,9 +8325,9 @@ async function startTnpdsAddressChangeFlow(citizenProfile = {}, onProgress = () 
 
             let mobInput = page.locator('input[placeholder*="கைபேசி"], input[formcontrolname="mobNumber"]:not([disabled]), input[formcontrolname="mobileno"]').first();
             if (await mobInput.count() > 0 && await mobInput.isVisible().catch(() => false)) {
-                let captchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
-                let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], .captcha-img').first();
-                const sendOtpBtn = page.locator('input[value="பதிவு செய்ய"], button:has-text("பதிவு செய்ய"), button:has-text("OTP"), #btnSendOtp').first();
+                let captchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
+                let captchaImg = page.locator('img[src^="data:image"], img[title*="கேப்ட்சா"], img[alt="Captcha Code"], img[src*="captcha"]:not([src*="perfdrive"]), .captcha-img').first();
+                const sendOtpBtn = page.locator('input[type="submit"][value="பதிவு செய்ய"], input.btn-success[value*="பதிவு"], button:has-text("பதிவு செய்ய"), #btnSendOtp').first();
 
                 // AI Captcha auto solve
                 const code = await autoSolveCaptcha(page, onProgress, options);
