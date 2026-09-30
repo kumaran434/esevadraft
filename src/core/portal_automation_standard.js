@@ -38,15 +38,93 @@ function getStandardBrowserConfig(options = {}) {
 
 /**
  * Standard Stealth Injection for anti-bot compliance on government portals (Radware/Perfdrive/Cloudflare)
+ * Invariant: Never inject fake plugins array or fake window.chrome runtime as they trigger Radware bot anomalies.
  */
 async function applyStandardStealth(context) {
     if (!context) return;
     await context.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'ta'] });
-        window.chrome = { runtime: {} };
     });
+}
+
+/**
+ * Universal Multi-Layer AI Captcha Solver
+ * Queries local Gemini if apiKey present, and automatically falls back to backend /api/ocr/captcha.
+ */
+async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) {
+    try {
+        let curCaptchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
+        if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
+            const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
+            if (await allInputs.count() >= 2) curCaptchaInput = allInputs.nth(1);
+        }
+        if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) return null;
+
+        let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img, .captcha-container img').first();
+        if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) {
+            const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
+            if (await formImgs.count() > 0 && await formImgs.first().isVisible().catch(() => false)) captchaImg = formImgs.first();
+        }
+        if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) return null;
+
+        const imgBuf = await captchaImg.screenshot();
+        const rawB64 = imgBuf.toString('base64');
+
+        // Strategy 1: Local Gemini SDK
+        const apiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
+        if (apiKey) {
+            try {
+                const { GoogleGenAI } = require('@google/genai');
+                const ai = new GoogleGenAI({ apiKey });
+                for (const mName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+                    try {
+                        const ocrRes = await ai.models.generateContent({
+                            model: mName,
+                            contents: [{
+                                role: 'user',
+                                parts: [
+                                    { inlineData: { mimeType: 'image/png', data: rawB64 } },
+                                    { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
+                                ]
+                            }]
+                        });
+                        if (ocrRes && ocrRes.text) {
+                            const match = ocrRes.text.trim().match(/(\*\*|`|"|')?([a-zA-Z0-9]{4,8})(\*\*|`|"|')?/);
+                            if (match && match[2]) return match[2];
+                        }
+                    } catch (mErr) {}
+                }
+            } catch (eLocal) {}
+        }
+
+        // Strategy 2: Backend Cloud OCR Fallback
+        const endpoints = [
+            options.serverUrl ? `${options.serverUrl.replace(/\/$/, '')}/api/ocr/captcha` : null,
+            'https://esevadraft.in/api/ocr/captcha',
+            'http://localhost:3000/api/ocr/captcha'
+        ].filter(Boolean);
+
+        for (const ep of endpoints) {
+            try {
+                if (typeof fetch === 'function') {
+                    const resp = await fetch(ep, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imageBase64: rawB64 }),
+                        signal: AbortSignal.timeout(6000)
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data && data.success && data.code) return data.code;
+                    }
+                }
+            } catch (netErr) {}
+        }
+    } catch (e) {
+        console.warn('[Universal Captcha Solver] Error:', e.message);
+    }
+    return null;
 }
 
 /**
@@ -160,5 +238,6 @@ module.exports = {
     applyStandardStealth,
     setupStandardOtpBypass,
     showStandardBrowserHud,
-    getStandardDemoProfile
+    getStandardDemoProfile,
+    solveUniversalCaptcha
 };
