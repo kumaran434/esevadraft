@@ -54,11 +54,10 @@ async function applyStandardStealth(context) {
  */
 async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) {
     try {
-        let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
+        let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[name="captchaCode"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
         if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
-            const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-            if (await allInputs.count() >= 3) curCaptchaInput = allInputs.nth(2);
-            else if (await allInputs.count() >= 2) curCaptchaInput = allInputs.nth(1);
+            const nonMobInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"]), .card input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"])');
+            if (await nonMobInputs.count() > 0) curCaptchaInput = nonMobInputs.first();
         }
         if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) return null;
 

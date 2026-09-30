@@ -4905,14 +4905,12 @@ async function solveCaptchaWithMultiLayerAi(imgInput, apiKey, options = {}) {
 async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
     const apiKey = getActiveGeminiApiKey(options);
 
-    // 1. Locate Captcha Input (Tamil and English attributes)
-    let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
+    // 1. Locate Captcha Input (Strictly exclude mobile input)
+    let curCaptchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[name="captchaCode"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
     if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
-        const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-        if (await allInputs.count() >= 3) {
-            curCaptchaInput = allInputs.nth(2);
-        } else if (await allInputs.count() >= 2) {
-            curCaptchaInput = allInputs.nth(1);
+        const nonMobInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"]), .card input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"])');
+        if (await nonMobInputs.count() > 0) {
+            curCaptchaInput = nonMobInputs.first();
         }
     }
 
@@ -5738,15 +5736,13 @@ async function startTnpdsAddMemberFlow(citizenProfile = {}, onProgress = () => {
             await page.waitForTimeout(1000);
 
             // Strategy 1: Named attributes
-            let captchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
+            let captchaInput = page.locator('input#captchaCode, input[formcontrolname="captchaCode"], input[formcontrolname="captcha"], input[name="captchaCode"], input[placeholder*="எழுத்துக்களை"], #captcha').first();
 
-            // Strategy 2: Third or second visible input in the login card (+91 = 0, mobile = 1, captcha = 2)
+            // Strategy 2: Non-mobile input
             if (await captchaInput.count() === 0 || !(await captchaInput.isVisible())) {
-                const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
-                if (await allInputs.count() >= 3) {
-                    captchaInput = allInputs.nth(2);
-                } else if (await allInputs.count() >= 2) {
-                    captchaInput = allInputs.nth(1);
+                const nonMobInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"]), .card input:not([type="hidden"]):not([type="submit"]):not([formcontrolname*="mob"]):not([id*="mob"]):not([placeholder*="கைபேசி"])');
+                if (await nonMobInputs.count() > 0) {
+                    captchaInput = nonMobInputs.first();
                 }
             }
 
