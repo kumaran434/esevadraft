@@ -7,9 +7,21 @@ async function runMockSandboxTest() {
     console.log('Watch the browser window open and fill every single field!');
     console.log('======================================================\n');
 
-    const profile = getCitizenProfile('9790170026');
+    const path = require('path');
+    const fs = require('fs');
+    const draftPath = path.join(__dirname, 'data', 'drafts', '9790170026.json');
+    let profile = null;
+    if (fs.existsSync(draftPath)) {
+        try {
+            const draft = JSON.parse(fs.readFileSync(draftPath, 'utf-8'));
+            profile = draft.citizenProfile;
+        } catch (e) {}
+    }
     if (!profile) {
-        console.error('Citizen profile not found!');
+        profile = getCitizenProfile('9790170026');
+    }
+    if (!profile) {
+        console.error('Citizen profile not found in drafts or database!');
         return;
     }
 

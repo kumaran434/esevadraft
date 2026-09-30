@@ -46,10 +46,20 @@ function saveCitizenProfile(mobileNumber, profileData) {
     const db = loadDatabase();
     const cleanData = { ...profileData };
     if (cleanData.district || cleanData.taluk || cleanData.village || cleanData.pincode) {
-        const resolved = resolveTnDistrict(cleanData.district, cleanData.taluk, cleanData.village, cleanData.pincode);
+        const fullAddr = [cleanData.streetEng, cleanData.streetTam, cleanData.areaEng, cleanData.areaTam].filter(Boolean).join(' ');
+        const resolved = resolveTnDistrict(cleanData.district, cleanData.taluk, cleanData.village, cleanData.pincode, fullAddr);
         cleanData.district = resolved.district;
         cleanData.districtTam = resolved.districtTam;
         if (resolved.taluk) cleanData.taluk = resolved.taluk;
+        if (resolved.talukTam) cleanData.talukTam = resolved.talukTam;
+        if (resolved.village && (!cleanData.village || resolved.wasAutoCorrected)) {
+            cleanData.village = resolved.village;
+            if (resolved.villageTam) cleanData.villageTam = resolved.villageTam;
+        }
+        if (resolved.wasAutoCorrected) {
+            cleanData.districtAutoCorrected = true;
+            cleanData.districtCorrectionReason = resolved.reason;
+        }
     }
     db[mobileNumber] = {
         ...(db[mobileNumber] || {}),

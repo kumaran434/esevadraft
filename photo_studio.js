@@ -1,12 +1,34 @@
-const sharp = require('sharp');
-const PDFDocument = require('pdfkit');
+let sharp = null;
+try { sharp = require('sharp'); } catch (e) {}
+let PDFDocument = null;
+try { PDFDocument = require('pdfkit'); } catch (e) {}
 const fs = require('fs');
 const path = require('path');
 
-const studioDir = path.join(__dirname, 'compressed');
-if (!fs.existsSync(studioDir)) {
-    fs.mkdirSync(studioDir, { recursive: true });
+const os = require('os');
+
+function getSafeStudioDir() {
+    const localDir = path.join(__dirname, 'compressed');
+    try {
+        if (!fs.existsSync(localDir)) {
+            fs.mkdirSync(localDir, { recursive: true });
+        }
+        const testFile = path.join(localDir, `.perm_test_${Date.now()}`);
+        fs.writeFileSync(testFile, 'ok');
+        fs.unlinkSync(testFile);
+        return localDir;
+    } catch (e) {
+        const fallbackDir = path.join(os.tmpdir(), 'esevadraft', 'compressed');
+        try {
+            if (!fs.existsSync(fallbackDir)) {
+                fs.mkdirSync(fallbackDir, { recursive: true });
+            }
+        } catch (e2) {}
+        return fallbackDir;
+    }
 }
+
+const studioDir = getSafeStudioDir();
 
 /**
  * AI Passport Photo Studio:
@@ -19,6 +41,9 @@ if (!fs.existsSync(studioDir)) {
 async function produceCompliantPassportPhoto(inputPath) {
     if (!fs.existsSync(inputPath)) {
         console.warn(`File not found for photo studio: ${inputPath}`);
+        return inputPath;
+    }
+    if (!sharp) {
         return inputPath;
     }
 
@@ -65,7 +90,8 @@ async function produceCompliantPassportPhoto(inputPath) {
  */
 async function compressHeavyPdf(inputPdfPath) {
     try {
-        const { chromium } = require('playwright');
+        let chromium;
+        try { chromium = require('playwright').chromium; } catch(e) { chromium = require('playwright-core').chromium; }
         const pdfBuf = fs.readFileSync(inputPdfPath);
         const pdfBase64 = pdfBuf.toString('base64');
         const outputPdfPath = path.join(studioDir, `compressed_${Date.now()}_${path.basename(inputPdfPath)}`);
@@ -145,11 +171,10 @@ async function produceCompliantDocument(inputPath) {
         return inputPath;
     }
 
-    const tempJpg = path.join(studioDir, `enhanced_scan_${Date.now()}.jpeg`);
-    const outputPdfPath = path.join(studioDir, `doc_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}.pdf`);
+    const outputJpg = path.join(studioDir, `doc_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}.jpeg`);
 
     try {
-        // Multi-Stage Image Restoration Pipeline (Resized & optimized for < 240 KB Government standard)
+        // Multi-Stage Image Restoration Pipeline (Resized & optimized for < 180 KB Government standard)
         await sharp(inputPath)
             .resize({ width: 1000, height: 1350, fit: 'inside', withoutEnlargement: true })
             .flatten({ background: { r: 255, g: 255, b: 255 } })
@@ -165,39 +190,14 @@ async function produceCompliantDocument(inputPath) {
                 m2: 0.6
             })
             .jpeg({
-                quality: 75,
+                quality: 82,
                 chromaSubsampling: '4:2:0'
             })
-            .toFile(tempJpg);
+            .toFile(outputJpg);
 
-        // 2. Wrap the crystal-clear enhanced scan inside official Government A4 PDF
-        return new Promise((resolve) => {
-            const doc = new PDFDocument({ size: 'A4', margin: 36 });
-            const writeStream = fs.createWriteStream(outputPdfPath);
-
-            doc.pipe(writeStream);
-            
-            // Center the enhanced document on the A4 page
-            doc.image(tempJpg, 40, 60, {
-                fit: [515, 680],
-                align: 'center',
-                valign: 'center'
-            });
-            
-            doc.end();
-
-            writeStream.on('finish', () => {
-                try { if (fs.existsSync(tempJpg)) fs.unlinkSync(tempJpg); } catch (e) {}
-                const fileSizeKB = (fs.statSync(outputPdfPath).size / 1024).toFixed(1);
-                console.log(`✨ AI Enhanced Government PDF Generated: ${outputPdfPath} (${fileSizeKB} KB)`);
-                resolve(outputPdfPath);
-            });
-
-            writeStream.on('error', (err) => {
-                console.error('PDF generation error:', err);
-                resolve(tempJpg);
-            });
-        });
+        const fileSizeKB = (fs.statSync(outputJpg).size / 1024).toFixed(1);
+        console.log(`✨ AI Enhanced Compliant Document Generated: ${outputJpg} (${fileSizeKB} KB)`);
+        return outputJpg;
     } catch (e) {
         console.error('Doc optimizer error:', e.message);
         return inputPath;

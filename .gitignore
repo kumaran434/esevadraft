@@ -34,3 +34,8 @@ downloads/
 .DS_Store
 Thumbs.db
 *.log
+*.txt
+public/receipts/
+public/previews/
+public/videos/
+public/logs/

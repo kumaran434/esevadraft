@@ -133,10 +133,18 @@ Respond strictly in JSON format:
 
         // TN District Bifurcation Auto-Correction using dedicated mapper:
         const { resolveTnDistrict } = require('./tn_district_mapper');
-        const resolved = resolveTnDistrict(result.district, result.taluk, result.village, result.pincode);
+        const fullAddr = [result.streetEng, result.streetTam, result.areaEng, result.areaTam].filter(Boolean).join(' ');
+        const resolved = resolveTnDistrict(result.district, result.taluk, result.village, result.pincode, fullAddr);
         result.district = resolved.district;
         result.districtTam = resolved.districtTam;
         if (resolved.taluk) result.taluk = resolved.taluk;
+        if (resolved.talukTam) result.talukTam = resolved.talukTam;
+        if (resolved.village && (!result.village || resolved.wasAutoCorrected)) {
+            result.village = resolved.village;
+            if (resolved.villageTam) result.villageTam = resolved.villageTam;
+        }
+        if (resolved.areaEng && !result.areaEng) result.areaEng = resolved.areaEng;
+        if (resolved.areaTam && !result.areaTam) result.areaTam = resolved.areaTam;
         if (resolved.wasAutoCorrected) {
             result.districtAutoCorrected = true;
             result.districtCorrectionReason = resolved.reason;

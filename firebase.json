@@ -14,15 +14,26 @@
       "**/*.jpg",
       "**/*.pdf"
     ],
+    "headers": [
+      {
+        "source": "**/*.@(html|json)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ],
     "redirects": [
       {
         "source": "/api/download/desktop-app",
-        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.0.1/eSevaDraft-Desktop-Setup-1.0.1.exe",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.12/eSevaDraft-Desktop-Setup-1.1.12.exe",
         "type": 302
       },
       {
         "source": "/download/desktop-app",
-        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.0.1/eSevaDraft-Desktop-Setup-1.0.1.exe",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.12/eSevaDraft-Desktop-Setup-1.1.12.exe",
         "type": 302
       }
     ],

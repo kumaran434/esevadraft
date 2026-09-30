@@ -1,8 +1,8 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.0.1",
+  "version": "1.1.12",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build:protect": "node build-protected.js",
@@ -24,11 +24,34 @@
   "build": {
     "appId": "in.esevadraft.desktop",
     "productName": "eSevaDraft Desktop",
+    "extraResources": [
+      {
+        "from": "../tnpds_automation.js",
+        "to": "tnpds_automation.js"
+      },
+      {
+        "from": "../photo_studio.js",
+        "to": "photo_studio.js"
+      },
+      {
+        "from": "../tn_district_mapper.js",
+        "to": "tn_district_mapper.js"
+      },
+      {
+        "from": "../govt_automation_core.js",
+        "to": "govt_automation_core.js"
+      },
+      {
+        "from": "../data",
+        "to": "data"
+      }
+    ],
     "win": {
       "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
@@ -40,6 +63,9 @@
         "repo": "esevadraft"
       }
     ],
-    "asar": true
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/playwright-core/**"
+    ]
   }
 }

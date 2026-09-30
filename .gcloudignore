@@ -4,12 +4,17 @@ uploads/**
 scratch/**
 compressed/**
 chrome_session_data/**
+public/videos/**
 public/recordings/**
 public/previews/**
 public/receipts/**
+public/logs/**
 *.log
 *.zip
 .env
+desktop
 desktop/**
+downloads
 downloads/**
 *.exe
+data/**
