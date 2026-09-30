@@ -4824,12 +4824,76 @@ function getActiveGeminiApiKey(options = {}) {
     return process.env.GEMINI_API_KEY || '';
 }
 
+async function solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options = {}) {
+    // Strategy 1: Local Gemini SDK (if apiKey present in env/options)
+    if (apiKey) {
+        try {
+            const { GoogleGenAI } = require('@google/genai');
+            const ai = new GoogleGenAI({ apiKey });
+
+            for (const mName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+                try {
+                    const ocrRes = await ai.models.generateContent({
+                        model: mName,
+                        contents: [
+                            {
+                                role: 'user',
+                                parts: [
+                                    { inlineData: { mimeType: 'image/png', data: imgBuf.toString('base64') } },
+                                    { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
+                                ]
+                            }
+                        ],
+                        config: {
+                            systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
+                        }
+                    });
+                    if (ocrRes && ocrRes.text) {
+                        const rawText = ocrRes.text.trim();
+                        const match = rawText.match(/(\*\*|`|"|')?([a-zA-Z0-9]{4,8})(\*\*|`|"|')?/);
+                        if (match && match[2]) return match[2];
+                        const stripped = rawText.replace(/[^a-zA-Z0-9]/g, '');
+                        if (stripped.length >= 4 && stripped.length <= 8) return stripped;
+                    }
+                } catch (mErr) {}
+            }
+        } catch (localErr) {}
+    }
+
+    // Strategy 2: Universal Backend Cloud OCR Endpoint (Works anywhere in Desktop app & Cloud without local .env)
+    const targetUrls = [];
+    if (options.serverUrl) targetUrls.push(`${options.serverUrl.replace(/\/$/, '')}/api/ocr/captcha`);
+    targetUrls.push('https://esevadraft.in/api/ocr/captcha');
+    targetUrls.push('http://localhost:3000/api/ocr/captcha');
+
+    const rawB64 = imgBuf.toString('base64');
+    for (const url of targetUrls) {
+        try {
+            if (typeof fetch === 'function') {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ imageBase64: rawB64 }),
+                    signal: AbortSignal.timeout(6000)
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data && data.success && data.code) {
+                        return data.code;
+                    }
+                }
+            }
+        } catch (netErr) {}
+    }
+
+    return null;
+}
+
 async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
     const apiKey = getActiveGeminiApiKey(options);
-    if (!apiKey) return null;
 
-    // 1. Locate Captcha Input
-    let curCaptchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"]').first();
+    // 1. Locate Captcha Input (Tamil and English attributes)
+    let curCaptchaInput = page.locator('input[formcontrolname="captcha"], input[formcontrolname="captchaCode"], input[placeholder*="எழுத்துக்களை"], input[placeholder*="எண்ணை"], input[placeholder*="captcha" i], #captcha, input[name="captcha"], input[name="captchaCode"]').first();
     if (await curCaptchaInput.count() === 0 || !(await curCaptchaInput.isVisible().catch(() => false))) {
         const allInputs = page.locator('form input:not([type="hidden"]):not([type="submit"]), .card input:not([type="hidden"]):not([type="submit"]), .login-box input:not([type="hidden"]):not([type="submit"])');
         if (await allInputs.count() >= 2) {
@@ -4842,7 +4906,7 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
     }
 
     // 2. Locate Captcha Image
-    let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img').first();
+    let captchaImg = page.locator('img[src*="captcha"], img[alt*="Captcha" i], img[src*="create"], img[src*="data:image"], .captcha-img, .captcha-container img').first();
     if (await captchaImg.count() === 0 || !(await captchaImg.isVisible().catch(() => false))) {
         const formImgs = page.locator('form img:not([src*="logo"]), .card img:not([src*="logo"])');
         if (await formImgs.count() > 0 && await formImgs.first().isVisible().catch(() => false)) {
@@ -4865,7 +4929,7 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
         }
     }).catch(() => {});
 
-    // 4. Multimodal OCR via Gemini AI
+    // 4. Multimodal OCR via Multi-Layer AI (Local Gemini or Cloud Backend)
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             onProgress(`🤖 [AI Captcha OCR] TNPDS கேப்ட்சா படம் பகுப்பாய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)...`);
@@ -4879,46 +4943,7 @@ async function autoSolveCaptcha(page, onProgress = () => {}, options = {}) {
             }
 
             const imgBuf = await captchaImg.screenshot();
-            const { GoogleGenAI } = require('@google/genai');
-            const ai = new GoogleGenAI({ apiKey });
-
-            let rawText = '';
-            for (const mName of ['gemini-3.6-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
-                try {
-                    const ocrRes = await ai.models.generateContent({
-                        model: mName,
-                        contents: [
-                            {
-                                role: 'user',
-                                parts: [
-                                    { inlineData: { mimeType: 'image/png', data: imgBuf.toString('base64') } },
-                                    { text: 'Extract the 6 alphanumeric characters from this captcha image. Output ONLY the code, nothing else.' }
-                                ]
-                            }
-                        ],
-                        config: {
-                            systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
-                        }
-                    });
-                    if (ocrRes && ocrRes.text) {
-                        rawText = ocrRes.text.trim();
-                        break;
-                    }
-                } catch (mErr) {}
-            }
-
-            let code = '';
-            if (rawText) {
-                const match = rawText.match(/(\*\*|`|"|')?([a-zA-Z0-9]{4,8})(\*\*|`|"|')?/);
-                if (match && match[2]) {
-                    code = match[2];
-                } else {
-                    const stripped = rawText.replace(/[^a-zA-Z0-9]/g, '');
-                    if (stripped.length >= 4 && stripped.length <= 8) {
-                        code = stripped;
-                    }
-                }
-            }
+            const code = await solveCaptchaWithMultiLayerAi(imgBuf, apiKey, options);
 
             if (code) {
                 onProgress(`🤖 [AI Captcha OCR] கேப்ட்சா குறியீடு தானாகக் கண்டறியப்பட்டது: "${code}"`);

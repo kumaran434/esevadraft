@@ -345,7 +345,8 @@ ipcMain.handle('start-live-automation', async (_event, draftData) => {
                 subServiceData: targetProfile.subServiceData,
                 operatorMobile: draftData?.operatorMobile || '',
                 base64Docs: draftData?.base64Docs || draftData?.citizenProfile?.base64Docs,
-                geminiApiKey: process.env.GEMINI_API_KEY || ''
+                geminiApiKey: process.env.GEMINI_API_KEY || '',
+                serverUrl: process.env.ESEVA_DEV_URL || 'https://esevadraft.in'
             })
                 .then(res => {
                     console.log('[Desktop] Automation finished:', res);
