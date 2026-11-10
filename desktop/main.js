@@ -67,6 +67,27 @@ if (!gotTheLock) {
 
     // App Lifecycle
     app.whenReady().then(() => {
+        // Stale Cache Purge upon Version Upgrade: Prevents zombie UI cache across installer updates
+        try {
+            const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : '';
+            const currentVer = app.getVersion() || '1.1.14';
+            if (userData) {
+                const verFile = path.join(userData, '.installed_version');
+                let prevVer = '';
+                try { if (fs.existsSync(verFile)) prevVer = fs.readFileSync(verFile, 'utf8').trim(); } catch (_) {}
+                if (prevVer !== currentVer) {
+                    console.log(`🚀 [Version Transition] Upgraded from ${prevVer || 'prior'} to ${currentVer}. Purging stale cache...`);
+                    const userPublic = path.join(userData, 'public');
+                    if (fs.existsSync(userPublic)) {
+                        try { fs.rmSync(userPublic, { recursive: true, force: true }); } catch (_) {}
+                    }
+                    try { fs.writeFileSync(verFile, currentVer, 'utf8'); } catch (_) {}
+                }
+            }
+        } catch (e) {
+            console.warn('[Cache Purge Error]:', e.message);
+        }
+
         startLocalServer(() => activeAutomationModule, (mod) => { activeAutomationModule = mod; });
         createMainWindow();
 

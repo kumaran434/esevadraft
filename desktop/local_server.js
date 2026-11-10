@@ -39,9 +39,16 @@ function resolveLocalFile(reqPath) {
     if (clean.includes('..')) return null;
 
     const candidates = [];
+
+    // 1. Packaged Installer Resources & Workspace (Always Certified Production Version)
+    if (process.resourcesPath) {
+        candidates.push(path.join(process.resourcesPath, 'public', clean));
+    }
+    candidates.push(path.join(__dirname, '..', 'public', clean));
+
+    // 2. User Data Directory (Uploads, Compressed Cache, and Secondary OTA Assets)
     try {
         if (typeof app !== 'undefined' && app.getPath) {
-            candidates.push(path.join(app.getPath('userData'), 'public', clean));
             if (clean.startsWith('uploads/')) {
                 const sub = clean.replace(/^uploads\//, '');
                 candidates.push(path.join(app.getPath('userData'), 'data', 'uploads', sub));
@@ -56,12 +63,9 @@ function resolveLocalFile(reqPath) {
                 const sub = clean.replace(/^data\/uploads\//, '');
                 candidates.push(path.join(app.getPath('userData'), 'data', 'uploads', sub));
             }
+            candidates.push(path.join(app.getPath('userData'), 'public', clean));
         }
     } catch (_) {}
-    if (process.resourcesPath) {
-        candidates.push(path.join(process.resourcesPath, 'public', clean));
-    }
-    candidates.push(path.join(__dirname, '..', 'public', clean));
     if (clean.startsWith('uploads/')) {
         const sub = clean.replace(/^uploads\//, '');
         candidates.push(path.join(__dirname, '..', 'data', 'uploads', sub));
