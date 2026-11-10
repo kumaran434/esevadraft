@@ -125,16 +125,16 @@ router.get('/api/download/desktop-app', (req, res) => {
             return res.download(path.join(distDir, latestExe), latestExe);
         }
     }
-    return res.redirect('https://github.com/kumaran434/esevadraft/releases/download/v1.1.14/eSevaDraft-Desktop-Setup-1.1.14.exe');
+    return res.redirect('https://github.com/kumaran434/esevadraft/releases/download/v1.1.15/eSevaDraft-Desktop-Setup-1.1.15.exe');
 });
 
 // 8. GET /api/download/version - Returns latest available desktop application version info
 router.get('/api/download/version', (req, res) => {
     res.json({
         success: true,
-        latestVersion: '1.1.14',
+        latestVersion: '1.1.15',
         downloadUrl: '/api/download/desktop-app',
-        releaseName: 'eSevaDraft Desktop Suite v1.1.14'
+        releaseName: 'eSevaDraft Desktop Suite v1.1.15'
     });
 });
 

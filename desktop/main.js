@@ -70,7 +70,7 @@ if (!gotTheLock) {
         // Stale Cache Purge upon Version Upgrade: Prevents zombie UI cache across installer updates
         try {
             const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : '';
-            const currentVer = app.getVersion() || '1.1.14';
+            const currentVer = app.getVersion() || '1.1.15';
             if (userData) {
                 const verFile = path.join(userData, '.installed_version');
                 let prevVer = '';
