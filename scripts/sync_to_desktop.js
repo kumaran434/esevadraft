@@ -36,6 +36,18 @@ async function syncAllToDesktop() {
     // 1. Sync core automation files & support modules to both UserData and Program Resources
     const destinations = [USER_DATA_DIR, PROGRAM_RESOURCES_DIR];
 
+    // Ensure resources has a junction to workspace node_modules so Express & all native modules resolve instantly
+    const resourcesNodeModules = path.join(PROGRAM_RESOURCES_DIR, 'node_modules');
+    const workspaceNodeModules = path.join(ROOT_DIR, 'node_modules');
+    if (fs.existsSync(PROGRAM_RESOURCES_DIR) && !fs.existsSync(resourcesNodeModules) && fs.existsSync(workspaceNodeModules)) {
+        try {
+            fs.symlinkSync(workspaceNodeModules, resourcesNodeModules, 'junction');
+            console.log('  ✅ Linked resources/node_modules -> workspace/node_modules (NTFS junction)');
+        } catch (e) {
+            console.warn(`  ⚠️ Could not link resources/node_modules: ${e.message}`);
+        }
+    }
+
     for (const dest of destinations) {
         if (!fs.existsSync(dest)) continue;
 

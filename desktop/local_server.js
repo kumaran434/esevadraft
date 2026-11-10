@@ -349,6 +349,29 @@ function getLocalExpressApp() {
     if (!localExpressAppInstance && !expressLoadAttempted) {
         expressLoadAttempted = true;
         try {
+            // Hook Node Module resolution so Express and native modules are found
+            const Module = require('module');
+            const origNodeModulePaths = Module._nodeModulePaths;
+            const extraNodePaths = [
+                path.join('d:', 'downloads', 'ai assitant 2', 'node_modules'),
+                path.join(__dirname, '..', 'node_modules'),
+                path.join(__dirname, 'node_modules'),
+                path.join(process.resourcesPath || '', 'node_modules'),
+                path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules')
+            ];
+            if (typeof app !== 'undefined' && app.getPath) {
+                extraNodePaths.push(path.join(app.getPath('userData'), 'node_modules'));
+            }
+            Module._nodeModulePaths = function(from) {
+                const paths = origNodeModulePaths.call(this, from);
+                for (const extra of extraNodePaths) {
+                    if (fs.existsSync(extra) && !paths.includes(extra)) {
+                        paths.push(extra);
+                    }
+                }
+                return paths;
+            };
+
             const candidates = [
                 path.join('d:', 'downloads', 'ai assitant 2', 'server.js'),
                 path.join(__dirname, '..', 'server.js'),
@@ -365,12 +388,17 @@ function getLocalExpressApp() {
                         const mod = require(cand);
                         if (mod && mod.app) {
                             localExpressAppInstance = mod.app;
+                            console.log('✅ [Desktop Local Server] Successfully mounted local Express engine from:', cand);
                             break;
                         }
-                    } catch (_) {}
+                    } catch (err) {
+                        console.warn(`⚠️ [Desktop Local Server] Candidate ${cand} load failed:`, err.message);
+                    }
                 }
             }
-        } catch (_) {}
+        } catch (e) {
+            console.warn('⚠️ [Desktop Local Server] Failed to initialize Express app:', e.message);
+        }
     }
     return localExpressAppInstance;
 }
@@ -1338,6 +1366,10 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
 
             // 3.5 Cloud API Proxy Fallback (only if local Express is unavailable)
             if (urlPath.startsWith('/api/')) {
+                if (urlPath.startsWith('/api/tools/')) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'டூல்ஸ் சேவை இயங்கவில்லை. சர்வரை மறுதொடக்கம் செய்யவும்.' }));
+                }
                 return proxyToCloud(req, res);
             }
 

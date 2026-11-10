@@ -314,8 +314,11 @@
             const savedPct = Math.max(0, Math.round((1 - (data.mainFile.sizeBytes / tool1State.file.size)) * 100));
 
             if (statusEl) {
-                statusEl.innerHTML = `<span style="color:#15803d; font-weight:800;">✅ சுருக்கப்பட்டது: ${origKb} KB ➔ ${newKb} KB (${savedPct}% குறைப்பு)</span>`;
+                statusEl.innerHTML = `<span style="color:#15803d; font-weight:800;">✅ சுருக்கப்பட்டது: ${origKb} KB ➔ ${newKb} KB (${savedPct}% குறைப்பு) — பதிவிறக்கம் தொடங்கியது!</span>`;
             }
+
+            // Immediately auto-trigger the file download
+            triggerDownloadUrl(data.mainFile.downloadUrl, data.mainFile.filename);
 
             if (resultsBox) {
                 resultsBox.innerHTML = `
@@ -323,6 +326,9 @@
                         <div>
                             <div style="font-size:13px; font-weight:800; color:#065f46;">
                                 <i class="fa-solid fa-file-circle-check" style="color:#16a34a;"></i> ${data.mainFile.filename} (${newKb} KB)
+                            </div>
+                            <div style="font-size:11px; color:#15803d; margin-top:2px;">
+                                📥 கோப்பு உங்கள் கம்ப்யூட்டரில் தானாகவே பதிவிறக்கம் செய்யப்பட்டது. மீண்டும் பதிவிறக்க கீழே உள்ள பட்டனைப் பயன்படுத்தலாம்.
                             </div>
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
@@ -342,7 +348,98 @@
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-compress"></i> சுருக்கு (Compress PDF)';
+                btn.innerHTML = '<i class="fa-solid fa-download"></i> 📥 சுருக்கு & பதிவிறக்கு (Compress & Download)';
+            }
+        }
+    };
+
+    // Execute Combined PDF Compression + N-Part Split (Does BOTH at once!)
+    window.runTool1CompressAndSplit = async function () {
+        if (!tool1State.file) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் மேலே உள்ள பெட்டியில் ஒரு PDF கோப்பை அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+
+        const customKbVal = Number(document.getElementById('tool1CustomKbInput')?.value);
+        const targetKb = customKbVal > 10 ? customKbVal : (tool1State.targetKb || 200);
+        const numParts = Number(document.getElementById('tool1NumPartsInput')?.value) || 5;
+        const btn = document.getElementById('btnTool1CompressAndSplit');
+        const statusEl = document.getElementById('tool1StatusMsg');
+        const resultsBox = document.getElementById('tool1ResultsContainer');
+
+        try {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சுருக்கி & பிரிக்கப்படுகிறது...';
+            }
+
+            const pageUrls = await renderAllPdfPagesToDataUrls(
+                tool1State.file,
+                targetKb <= 120 ? 1.15 : 1.45,
+                (msg) => { if (statusEl) statusEl.innerText = msg; }
+            );
+
+            if (statusEl) statusEl.innerText = `⚡ ${targetKb} KB அளவிற்கு PDF சுருக்கப்பட்டு ${numParts} பாகங்களாகப் பிரிக்கப்படுகிறது...`;
+
+            const res = await fetch('/api/tools/pdf-compress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    originalName: tool1State.file.name,
+                    targetKb,
+                    splitParts: numParts,
+                    pageDataUrls: pageUrls
+                })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'PDF சுருக்கிப் பிரிப்பதில் பிழை');
+
+            const origKb = (tool1State.file.size / 1024).toFixed(1);
+            const newKb = data.mainFile.sizeKb;
+            const parts = data.splitOutputs || [];
+
+            if (statusEl) {
+                statusEl.innerHTML = `<span style="color:#15803d; font-weight:800;">✅ சுருக்கப்பட்டது (${origKb} KB ➔ ${newKb} KB) மற்றும் ${parts.length} பாகங்களாகப் பிரிக்கப்பட்டது!</span>`;
+            }
+
+            // Auto-download the full compressed file
+            triggerDownloadUrl(data.mainFile.downloadUrl, data.mainFile.filename);
+
+            let partsHtml = '';
+            if (parts.length > 0) {
+                partsHtml = renderSplitPartsCardsHtml(parts, `✂️ பிரிக்கப்பட்ட ${parts.length} PDF பாகங்கள் (ஒவ்வொன்றும் சுருக்கப்பட்டது)`);
+            }
+
+            if (resultsBox) {
+                resultsBox.innerHTML = `
+                    <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <div style="font-size:13px; font-weight:800; color:#065f46;">
+                                <i class="fa-solid fa-file-circle-check" style="color:#16a34a;"></i> முழு கோப்பு: ${data.mainFile.filename} (${newKb} KB)
+                            </div>
+                            <div style="font-size:11px; color:#15803d; margin-top:2px;">
+                                📥 முழு கோப்பு பதிவிறக்கம் தொடங்கியது!
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <a href="${data.mainFile.downloadUrl}?inline=1" target="_blank" style="height:32px; padding:0 12px; background:white; border:1.5px solid #86efac; color:#166534; border-radius:6px; font-size:11.5px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-eye"></i> பார்
+                            </a>
+                            <a href="${data.mainFile.downloadUrl}" download="${data.mainFile.filename}" style="height:32px; padding:0 14px; background:#16a34a; color:white; border-radius:6px; font-size:11.5px; font-weight:800; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-download"></i> பதிவிறக்கு
+                            </a>
+                        </div>
+                    </div>
+                    ${partsHtml}
+                `;
+            }
+        } catch (err) {
+            console.error('Compress & Split error:', err);
+            if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626; font-weight:700;">⚠️ பிழை: ${err.message}</span>`;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-bolt-lightning"></i> ⚡ சுருக்கி & பாகங்களாகப் பிரித்துப் பதிவிறக்கு (Compress + Split & Download)';
             }
         }
     };
@@ -380,10 +477,13 @@
 
             const parts = data.splitOutputs || [];
             if (statusEl) {
-                statusEl.innerHTML = `<span style="color:#1d4ed8; font-weight:800;">✅ ${parts.length} பாகங்களாகப் பிரிக்கப்பட்டது!</span>`;
+                statusEl.innerHTML = `<span style="color:#1d4ed8; font-weight:800;">✅ ${parts.length} பாகங்களாகப் பிரிக்கப்பட்டுப் பதிவிறக்கம் தொடங்கியது!</span>`;
             }
             if (resultsBox) {
                 resultsBox.innerHTML = renderSplitPartsCardsHtml(parts, `✂️ பிரிக்கப்பட்ட ${parts.length} PDF பாகங்கள்`);
+            }
+            if (parts.length > 0) {
+                downloadAllSplitParts();
             }
         } catch (err) {
             console.error('Split error:', err);
@@ -590,11 +690,19 @@
             const data = await res.json();
             if (!data.success) throw new Error(data.error || 'JPG to PDF மாற்றத்தில் பிழை');
 
+            // Immediately auto-trigger PDF download to user's computer
+            triggerDownloadUrl(data.output.downloadUrl, data.output.filename);
+
             if (resBox) {
                 resBox.innerHTML = `
                     <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                        <div style="font-size:13px; font-weight:800; color:#065f46;">
-                            ✅ ${data.output.filename} (${data.output.sizeKb} KB)
+                        <div>
+                            <div style="font-size:13px; font-weight:800; color:#065f46;">
+                                ✅ ${data.output.filename} (${data.output.sizeKb} KB)
+                            </div>
+                            <div style="font-size:11px; color:#15803d; margin-top:2px;">
+                                📥 PDF உங்கள் கணினியில் தானாகப் பதிவிறக்கப்பட்டது!
+                            </div>
                         </div>
                         <div style="display:flex; gap:8px;">
                             <a href="${data.output.downloadUrl}?inline=1" target="_blank" style="height:32px; padding:0 12px; background:white; border:1.5px solid #86efac; color:#166534; border-radius:6px; font-size:11.5px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
