@@ -42,6 +42,23 @@ async function resolveChatContext(req) {
                     if (existingDraft.intakeState && (!sess.intakeState || sess.intakeState === 'START' || sess.intakeState === 'SERVICE_SELECTION')) {
                         sess.intakeState = existingDraft.intakeState;
                     }
+                    if (existingDraft.targetMemberCount && (!sess.targetMemberCount || sess.targetMemberCount <= 1)) {
+                        sess.targetMemberCount = existingDraft.targetMemberCount;
+                    }
+                    if (existingDraft.currentMemberIdx !== undefined && (!sess.currentMemberIdx || sess.currentMemberIdx === 0)) {
+                        sess.currentMemberIdx = existingDraft.currentMemberIdx;
+                    }
+                    if (existingDraft.tempMember && !sess.tempMember) {
+                        sess.tempMember = existingDraft.tempMember;
+                    }
+                    if (existingDraft.tempUploads && (!sess.tempUploads || Object.keys(sess.tempUploads).length === 0)) {
+                        sess.tempUploads = existingDraft.tempUploads;
+                    }
+                    if (Array.isArray(existingDraft.chatHistory) && existingDraft.chatHistory.length > 0) {
+                        if (!sess.chatHistory || sess.chatHistory.length <= 1) {
+                            sess.chatHistory = [...existingDraft.chatHistory];
+                        }
+                    }
                     if (!sess.subService && (existingDraft.subService || existingDraft.citizenProfile?.subService)) {
                         sess.subService = existingDraft.subService || existingDraft.citizenProfile?.subService;
                     }

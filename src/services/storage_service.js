@@ -195,9 +195,15 @@ function persistSessions(currentActiveMobile) {
                 operatorName: curState.operatorName || null,
                 operatorMobile: curState.operatorMobile || null,
                 citizenProfile: curState.citizenProfile,
+                subService: curState.subService || curState.citizenProfile?.subService || null,
+                subServiceData: curState.subServiceData || curState.citizenProfile?.subServiceData || null,
                 documents: curState.tempUploads || {},
                 chatHistory: curState.chatHistory,
                 intakeState: curState.intakeState,
+                targetMemberCount: curState.targetMemberCount !== undefined ? curState.targetMemberCount : null,
+                currentMemberIdx: curState.currentMemberIdx !== undefined ? curState.currentMemberIdx : 0,
+                tempMember: curState.tempMember || null,
+                tempUploads: curState.tempUploads || null,
                 step: curState.step,
                 applicationNumber: curState.applicationNumber,
                 applicationPdfUrl: curState.applicationPdfUrl,
@@ -234,14 +240,49 @@ function getOrCreateSession(mobile) {
     if (!sessions.has(mobile)) {
         let resurrected = null;
         try {
-            if (hasActiveDraftOnDisk(mobile) && fs.existsSync(SESSIONS_DATA_PATH)) {
-                const { isMeaningfulDraft } = require('./db/draft_manage');
-                const disk = JSON.parse(fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8'));
-                if (disk && disk[mobile] && isMeaningfulDraft({ mobileNumber: mobile, ...disk[mobile] })) {
-                    resurrected = disk[mobile];
-                    resurrected.isAutomating = false;
-                    resurrected.isAutomationRunning = false;
-                    resurrected.automationStep = 0;
+            if (hasActiveDraftOnDisk(mobile)) {
+                if (fs.existsSync(SESSIONS_DATA_PATH)) {
+                    const { isMeaningfulDraft } = require('./db/draft_manage');
+                    const disk = JSON.parse(fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8'));
+                    if (disk && disk[mobile] && isMeaningfulDraft({ mobileNumber: mobile, ...disk[mobile] })) {
+                        resurrected = disk[mobile];
+                        resurrected.isAutomating = false;
+                        resurrected.isAutomationRunning = false;
+                        resurrected.automationStep = 0;
+                    }
+                }
+
+                // If not found in sessions.json, resurrect directly from individual draft file on disk!
+                if (!resurrected) {
+                    const draftCandidates = [
+                        path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts', `${mobile}.json`),
+                        path.join(DATA_DIR, 'drafts', `${mobile}.json`)
+                    ];
+                    for (const dPath of draftCandidates) {
+                        if (fs.existsSync(dPath)) {
+                            const parsed = JSON.parse(fs.readFileSync(dPath, 'utf-8'));
+                            if (parsed && (parsed.citizenProfile || parsed.mobileNumber)) {
+                                resurrected = {
+                                    intakeState: parsed.intakeState || 'SERVICE_SELECTION',
+                                    targetMemberCount: parsed.targetMemberCount !== undefined ? parsed.targetMemberCount : 1,
+                                    currentMemberIdx: parsed.currentMemberIdx !== undefined ? parsed.currentMemberIdx : 0,
+                                    tempUploads: parsed.tempUploads || parsed.documents || {},
+                                    tempMember: parsed.tempMember || null,
+                                    step: parsed.step || 'READY',
+                                    subService: parsed.subService || parsed.citizenProfile?.subService || null,
+                                    subServiceData: parsed.subServiceData || parsed.citizenProfile?.subServiceData || null,
+                                    citizenProfile: parsed.citizenProfile || createFreshProfile(mobile),
+                                    chatHistory: Array.isArray(parsed.chatHistory) && parsed.chatHistory.length > 0 ? parsed.chatHistory : [getInitialWelcomeMessage()],
+                                    applicationNumber: parsed.applicationNumber || null,
+                                    applicationPdfUrl: parsed.applicationPdfUrl || null,
+                                    isAutomating: false,
+                                    isAutomationRunning: false,
+                                    automationStep: 0
+                                };
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         } catch (_) {}

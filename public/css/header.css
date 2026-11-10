@@ -3,6 +3,13 @@
    Strictly compliant with: 34px button height, 8px border-radius, desktop ergonomics
    ========================================================================== */
 
+/* Strictly hide any desktop app download button or banner inside desktop application */
+#btnDesktopDownloadNav,
+.desktop-app-download-btn,
+.web-only-download-card.desktop-hidden {
+    display: none !important;
+}
+
 /* --------------------------------------------------------------------------
    1. Unified Header Navigation Pills (Distinct Semantic Color Coding)
    -------------------------------------------------------------------------- */

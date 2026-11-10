@@ -2,9 +2,18 @@ const storageService = require('../../services/storage_service');
 const { getRelationshipOptions } = require('../../core/chat_fsm');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
+const { saveCitizenDraft } = require('../../../firestore_db');
+
+const { persistSessions } = storageService;
 
 async function handleMemberAadhaar(ctx, req, res) {
     const { uploadedFile, sess } = ctx;
+    const activeMobile = sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+
+    if (typeof sess.currentMemberIdx !== 'number' || isNaN(sess.currentMemberIdx) || sess.currentMemberIdx < 1) {
+        const existingMembers = Array.isArray(sess.citizenProfile?.members) ? sess.citizenProfile.members.length : 1;
+        sess.currentMemberIdx = Math.max(1, existingMembers);
+    }
 
     // STATE 6: MEMBER_AADHAAR_FRONT
     if (sess.intakeState === 'MEMBER_AADHAAR_FRONT') {
@@ -76,6 +85,19 @@ async function handleMemberAadhaar(ctx, req, res) {
                       `🤝 **குடும்பத் தலைவருடனான இவரின் உறவுமுறை என்ன?** கீழே உள்ளதில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
                 options: getRelationshipOptions(sess.citizenProfile?.headGender)
             });
+            persistSessions(activeMobile);
+            if (activeMobile) {
+                saveCitizenDraft(activeMobile, {
+                    citizenProfile: sess.citizenProfile,
+                    chatHistory: sess.chatHistory,
+                    intakeState: sess.intakeState,
+                    targetMemberCount: sess.targetMemberCount,
+                    currentMemberIdx: sess.currentMemberIdx,
+                    tempMember: sess.tempMember,
+                    tempUploads: sess.tempUploads,
+                    step: sess.step || 'draft'
+                }).catch(() => {});
+            }
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
             return true;
         }
@@ -110,6 +132,19 @@ async function handleMemberAadhaar(ctx, req, res) {
             actionRequired: 'upload',
             uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் பின்பக்கம்`
         });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            saveCitizenDraft(activeMobile, {
+                citizenProfile: sess.citizenProfile,
+                chatHistory: sess.chatHistory,
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                currentMemberIdx: sess.currentMemberIdx,
+                tempMember: sess.tempMember,
+                tempUploads: sess.tempUploads,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
         return true;
     }
@@ -166,6 +201,19 @@ async function handleMemberAadhaar(ctx, req, res) {
                   `🤝 **குடும்பத் தலைவருடனான இவரின் உறவுமுறை என்ன?** கீழே உள்ளதில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
             options: getRelationshipOptions(sess.citizenProfile?.headGender)
         });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            saveCitizenDraft(activeMobile, {
+                citizenProfile: sess.citizenProfile,
+                chatHistory: sess.chatHistory,
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                currentMemberIdx: sess.currentMemberIdx,
+                tempMember: sess.tempMember,
+                tempUploads: sess.tempUploads,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
         return true;
     }

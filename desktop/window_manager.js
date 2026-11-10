@@ -82,6 +82,10 @@ function createMainWindow() {
     mainWindow.removeMenu();
     mainWindow.setMenuBarVisibility(false);
 
+    try {
+        mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' eSevaDraft-Desktop/' + (app.getVersion() || '1.1.14'));
+    } catch (_) {}
+
     const forceVisibleForeground = () => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
         if (mainWindow.isMinimized()) mainWindow.restore();

@@ -3,6 +3,7 @@ const path = require('path');
 const storageService = require('../../services/storage_service');
 const { updateHeadMember, isProfileDataComplete } = require('../../services/profile_helpers');
 const { saveCitizenProfile } = require('../../../database');
+const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
 
@@ -257,6 +258,19 @@ async function handleHeadAadhaar(ctx, req, res) {
                     actionRequired: 'upload',
                     uploadPrompt: 'உறுப்பினர் 2 ஆதார் முன்பக்கம்'
                 });
+                persistSessions(activeMobile);
+                if (activeMobile) {
+                    saveCitizenDraft(activeMobile, {
+                        citizenProfile: sess.citizenProfile,
+                        chatHistory: sess.chatHistory,
+                        intakeState: sess.intakeState,
+                        targetMemberCount: sess.targetMemberCount,
+                        currentMemberIdx: sess.currentMemberIdx,
+                        tempMember: sess.tempMember,
+                        tempUploads: sess.tempUploads,
+                        step: sess.step || 'draft'
+                    }).catch(() => {});
+                }
             } else {
                 sess.intakeState = 'MOBILE_NUMBER';
                 const hasValidCurrentMob = activeMobile && /^[6-9]\d{9}$/.test(activeMobile);

@@ -8,7 +8,7 @@ const { persistSessions } = storageService;
 
 async function handleMemberVerification(ctx, req, res) {
     const { text, sess } = ctx;
-    const activeMobile = storageService.getActiveMobile();
+    const activeMobile = sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
     // STATE 8: MEMBER_RELATIONSHIP
     if (sess.intakeState === 'MEMBER_RELATIONSHIP') {
@@ -43,6 +43,19 @@ async function handleMemberVerification(ctx, req, res) {
                 { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
             ]
         });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            saveCitizenDraft(activeMobile, {
+                citizenProfile: sess.citizenProfile,
+                chatHistory: sess.chatHistory,
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                currentMemberIdx: sess.currentMemberIdx,
+                tempMember: sess.tempMember,
+                tempUploads: sess.tempUploads,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
         return true;
     }
@@ -110,6 +123,19 @@ async function handleMemberVerification(ctx, req, res) {
                     actionRequired: 'upload',
                     uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் முன்பக்கம்`
                 });
+                persistSessions(activeMobile);
+                if (activeMobile) {
+                    saveCitizenDraft(activeMobile, {
+                        citizenProfile: sess.citizenProfile,
+                        chatHistory: sess.chatHistory,
+                        intakeState: sess.intakeState,
+                        targetMemberCount: sess.targetMemberCount,
+                        currentMemberIdx: sess.currentMemberIdx,
+                        tempMember: sess.tempMember,
+                        tempUploads: sess.tempUploads,
+                        step: sess.step || 'draft'
+                    }).catch(() => {});
+                }
             } else {
                 const isComplete = isProfileDataComplete(sess.citizenProfile, sess.tempUploads);
                 if (isComplete) {
@@ -167,6 +193,19 @@ async function handleMemberVerification(ctx, req, res) {
                 { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
             ]
         });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            saveCitizenDraft(activeMobile, {
+                citizenProfile: sess.citizenProfile,
+                chatHistory: sess.chatHistory,
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                currentMemberIdx: sess.currentMemberIdx,
+                tempMember: sess.tempMember,
+                tempUploads: sess.tempUploads,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
         return true;
     }
