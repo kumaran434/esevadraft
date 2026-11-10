@@ -105,8 +105,7 @@ class TnpdsLoginPage {
 
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-                this.onProgress(`🤖 [AI Captcha OCR] TNPDS கேப்ட்சா படம் பகுப்பாய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)...`);
-                await this.page.waitForTimeout(400);
+                this.onProgress(`⚡ [AI Captcha OCR] TNPDS கேப்ட்சா படம் அதிவேகமாக ஆய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)...`);
 
                 let imgPayload = null;
                 const srcAttr = await capImg.getAttribute('src').catch(() => '');
@@ -120,12 +119,10 @@ class TnpdsLoginPage {
 
                 const code = await AiCaptchaSolver.solve(imgPayload, options);
                 if (code && code.length >= 4 && code.length <= 8) {
-                    this.onProgress(`🤖 [AI Captcha OCR] கேப்ட்சா குறியீடு பெறப்பட்டது: "${code}"`);
-                    await capInput.click();
+                    this.onProgress(`⚡ [AI Captcha OCR] கேப்ட்சா குறியீடு பெறப்பட்டது: "${code}" ✅`);
                     await capInput.fill(code);
                     await capInput.dispatchEvent('input');
                     await capInput.dispatchEvent('change');
-                    await this.page.waitForTimeout(300);
                     return code;
                 }
             } catch (e) {

@@ -1,0 +1,175 @@
+/* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .filter-pill {
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid #cbd5e1;
+            background: white;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-pill:hover {
+            border-color: var(--primary);
+        }
+        .filter-pill.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        @keyframes spinSmooth {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* AI Document Scanner HUD Styles */
+        @keyframes laserScan {
+            0% { top: 0%; opacity: 0.8; }
+            50% { top: 88%; opacity: 1; }
+            100% { top: 0%; opacity: 0.8; }
+        }
+
+        .ai-laser-beam {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(34,197,94,0) 0%, #22c55e 50%, rgba(34,197,94,0) 100%);
+            box-shadow: 0 0 15px 3px #22c55e, 0 0 25px 6px rgba(74, 222, 128, 0.6);
+            animation: laserScan 1.8s infinite ease-in-out;
+            pointer-events: none;
+        }
+
+        .ai-step-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 7px;
+            transition: all 0.3s ease;
+        }
+        .ai-step-item:last-child { margin-bottom: 0; }
+        .ai-step-item.active {
+            opacity: 1 !important;
+            color: #0f172a !important;
+            font-weight: 700;
+        }
+        .ai-step-item.done {
+            opacity: 1 !important;
+            color: #166534 !important;
+        }
+
+        /* Dedicated Citizen Mobile-App Experience Styles */
+        .citizen-mode {
+            max-width: 580px !important;
+            margin: 0 auto !important;
+            height: calc(100vh - 65px) !important;
+            background: #ffffff !important;
+            border-radius: 16px !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 6px 28px rgba(0, 0, 0, 0.08) !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            position: relative !important;
+        }
+        @media (max-width: 600px) {
+            .citizen-mode {
+                max-width: 100% !important;
+                height: 100vh !important;
+                border-radius: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+        }
+        body:not(.is-desktop-app):not(.is-operator-mode) .citizen-mode .citizen-sidebar {
+            display: none !important;
+        }
+        body:not(.is-desktop-app):not(.is-operator-mode) .citizen-mode .citizen-chat-area {
+            border-right: none !important;
+            flex: 1 !important;
+            height: 100% !important;
+            overflow: hidden !important;
+        }
+        
+        .c-bottom-nav {
+            height: 58px;
+            background: #ffffff;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 0 6px;
+            z-index: 100;
+            flex-shrink: 0;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04);
+        }
+        .c-bottom-btn {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 6px 0;
+            transition: all 0.2s ease;
+            border-radius: 8px;
+        }
+        .c-bottom-btn i {
+            font-size: 17px;
+            transition: transform 0.2s ease;
+        }
+        .c-bottom-btn.active {
+            color: #059669;
+            font-weight: 800;
+        }
+        .c-bottom-btn.active i {
+            transform: scale(1.15);
+            color: #059669;
+        }
+        .c-bottom-btn:hover {
+            color: #0f172a;
+            background: #f1f5f9;
+        }
+
+        .c-service-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            text-align: left;
+        }
+        .c-service-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+            border-color: #10b981;
+        }

@@ -52,7 +52,12 @@ async function runImmuneGuardSuite() {
     console.log('  ✅ [IMMUNE-04] applyDryRunGuard enforces three-way dry run safety invariant');
 
     // 4. Codebase Anti-Pattern & Invariant Audit
-    const tnpdsCode = fs.readFileSync(path.join(__dirname, '..', 'tnpds_automation.js'), 'utf8');
+    const tnpdsCode = [
+        path.join(__dirname, '..', 'tnpds_automation.js'),
+        path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'add_member_flow.js'),
+        path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'address_change_flow.js'),
+        path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card_flow.js')
+    ].filter(f => fs.existsSync(f)).map(f => fs.readFileSync(f, 'utf8')).join('\n');
 
     // Anti-Pattern: Fake plugins
     assert(!tnpdsCode.includes('navigator.plugins = [1, 2, 3'), 'Anti-pattern check: No fake plugins override');
@@ -83,7 +88,11 @@ async function runImmuneGuardSuite() {
     assert(tnpdsCode.includes('DOC_TYPE_GATE_HALT'), 'Mandatory invariant (Case-16): Zero-step-skip halts if supportingDocuments is unselected');
     assert(tnpdsCode.includes('DOC_UPLOAD_GATE_HALT'), 'Mandatory invariant (Case-16): Zero-step-skip halts if document file is not attached');
     assert(tnpdsCode.includes('ADD_MEMBER_TABLE_GATE_HALT'), 'Mandatory invariant (Case-16): Mandatory table gate halts if member is not added to table');
-    passedCount += 18;
+    // Mandatory Invariant: CASE-48 — Universal Zero-Step-Skip & Absolute Human OTP Gating Law
+    assert(!tnpdsCode.includes("setTimeout(() => { if (cachedUserOtp)"), 'Mandatory invariant (Case-48): No dummy 2s timeout auto-resolving OTP');
+    const step21Content = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
+    assert(!step21Content.includes("m.style.display = 'none'"), 'Mandatory invariant (Case-48): Step 21 forbids fake modal-hiding bypass');
+    passedCount += 20;
     console.log(`  ✅ [IMMUNE-05] Codebase verified against all prohibited anti-patterns and mandatory invariants (${memory.totalRulesLocked} Rules)`);
 
     // 5. Dynamic Auto-Expansion Test: Verify registerNewImmuneRule works and persists

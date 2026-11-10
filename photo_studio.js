@@ -1,48 +1,28 @@
-let sharp = null;
-try { sharp = require('sharp'); } catch (e) {}
-let PDFDocument = null;
-try { PDFDocument = require('pdfkit'); } catch (e) {}
+let _sharp = null;
+function getSharp() {
+    if (_sharp === null) {
+        try { _sharp = require('sharp'); } catch (e) { _sharp = false; }
+    }
+    return _sharp;
+}
 const fs = require('fs');
 const path = require('path');
 
-const os = require('os');
-
-function getSafeStudioDir() {
-    const localDir = path.join(__dirname, 'compressed');
-    try {
-        if (!fs.existsSync(localDir)) {
-            fs.mkdirSync(localDir, { recursive: true });
-        }
-        const testFile = path.join(localDir, `.perm_test_${Date.now()}`);
-        fs.writeFileSync(testFile, 'ok');
-        fs.unlinkSync(testFile);
-        return localDir;
-    } catch (e) {
-        const fallbackDir = path.join(os.tmpdir(), 'esevadraft', 'compressed');
-        try {
-            if (!fs.existsSync(fallbackDir)) {
-                fs.mkdirSync(fallbackDir, { recursive: true });
-            }
-        } catch (e2) {}
-        return fallbackDir;
-    }
-}
+const { 
+    getSafeStudioDir, 
+    compressHeavyPdf, 
+    cropDocumentToExactBoundary,
+    produceDualSidedDocument: coreProduceDualSided 
+} = require('./src/services/document_pdf_generator');
 
 const studioDir = getSafeStudioDir();
 
-/**
- * AI Passport Photo Studio:
- * Transforms ANY user uploaded camera photo or selfie into a 100% compliant Government Passport Photo:
- * 1. Solid White Background (#FFFFFF).
- * 2. Centers and crops to standard passport ratio (3.5cm x 4.5cm / 300x350px).
- * 3. Enhances brightness, contrast & sharpness.
- * 4. Strict JPEG compression between 40 KB and 85 KB (TNPDS compliant).
- */
 async function produceCompliantPassportPhoto(inputPath) {
     if (!fs.existsSync(inputPath)) {
         console.warn(`File not found for photo studio: ${inputPath}`);
         return inputPath;
     }
+    const sharp = getSharp();
     if (!sharp) {
         return inputPath;
     }
@@ -80,89 +60,11 @@ async function produceCompliantPassportPhoto(inputPath) {
     }
 }
 
-/**
- * AI Magic-Color Document Scanner & Enhancer (CamScanner / Adobe Scan Grade):
- * - Transforms ANY blurry, low-light, shadowed mobile phone photo of an Aadhaar/Gas card into a crystal-clear scanner scan:
- * 1. Adaptive Contrast Normalization: turns dark text into crisp black ink and grayish paper into pure white.
- * 2. Unsharp Masking & Edge Enhancement: sharpens fuzzy Aadhaar numbers & letters.
- * 3. Color Temperature & Shadow Balance: removes yellowish incandescent bulb lighting and shadows.
- * 4. Embeds enhanced high-definition scan into an official Government A4 PDF (< 250 KB).
- */
-async function compressHeavyPdf(inputPdfPath) {
-    try {
-        let chromium;
-        try { chromium = require('playwright').chromium; } catch(e) { chromium = require('playwright-core').chromium; }
-        const pdfBuf = fs.readFileSync(inputPdfPath);
-        const pdfBase64 = pdfBuf.toString('base64');
-        const outputPdfPath = path.join(studioDir, `compressed_${Date.now()}_${path.basename(inputPdfPath)}`);
-
-        const browser = await chromium.launch({ headless: true });
-        const page = await browser.newPage();
-        await page.setContent(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-            </head>
-            <body style="margin:0; padding:0; background:white;">
-                <canvas id="pdfCanvas"></canvas>
-                <script>
-                    window.renderPdf = async function(base64Data) {
-                        const raw = atob(base64Data);
-                        const uint8 = new Uint8Array(raw.length);
-                        for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i);
-                        const loadingTask = pdfjsLib.getDocument({ data: uint8 });
-                        const pdf = await loadingTask.promise;
-                        const p = await pdf.getPage(1);
-                        const viewport = p.getViewport({ scale: 1.5 });
-                        const canvas = document.getElementById('pdfCanvas');
-                        canvas.width = viewport.width;
-                        canvas.height = viewport.height;
-                        const ctx = canvas.getContext('2d');
-                        await p.render({ canvasContext: ctx, viewport: viewport }).promise;
-                        return true;
-                    };
-                </script>
-            </body>
-            </html>
-        `);
-
-        await page.waitForFunction(() => typeof window.renderPdf === 'function', { timeout: 15000 });
-        await page.evaluate((b64) => window.renderPdf(b64), pdfBase64);
-        await page.waitForTimeout(1000);
-
-        const canvas = page.locator('#pdfCanvas');
-        const imgBuf = await canvas.screenshot({ type: 'jpeg', quality: 80 });
-        await browser.close();
-
-        return new Promise((resolve) => {
-            const doc = new PDFDocument({ size: 'A4', margin: 20 });
-            const writeStream = fs.createWriteStream(outputPdfPath);
-            doc.pipe(writeStream);
-            doc.image(imgBuf, 20, 20, { fit: [555, 800], align: 'center', valign: 'center' });
-            doc.end();
-
-            writeStream.on('finish', () => {
-                const szKB = (fs.statSync(outputPdfPath).size / 1024).toFixed(1);
-                console.log(`✨ Heavy PDF compressed to Government Standard: ${outputPdfPath} (${szKB} KB)`);
-                resolve(outputPdfPath);
-            });
-
-            writeStream.on('error', () => resolve(inputPdfPath));
-        });
-    } catch (e) {
-        console.error('Heavy PDF compression fallback:', e.message);
-        return inputPdfPath;
-    }
-}
-
-async function produceCompliantDocument(inputPath) {
+async function produceCompliantDocument(inputPath, options = {}) {
     if (!fs.existsSync(inputPath)) return inputPath;
 
-    // If already a PDF:
     if (inputPath.toLowerCase().endsWith('.pdf')) {
         const sz = fs.statSync(inputPath).size;
-        // Strict Government TNPDS portal limit is 250 KB!
         if (sz > 240 * 1024) {
             console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > 240 KB). Auto-compressing to Government Standard (< 240 KB)...`);
             return await compressHeavyPdf(inputPath);
@@ -171,22 +73,26 @@ async function produceCompliantDocument(inputPath) {
         return inputPath;
     }
 
+    const sharp = getSharp();
+    if (!sharp) return inputPath;
     const outputJpg = path.join(studioDir, `doc_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}.jpeg`);
+    let croppedPath = inputPath;
 
     try {
-        // Multi-Stage Image Restoration Pipeline (Resized & optimized for < 180 KB Government standard)
-        await sharp(inputPath)
+        croppedPath = await cropDocumentToExactBoundary(inputPath, options);
+        await sharp(croppedPath)
+            .rotate()
             .resize({ width: 1000, height: 1350, fit: 'inside', withoutEnlargement: true })
             .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .normalize() // Adaptive contrast stretch (CamScanner effect)
-            .gamma(1.1) // Shadow removal & brightness compensation
+            .normalize()
+            .gamma(1.1)
             .modulate({
                 brightness: 1.05,
-                saturation: 1.15 // Enhances Aadhaar logo & official colors
+                saturation: 1.15
             })
             .sharpen({
-                sigma: 1.6, // High-pass edge filter
-                m1: 2.0,    // Sharpens small letters & 12-digit numbers
+                sigma: 1.6,
+                m1: 2.0,
                 m2: 0.6
             })
             .jpeg({
@@ -195,99 +101,82 @@ async function produceCompliantDocument(inputPath) {
             })
             .toFile(outputJpg);
 
-        const fileSizeKB = (fs.statSync(outputJpg).size / 1024).toFixed(1);
+        let fileSizeBytes = fs.statSync(outputJpg).size;
+        if (fileSizeBytes > 98 * 1024) {
+            await sharp(croppedPath)
+                .rotate()
+                .resize({ width: 860, height: 1160, fit: 'inside', withoutEnlargement: true })
+                .flatten({ background: { r: 255, g: 255, b: 255 } })
+                .normalize()
+                .gamma(1.1)
+                .modulate({ brightness: 1.05, saturation: 1.1 })
+                .sharpen({ sigma: 1.4, m1: 1.8, m2: 0.5 })
+                .jpeg({ quality: 68, chromaSubsampling: '4:2:0' })
+                .toFile(outputJpg);
+            fileSizeBytes = fs.statSync(outputJpg).size;
+        }
+        const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
         console.log(`✨ AI Enhanced Compliant Document Generated: ${outputJpg} (${fileSizeKB} KB)`);
         return outputJpg;
     } catch (e) {
         console.error('Doc optimizer error:', e.message);
         return inputPath;
+    } finally {
+        try { if (croppedPath && croppedPath !== inputPath && fs.existsSync(croppedPath)) fs.unlinkSync(croppedPath); } catch (_) {}
     }
 }
 
-/**
- * AI Dual-Side Document Merger (Xerox 2-in-1 Official Government Standard):
- * - Takes Front Side photo (Name/Photo/DOB/Aadhaar) and Back Side photo (Address/Father/QR).
- * - Applies Magic-Color contrast normalization & sharpening to both images.
- * - Stitches both sides cleanly onto a single official Government A4 PDF page:
- *   - Top Half: Front Side of Aadhaar Card.
- *   - Bottom Half: Back Side of Aadhaar Card.
- * - Strict compression to < 250 KB (100% TNPDS green tick guaranteed!).
- */
 async function produceDualSidedDocument(frontPath, backPath) {
-    if (!fs.existsSync(frontPath)) return null;
-    if (!backPath || !fs.existsSync(backPath)) {
-        return produceCompliantDocument(frontPath);
-    }
+    return coreProduceDualSided(frontPath, backPath, produceCompliantDocument);
+}
 
-    const tempFrontJpg = path.join(studioDir, `enhanced_front_${Date.now()}.jpeg`);
-    const tempBackJpg = path.join(studioDir, `enhanced_back_${Date.now()}.jpeg`);
-    const outputPdfPath = path.join(studioDir, `doc_merged_${Date.now()}_aadhaar.pdf`);
+async function extractFacePassportFromDocument(filePath, boundingBox = null) {
+    const sharp = getSharp();
+    if (!fs.existsSync(filePath) || !sharp) return null;
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.pdf') return null;
 
     try {
-        // 1. Restore & enhance Front image (Scaled for 2-in-1 layout < 220 KB)
-        await sharp(frontPath)
-            .resize({ width: 800, height: 550, fit: 'inside', withoutEnlargement: true })
-            .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .normalize()
-            .gamma(1.1)
-            .modulate({ brightness: 1.05, saturation: 1.15 })
-            .sharpen({ sigma: 1.6, m1: 2.0, m2: 0.6 })
-            .jpeg({ quality: 70, chromaSubsampling: '4:2:0' })
-            .toFile(tempFrontJpg);
+        const meta = await sharp(filePath).metadata();
+        const w = meta.width;
+        const h = meta.height;
+        let left, top, extractW, extractH;
 
-        // 2. Restore & enhance Back image (Scaled for 2-in-1 layout < 220 KB)
-        await sharp(backPath)
-            .resize({ width: 800, height: 550, fit: 'inside', withoutEnlargement: true })
-            .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .normalize()
-            .gamma(1.1)
-            .modulate({ brightness: 1.05, saturation: 1.15 })
-            .sharpen({ sigma: 1.6, m1: 2.0, m2: 0.6 })
-            .jpeg({ quality: 70, chromaSubsampling: '4:2:0' })
-            .toFile(tempBackJpg);
+        if (Array.isArray(boundingBox) && boundingBox.length === 4) {
+            const [ymin, xmin, ymax, xmax] = boundingBox;
+            const boxH = (ymax - ymin) * h / 1000;
+            const boxW = (xmax - xmin) * w / 1000;
+            const padY = Math.round(boxH * 0.18);
+            const padX = Math.round(boxW * 0.18);
+            top = Math.max(0, Math.round((ymin * h / 1000) - padY));
+            left = Math.max(0, Math.round((xmin * w / 1000) - padX));
+            extractW = Math.min(w - left, Math.round(boxW + padX * 2));
+            extractH = Math.min(h - top, Math.round(boxH + padY * 2));
+        } else {
+            left = Math.round(w * 0.05);
+            top = Math.round(h * 0.22);
+            extractW = Math.round(w * 0.35);
+            extractH = Math.round(h * 0.52);
+        }
 
-        // 3. Place both sides onto a Single A4 Page (Xerox 2-in-1 layout)
-        return new Promise((resolve) => {
-            const doc = new PDFDocument({ size: 'A4', margin: 36 });
-            const writeStream = fs.createWriteStream(outputPdfPath);
+        if (extractW < 40 || extractH < 40) return null;
 
-            doc.pipe(writeStream);
+        const tempRawCrop = path.join(studioDir, `raw_face_crop_${Date.now()}.jpeg`);
+        await sharp(filePath)
+            .extract({ left, top, width: extractW, height: extractH })
+            .toFile(tempRawCrop);
 
-            // Front Side (Top Half)
-            doc.image(tempFrontJpg, 50, 45, {
-                fit: [495, 340],
-                align: 'center',
-                valign: 'center'
-            });
+        const passportFinal = await produceCompliantPassportPhoto(tempRawCrop);
+        try { if (fs.existsSync(tempRawCrop) && tempRawCrop !== passportFinal) fs.unlinkSync(tempRawCrop); } catch (e) {}
 
-            // Dashed Dividing line
-            doc.moveTo(50, 400).lineTo(545, 400).dash(4, { space: 4 }).strokeColor('#cbd5e1').stroke();
-
-            // Back Side (Bottom Half)
-            doc.image(tempBackJpg, 50, 420, {
-                fit: [495, 340],
-                align: 'center',
-                valign: 'center'
-            });
-
-            doc.end();
-
-            writeStream.on('finish', () => {
-                try { if (fs.existsSync(tempFrontJpg)) fs.unlinkSync(tempFrontJpg); } catch (e) {}
-                try { if (fs.existsSync(tempBackJpg)) fs.unlinkSync(tempBackJpg); } catch (e) {}
-                const fileSizeKB = (fs.statSync(outputPdfPath).size / 1024).toFixed(1);
-                console.log(`✨ AI Merged 2-in-1 Government PDF Generated: ${outputPdfPath} (${fileSizeKB} KB)`);
-                resolve(outputPdfPath);
-            });
-
-            writeStream.on('error', (err) => {
-                console.error('2-in-1 PDF generation error:', err);
-                resolve(tempFrontJpg);
-            });
-        });
+        if (passportFinal && fs.existsSync(passportFinal)) {
+            console.log(`✨ AI Auto-Extracted Passport Photo from Aadhaar: ${passportFinal}`);
+            return passportFinal;
+        }
+        return null;
     } catch (e) {
-        console.error('Dual-side merger error:', e.message);
-        return frontPath;
+        console.warn('Face extraction notice:', e.message);
+        return null;
     }
 }
 
@@ -295,5 +184,7 @@ module.exports = {
     produceCompliantPassportPhoto,
     produceCompliantDocument,
     produceDualSidedDocument,
-    compressHeavyPdf
+    cropDocumentToExactBoundary,
+    compressHeavyPdf,
+    extractFacePassportFromDocument
 };

@@ -53,14 +53,15 @@ async function runVerification() {
     console.log('🔒 VERIFYING CHAT-TO-AUTOMATION ZERO-OTP SAFEGUARD');
     console.log('======================================================\n');
 
+    const testMobile = '9999000099';
     // 1. Create a customer session
     const res1 = await request('POST', '/api/operator/new-customer', {
-        customerMobile: '9790170026',
-        customerName: 'Kumaran K',
+        customerMobile: testMobile,
+        customerName: 'Test Kumaran',
         serviceName: 'புதிய ரேஷன் கார்டு'
     });
 
-    console.log('[CHECK 1] Customer Session Creation for 9790170026:');
+    console.log(`[CHECK 1] Customer Session Creation for ${testMobile}:`);
     if (res1.status === 200 && res1.body.success) {
         console.log('  ✅ PASS: Session initialized for Ration Card');
     } else {
@@ -69,7 +70,7 @@ async function runVerification() {
     }
 
     // 2. Query session state
-    const res2 = await request('GET', '/api/auth/session?mobile=9790170026');
+    const res2 = await request('GET', `/api/auth/session?mobile=${testMobile}`);
     console.log('\n[CHECK 2] Verification of Session Isolation:');
     if (res2.status === 200 && res2.body.citizenProfile) {
         console.log('  ✅ PASS: Profile verified with mobile:', res2.body.citizenProfile.mobileNumber);
@@ -82,7 +83,7 @@ async function runVerification() {
     // Our new safeguard ensures that even without typing "mock", safe mock mode is ENFORCED!
     console.log('\n[CHECK 3] Triggering "start" from Chat Interface:');
     const res3 = await request('POST', '/api/chat', {
-        mobileNumber: '9790170026',
+        mobileNumber: testMobile,
         text: 'start'
     });
 
@@ -99,6 +100,11 @@ async function runVerification() {
         console.error('  ❌ FAIL: Chat start returned error', res3.status);
         process.exit(1);
     }
+
+    const fs = require('fs');
+    const path = require('path');
+    const testFile = path.join(__dirname, '..', 'data', 'drafts', `${testMobile}.json`);
+    if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
 
     console.log('\n======================================================');
     console.log('🎉 ZERO-OTP SAFEGUARD VERIFIED: NO SERVER OTP WILL BE TRIGGERED!');

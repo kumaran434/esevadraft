@@ -22,7 +22,16 @@ async function runLivePortalPreFlight() {
         try { cookies = JSON.parse(fs.readFileSync(cookiePath, 'utf8')).cookies || []; } catch (_) {}
     }
 
-    const browser = await chromium.launch({ channel: 'chrome', headless: false });
+    const browser = await chromium.launch({
+        channel: 'chrome',
+        headless: false,
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: [
+            '--disable-blink-features=AutomationControlled',
+            '--start-maximized',
+            '--no-sandbox'
+        ]
+    });
     const context = await browser.newContext();
     if (cookies.length) await context.addCookies(cookies);
     const page = await context.newPage();
@@ -32,6 +41,14 @@ async function runLivePortalPreFlight() {
         await page.goto('https://www.tnpds.gov.in/auth/login', { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForTimeout(3000);
         console.log('Current URL:', page.url());
+
+        // Radware / Perfdrive challenge clearance wait loop
+        let attempts = 0;
+        while ((page.url().includes('perfdrive') || page.url().includes('validate.')) && attempts < 15) {
+            console.log(`🛡️ [Radware Challenge Detected] Waiting for challenge clearance (${attempts + 1}/15)...`);
+            await page.waitForTimeout(1000);
+            attempts++;
+        }
 
         if (page.url().includes('/pages/home') || page.url().endsWith('.in/') || page.url().endsWith('.in')) {
             const link = page.locator('a:has-text("உறுப்பினரை சேர்க்க"), a:has-text("பயனாளர் நுழைவு"), a:has-text("முகவரி மாற்றம்")').first();

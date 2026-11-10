@@ -92,7 +92,7 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
             try {
                 const { GoogleGenAI } = require('@google/genai');
                 const ai = new GoogleGenAI({ apiKey });
-                for (const mName of ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash']) {
+                for (const mName of ['gemini-flash-latest', 'gemini-3.8-flash']) {
                     try {
                         const ocrRes = await ai.models.generateContent({
                             model: mName,
@@ -118,12 +118,13 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
             } catch (eLocal) {}
         }
 
-        // Strategy 2: Backend Cloud OCR Fallback
-        const endpoints = [
+        // Strategy 2: Backend Cloud OCR Fallback (Universal Any-Operator Law)
+        const rawEndpoints = [
             options.serverUrl ? `${options.serverUrl.replace(/\/$/, '')}/api/ocr/captcha` : null,
             'https://esevadraft.in/api/ocr/captcha',
             'http://localhost:3000/api/ocr/captcha'
         ].filter(Boolean);
+        const endpoints = Array.from(new Set(rawEndpoints));
 
         for (const ep of endpoints) {
             try {
@@ -132,7 +133,7 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ imageBase64: rawB64 }),
-                        signal: AbortSignal.timeout(6000)
+                        signal: AbortSignal.timeout(28000)
                     });
                     if (resp.ok) {
                         const data = await resp.json();
@@ -253,11 +254,35 @@ function getStandardDemoProfile(serviceId = 'TNPDS') {
     };
 }
 
+const { UniversalOtpListener } = require('../portal/common/universal_otp_listener');
+const {
+    isRadwareChallenge,
+    tryAutoClickRadwareChallenge,
+    waitForRadwareClearanceAndSettle,
+    detectPostRefreshStep,
+    injectRadwareStealthShield,
+    performEarlyStep1RadwareWarmup,
+    assertNoRadwareOrPageRefresh,
+    executePageBlockWithRadwareRestart,
+    executeStepWithRadwareResumption
+} = require('../portal/common/universal_radware_resumption');
+
 module.exports = {
     getStandardBrowserConfig,
     applyStandardStealth,
     setupStandardOtpBypass,
     showStandardBrowserHud,
     getStandardDemoProfile,
-    solveUniversalCaptcha
+    solveUniversalCaptcha,
+    UniversalOtpListener,
+    isRadwareChallenge,
+    tryAutoClickRadwareChallenge,
+    waitForRadwareClearanceAndSettle,
+    detectPostRefreshStep,
+    injectRadwareStealthShield,
+    performEarlyStep1RadwareWarmup,
+    assertNoRadwareOrPageRefresh,
+    executePageBlockWithRadwareRestart,
+    executeStepWithRadwareResumption
 };
+

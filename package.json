@@ -1,10 +1,21 @@
 {
-  "name": "ai-assitant-2",
-  "version": "1.0.0",
+  "name": "esevadraft-suite",
+  "version": "1.1.13",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/regression_suite.js"
+    "test": "node tests/regression_suite.js",
+    "test:fast": "node tests/service_quick_test.js",
+    "test:single": "node tests/run_single.js",
+    "check": "node scripts/preflight_check.js",
+    "lint:modular": "node scripts/lint_modular.js",
+    "sync:desktop": "node scripts/sync_to_desktop.js",
+    "service:new": "node scripts/scaffold_service.js",
+    "app:robot": "node scripts/run_desktop_automation.js --flow ration",
+    "app:dev": "node scripts/run_desktop_automation.js --login --keep-open",
+    "app:go": "node scratch/drive_submit_to_portal.js",
+    "test:e2e": "node scripts/run_full_e2e_automation.js",
+    "dev": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +28,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "multer": "^2.2.0",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.20.2",
     "playwright": "^1.62.1",
     "sharp": "^0.35.4"

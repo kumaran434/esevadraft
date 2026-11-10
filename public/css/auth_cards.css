@@ -1,0 +1,169 @@
+
+        .nav-tabs { 
+            display: flex; 
+            align-items: center;
+            gap: 6px; 
+            background: transparent !important; 
+            padding: 0 !important; 
+            margin: 0 !important;
+        }
+
+        .nav-tab {
+            background: rgba(255, 255, 255, 0.12) !important;
+            color: #f1f5f9 !important;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        }
+        .nav-tab:hover {
+            background: rgba(255, 255, 255, 0.22) !important;
+            color: #ffffff !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        .nav-tab.active { 
+            background: #ffffff !important; 
+            color: var(--primary) !important; 
+            font-weight: 700 !important;
+            border-color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+        }
+
+        .btn-view-toggle {
+            background: #f59e0b !important;
+            color: #1e293b !important;
+            font-weight: 700 !important;
+            box-shadow: 0 2px 6px rgba(245,158,11,0.3) !important;
+        }
+
+        /* Main Container */
+        .app-body {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+            background: var(--bg);
+        }
+
+        /* 0. AUTH / LOGIN SCREEN (WORLD CLASS CIVIC PORTAL) */
+        .auth-screen {
+            position: fixed;
+            top: 48px;
+            left: 0;
+            width: 100vw;
+            height: calc(100vh - 48px);
+            background: radial-gradient(circle at 12% 18%, rgba(16, 185, 129, 0.2) 0%, transparent 45%),
+                        radial-gradient(circle at 88% 82%, rgba(2, 132, 199, 0.15) 0%, transparent 50%),
+                        linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            z-index: 99999;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        /* Strict Invariant: On Login/Signup Screen, ONLY Window Controls (- 🗖 ✕) are visible */
+        body:has(#authScreen:not([style*="display: none"]):not([style*="display:none"])) .nav-actions > *:not(#desktopWindowControls) {
+            display: none !important;
+        }
+
+        .auth-portal-container {
+            width: 100%;
+            max-width: 980px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 36px;
+            margin: auto;
+        }
+
+        .auth-hero-pane {
+            flex: 1.1;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 10px;
+        }
+
+        .auth-hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #a7f3d0;
+            backdrop-filter: blur(8px);
+            width: fit-content;
+        }
+        .auth-hero-badge svg {
+            width: 22px;
+            height: 22px;
+            display: inline-block;
+            vertical-align: middle;
+            flex-shrink: 0;
+        }
+
+        .auth-hero-title {
+            font-size: 28px;
+            font-weight: 800;
+            line-height: 1.3;
+            margin: 0;
+            background: linear-gradient(135deg, #ffffff 30%, #a7f3d0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .auth-hero-desc {
+            font-size: 13.5px;
+            line-height: 1.6;
+            color: #cbd5e1;
+            margin: 0;
+        }
+
+        .auth-hero-features {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 4px;
+        }
+
+        .auth-feat-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 12px 14px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+        .auth-feat-item:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateX(4px);
+        }
+
+        .auth-feat-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: rgba(16, 185, 129, 0.25);
+            color: #34d399;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+
+        .auth-feat-text h4 {
+            margin: 0 0 2px 0;
+            font-size: 13px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }

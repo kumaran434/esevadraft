@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.12",
+  "version": "1.1.13",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {
@@ -42,8 +42,40 @@
         "to": "govt_automation_core.js"
       },
       {
+        "from": "../tnega_can_automation.js",
+        "to": "tnega_can_automation.js"
+      },
+      {
+        "from": "../ai_document_extractor.js",
+        "to": "ai_document_extractor.js"
+      },
+      {
+        "from": "../firestore_db.js",
+        "to": "firestore_db.js"
+      },
+      {
+        "from": "../database.js",
+        "to": "database.js"
+      },
+      {
+        "from": "../server.js",
+        "to": "server.js"
+      },
+      {
+        "from": "../package.json",
+        "to": "package.json"
+      },
+      {
         "from": "../data",
         "to": "data"
+      },
+      {
+        "from": "../src",
+        "to": "src"
+      },
+      {
+        "from": "../public",
+        "to": "public"
       }
     ],
     "win": {
