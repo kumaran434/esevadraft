@@ -17,9 +17,10 @@ const {
 
 const _loggedRestores = new Set();
 
-async function getCitizenDraft(mobileNumber) {
+async function getCitizenDraft(mobileNumber, operatorUid = null) {
     if (!mobileNumber) return null;
     const cleanMobile = String(mobileNumber).trim();
+    const targetOp = operatorUid ? String(operatorUid).trim() : null;
     let data = null;
 
     // 1. Fast Local Disk Check (0ms latency - picks richest draft between workspace and AppData)
@@ -32,6 +33,14 @@ async function getCitizenDraft(mobileNumber) {
     }
     if (fs.existsSync(appDataFile)) {
         try { appData = JSON.parse(fs.readFileSync(appDataFile, 'utf8')); } catch (_) {}
+    }
+
+    // STRICT TENANT BOUNDARY: Exclude drafts that belong to a different operator
+    if (targetOp && localData && localData.operatorUid && String(localData.operatorUid).trim() !== targetOp) {
+        localData = null;
+    }
+    if (targetOp && appData && appData.operatorUid && String(appData.operatorUid).trim() !== targetOp) {
+        appData = null;
     }
 
     if (localData && appData) {
@@ -54,20 +63,27 @@ async function getCitizenDraft(mobileNumber) {
             try {
                 const doc = await firestore.collection(COLLECTION_NAME).doc(cleanMobile).get();
                 if (doc.exists) {
-                    data = doc.data();
-                    if (!_loggedRestores.has(cleanMobile)) {
-                        _loggedRestores.add(cleanMobile);
-                        console.log(`☁️ Restored draft from Firestore for +91 ${cleanMobile}`);
-                    }
-                    // Immediately cache to local disk so future reads are instant (0ms)!
-                    try {
-                        const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
-                        const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
-                        const cacheFile = path.join(targetLocalDir, `${cleanMobile}.json`);
-                        if (!fs.existsSync(cacheFile)) {
-                            fs.writeFileSync(cacheFile, JSON.stringify(data, null, 2), 'utf8');
+                    const docData = doc.data();
+                    const docOp = docData.operatorUid ? String(docData.operatorUid).trim() : null;
+                    // STRICT TENANT BOUNDARY: Never load or cache another operator's draft from cloud!
+                    if (targetOp && docOp && docOp !== targetOp) {
+                        console.warn(`🚨 [Tenant Boundary] Blocked cross-operator access to +91 ${cleanMobile} (owner: ${docOp}, requester: ${targetOp})`);
+                    } else {
+                        data = docData;
+                        if (!_loggedRestores.has(cleanMobile)) {
+                            _loggedRestores.add(cleanMobile);
+                            console.log(`☁️ Restored draft from Firestore for +91 ${cleanMobile}`);
                         }
-                    } catch (_) {}
+                        // Cache to local disk ONLY IF owned by current operator
+                        try {
+                            const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
+                            const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
+                            const cacheFile = path.join(targetLocalDir, `${cleanMobile}.json`);
+                            if (!fs.existsSync(cacheFile)) {
+                                fs.writeFileSync(cacheFile, JSON.stringify(data, null, 2), 'utf8');
+                            }
+                        } catch (_) {}
+                    }
                 }
             } catch (e) {
                 console.warn(`Firestore read fallback: ${e.message}`);
@@ -78,6 +94,11 @@ async function getCitizenDraft(mobileNumber) {
     if (!data) return null;
     if (data.isDeleted === true || data.status === 'TRASHED') {
         return null; // Deleted drafts must NEVER be returned or resurrected!
+    }
+
+    // STRICT TENANT BOUNDARY: Final assertion
+    if (targetOp && data.operatorUid && String(data.operatorUid).trim() !== targetOp) {
+        return null;
     }
 
     const uploadsDir = path.join(__dirname, '..', '..', '..', 'uploads');
@@ -270,6 +291,7 @@ async function getCitizenDraft(mobileNumber) {
             }
         }
     }
+    data.base64Docs = data.base64Docs || {};
     if (restoredDocs.memberAadhaar && (!data.base64Docs.memberAadhaarsBase64 || data.base64Docs.memberAadhaarsBase64.length === 0)) {
         if (fs.existsSync(restoredDocs.memberAadhaar)) {
             data.base64Docs.memberAadhaarsBase64 = [{ name: path.basename(restoredDocs.memberAadhaar), base64: fileToBase64(restoredDocs.memberAadhaar) }];

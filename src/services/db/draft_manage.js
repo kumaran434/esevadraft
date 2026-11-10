@@ -94,6 +94,7 @@ async function listAllDrafts(operatorUid = null) {
     const drafts = [];
     const seenMobiles = new Set();
     const targetUid = operatorUid ? String(operatorUid).trim() : null;
+    const normTarget = normalizeOperatorUid(targetUid);
 
     const isDesktopLocal = !process.env.K_SERVICE && !process.env.GAE_SERVICE;
 
@@ -108,9 +109,9 @@ async function listAllDrafts(operatorUid = null) {
                     try {
                         const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
                         if (!isMeaningfulDraft(d)) return;
-                        const normTarget = normalizeOperatorUid(targetUid);
                         const normDocOp = normalizeOperatorUid(d.operatorUid);
-                        if (!isDesktopLocal && normTarget && normDocOp && normDocOp !== normTarget) return;
+                        // STRICT TENANT BOUNDARY: Never show another operator's drafts
+                        if (normTarget && normDocOp && normDocOp !== normTarget) return;
 
                         const prof = d.citizenProfile || {};
                         const name = extractDraftDisplayName(d);
@@ -168,11 +169,11 @@ async function listAllDrafts(operatorUid = null) {
                     col.doc(doc.id).delete().catch(() => {});
                     return;
                 }
-                const normTarget = normalizeOperatorUid(targetUid);
                 const normDocOp = normalizeOperatorUid(d.operatorUid);
-                if (!isDesktopLocal && normTarget && normDocOp && normDocOp !== normTarget) return;
+                // STRICT TENANT BOUNDARY: Cloud drafts belong to specific operators.
+                if (normTarget && normDocOp !== normTarget) return;
 
-                // Ensure Cloud draft is also cached to the local disk directory
+                // Ensure Cloud draft is also cached to the local disk directory ONLY IF owned by target operator!
                 if (!d.isDeleted && d.status !== 'TRASHED' && d.mobileNumber) {
                     const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
                     const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
@@ -217,6 +218,10 @@ async function listAllDrafts(operatorUid = null) {
                 snapshot.forEach(doc => {
                     const d = doc.data();
                     if (d && !d.isDeleted && d.status !== 'TRASHED' && d.mobileNumber) {
+                        const normDocOp = normalizeOperatorUid(d.operatorUid);
+                        // STRICT TENANT BOUNDARY: NEVER cache another operator's draft to local disk!
+                        if (normTarget && normDocOp !== normTarget) return;
+
                         const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
                         const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
                         const localTargetFile = path.join(targetLocalDir, `${d.mobileNumber}.json`);

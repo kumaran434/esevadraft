@@ -50,6 +50,21 @@ router.get('/api/chat/history', async (req, res) => {
         return res.json({ chatHistory: [getInitialWelcomeMessage()], citizenProfile: null, step: 'READY' });
     }
 
+    // STRICT TENANT BOUNDARY: Check if session belongs to another operator
+    if (isOpReq && reqOpUid && sess.operatorUid) {
+        const normSessOp = String(sess.operatorUid).trim();
+        const normReqOp = String(reqOpUid).trim();
+        if (normSessOp && normReqOp && normSessOp !== normReqOp) {
+            return res.status(403).json({
+                error: 'இந்த வாடிக்கையாளர் விவரங்கள் மற்றொரு மையத்திற்குரியவை.',
+                chatHistory: [getInitialWelcomeMessage()],
+                citizenProfile: null,
+                step: 'READY',
+                noCustomerActive: true
+            });
+        }
+    }
+
     if (reqOpUid && (!sess.operatorUid || sess.operatorUid === 'null')) {
         sess.operatorUid = reqOpUid;
     }
@@ -63,7 +78,7 @@ router.get('/api/chat/history', async (req, res) => {
     if (needsDraftRestore) {
         sess._draftChecked = true;
         try {
-            const draft = await getCitizenDraft(mobile);
+            const draft = await getCitizenDraft(mobile, reqOpUid);
             if (draft && draft.citizenProfile && (draft.citizenProfile.fullNameEng || draft.citizenProfile.fullNameTam)) {
                 const fresh = createFreshProfile(mobile);
                 const prevProf = sess.citizenProfile || {};

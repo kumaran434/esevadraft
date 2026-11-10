@@ -101,7 +101,8 @@ router.post('/api/operator/search-citizen', async (req, res) => {
 router.post('/api/operator/new-customer', async (req, res) => {
     const customerMobile = req.body.customerMobile || req.body.mobileNumber || req.body.mobile;
     const serviceName = req.body.serviceName || req.body.service;
-    const { customerName, operatorUid, operatorName, operatorMobile, isWalkin } = req.body;
+    const { customerName, operatorName, operatorMobile, isWalkin } = req.body;
+    const operatorUid = req.body.operatorUid || req.headers['x-operator-uid'] || req.query.operatorUid || null;
     const isTempWalkin = isWalkin === true || !customerMobile || String(customerMobile).startsWith('walkin_');
     let cleanMobile = '';
 
@@ -153,15 +154,15 @@ router.post('/api/operator/new-customer', async (req, res) => {
         const existingName = (existingDraft.operatorName || '').trim().toLowerCase();
         const incomingName = (operatorName || '').trim().toLowerCase();
 
-        // Safe resolution: It is the SAME operator if UID matches, OR mobile matches, OR centre name matches,
-        // OR if the draft was created locally without UID, OR running in desktop standalone mode!
-        const isDesktopLocal = !process.env.K_SERVICE && !process.env.GAE_SERVICE;
-        const isSameOperator = isDesktopLocal ||
-                               (!existingOp) ||
-                               (!incomingOp) ||
-                               (existingOp === incomingOp) ||
-                               (existingMob && incomingMob && existingMob === incomingMob) ||
-                               (existingName && incomingName && (existingName === incomingName || existingName.includes(incomingName) || incomingName.includes(existingName)));
+        // STRICT TENANT BOUNDARY:
+        // If the draft has an owner and the incoming operator UID does not match, ACCESS IS STRICTLY FORBIDDEN!
+        let isSameOperator = true;
+        if (existingOp && incomingOp && existingOp !== incomingOp) {
+            isSameOperator = false;
+        } else if (existingOp && !incomingOp) {
+            // Draft belongs to an operator, but requester is unauthenticated
+            isSameOperator = false;
+        }
 
         if (!isSameOperator) {
             return res.status(403).json({ 

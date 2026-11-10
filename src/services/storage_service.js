@@ -149,6 +149,9 @@ function persistSessions(currentActiveMobile) {
             
             if (isPhone || isTarget) {
                 snapshot[mobile] = {
+                    operatorUid: state.operatorUid || null,
+                    operatorName: state.operatorName || null,
+                    operatorMobile: state.operatorMobile || null,
                     intakeState: state.intakeState,
                     targetMemberCount: state.targetMemberCount,
                     currentMemberIdx: state.currentMemberIdx,
@@ -172,6 +175,9 @@ function persistSessions(currentActiveMobile) {
         const recentWalkins = walkinEntries.slice(-5);
         recentWalkins.forEach(({ mobile, state }) => {
             snapshot[mobile] = {
+                operatorUid: state.operatorUid || null,
+                operatorName: state.operatorName || null,
+                operatorMobile: state.operatorMobile || null,
                 intakeState: state.intakeState,
                 targetMemberCount: state.targetMemberCount,
                 currentMemberIdx: state.currentMemberIdx,
@@ -267,6 +273,9 @@ function getOrCreateSession(mobile) {
                             const parsed = JSON.parse(fs.readFileSync(dPath, 'utf-8'));
                             if (parsed && (parsed.citizenProfile || parsed.mobileNumber)) {
                                 resurrected = {
+                                    operatorUid: parsed.operatorUid || null,
+                                    operatorName: parsed.operatorName || null,
+                                    operatorMobile: parsed.operatorMobile || null,
                                     intakeState: parsed.intakeState || 'SERVICE_SELECTION',
                                     targetMemberCount: parsed.targetMemberCount !== undefined ? parsed.targetMemberCount : 1,
                                     currentMemberIdx: parsed.currentMemberIdx !== undefined ? parsed.currentMemberIdx : 0,

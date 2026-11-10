@@ -69,8 +69,9 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
     const rawKey = req.params.mobileNumber || '';
     const cleanMob = String(rawKey).trim();
     if (!cleanMob) return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
+    const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
     try {
-        const draft = await getCitizenDraft(cleanMob);
+        const draft = await getCitizenDraft(cleanMob, opUid);
         if (draft) {
             draft.base64Docs = draft.base64Docs || {};
             const memDocPath = draft.documents?.memberAadhaar || draft.citizenProfile?.subServiceData?.docPath || draft.citizenProfile?.tempMember?.docPath || draft.citizenProfile?.members?.[0]?.docPath;
@@ -85,7 +86,6 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
                     } catch (e) {}
                 }
             }
-            const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
             const draftOp = normalizeOperatorUid(draft.operatorUid);
             const reqOp = normalizeOperatorUid(opUid);
             if (draftOp && reqOp && draftOp !== reqOp) {
