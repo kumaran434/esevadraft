@@ -115,6 +115,7 @@ async function handleMemberVerification(ctx, req, res) {
                 sess.tempUploads = sess.tempUploads || {};
                 sess.tempUploads.currentMemberFront = null;
                 sess.tempUploads.currentMemberBack = null;
+                sess.tempMember = null;
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `✅ **உறுப்பினர் ${sess.currentMemberIdx} (${sess.tempMember.relationshipTam}) வெற்றிகரமாகச் சேர்க்கப்பட்டார்!**\n\n` +

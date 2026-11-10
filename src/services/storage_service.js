@@ -155,6 +155,8 @@ function persistSessions(currentActiveMobile) {
                     step: state.step,
                     citizenProfile: state.citizenProfile,
                     chatHistory: state.chatHistory,
+                    tempUploads: state.tempUploads || null,
+                    tempMember: state.tempMember || null,
                     applicationNumber: state.applicationNumber || null,
                     applicationPdfUrl: state.applicationPdfUrl || null
                 };
@@ -178,6 +180,8 @@ function persistSessions(currentActiveMobile) {
                 subServiceData: state.subServiceData || state.citizenProfile?.subServiceData || null,
                 citizenProfile: state.citizenProfile,
                 chatHistory: state.chatHistory,
+                tempUploads: state.tempUploads || null,
+                tempMember: state.tempMember || null,
                 applicationNumber: state.applicationNumber || null,
                 applicationPdfUrl: state.applicationPdfUrl || null
             };
