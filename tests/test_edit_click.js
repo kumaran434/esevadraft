@@ -137,6 +137,16 @@ async function testEditButton() {
             disp = modal ? window.getComputedStyle(modal).display : 'null';
             const docEditBtnSuccess = disp === 'flex' || disp === 'block';
 
+            // Verify View (Eye) button exists on document row
+            const docViewBtn = firstDocRow?.querySelector('a[title*="பார்"]');
+            // Verify Download button exists on document row
+            const docDownloadBtn = firstDocRow?.querySelector('a[title*="பதிவிறக்கு"]');
+            const dlAttr = docDownloadBtn?.getAttribute('download') || '';
+
+            // Verify Top & Bottom Action Bars
+            const topActionBar = document.getElementById('sidebarTopActionBar');
+            const stickyFooterBar = document.getElementById('sidebarStickyFooterBar');
+
             return {
                 btnSidebarSuccess,
                 firstDocRowFound: Boolean(firstDocRow),
@@ -144,7 +154,12 @@ async function testEditButton() {
                 docRowClickSuccess,
                 docEditBtnFound: Boolean(docEditBtn),
                 docBtnCursor,
-                docEditBtnSuccess
+                docEditBtnSuccess,
+                docViewBtnFound: Boolean(docViewBtn),
+                docDownloadBtnFound: Boolean(docDownloadBtn),
+                downloadFilename: dlAttr,
+                topActionBarFound: Boolean(topActionBar),
+                stickyFooterBarFound: Boolean(stickyFooterBar)
             };
         } catch (e) {
             return { error: e.stack || e.message };

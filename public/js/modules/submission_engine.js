@@ -437,33 +437,38 @@
                     titleEng: isNewRationCard ? 'Head Passport Photo' : 'Applicant Photo',
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto?download=1`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto`,
-                    icon: 'fa-user'
+                    icon: 'fa-user',
+                    isPdf: false
                 });
             }
 
             // 2. Aadhaar
             if (!isAddMember && (prof.headAadhaar || prof.headAadhaarDocPath || dMap.headAadhaar || b64Map.headAadhaarBase64)) {
                 const headName = prof.fullNameTam || prof.fullNameEng || (isNewRationCard ? 'தலைவர்' : 'விண்ணப்பதாரர்');
+                const hDocStr = String(prof.headAadhaarDocPath || dMap.headAadhaar || '');
                 docs.push({
                     type: 'headAadhaar',
                     title: isNewRationCard ? `குடும்பத் தலைவர் ஆதார் (${headName})` : `விண்ணப்பதாரர் ஆதார் (${headName})`,
                     titleEng: isNewRationCard ? 'Head of Family Aadhaar' : 'Applicant Aadhaar',
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar?download=1`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar`,
-                    icon: 'fa-id-card'
+                    icon: 'fa-id-card',
+                    isPdf: hDocStr.toLowerCase().endsWith('.pdf') || hDocStr.toLowerCase().includes('merged')
                 });
             }
 
             // 3. Smart Ration Card (if present on profile)
             if (prof.smartCardDocPath || dMap.smartCard || dMap.rationCard || b64Map.smartCardBase64) {
                 const cardNo = prof.smartCardNumber || prof.rationCardNumber || prof.rationCardNo || '';
+                const cardDocStr = String(prof.smartCardDocPath || dMap.smartCard || dMap.rationCard || '');
                 docs.push({
                     type: 'smartCard',
                     title: cardNo ? `ஸ்மார்ட் ரேஷன் கார்டு (${cardNo})` : 'ஸ்மார்ட் ரேஷன் கார்டு',
                     titleEng: 'Smart Ration Card',
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard?download=1`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard`,
-                    icon: 'fa-address-card'
+                    icon: 'fa-address-card',
+                    isPdf: cardDocStr.toLowerCase().endsWith('.pdf')
                 });
             }
 
@@ -473,6 +478,7 @@
                     const hasDoc = m.docPath || m.aadhaarNumber || (dMap.memberAadhaars && dMap.memberAadhaars[idx]) || dMap[`memberAadhaar_${idx}`] || (b64Map.memberAadhaarsBase64 && b64Map.memberAadhaarsBase64[idx]);
                     if (hasDoc) {
                         const mName = m.nameTam || m.nameEng || `உறுப்பினர் ${idx + 2}`;
+                        const mDocStr = String(m.docPath || dMap[`memberAadhaar_${idx}`] || '');
                         docs.push({
                             type: `memberAadhaar${idx}`,
                             title: `உறுப்பினர் ஆதார் (${mName})`,
@@ -480,6 +486,7 @@
                             downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?download=1&index=${idx}`,
                             previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?index=${idx}`,
                             icon: 'fa-address-card',
+                            isPdf: mDocStr.toLowerCase().endsWith('.pdf') || mDocStr.toLowerCase().includes('merged'),
                             memberIndex: idx + 1
                         });
                     }
@@ -488,26 +495,30 @@
 
             // 4. Gas Book / Receipt (Strictly ONLY for New Smart Card)
             if (isNewRationCard && ((prof.gasDetails && (prof.gasDetails.gasBookPath || (prof.gasDetails.hasGas && prof.gasDetails.consumerNumber))) || dMap.gasBook || b64Map.gasBookBase64)) {
+                const gasDocStr = String(prof.gasDetails?.gasBookPath || dMap.gasBook || '');
                 docs.push({
                     type: 'gasBook',
                     title: 'எரிவாயு இணைப்பு அட்டை / ரசீது',
                     titleEng: 'Gas Consumer Book / Receipt',
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook?download=1`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook`,
-                    icon: 'fa-fire'
+                    icon: 'fa-fire',
+                    isPdf: gasDocStr.toLowerCase().endsWith('.pdf')
                 });
             }
 
             // 5. Residence Proof (Strictly ONLY for New Smart Card)
             if (isNewRationCard && ((prof.residenceProof && (prof.residenceProof.docPath || prof.residenceProof.typeTam || prof.residenceProof.type)) || dMap.residenceProof || b64Map.residenceProofBase64)) {
                 const proofName = (prof.residenceProof && (prof.residenceProof.typeTam || prof.residenceProof.type)) || 'குடியிருப்புச் சான்று';
+                const resDocStr = String(prof.residenceProof?.docPath || dMap.residenceProof || '');
                 docs.push({
                     type: 'residenceProof',
                     title: `குடியிருப்புச் சான்று (${proofName})`,
                     titleEng: 'Residence Proof',
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof?download=1`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof`,
-                    icon: 'fa-house'
+                    icon: 'fa-house',
+                    isPdf: resDocStr.toLowerCase().endsWith('.pdf')
                 });
             }
 

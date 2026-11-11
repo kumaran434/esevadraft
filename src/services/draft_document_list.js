@@ -194,17 +194,13 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
         });
     }
 
-    // 5. Residence Proof (Strict real-file check - avoid duplicate entry when identical to gasBook)
-    const isDuplicateOfGas = hasGasDoc && (
-        (gasPath && resPath && path.basename(String(gasPath)) === path.basename(String(resPath))) ||
-        (!resPath && b64Map.residenceProofBase64 && b64Map.gasBookBase64 === b64Map.residenceProofBase64)
-    );
+    // 5. Residence Proof (Strict real-file check)
     const skipResForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY');
-    if (!skipResForSubservice && !isDuplicateOfGas && hasRes) {
+    if (!skipResForSubservice && hasRes) {
         const proofName = prof.residenceProof?.typeTam || 'குடியிருப்புச் சான்று';
         docs.push({
             type: 'residenceProof',
-            title: proofName,
+            title: proofName.startsWith('குடியிருப்பு') ? proofName : `குடியிருப்புச் சான்று (${proofName})`,
             titleEng: 'Residence Proof',
             downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof?download=1`,
             previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof`,

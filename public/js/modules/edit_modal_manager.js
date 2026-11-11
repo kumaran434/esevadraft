@@ -1543,3 +1543,37 @@
             // Sync badge & toggle buttons based on actual dev mode state
             syncDevMockUI();
         })();
+
+        // Robust Event Listener Binder for Sidebar Edit & Save Controls
+        (function initSidebarActionBindings() {
+            function bindActionButtons() {
+                const editBtn = document.getElementById('btnSidebarEdit');
+                if (editBtn && !editBtn._hasListener) {
+                    editBtn._hasListener = true;
+                    editBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof window.openEditModal === 'function') {
+                            window.openEditModal();
+                        }
+                    });
+                }
+                const saveBtn = document.getElementById('btnSidebarSave');
+                if (saveBtn && !saveBtn._hasListener) {
+                    saveBtn._hasListener = true;
+                    saveBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof window.saveCurrentDraftManually === 'function') {
+                            window.saveCurrentDraftManually();
+                        }
+                    });
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bindActionButtons);
+            } else {
+                bindActionButtons();
+            }
+            setTimeout(bindActionButtons, 1000);
+        })();

@@ -1023,6 +1023,16 @@
 
                     <!-- 2. Customer Details Box (Shown ONLY when a customer session or draft is active) -->
                     <div id="sidebarCustomerDetailsBox" style="display: none; flex-direction: column; gap: 10px;">
+                        <!-- Top Quick Action Bar for Customer Profile -->
+                        <div id="sidebarTopActionBar" style="display: flex; gap: 8px; width: 100%; margin-bottom: 2px;">
+                            <button type="button" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 34px; padding: 0 8px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 2px rgba(37,99,235,0.12); transition: all 0.2s;" onmouseover="this.style.background='#dbeafe';" onmouseout="this.style.background='#eff6ff';">
+                                <i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)
+                            </button>
+                            <button type="button" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 34px; padding: 0 8px; background: #ecfdf5; color: #047857; border: 1.5px solid #a7f3d0; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 2px rgba(16,185,129,0.12); transition: all 0.2s;" onmouseover="this.style.background='#d1fae5';" onmouseout="this.style.background='#ecfdf5';">
+                                <i class="fa-solid fa-floppy-disk"></i> சேமி (Save)
+                            </button>
+                        </div>
+
                         <!-- Application Status Card (shown when submitted) -->
                         <div class="card-box" id="sidebarAppStatusBox" style="display: none; background: #f0fdf4; border-left: 4px solid #16a34a;">
                             <h4 style="color: #166534; display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-circle-check" style="color: #16a34a;"></i> TNPDS விண்ணப்ப நிலை</h4>
@@ -1127,9 +1137,10 @@
                             </div>
                         </div>
 
-                        <div style="display: flex; gap: 8px; width: 100%; margin-top: auto; padding-top: 8px;">
-                            <button id="btnSidebarEdit" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 36px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(2,132,199,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); z-index: 10;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
-                            <button id="btnSidebarSave" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 36px; padding: 0 8px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(5,150,105,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); z-index: 10;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-floppy-disk"></i> சேமி (Save)</button>
+                        <!-- Bottom Sticky Action Bar (Elevated above any OS watermark) -->
+                        <div id="sidebarStickyFooterBar" style="position: sticky; bottom: 0; left: 0; right: 0; z-index: 999; background: #ffffff; padding: 10px 12px; margin-top: auto; margin-bottom: 6px; border-top: 1.5px solid #e2e8f0; border-radius: 10px; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08); display: flex; gap: 8px; width: 100%; box-sizing: border-box;">
+                            <button id="btnSidebarEdit" type="button" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 38px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(2,132,199,0.3); white-space: nowrap; transition: all 0.2s; z-index: 1000;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
+                            <button id="btnSidebarSave" type="button" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 38px; padding: 0 8px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(5,150,105,0.3); white-space: nowrap; transition: all 0.2s; z-index: 1000;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-floppy-disk"></i> சேமி (Save)</button>
                         </div>
                     </div>
                 </div>

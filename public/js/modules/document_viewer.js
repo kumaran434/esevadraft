@@ -95,6 +95,10 @@
                 const iconClass = (doc.icon && doc.icon.startsWith('fa-')) ? doc.icon : 'fa-file-lines';
                 const docType = doc.type || '';
                 const mIdx = (doc.memberIndex !== undefined) ? doc.memberIndex : (docType.match(/\d+/) ? Number(docType.match(/\d+/)[0]) + 1 : '');
+                const cleanTitle = (doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\?%*:|"<>]/g, '_');
+                const fileExt = doc.isPdf ? 'pdf' : 'jpg';
+                const dlName = `${cleanTitle}.${fileExt}`;
+                const previewTargetUrl = doc.previewUrl || doc.downloadUrl;
                 return `
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; gap: 8px; margin-bottom: 5px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer !important;"
                          onclick="if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"
@@ -107,22 +111,30 @@
                             </div>
                             <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;">
                                 <div style="font-weight: 700; font-size: 11.5px; color: #0f172a; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${doc.title}">${doc.title}</div>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.titleEng || doc.type}</div>
+                                <div style="font-size: 10px; color: #64748b; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.titleEng || doc.type} ${doc.isPdf ? '<span style=\"color: #dc2626; font-weight: 700;\">(PDF)</span>' : '<span style=\"color: #059669; font-weight: 600;\">(IMG)</span>'}</div>
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
+                        <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                            <a href="${previewTargetUrl}" target="_blank"
+                               onclick="event.stopPropagation(); window.open('${previewTargetUrl}', '_blank'); return false;"
+                               title="${doc.title} — ஆவணத்தைப் பார் (View Document)"
+                               style="height: 30px; width: 30px; border-radius: 7px; background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #16a34a; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 12px; cursor: pointer !important; transition: all 0.15s; box-shadow: 0 1px 2px rgba(22,163,74,0.12);"
+                               onmouseover="this.style.background='#dcfce7'; this.style.transform='scale(1.08)';"
+                               onmouseout="this.style.background='#f0fdf4'; this.style.transform='none';">
+                                <i class="fa-solid fa-eye"></i>
+                            </a>
                             <button type="button"
-                                    onclick="event.stopPropagation(); if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"
+                                    onclick="event.preventDefault(); event.stopPropagation(); if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"
                                     title="${doc.title} — திருத்து / மாற்று (Edit/Replace)"
-                                    style="height: 32px; width: 32px; border-radius: 8px; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer !important; transition: all 0.15s; box-shadow: 0 1px 2px rgba(37,99,235,0.12);"
+                                    style="height: 30px; width: 30px; border-radius: 7px; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 11.5px; cursor: pointer !important; transition: all 0.15s; box-shadow: 0 1px 2px rgba(37,99,235,0.12);"
                                     onmouseover="this.style.background='#dbeafe'; this.style.transform='scale(1.08)';"
                                     onmouseout="this.style.background='#eff6ff'; this.style.transform='none';">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </button>
-                            <a href="${doc.downloadUrl}" download
-                               onclick="event.preventDefault(); event.stopPropagation(); window.downloadDocumentFile('${doc.downloadUrl}', '${(doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\\\?%*:|\"<>]/g, '_')}.pdf');"
-                               title="${doc.title} — பதிவிறக்கு (Download)"
-                               style="height: 32px; width: 32px; border-radius: 8px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s; cursor: pointer !important;"
+                            <a href="${doc.downloadUrl}" download="${dlName}"
+                               onclick="event.preventDefault(); event.stopPropagation(); window.downloadDocumentFile('${doc.downloadUrl}', '${dlName}', ${Boolean(doc.isPdf)});"
+                               title="${doc.title} — பதிவிறக்கு (${fileExt.toUpperCase()})"
+                               style="height: 30px; width: 30px; border-radius: 7px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 12px; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s; cursor: pointer !important;"
                                onmouseover="this.style.background='#d1fae5'; this.style.transform='scale(1.08)';"
                                onmouseout="this.style.background='#ecfdf5'; this.style.transform='none';">
                                 <i class="fa-solid fa-download"></i>
@@ -135,13 +147,20 @@
 
         let cachedServerDocsByMobile = {};
 
-        function downloadDocumentFile(url, filename) {
+        function downloadDocumentFile(url, suggestedName, isPdf) {
+            let filename = suggestedName || 'document';
+            const hasExt = /\.(pdf|jpg|jpeg|png)$/i.test(filename);
+            if (!hasExt) {
+                filename += (isPdf ? '.pdf' : '.jpg');
+            } else if (!isPdf && filename.toLowerCase().endsWith('.pdf')) {
+                filename = filename.replace(/\.pdf$/i, '.jpg');
+            }
             if (typeof window.triggerDownloadUrl === 'function') {
                 return window.triggerDownloadUrl(url, filename);
             }
             const a = document.createElement('a');
             a.href = url;
-            a.download = filename || 'document.pdf';
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             setTimeout(() => a.remove(), 500);

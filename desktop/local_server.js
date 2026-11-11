@@ -1247,7 +1247,8 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                             const hasGas = checkExists(dMap.gasBook || prof.gasDetails?.gasBookPath, b64Map.gasBookBase64);
                             if (hasGas) {
                                 docs.push({ type: 'gasBook', title: 'எரிவாயு இணைப்பு அட்டை / ரசீது', titleEng: 'Gas Consumer Book / Receipt', downloadUrl: `/api/drafts/${mob}/doc/gasBook?download=1`, previewUrl: `/api/drafts/${mob}/doc/gasBook`, icon: 'fa-fire' });
-                            } else if (checkExists(dMap.residenceProof || prof.residenceProof?.docPath, b64Map.residenceProofBase64)) {
+                            }
+                            if (checkExists(dMap.residenceProof || prof.residenceProof?.docPath, b64Map.residenceProofBase64)) {
                                 docs.push({ type: 'residenceProof', title: prof.residenceProof?.typeTam || 'குடியிருப்புச் சான்று', titleEng: 'Residence Proof', downloadUrl: `/api/drafts/${mob}/doc/residenceProof?download=1`, previewUrl: `/api/drafts/${mob}/doc/residenceProof`, icon: 'fa-house' });
                             }
                         }

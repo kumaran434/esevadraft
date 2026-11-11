@@ -222,7 +222,7 @@
         .citizen-sidebar {
             flex: 1.2;
             background: #f8fafc;
-            padding: 14px;
+            padding: 14px 14px 30px 14px;
             overflow-y: auto !important;
             display: flex;
             flex-direction: column;
