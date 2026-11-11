@@ -394,18 +394,20 @@
                 const curState = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
                 const svcName = (window.pendingSelectedService || a.serviceName || data?.serviceName || '').toLowerCase();
                 const isServiceSelectionOnly = (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || (!curState && !window.pendingSelectedService));
+                const isExplicitNewCard = a.subService === 'NEW_CARD' || a.subService === 'NEW_RATION_CARD' ||
+                                          a.service === 'new_smart_card' || a.service === 'ration' || 
+                                          a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' ||
+                                          window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
+                                          svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card');
                 const isIncomeService = !isServiceSelectionOnly && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'));
                 const isResidenceService = !isServiceSelectionOnly && (curState.includes('RESIDENCE') || svcName.includes('இருப்பிடம்') || svcName.includes('residence'));
                 const isCommunityService = !isServiceSelectionOnly && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'));
-                const isRemoveMemberService = !isServiceSelectionOnly && isSubserviceRemoveMember;
-                const isAddMemberService = !isServiceSelectionOnly && isSubserviceAddMember;
-                const isAddressChangeService = !isServiceSelectionOnly && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
-                const isNewRationCardService = !isServiceSelectionOnly && !isIncomeService && !isResidenceService && !isCommunityService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
-                    curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE' ||
-                    a.service === 'new_smart_card' || a.service === 'ration' || a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' || a.subService === 'NEW_CARD' ||
-                    window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
-                    svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card')
-                );
+                const isRemoveMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceRemoveMember;
+                const isAddMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceAddMember;
+                const isAddressChangeService = !isServiceSelectionOnly && !isExplicitNewCard && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
+                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isIncomeService && !isResidenceService && !isCommunityService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
+                    curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE'
+                )));
 
                 // 1. Sidebar Head Title & Box Visibility
                 const headBoxEl = document.getElementById('sidebarHeadBox');
@@ -462,6 +464,51 @@
                         setVal('infoCommunityCaste', a.caste || a.subCaste || a.casteName || '—');
                     } else {
                         communityBox.style.display = 'none';
+                    }
+                }
+
+                // 2.8 Add Member Box
+                const addMemberBox = document.getElementById('sidebarAddMemberBox');
+                if (addMemberBox) {
+                    if (isAddMemberService && subData) {
+                        addMemberBox.style.display = 'block';
+                        const addName = subData.memberNameTam ? (subData.memberNameEng ? `${subData.memberNameTam} (${subData.memberNameEng})` : subData.memberNameTam) : (subData.memberName || '—');
+                        const addRel = subData.relationshipTam || subData.relationship || (subData.isChild ? 'மகன்/மகள்' : 'உறுப்பினர்');
+                        const addDob = subData.dob || '—';
+                        const addGender = subData.genderTam || subData.gender || '—';
+                        const addAadhaar = subData.aadhaarNo ? subData.aadhaarNo.replace(/(\d{4})/g, '$1 ').trim() : '—';
+                        const addMob = (a.mobileNumber || activeCustMob) ? `+91 ${a.mobileNumber || activeCustMob}` : '—';
+                        const addDoc = subData.isChild ? 'பிறப்புச் சான்றிதழ் (Birth Certificate)' : 'ஆதார் அட்டை (Aadhaar Card)';
+                        setVal('infoAddMemberName', addName);
+                        setVal('infoAddMemberRel', addRel);
+                        setVal('infoAddMemberDobGender', `${addDob} | ${addGender}`);
+                        setVal('infoAddMemberAadhaar', addAadhaar);
+                        setVal('infoAddMemberMobile', addMob);
+                        setVal('infoAddMemberDoc', `${addDoc} ✅`);
+                    } else {
+                        addMemberBox.style.display = 'none';
+                    }
+                }
+
+                // 2.9 Change Address Box
+                const changeAddressBox = document.getElementById('sidebarChangeAddressBox');
+                if (changeAddressBox) {
+                    if (isAddressChangeService && subData) {
+                        changeAddressBox.style.display = 'block';
+                        const dNo = subData.doorNo || '—';
+                        const street = subData.streetTam ? (subData.streetEng ? `${subData.streetTam} (${subData.streetEng})` : subData.streetTam) : (subData.streetEng || '');
+                        const area = subData.areaTam ? (subData.areaEng ? `${subData.areaTam} (${subData.areaEng})` : subData.areaTam) : (subData.areaEng || '—');
+                        const taluk = subData.taluk || a.taluk || '—';
+                        const dist = subData.district || a.district || '—';
+                        const pin = subData.pincode || a.pincode || '—';
+                        const proof = subData.proofType || 'மின் கட்டண ரசீது (EB Bill)';
+                        setVal('infoChangeAddressStreet', `${dNo}, ${street}`.trim());
+                        setVal('infoChangeAddressArea', area);
+                        setVal('infoChangeAddressTalukDist', `${taluk} / ${dist}`);
+                        setVal('infoChangeAddressPin', pin);
+                        setVal('infoChangeAddressProof', `${proof} ✅`);
+                    } else {
+                        changeAddressBox.style.display = 'none';
                     }
                 }
 

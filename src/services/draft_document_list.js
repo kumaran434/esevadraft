@@ -95,8 +95,23 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     const docs = [];
     const isExplicitSidebarFilter = Boolean(subServiceFilterArg);
     const activeSubService = String(subServiceFilterArg || prof.subService || draft?.subService || '').toUpperCase();
-    const isAddMember = activeSubService === 'ADD_MEMBER' || Boolean(prof.subServiceData?.memberName) || (prof.intakeState && String(prof.intakeState).startsWith('RATION_ADD_MEMBER'));
-    const isNewRationCard = !isAddMember && (draft?.service === 'புதிய ரேஷன் கார்டு' || prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || activeSubService === 'NEW_CARD' || prof.subService === 'NEW_CARD');
+    const isExplicitNewCard = activeSubService === 'NEW_CARD' ||
+                              activeSubService === 'NEW_RATION_CARD' ||
+                              activeSubService === 'NEW_SMART_CARD' ||
+                              draft?.service === 'புதிய ரேஷன் கார்டு' ||
+                              draft?.service === 'new_smart_card' ||
+                              draft?.service === 'ration' ||
+                              prof.service === 'new_smart_card' ||
+                              prof.service === 'புதிய ரேஷன் கார்டு' ||
+                              prof.service === 'ration' ||
+                              prof.subService === 'NEW_CARD' ||
+                              prof.subService === 'NEW_RATION_CARD';
+    const isAddMember = !isExplicitNewCard && (
+                            activeSubService === 'ADD_MEMBER' || 
+                            (prof.intakeState && String(prof.intakeState).startsWith('RATION_ADD_MEMBER')) || 
+                            (!activeSubService && Boolean(prof.subServiceData?.memberName))
+                        );
+    const isNewRationCard = isExplicitNewCard || (!isAddMember && (draft?.service === 'புதிய ரேஷன் கார்டு' || prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || activeSubService === 'NEW_CARD' || prof.subService === 'NEW_CARD'));
 
     const photoPath = dMap.profilePhoto || dMap.headPhoto || prof.headPhotoPath || sess?.citizenProfile?.headPhotoPath;
     const aadhaarPath = dMap.headAadhaar || prof.headAadhaarDocPath || sess?.citizenProfile?.headAadhaarDocPath || dMap.headAadhaarFront;
@@ -301,6 +316,87 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
             previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/newAddressProof`,
             icon: 'fa-location-dot'
         });
+    }
+
+    // 6.5 Master Profile Accumulating Documents (PAN Card, Voter ID, Income Proof, TC, Bank Passbook, etc.)
+    const KNOWN_DOC_METADATA = {
+        panCard: { title: 'பான் கார்டு (PAN Card)', titleEng: 'PAN Card', icon: 'fa-id-card' },
+        panCardFront: { title: 'பான் கார்டு முன்பக்கம் (PAN Card Front)', titleEng: 'PAN Card Front', icon: 'fa-id-card' },
+        panCardBack: { title: 'பான் கார்டு பின்பக்கம் (PAN Card Back)', titleEng: 'PAN Card Back', icon: 'fa-id-card' },
+        panFront: { title: 'பான் கார்டு முன்பக்கம் (PAN Front)', titleEng: 'PAN Card Front', icon: 'fa-id-card' },
+        panBack: { title: 'பான் கார்டு பின்பக்கம் (PAN Back)', titleEng: 'PAN Card Back', icon: 'fa-id-card' },
+        voterId: { title: 'வாக்காளர் அடையாள அட்டை (Voter ID)', titleEng: 'Voter ID Card', icon: 'fa-address-card' },
+        voterIdFront: { title: 'வாக்காளர் அட்டை முன்பக்கம் (Voter ID Front)', titleEng: 'Voter ID Front', icon: 'fa-address-card' },
+        voterIdBack: { title: 'வாக்காளர் அட்டை பின்பக்கம் (Voter ID Back)', titleEng: 'Voter ID Back', icon: 'fa-address-card' },
+        epicCard: { title: 'வாக்காளர் அட்டை (EPIC Card)', titleEng: 'EPIC Voter Card', icon: 'fa-address-card' },
+        incomeProof: { title: 'வருமானச் சான்று / சம்பள ரசீது (Income Proof)', titleEng: 'Income Proof / Pay Slip', icon: 'fa-receipt' },
+        salarySlip: { title: 'சம்பள ரசீது (Salary Slip)', titleEng: 'Salary Slip', icon: 'fa-money-bill-wave' },
+        incomeCertificate: { title: 'வருமானச் சான்றிதழ் (Income Certificate)', titleEng: 'Income Certificate', icon: 'fa-certificate' },
+        drivingLicense: { title: 'ஓட்டுநர் உரிமம் (Driving License)', titleEng: 'Driving License', icon: 'fa-id-badge' },
+        bankPassbook: { title: 'வங்கி கணக்குப் புத்தகம் (Bank Passbook)', titleEng: 'Bank Passbook', icon: 'fa-building-columns' },
+        ebBill: { title: 'மின் கட்டண ரசீது (EB Bill)', titleEng: 'Electricity Bill', icon: 'fa-bolt' },
+        propertyTax: { title: 'சொத்து வரி ரசீது (Property Tax Receipt)', titleEng: 'Property Tax Receipt', icon: 'fa-landmark' },
+        marriageCertificate: { title: 'திருமணச் சான்றிதழ் (Marriage Certificate)', titleEng: 'Marriage Certificate', icon: 'fa-certificate' },
+        communityCertificate: { title: 'சாதிச் சான்றிதழ் (Community Certificate)', titleEng: 'Community Certificate', icon: 'fa-award' },
+        schoolTc: { title: 'பள்ளி மாற்றுச் சான்றிதழ் (Transfer Certificate - TC)', titleEng: 'School TC', icon: 'fa-graduation-cap' },
+        deathCertificate: { title: 'இறப்புச் சான்றிதழ் (Death Certificate)', titleEng: 'Death Certificate', icon: 'fa-file-medical' },
+        canReceipt: { title: 'TNeGA CAN பதிவு ரசீது', titleEng: 'TNeGA CAN Receipt', icon: 'fa-receipt' }
+    };
+
+    const internalKeysToSkip = new Set([
+        'profilePhoto', 'headPhoto', 'headPhotoPath', 'headAadhaar', 'headAadhaarDocPath', 'headAadhaarFront', 'headAadhaarBack',
+        'smartCard', 'rationCard', 'smartCardDocPath', 'rationCardDocPath', 'gasBook', 'residenceProof', 'communityProof',
+        'subServiceMemberDoc', 'memberAadhaarFront', 'memberAadhaarBack', 'memberAadhaar', 'memberAadhaars', 'birthCertificate',
+        'surrenderProof', 'removeProof', 'newAddressProof', 'applicationPdf'
+    ]);
+
+    for (const [k, meta] of Object.entries(KNOWN_DOC_METADATA)) {
+        if (!docs.some(d => d.type === k)) {
+            const rawP = dMap[k] || prof[k] || sess?.tempUploads?.[k];
+            const rawB64 = b64Map[`${k}Base64`] || b64Map[k];
+            const rawUrl = storageUrls[k];
+            if (fileOrDataExists(rawP, rawB64, rawUrl)) {
+                docs.push({
+                    type: k,
+                    title: meta.title,
+                    titleEng: meta.titleEng,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${k}?download=1`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${k}`,
+                    icon: meta.icon || 'fa-file-lines',
+                    isPdf: isPhysicalPdf(rawP, rawB64)
+                });
+            }
+        }
+    }
+
+    const allDocKeys = new Set([
+        ...Object.keys(dMap || {}),
+        ...Object.keys(prof.documents || {}),
+        ...Object.keys(draft?.documents || {})
+    ]);
+
+    for (const k of allDocKeys) {
+        if (!internalKeysToSkip.has(k) && !docs.some(d => d.type === k) && !k.endsWith('Base64') && !k.startsWith('temp_')) {
+            const rawP = dMap[k] || prof.documents?.[k];
+            const rawB64 = b64Map[`${k}Base64`] || b64Map[k];
+            const rawUrl = storageUrls[k];
+            if (fileOrDataExists(rawP, rawB64, rawUrl)) {
+                const meta = KNOWN_DOC_METADATA[k] || {
+                    title: `ஆவணம் (${k})`,
+                    titleEng: k,
+                    icon: 'fa-file-lines'
+                };
+                docs.push({
+                    type: k,
+                    title: meta.title,
+                    titleEng: meta.titleEng,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${k}?download=1`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${k}`,
+                    icon: meta.icon,
+                    isPdf: isPhysicalPdf(rawP, rawB64)
+                });
+            }
+        }
     }
 
     // 7. Submitted Application PDF (if exists)

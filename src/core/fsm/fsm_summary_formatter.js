@@ -7,7 +7,17 @@ function renderSubserviceReadySummary(sess) {
     let svcNameTam = 'குடும்ப அட்டை சேவை';
     let detailsList = '';
 
-    if (subService === 'ADD_MEMBER') {
+    if (subService === 'NEW_CARD' || subService === 'NEW_RATION_CARD') {
+        svcNameTam = 'புதிய குடும்ப அட்டை (New Smart Card)';
+        const headName = sess.citizenProfile?.fullNameTam || sess.citizenProfile?.fullNameEng || 'குடும்பத் தலைவர்';
+        const memberCount = (sess.citizenProfile?.members && sess.citizenProfile.members.length > 0) ? sess.citizenProfile.members.length : 1;
+        const addrParts = [sess.citizenProfile?.doorNo, sess.citizenProfile?.streetTam || sess.citizenProfile?.streetEng, sess.citizenProfile?.taluk, sess.citizenProfile?.district].filter(Boolean);
+        const address = addrParts.join(', ') || 'சரிபார்க்கப்பட்ட முகவரி';
+        detailsList = `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+                      `• 👥 **மொத்த உறுப்பினர்கள்:** ${memberCount} நபர்(கள்)\n` +
+                      `• 🏠 **முகவரி:** ${address}\n` +
+                      `• 📄 **இணைக்கப்பட்ட ஆவணங்கள்:** புகைப்படம், ஆதார் மற்றும் முகவரிச் சான்று ✅\n`;
+    } else if (subService === 'ADD_MEMBER') {
         const isChild = sess.subServiceData?.isChild;
         svcNameTam = isChild ? 'குடும்ப உறுப்பினர் சேர்க்கை (குழந்தை)' : 'குடும்ப உறுப்பினர் சேர்க்கை (பெரியவர்)';
         const rel = sess.subServiceData?.relationshipTam || 'உறுப்பினர்';
@@ -61,13 +71,15 @@ function renderSubserviceReadySummary(sess) {
                       `• 📄 **சான்று:** எரிவாயு நுகர்வோர் அட்டை (Gas Book) ✅\n`;
     }
 
+    const isNewCard = subService === 'NEW_CARD' || subService === 'NEW_RATION_CARD';
+
     return {
         sender: 'bot',
         text: `🎉 **${svcNameTam} விண்ணப்பம் தயார்! (Application Ready)** 🎯\n\n` +
               `• 🏛️ **அரசு சேவை:** ${svcNameTam}\n` +
               detailsList +
-              `• 📱 **அங்கீகரிப்பு முறை:** குடும்ப அட்டை பதிவு மொபைல் எண் OTP மூலம்.\n\n` +
-              `இப்போது TNPDS போர்ட்டலில் உள்நுழைந்து நேரடியாக விண்ணப்பிக்கலாம்:`,
+              `• 📱 **அங்கீகரிப்பு முறை:** ${isNewCard ? 'விண்ணப்பதாரர் மொபைல் எண் நேரடி OTP மூலம்.' : 'குடும்ப அட்டை பதிவு மொபைல் எண் OTP மூலம்.'}\n\n` +
+              `${isNewCard ? 'இப்போது TNPDS போர்ட்டலில் புதிய குடும்ப அட்டைக்கு நேரடியாக விண்ணப்பிக்கலாம்:' : 'இப்போது TNPDS போர்ட்டலில் உள்நுழைந்து நேரடியாக விண்ணப்பிக்கலாம்:'}`,
         options: [
             { label: "📱 நேரலை TNPDS சமர்ப்பி (Real Govt OTP)", value: "REAL_LIVE_OTP" },
             { label: "🚀 TNPDS போர்ட்டலில் விண்ணப்பி (Submit to Portal)", value: "CONFIRM_SUBMIT" },

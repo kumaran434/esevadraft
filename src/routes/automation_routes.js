@@ -145,6 +145,7 @@ router.post('/api/automation/start', async (req, res) => {
     const isPublishMode = req.body.enableFinalSubmit === true || req.body.isPublish === true;
     const isDryRunMode = req.body.isDryRun === true || req.body.dryRun === true || (!isPublishMode && !isMock);
     const enableSubmit = isPublishMode && !isDryRunMode;
+    const explicitSubService = req.body.subService || req.body.service || sess.subService || sess.citizenProfile?.subService || '';
 
     const isCanRegisterFlow = (
         sess.subService === 'CAN_REGISTER' ||
@@ -159,7 +160,37 @@ router.post('/api/automation/start', async (req, res) => {
         sess.subService = 'CAN_REGISTER';
     }
 
-    const isCanSearchFlow = !isCanRegisterFlow && (
+    const isExplicitSubservice = (sess.subService && sess.subService !== 'NEW_CARD' && sess.subService !== 'NEW_RATION_CARD' && sess.subService !== 'RATION_SERVICE') ||
+                                 (req.body.subService && req.body.subService !== 'NEW_CARD' && req.body.subService !== 'NEW_RATION_CARD');
+
+    const isNewCardFlow = !isExplicitSubservice && (
+                          sess.subService === 'NEW_CARD' || 
+                          sess.subService === 'NEW_RATION_CARD' ||
+                          req.body.subService === 'NEW_CARD' ||
+                          req.body.subService === 'NEW_RATION_CARD' ||
+                          req.body.service === 'NEW_RATION_CARD' ||
+                          req.body.service === 'new_smart_card' ||
+                          sess.service === 'new_smart_card' ||
+                          sess.service === 'புதிய ரேஷன் கார்டு' ||
+                          sess.citizenProfile?.subService === 'NEW_CARD' ||
+                          sess.citizenProfile?.subService === 'NEW_RATION_CARD' ||
+                          sess.citizenProfile?.service === 'new_smart_card' ||
+                          sess.citizenProfile?.service === 'புதிய ரேஷன் கார்டு' ||
+                          (!sess.subService && (
+                              (sess.intakeState && (sess.intakeState.startsWith('MEMBER_') || sess.intakeState.startsWith('HEAD_') || sess.intakeState.startsWith('GAS_') || sess.intakeState.startsWith('CARD_TYPE') || sess.intakeState.startsWith('RESIDENCE_PROOF')))
+                          ))
+    );
+
+    if (isNewCardFlow) {
+        sess.subService = 'NEW_CARD';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'NEW_CARD';
+        sess.subServiceData = {};
+        if (sess.citizenProfile?.subServiceData) {
+            sess.citizenProfile.subServiceData = {};
+        }
+    }
+
+    const isCanSearchFlow = !isNewCardFlow && !isCanRegisterFlow && (
         sess.subService === 'CAN_SEARCH' ||
         sess.citizenProfile?.subService === 'CAN_SEARCH' ||
         req.body.service === 'CAN_SEARCH' ||
@@ -171,49 +202,55 @@ router.post('/api/automation/start', async (req, res) => {
         sess.subService = 'CAN_SEARCH';
     }
 
-    const isRemoveMemberFlow = !isCanRegisterFlow && !isCanSearchFlow && (
+    const isRemoveMemberFlow = !isNewCardFlow && !isCanRegisterFlow && !isCanSearchFlow && (
                                sess.subService === 'REMOVE_MEMBER' || 
                                sess.citizenProfile?.subService === 'REMOVE_MEMBER' ||
                                (sess.intakeState && sess.intakeState.startsWith('RATION_REMOVE_MEMBER')) ||
-                               (Boolean(sess.subServiceData?.memberName) && Boolean(sess.subServiceData?.reason))
+                               (!sess.subService && Boolean(sess.subServiceData?.memberName) && Boolean(sess.subServiceData?.reason))
                                ) && sess.subService !== 'CHANGE_HEAD';
     if (isRemoveMemberFlow) {
         sess.subService = 'REMOVE_MEMBER';
         sess.subServiceData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
     }
 
-    const isAddMemberFlow = !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && (
+    const isAddMemberFlow = !isNewCardFlow && !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && (
                             sess.subService === 'ADD_MEMBER' || 
                             sess.citizenProfile?.subService === 'ADD_MEMBER' ||
-                            Boolean(sess.subServiceData?.memberName || sess.subServiceData?.isChild !== undefined) ||
-                            Boolean(sess.citizenProfile?.subServiceData?.memberName) ||
-                            (sess.intakeState && sess.intakeState.startsWith('RATION_ADD_MEMBER'))
+                            (sess.intakeState && sess.intakeState.startsWith('RATION_ADD_MEMBER')) ||
+                            (!sess.subService && (
+                                Boolean(sess.subServiceData?.memberName || sess.subServiceData?.isChild !== undefined) ||
+                                Boolean(sess.citizenProfile?.subServiceData?.memberName)
+                            ))
     );
     if (isAddMemberFlow) {
         sess.subService = 'ADD_MEMBER';
         sess.subServiceData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
     }
-    const isChangeAddressFlow = !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && (
+    const isChangeAddressFlow = !isNewCardFlow && !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && (
                                 sess.subService === 'CHANGE_ADDRESS' || 
                                 sess.citizenProfile?.subService === 'CHANGE_ADDRESS' ||
-                                Boolean(sess.subServiceData?.doorNo) ||
-                                Boolean(sess.citizenProfile?.subServiceData?.doorNo) ||
-                                (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_ADDRESS'))
+                                (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_ADDRESS')) ||
+                                (!sess.subService && (
+                                    Boolean(sess.subServiceData?.doorNo) ||
+                                    Boolean(sess.citizenProfile?.subServiceData?.doorNo)
+                                ))
     );
     if (isChangeAddressFlow) {
         sess.subService = 'CHANGE_ADDRESS';
         sess.subServiceData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
     }
 
-    const isMobileChangeFlow = !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && !isChangeAddressFlow && (
+    const isMobileChangeFlow = !isNewCardFlow && !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && !isChangeAddressFlow && (
                                 sess.subService === 'UPDATE_MOBILE' ||
                                 sess.subService === 'CHANGE_MOBILE' ||
                                 sess.subService === 'CHANGE_OF_MOBILE_NUMBER' ||
                                 sess.citizenProfile?.subService === 'UPDATE_MOBILE' ||
                                 sess.citizenProfile?.subService === 'CHANGE_MOBILE' ||
                                 sess.citizenProfile?.subService === 'CHANGE_OF_MOBILE_NUMBER' ||
-                                Boolean(sess.subServiceData?.newMobile) ||
-                                Boolean(sess.citizenProfile?.subServiceData?.newMobile) ||
+                                (!sess.subService && (
+                                    Boolean(sess.subServiceData?.newMobile) ||
+                                    Boolean(sess.citizenProfile?.subServiceData?.newMobile)
+                                )) ||
                                 (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_MOBILE'))
     );
     if (isMobileChangeFlow) {
@@ -221,13 +258,15 @@ router.post('/api/automation/start', async (req, res) => {
         sess.subServiceData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
     }
 
-    const isChangeHeadFlow = !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && !isChangeAddressFlow && !isMobileChangeFlow && (
+    const isChangeHeadFlow = !isNewCardFlow && !isCanRegisterFlow && !isCanSearchFlow && !isRemoveMemberFlow && !isAddMemberFlow && !isChangeAddressFlow && !isMobileChangeFlow && (
                                 sess.subService === 'CHANGE_HEAD' ||
                                 sess.subService === 'FAMILY_HEAD_MEMBER_CHANGE' ||
                                 sess.citizenProfile?.subService === 'CHANGE_HEAD' ||
                                 sess.citizenProfile?.subService === 'FAMILY_HEAD_MEMBER_CHANGE' ||
-                                Boolean(sess.subServiceData?.newHeadName) ||
-                                Boolean(sess.citizenProfile?.subServiceData?.newHeadName) ||
+                                (!sess.subService && (
+                                    Boolean(sess.subServiceData?.newHeadName) ||
+                                    Boolean(sess.citizenProfile?.subServiceData?.newHeadName)
+                                )) ||
                                 (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_HEAD'))
     );
     if (isChangeHeadFlow) {

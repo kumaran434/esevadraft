@@ -235,24 +235,47 @@ async function handleAutomationStarter(ctx, req, res) {
         });
         return true;
     }
-    const isExplicitChangeAddress = sess.subService === 'CHANGE_ADDRESS' || 
-                                    (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_ADDRESS'));
-    const isExplicitAddMember = sess.subService === 'ADD_MEMBER' || 
-                                (sess.intakeState && sess.intakeState.startsWith('RATION_ADD_MEMBER'));
+    const isExplicitSubservice = (sess.subService && sess.subService !== 'NEW_CARD' && sess.subService !== 'NEW_RATION_CARD' && sess.subService !== 'RATION_SERVICE');
+    const isNewCardFlow = !isExplicitSubservice && (
+                          sess.subService === 'NEW_CARD' || 
+                          sess.subService === 'NEW_RATION_CARD' ||
+                          sess.citizenProfile?.subService === 'NEW_CARD' ||
+                          sess.citizenProfile?.subService === 'NEW_RATION_CARD' ||
+                          sess.service === 'new_smart_card' ||
+                          sess.service === 'புதிய ரேஷன் கார்டு' ||
+                          sess.citizenProfile?.service === 'new_smart_card' ||
+                          sess.citizenProfile?.service === 'புதிய ரேஷன் கார்டு' ||
+                          (!sess.subService && (
+                              (sess.intakeState && (sess.intakeState.startsWith('MEMBER_') || sess.intakeState.startsWith('HEAD_') || sess.intakeState.startsWith('GAS_') || sess.intakeState.startsWith('CARD_TYPE') || sess.intakeState.startsWith('RESIDENCE_PROOF')))
+                          ))
+    );
 
-    const isChangeAddressFlow = isExplicitChangeAddress || (!isExplicitAddMember && (
+    const isExplicitChangeAddress = !isNewCardFlow && (sess.subService === 'CHANGE_ADDRESS' || 
+                                    (sess.intakeState && sess.intakeState.startsWith('RATION_CHANGE_ADDRESS')));
+    const isExplicitAddMember = !isNewCardFlow && (sess.subService === 'ADD_MEMBER' || 
+                                (sess.intakeState && sess.intakeState.startsWith('RATION_ADD_MEMBER')));
+
+    const isChangeAddressFlow = !isNewCardFlow && (isExplicitChangeAddress || (!isExplicitAddMember && (
         sess.citizenProfile?.subService === 'CHANGE_ADDRESS' ||
-        Boolean(sess.subServiceData?.doorNo) ||
-        Boolean(sess.citizenProfile?.subServiceData?.doorNo)
-    ));
+        (!sess.subService && (Boolean(sess.subServiceData?.doorNo) || Boolean(sess.citizenProfile?.subServiceData?.doorNo)))
+    )));
 
-    const isAddMemberFlow = !isChangeAddressFlow && (isExplicitAddMember || (
+    const isAddMemberFlow = !isNewCardFlow && !isChangeAddressFlow && (isExplicitAddMember || (
         sess.citizenProfile?.subService === 'ADD_MEMBER' ||
-        Boolean(sess.subServiceData?.memberName || sess.subServiceData?.isChild !== undefined) ||
-        Boolean(sess.citizenProfile?.subServiceData?.memberName)
+        (!sess.subService && (
+            Boolean(sess.subServiceData?.memberName || sess.subServiceData?.isChild !== undefined) ||
+            Boolean(sess.citizenProfile?.subServiceData?.memberName)
+        ))
     ));
 
-    if (isChangeAddressFlow) {
+    if (isNewCardFlow) {
+        sess.subService = 'NEW_CARD';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'NEW_CARD';
+        sess.subServiceData = {};
+        if (sess.citizenProfile?.subServiceData) {
+            sess.citizenProfile.subServiceData = {};
+        }
+    } else if (isChangeAddressFlow) {
         sess.subService = 'CHANGE_ADDRESS';
         if (sess.citizenProfile) sess.citizenProfile.subService = 'CHANGE_ADDRESS';
         sess.subServiceData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
@@ -345,10 +368,10 @@ async function handleAutomationStarter(ctx, req, res) {
 
     const targetSess = sess;
     const targetMob = targetMobile || activeMobile;
-    const isChangeAddressAction = isChangeAddressFlow || 
+    const isChangeAddressAction = !isNewCardFlow && (isChangeAddressFlow || 
                                   targetSess.subService === 'CHANGE_ADDRESS' || 
-                                  targetSess.citizenProfile?.subService === 'CHANGE_ADDRESS';
-    const isAddMemberAction = !isChangeAddressAction && (isAddMemberFlow || 
+                                  targetSess.citizenProfile?.subService === 'CHANGE_ADDRESS');
+    const isAddMemberAction = !isNewCardFlow && !isChangeAddressAction && (isAddMemberFlow || 
                               targetSess.subService === 'ADD_MEMBER' || 
                               targetSess.citizenProfile?.subService === 'ADD_MEMBER');
     const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை முறை (Live Production)';
