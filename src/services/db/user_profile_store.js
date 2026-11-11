@@ -96,7 +96,8 @@ async function getUserProfile(uid) {
 
 async function lookupUserByMobile(mobileNumber) {
     if (!mobileNumber) return null;
-    const cleanMobile = String(mobileNumber).replace(/\D/g, '');
+    const digitsOnly = String(mobileNumber).replace(/\D/g, '');
+    const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
     if (cleanMobile.length !== 10) return null;
 
     try {
@@ -105,7 +106,12 @@ async function lookupUserByMobile(mobileNumber) {
             for (const f of files) {
                 if (f.endsWith('.json')) {
                     const data = JSON.parse(fs.readFileSync(path.join(LOCAL_USERS_DIR, f), 'utf8'));
-                    if (data.mobileNumber === cleanMobile || (data.email && data.email.includes(cleanMobile))) {
+                    const profileMob = String(data.mobileNumber || '').replace(/\D/g, '').slice(-10);
+                    if (profileMob === cleanMobile) {
+                        // Ensure internal domain email stays aligned with mobile number
+                        if (data.email && data.email.endsWith('@esevadraft.in')) {
+                            data.email = `${cleanMobile}@esevadraft.in`;
+                        }
                         return data;
                     }
                 }
@@ -121,7 +127,11 @@ async function lookupUserByMobile(mobileNumber) {
                 .limit(1)
                 .get();
             if (!snap.empty) {
-                return snap.docs[0].data();
+                const data = snap.docs[0].data();
+                if (data.email && data.email.endsWith('@esevadraft.in')) {
+                    data.email = `${cleanMobile}@esevadraft.in`;
+                }
+                return data;
             }
         } catch (e) {
             console.warn(`Firestore lookupUserByMobile error: ${e.message}`);

@@ -172,60 +172,90 @@
 
         async function handleFirebaseLogin() {
             hideAuthError();
-            const rawInput = document.getElementById('loginIdentifier')?.value.trim();
-            const password = document.getElementById('loginPassword')?.value;
-            if (!rawInput || !password) {
+            const rawInput = (document.getElementById('loginIdentifier')?.value || '').trim();
+            const rawPassword = document.getElementById('loginPassword')?.value || '';
+            if (!rawInput || !rawPassword) {
                 showAuthError('கைபேசி எண் அல்லது மின்னஞ்சல் மற்றும் கடவுச்சொல்லை உள்ளிடவும்.');
                 return;
             }
 
-            let authEmail = rawInput;
-            const cleanMobile = rawInput.replace(/\D/g, '');
+            const isEmail = rawInput.includes('@');
+            let cleanMobile = '';
+            let primaryEmail = '';
+            let altEmail = null;
             let detectedRole = null;
             let detectedName = null;
 
-            if (!rawInput.includes('@')) {
+            if (isEmail) {
+                primaryEmail = rawInput.trim().toLowerCase();
+            } else {
+                const digitsOnly = rawInput.replace(/\D/g, '');
+                cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
                 if (cleanMobile.length !== 10) {
                     showAuthError('சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.');
                     return;
                 }
-                authEmail = `${cleanMobile}@esevadraft.in`;
+                primaryEmail = `${cleanMobile}@esevadraft.in`;
 
                 // Smart Lookup: check if user registered with a custom email or previously created account
                 try {
                     const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${cleanMobile}`);
                     const lData = await lRes.json();
-                    if (lData.found) {
-                        if (lData.authEmail) authEmail = lData.authEmail;
+                    if (lData && lData.found) {
+                        if (lData.authEmail && lData.authEmail.trim().toLowerCase() !== primaryEmail) {
+                            altEmail = lData.authEmail.trim().toLowerCase();
+                        }
                         if (lData.role) detectedRole = lData.role;
                         if (lData.displayName) detectedName = lData.displayName;
                     }
                 } catch (e) {}
             }
 
+            // Resilient Whitespace & Space Tolerance Engine:
+            // 1. Trimmed password (handles clipboard paste spaces, mobile keyboard auto-spaces)
+            // 2. Raw password (in case password intentionally has leading/trailing space)
+            // 3. Trimmed password + ' ' (in case user originally registered with an accidental trailing space)
+            const trimmedPass = rawPassword.trim();
+            const passwordCandidates = [];
+            if (trimmedPass) passwordCandidates.push(trimmedPass);
+            if (rawPassword && rawPassword !== trimmedPass) passwordCandidates.push(rawPassword);
+            if (trimmedPass && !passwordCandidates.includes(trimmedPass + ' ')) passwordCandidates.push(trimmedPass + ' ');
+
+            const emailCandidates = [primaryEmail];
+            if (altEmail && !emailCandidates.includes(altEmail)) emailCandidates.push(altEmail);
+
             const btn = document.getElementById('btnLoginSubmit');
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சரிபார்க்கிறது...';
             }
+
+            let userCred = null;
+            let lastAuthErr = null;
+
             try {
                 if (!window.signInWithEmailAndPassword || !window.fbAuth) {
                     throw new Error('Firebase Auth தயாராகவில்லை. சிறிது நேரத்தில் மீண்டும் முயலவும்.');
                 }
 
-                let userCred;
-                try {
-                    userCred = await window.signInWithEmailAndPassword(window.fbAuth, authEmail, password);
-                } catch (firstErr) {
-                    if (firstErr.code === 'auth/user-not-found') {
+                for (const emailToTry of emailCandidates) {
+                    for (const passToTry of passwordCandidates) {
                         try {
-                            userCred = await window.createUserWithEmailAndPassword(window.fbAuth, authEmail, password);
-                        } catch (createErr) {
-                            throw firstErr;
+                            userCred = await window.signInWithEmailAndPassword(window.fbAuth, emailToTry, passToTry);
+                            if (userCred && userCred.user) break;
+                        } catch (err) {
+                            lastAuthErr = err;
+                            if (err.code === 'auth/too-many-requests' || err.code === 'auth/network-request-failed') {
+                                throw err;
+                            }
                         }
-                    } else {
-                        throw firstErr;
                     }
+                    if (userCred && userCred.user) break;
+                }
+
+                if (!userCred || !userCred.user) {
+                    if (lastAuthErr) throw lastAuthErr;
+                    throw new Error('உள்நுழைவு தோல்வியடைந்தது. சரியான விவரங்களை உள்ளிடவும்.');
                 }
 
                 console.log('Firebase login success:', userCred.user.email);
@@ -250,8 +280,12 @@
                 let msg = e.message;
                 if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') {
                     msg = 'தவறான கைபேசி எண் அல்லது கடவுச்சொல்! சரியான கடவுச்சொல்லை உள்ளிடவும்.';
+                } else if (e.code === 'auth/too-many-requests') {
+                    msg = 'தொடர்ச்சியாக தவறான கடவுச்சொல் உள்ளிடப்பட்டதால் கணக்கு தற்காலிகமாகப் பாதுகாக்கப்பட்டுள்ளது. 2 நிமிடங்கள் கழித்து மீண்டும் முயலவும் அல்லது "கடவுச்சொல் மறந்துவிட்டதா?" என்பதைப் பயன்படுத்தவும்.';
                 } else if (e.code === 'auth/invalid-email') {
                     msg = 'மின்னஞ்சல் அல்லது கைபேசி எண் சரியான வடிவில் இல்லை.';
+                } else if (e.code === 'auth/network-request-failed') {
+                    msg = 'இணைய இணைப்பு துண்டிக்கப்பட்டுள்ளது. இணைய இணைப்பைச் சரிபார்க்கவும்.';
                 }
                 showAuthError(msg);
             } finally {
@@ -267,11 +301,12 @@
             hideAuthError();
             // Operator Portal: Every signup is an Operator signup
             const role = 'operator';
-            const name = document.getElementById('signupName')?.value.trim();
-            const mobile = document.getElementById('signupMobile')?.value.trim();
-            const cleanMobile = (mobile || '').replace(/\D/g, '');
-            const password = document.getElementById('signupPassword')?.value;
-            const confirmPassword = document.getElementById('signupConfirmPassword')?.value;
+            const name = (document.getElementById('signupName')?.value || '').trim();
+            const mobile = (document.getElementById('signupMobile')?.value || '').trim();
+            const digitsOnly = mobile.replace(/\D/g, '');
+            const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+            const password = (document.getElementById('signupPassword')?.value || '').trim();
+            const confirmPassword = (document.getElementById('signupConfirmPassword')?.value || '').trim();
 
             if (!name) return showAuthError('மையம் அல்லது உரிமையாளரின் பெயரை உள்ளிடவும்.');
             if (cleanMobile.length !== 10) return showAuthError('சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.');
@@ -338,7 +373,8 @@
             if (!rawInput) return;
             let email = rawInput.trim();
             if (!email.includes('@')) {
-                const clean = email.replace(/\D/g, '');
+                const digitsOnly = email.replace(/\D/g, '');
+                const clean = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
                 if (clean.length === 10) email = `${clean}@esevadraft.in`;
             }
             try {
@@ -442,6 +478,7 @@
 
 
         async function logoutUser() {
+            const lastOpMobile = localStorage.getItem('eseva_operator_mobile') || localStorage.getItem('eseva_user_mobile') || '';
             try {
                 if (window.fbAuth && window.fbSignOut) {
                     await window.fbSignOut(window.fbAuth);
@@ -450,6 +487,14 @@
             } catch (e) {}
             localStorage.clear();
             sessionStorage.clear();
+            hideAuthError();
+
+            const passInput = document.getElementById('loginPassword');
+            if (passInput) passInput.value = '';
+            const idInput = document.getElementById('loginIdentifier');
+            if (idInput && lastOpMobile && !idInput.value) {
+                idInput.value = lastOpMobile;
+            }
 
             const desktopNavbar = document.querySelector('.navbar');
             if (desktopNavbar) desktopNavbar.style.display = 'flex';

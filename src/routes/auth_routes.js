@@ -92,7 +92,8 @@ router.get('/api/auth/session', async (req, res) => {
 // 2. GET /api/auth/lookup-mobile
 router.get('/api/auth/lookup-mobile', async (req, res) => {
     const rawMobile = req.query.mobile || '';
-    const cleanMobile = rawMobile.replace(/\D/g, '');
+    const digitsOnly = String(rawMobile).replace(/\D/g, '');
+    const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
     if (cleanMobile.length !== 10) {
         return res.status(400).json({ error: '10-இலக்க மொபைல் எண் தேவை.' });
     }

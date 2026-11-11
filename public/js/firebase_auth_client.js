@@ -66,7 +66,7 @@
                 // Background reload check (non-blocking)
                 user.reload().catch(async (reloadErr) => {
                     console.warn('Firebase user reload check:', reloadErr.code || reloadErr.message);
-                    if (reloadErr.code !== 'auth/network-request-failed') {
+                    if (reloadErr.code === 'auth/user-disabled' || reloadErr.code === 'auth/user-not-found') {
                         await logoutUser();
                     }
                 });
@@ -86,7 +86,7 @@
                 try {
                     await window.fbAuth.currentUser.reload();
                 } catch (e) {
-                    if (e.code !== 'auth/network-request-failed') {
+                    if (e.code === 'auth/user-disabled' || e.code === 'auth/user-not-found') {
                         console.warn('Periodic auth verification detected user removal:', e.code);
                         await logoutUser();
                     }
