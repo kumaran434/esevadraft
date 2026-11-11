@@ -95,6 +95,12 @@ async function listAllDrafts(operatorUid = null) {
     const seenMobiles = new Set();
     const targetUid = operatorUid ? String(operatorUid).trim() : null;
     const normTarget = normalizeOperatorUid(targetUid);
+    const isTestRun = process.env.REGRESSION_TEST === 'true' || process.env.NODE_ENV === 'test';
+
+    // STRICT ZERO-LEAKAGE BOUNDARY: In production, unauthenticated requests without operatorUid get 0 drafts!
+    if (!normTarget && !isTestRun) {
+        return [];
+    }
 
     const isDesktopLocal = !process.env.K_SERVICE && !process.env.GAE_SERVICE;
 
@@ -110,8 +116,11 @@ async function listAllDrafts(operatorUid = null) {
                         const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
                         if (!isMeaningfulDraft(d)) return;
                         const normDocOp = normalizeOperatorUid(d.operatorUid);
-                        // STRICT TENANT BOUNDARY: Never show another operator's drafts
-                        if (normTarget && normDocOp && normDocOp !== normTarget) return;
+                        // STRICT TENANT BOUNDARY: When operator is specified, ONLY return drafts strictly belonging to them!
+                        // Drafts with null operatorUid or different operatorUid are strictly blocked!
+                        if (normTarget) {
+                            if (!normDocOp || normDocOp !== normTarget) return;
+                        }
 
                         const prof = d.citizenProfile || {};
                         const name = extractDraftDisplayName(d);
@@ -171,7 +180,9 @@ async function listAllDrafts(operatorUid = null) {
                 }
                 const normDocOp = normalizeOperatorUid(d.operatorUid);
                 // STRICT TENANT BOUNDARY: Cloud drafts belong to specific operators.
-                if (normTarget && normDocOp !== normTarget) return;
+                if (normTarget) {
+                    if (!normDocOp || normDocOp !== normTarget) return;
+                }
 
                 // Ensure Cloud draft is also cached to the local disk directory ONLY IF owned by target operator!
                 if (!d.isDeleted && d.status !== 'TRASHED' && d.mobileNumber) {

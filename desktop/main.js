@@ -82,7 +82,7 @@ if (!gotTheLock) {
         // Stale Cache Purge upon Version Upgrade: Prevents zombie UI cache across installer updates
         try {
             const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : '';
-            const currentVer = app.getVersion() || '1.1.16';
+            const currentVer = app.getVersion() || '1.1.18';
             if (userData) {
                 const verFile = path.join(userData, '.installed_version');
                 let prevVer = '';
@@ -96,8 +96,59 @@ if (!gotTheLock) {
                     try { fs.writeFileSync(verFile, currentVer, 'utf8'); } catch (_) {}
                 }
             }
+
+            // Startup Leakage & Legacy Artifacts Purge: Completely wipes any leaked dev drafts or vault from older installers
+            const resData = path.join(process.resourcesPath || '', 'data');
+            if (fs.existsSync(resData)) {
+                const resDrafts = path.join(resData, 'drafts');
+                if (fs.existsSync(resDrafts)) {
+                    try { fs.rmSync(resDrafts, { recursive: true, force: true }); } catch (_) {}
+                }
+                const resVault = path.join(resData, 'operator_vault.json');
+                if (fs.existsSync(resVault)) {
+                    try { fs.unlinkSync(resVault); } catch (_) {}
+                }
+                const resUsers = path.join(resData, 'users');
+                if (fs.existsSync(resUsers)) {
+                    try { fs.rmSync(resUsers, { recursive: true, force: true }); } catch (_) {}
+                }
+                const resCitizens = path.join(resData, 'citizens.json');
+                if (fs.existsSync(resCitizens)) {
+                    try { fs.writeFileSync(resCitizens, '{}', 'utf8'); } catch (_) {}
+                }
+                const resSessions = path.join(resData, 'sessions.json');
+                if (fs.existsSync(resSessions)) {
+                    try { fs.writeFileSync(resSessions, '{}', 'utf8'); } catch (_) {}
+                }
+            }
+
+            // If running on an external user's machine (not the dev machine with source repo), purge legacy test drafts from userData
+            const isLocalDevPC = process.env.USERNAME === 'ADMIN' && fs.existsSync('d:\\downloads\\ai assitant 2');
+            if (!isLocalDevPC && userData) {
+                const uDrafts = path.join(userData, 'data', 'drafts');
+                const leakedDraft = path.join(uDrafts, '9790170026.json');
+                if (fs.existsSync(leakedDraft)) {
+                    try { fs.unlinkSync(leakedDraft); } catch (_) {}
+                }
+                if (fs.existsSync(uDrafts)) {
+                    try {
+                        const dfList = fs.readdirSync(uDrafts);
+                        for (const df of dfList) {
+                            if (df.endsWith('.json')) {
+                                const fullP = path.join(uDrafts, df);
+                                try {
+                                    const parsed = JSON.parse(fs.readFileSync(fullP, 'utf8'));
+                                    if (!parsed.operatorUid && df === '9790170026.json') {
+                                        fs.unlinkSync(fullP);
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+                    } catch (_) {}
+                }
+            }
         } catch (e) {
-            console.warn('[Cache Purge Error]:', e.message);
+            console.warn('[Cache & Leakage Purge Error]:', e.message);
         }
 
         startLocalServer(() => activeAutomationModule, (mod) => { activeAutomationModule = mod; });

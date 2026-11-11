@@ -90,7 +90,7 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
             }
             const draftOp = normalizeOperatorUid(draft.operatorUid);
             const reqOp = normalizeOperatorUid(opUid);
-            if (draftOp && reqOp && draftOp !== reqOp) {
+            if (reqOp && (!draftOp || draftOp !== reqOp)) {
                 return res.status(403).json({ success: false, error: 'இந்த வாடிக்கையாளர் வரைவை அணுக உங்களுக்கு அனுமதி இல்லை.' });
             }
             const isTrashed = !!(draft.isDeleted || draft.status === 'TRASHED');
@@ -160,16 +160,17 @@ router.get('/api/drafts/:mobileNumber/documents-list', async (req, res) => {
     const rawKey = req.params.mobileNumber || '';
     const cleanMob = String(rawKey).trim();
     if (!cleanMob) return res.status(400).json({ error: 'Missing mobile' });
+    const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
 
     try {
         const digitsOnly = cleanMob.replace(/\D/g, '').slice(-10);
-        let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob) : null;
+        let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob, opUid) : null;
         if (!draft && digitsOnly) {
-            draft = await getCitizenDraft(digitsOnly);
+            draft = await getCitizenDraft(digitsOnly, opUid);
         }
         const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
         if (!draft && activeMob && activeMob !== cleanMob) {
-            draft = await getCitizenDraft(activeMob);
+            draft = await getCitizenDraft(activeMob, opUid);
         }
         const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
             ? sessions.get(cleanMob)

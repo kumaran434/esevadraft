@@ -44,10 +44,17 @@
                     || user.displayName 
                     || (role === 'operator' ? 'குமரன் இ-சேவை மையம்' : 'விண்ணப்பதாரர்');
 
+                if (user.email) {
+                    localStorage.setItem('eseva_last_auth_email', user.email);
+                    localStorage.setItem('eseva_auth_email', user.email);
+                }
                 if (role === 'operator') {
                     localStorage.setItem('eseva_operator_uid', user.uid);
                     localStorage.setItem('eseva_operator_name', dispName);
-                    localStorage.setItem('eseva_operator_mobile', mob);
+                    if (mob && mob !== '9876543210') {
+                        localStorage.setItem('eseva_operator_mobile', mob);
+                        localStorage.setItem('eseva_last_mobile', mob);
+                    }
                 }
                 localStorage.setItem('eseva_user_role', role);
 

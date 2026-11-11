@@ -172,8 +172,8 @@
 
         async function handleFirebaseLogin() {
             hideAuthError();
-            const rawInput = (document.getElementById('loginIdentifier')?.value || '').trim();
-            const rawPassword = document.getElementById('loginPassword')?.value || '';
+            const rawInput = (document.getElementById('loginIdentifier')?.value || '').trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+            const rawPassword = (document.getElementById('loginPassword')?.value || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
             if (!rawInput || !rawPassword) {
                 showAuthError('கைபேசி எண் அல்லது மின்னஞ்சல் மற்றும் கடவுச்சொல்லை உள்ளிடவும்.');
                 return;
@@ -187,42 +187,62 @@
             let detectedName = null;
 
             if (isEmail) {
-                primaryEmail = rawInput.trim().toLowerCase();
+                primaryEmail = rawInput.trim().toLowerCase().replace(/\s+/g, '');
             } else {
                 const digitsOnly = rawInput.replace(/\D/g, '');
-                cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
-                if (cleanMobile.length !== 10) {
-                    showAuthError('சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.');
-                    return;
-                }
-                primaryEmail = `${cleanMobile}@esevadraft.in`;
+                if (digitsOnly.length >= 10) {
+                    cleanMobile = digitsOnly.slice(-10);
+                    primaryEmail = `${cleanMobile}@esevadraft.in`;
 
-                // Smart Lookup: check if user registered with a custom email or previously created account
-                try {
-                    const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${cleanMobile}`);
-                    const lData = await lRes.json();
-                    if (lData && lData.found) {
-                        if (lData.authEmail && lData.authEmail.trim().toLowerCase() !== primaryEmail) {
-                            altEmail = lData.authEmail.trim().toLowerCase();
+                    // Smart Lookup: check if user registered with a custom email or previously created account
+                    try {
+                        const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${cleanMobile}`);
+                        const lData = await lRes.json();
+                        if (lData && lData.found) {
+                            if (lData.authEmail && lData.authEmail.trim().toLowerCase() !== primaryEmail) {
+                                altEmail = lData.authEmail.trim().toLowerCase();
+                            }
+                            if (lData.role) detectedRole = lData.role;
+                            if (lData.displayName) detectedName = lData.displayName;
                         }
-                        if (lData.role) detectedRole = lData.role;
-                        if (lData.displayName) detectedName = lData.displayName;
+                    } catch (e) {}
+                } else {
+                    // Alphanumeric username support (e.g. "kumaran", "admin")
+                    const cleanUser = rawInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+                    if (cleanUser && cleanUser.length >= 3) {
+                        primaryEmail = `${cleanUser}@esevadraft.in`;
+                    } else {
+                        showAuthError('சரியான 10-இலக்க மொபைல் எண் அல்லது மின்னஞ்சலை உள்ளிடவும்.');
+                        return;
                     }
-                } catch (e) {}
+                }
             }
 
             // Resilient Whitespace & Space Tolerance Engine:
             // 1. Trimmed password (handles clipboard paste spaces, mobile keyboard auto-spaces)
             // 2. Raw password (in case password intentionally has leading/trailing space)
             // 3. Trimmed password + ' ' (in case user originally registered with an accidental trailing space)
+            // 4. ' ' + Trimmed password (leading space tolerance)
+            // 5. Password with internal spaces removed
             const trimmedPass = rawPassword.trim();
             const passwordCandidates = [];
             if (trimmedPass) passwordCandidates.push(trimmedPass);
-            if (rawPassword && rawPassword !== trimmedPass) passwordCandidates.push(rawPassword);
+            if (rawPassword && !passwordCandidates.includes(rawPassword)) passwordCandidates.push(rawPassword);
             if (trimmedPass && !passwordCandidates.includes(trimmedPass + ' ')) passwordCandidates.push(trimmedPass + ' ');
+            if (trimmedPass && !passwordCandidates.includes(' ' + trimmedPass)) passwordCandidates.push(' ' + trimmedPass);
+            const noSpacePass = rawPassword.replace(/\s+/g, '');
+            if (noSpacePass && !passwordCandidates.includes(noSpacePass)) passwordCandidates.push(noSpacePass);
 
             const emailCandidates = [primaryEmail];
+            if (cleanMobile) {
+                const comEmail = `${cleanMobile}@esevadraft.com`;
+                if (!emailCandidates.includes(comEmail)) emailCandidates.push(comEmail);
+            }
             if (altEmail && !emailCandidates.includes(altEmail)) emailCandidates.push(altEmail);
+            const savedLastEmail = localStorage.getItem('eseva_last_auth_email') || localStorage.getItem('eseva_auth_email');
+            if (savedLastEmail && !emailCandidates.includes(savedLastEmail.toLowerCase().trim())) {
+                emailCandidates.push(savedLastEmail.toLowerCase().trim());
+            }
 
             const btn = document.getElementById('btnLoginSubmit');
             if (btn) {
@@ -263,12 +283,16 @@
                 const uid = user.uid;
                 const email = user.email;
                 const dispName = detectedName || user.displayName || localStorage.getItem('eseva_user_name') || 'மையம்';
-                // Dedicated Operator Desk Login: role is always guaranteed to be 'operator'
                 let chosenRole = 'operator';
 
-                if (cleanMobile) {
+                if (email) {
+                    localStorage.setItem('eseva_last_auth_email', email);
+                    localStorage.setItem('eseva_auth_email', email);
+                }
+                if (cleanMobile && cleanMobile !== '9876543210') {
                     localStorage.setItem('eseva_user_mobile', cleanMobile);
                     localStorage.setItem('eseva_operator_mobile', cleanMobile);
+                    localStorage.setItem('eseva_last_mobile', cleanMobile);
                 }
                 localStorage.setItem('eseva_user_role', chosenRole);
 
@@ -478,7 +502,9 @@
 
 
         async function logoutUser() {
-            const lastOpMobile = localStorage.getItem('eseva_operator_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+            let lastOpMobile = localStorage.getItem('eseva_last_mobile') || localStorage.getItem('eseva_operator_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+            if (lastOpMobile === '9876543210') lastOpMobile = '';
+            const lastAuthEmail = localStorage.getItem('eseva_last_auth_email') || localStorage.getItem('eseva_auth_email') || '';
             try {
                 if (window.fbAuth && window.fbSignOut) {
                     await window.fbSignOut(window.fbAuth);
@@ -487,13 +513,15 @@
             } catch (e) {}
             localStorage.clear();
             sessionStorage.clear();
+            if (lastOpMobile) localStorage.setItem('eseva_last_mobile', lastOpMobile);
+            if (lastAuthEmail) localStorage.setItem('eseva_last_auth_email', lastAuthEmail);
             hideAuthError();
 
             const passInput = document.getElementById('loginPassword');
             if (passInput) passInput.value = '';
             const idInput = document.getElementById('loginIdentifier');
-            if (idInput && lastOpMobile && !idInput.value) {
-                idInput.value = lastOpMobile;
+            if (idInput && !idInput.value) {
+                idInput.value = lastOpMobile || lastAuthEmail || '';
             }
 
             const desktopNavbar = document.querySelector('.navbar');

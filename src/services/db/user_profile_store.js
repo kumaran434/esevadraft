@@ -26,6 +26,11 @@ async function saveUserProfile(uid, profileData = {}) {
         ? profileData.isAdmin
         : ((typeof existing.isAdmin === 'boolean') ? existing.isAdmin : (roleVal === 'admin'));
 
+    if (profileData.mobileNumber) {
+        const digits = String(profileData.mobileNumber).replace(/\D/g, '');
+        profileData.mobileNumber = digits.length >= 10 ? digits.slice(-10) : digits;
+    }
+
     const payload = {
         ...existing,
         ...profileData,
@@ -108,8 +113,7 @@ async function lookupUserByMobile(mobileNumber) {
                     const data = JSON.parse(fs.readFileSync(path.join(LOCAL_USERS_DIR, f), 'utf8'));
                     const profileMob = String(data.mobileNumber || '').replace(/\D/g, '').slice(-10);
                     if (profileMob === cleanMobile) {
-                        // Ensure internal domain email stays aligned with mobile number
-                        if (data.email && data.email.endsWith('@esevadraft.in')) {
+                        if (!data.email) {
                             data.email = `${cleanMobile}@esevadraft.in`;
                         }
                         return data;
@@ -122,13 +126,19 @@ async function lookupUserByMobile(mobileNumber) {
     const firestore = getFirestoreInstance();
     if (isFirestoreAvailable() && firestore) {
         try {
-            const snap = await firestore.collection(USERS_COLLECTION)
+            let snap = await firestore.collection(USERS_COLLECTION)
                 .where('mobileNumber', '==', cleanMobile)
                 .limit(1)
                 .get();
+            if (snap.empty) {
+                snap = await firestore.collection(USERS_COLLECTION)
+                    .where('mobileNumber', '==', `+91${cleanMobile}`)
+                    .limit(1)
+                    .get();
+            }
             if (!snap.empty) {
                 const data = snap.docs[0].data();
-                if (data.email && data.email.endsWith('@esevadraft.in')) {
+                if (!data.email) {
                     data.email = `${cleanMobile}@esevadraft.in`;
                 }
                 return data;

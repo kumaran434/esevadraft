@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {
@@ -71,7 +71,31 @@
       },
       {
         "from": "../data",
-        "to": "data"
+        "to": "data",
+        "filter": [
+          "**/tn_bifurcated_taluks.*",
+          "**/tn_pincode_taluk_map.*",
+          "**/tn_village_lexicon*",
+          "**/services_registry_data.json",
+          "!**/drafts/**",
+          "!**/citizens/**",
+          "!**/applications/**",
+          "!**/checkpoints/**",
+          "!**/downloads/**",
+          "!**/golden_samples/**",
+          "!**/telemetry/**",
+          "!**/tnpds_chrome_profile/**",
+          "!**/users/**",
+          "!**/uploads/**",
+          "!**/citizens.json*",
+          "!**/sessions.json*",
+          "!**/operator_vault.json*",
+          "!**/tnega_cookies.json*",
+          "!**/latest_automation_run.json*",
+          "!**/automation_incident_log.json*",
+          "!**/automation_immune_memory.json*",
+          "!**/aadhaar_citizen_index.json*"
+        ]
       },
       {
         "from": "../src",

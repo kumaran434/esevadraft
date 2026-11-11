@@ -81,8 +81,7 @@ async function syncAllToDesktop() {
                             'tn_village_lexicon_part2.js',
                             'tn_village_lexicon_part3.js',
                             'services_registry_data.json',
-                            'automation_immune_memory.json',
-                            'operator_vault.json'
+                            'automation_immune_memory.json'
                         ]);
                         if (!fs.existsSync(destFolder)) fs.mkdirSync(destFolder, { recursive: true });
                         for (const staticFile of ALLOWED_STATIC_DATA_FILES) {

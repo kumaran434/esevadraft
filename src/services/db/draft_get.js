@@ -35,12 +35,14 @@ async function getCitizenDraft(mobileNumber, operatorUid = null) {
         try { appData = JSON.parse(fs.readFileSync(appDataFile, 'utf8')); } catch (_) {}
     }
 
-    // STRICT TENANT BOUNDARY: Exclude drafts that belong to a different operator
-    if (targetOp && localData && localData.operatorUid && String(localData.operatorUid).trim() !== targetOp) {
-        localData = null;
-    }
-    if (targetOp && appData && appData.operatorUid && String(appData.operatorUid).trim() !== targetOp) {
-        appData = null;
+    // STRICT TENANT BOUNDARY: When targetOp is provided, drafts MUST belong to this operator!
+    if (targetOp) {
+        if (localData && (!localData.operatorUid || String(localData.operatorUid).trim() !== targetOp)) {
+            localData = null;
+        }
+        if (appData && (!appData.operatorUid || String(appData.operatorUid).trim() !== targetOp)) {
+            appData = null;
+        }
     }
 
     if (localData && appData) {
@@ -66,7 +68,7 @@ async function getCitizenDraft(mobileNumber, operatorUid = null) {
                     const docData = doc.data();
                     const docOp = docData.operatorUid ? String(docData.operatorUid).trim() : null;
                     // STRICT TENANT BOUNDARY: Never load or cache another operator's draft from cloud!
-                    if (targetOp && docOp && docOp !== targetOp) {
+                    if (targetOp && (!docOp || docOp !== targetOp)) {
                         console.warn(`🚨 [Tenant Boundary] Blocked cross-operator access to +91 ${cleanMobile} (owner: ${docOp}, requester: ${targetOp})`);
                     } else {
                         data = docData;
