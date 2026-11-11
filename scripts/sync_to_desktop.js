@@ -124,22 +124,31 @@ async function syncAllToDesktop() {
     // Zero Pollution Invariant (Golden Rule 4): NEVER overwrite or inject dummy drafts into user desktop profile!
     console.log('  ✅ Core engine files, src/, data/, and public/ synced to Desktop App directories.');
 
-    // 2. Compile bytecode only if .jsc binaries are missing (avoids concurrent file lock race with ASAR packaging)
+    // 2. Compile bytecode whenever source files change or .jsc binaries are missing
+    const mainJs = path.join(ROOT_DIR, 'desktop', 'main.js');
     const mainJsc = path.join(ROOT_DIR, 'desktop', 'main.jsc');
+    const preloadJs = path.join(ROOT_DIR, 'desktop', 'preload.js');
     const preloadJsc = path.join(ROOT_DIR, 'desktop', 'preload.jsc');
     const buildProtectedScript = path.join(ROOT_DIR, 'desktop', 'build-protected.js');
-    if (fs.existsSync(buildProtectedScript) && (!fs.existsSync(mainJsc) || !fs.existsSync(preloadJsc))) {
+    const needsCompile = !fs.existsSync(mainJsc) || !fs.existsSync(preloadJsc) ||
+        (fs.existsSync(mainJs) && fs.statSync(mainJs).mtimeMs > fs.statSync(mainJsc).mtimeMs) ||
+        (fs.existsSync(preloadJs) && fs.statSync(preloadJs).mtimeMs > fs.statSync(preloadJsc).mtimeMs);
+
+    if (fs.existsSync(buildProtectedScript) && needsCompile) {
         try {
             const { execFileSync } = require('child_process');
-            execFileSync(process.execPath, [buildProtectedScript], { stdio: 'ignore', timeout: 10000 });
-        } catch (_) {}
+            execFileSync(process.execPath, [buildProtectedScript], { stdio: 'inherit', timeout: 15000 });
+            console.log('  ✅ Compiled updated main.js & preload.js into bytecode binaries.');
+        } catch (e) {
+            console.warn('  ⚠️ Bytecode compilation notice:', e.message);
+        }
     }
 
     // 3. Repack app.asar if present
     if (fs.existsSync(TARGET_ASAR)) {
         const tempDir = path.join(ROOT_DIR, '.tmp_asar_sync');
         try {
-            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
             asar.extractAll(TARGET_ASAR, tempDir);
 
             const desktopDir = path.join(ROOT_DIR, 'desktop');
@@ -184,11 +193,11 @@ try {
             fs.writeFileSync(path.join(tempDir, 'preload.loader.js'), preloadLoader, 'utf8');
 
             await asar.createPackage(tempDir, TARGET_ASAR);
-            fs.rmSync(tempDir, { recursive: true, force: true });
+            try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (_) {}
             console.log('  ✅ app.asar successfully updated with latest main.js, main.jsc, preload.js, and loaders.');
         } catch (e) {
             console.warn(`  ⚠️ ASAR repack warning: ${e.message}`);
-            try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
+            try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (_) {}
         }
     }
 

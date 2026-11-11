@@ -149,6 +149,33 @@ function registerIpcHandlers({ getMainWindow, getActiveModule, setActiveModule }
         return { success: true, message: 'ஸ்கேனர் தயார் நிலையில் உள்ளது.' };
     });
 
+    ipcMain.handle('save-file-direct', async (_event, payload) => {
+        try {
+            const { base64Data, filename } = payload || {};
+            if (!base64Data || !filename) return { success: false, error: 'Data and filename required' };
+            const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+            const buffer = Buffer.from(cleanBase64, 'base64');
+            const safeFilename = filename.replace(/[<>:"/\\|?*]+/g, '_');
+            let downloadsDir = 'C:\\Users\\ADMIN\\Downloads';
+            try {
+                if (typeof app !== 'undefined' && app.getPath) downloadsDir = app.getPath('downloads');
+            } catch (_) {}
+
+            let savePath = path.join(downloadsDir, safeFilename);
+            if (fs.existsSync(savePath)) {
+                const ext = path.extname(safeFilename);
+                const base = path.basename(safeFilename, ext);
+                savePath = path.join(downloadsDir, `${base}_${Date.now()}${ext}`);
+            }
+
+            fs.writeFileSync(savePath, buffer);
+            try { shell.showItemInFolder(savePath); } catch (_) {}
+            return { success: true, savePath, fileName: path.basename(savePath) };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
     ipcMain.handle('restore-focus', async () => {
         try {
             const win = getMainWindow();

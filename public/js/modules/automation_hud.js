@@ -673,6 +673,9 @@
             localStorage.removeItem('eseva_active_customer_mobile');
             localStorage.removeItem('eseva_active_customer_name');
             currentCitizenData = null;
+            window.currentCitizenData = null;
+            if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
+            if (typeof clearCustomerDocCache === 'function' && activeMob) clearCustomerDocCache(activeMob);
             lastRenderedChatHistoryJson = '';
             lastRenderedChatHistoryLength = 0;
 

@@ -350,6 +350,12 @@
                     const activeMob = (localStorage.getItem('eseva_active_customer_mobile') || '').replace(/\D/g, '').slice(-10);
                     const targetMob = (mobile || '').replace(/\D/g, '').slice(-10);
 
+                    if (typeof clearCustomerDocCache === 'function') {
+                        clearCustomerDocCache(targetMob);
+                        clearCustomerDocCache(mobile);
+                    }
+                    if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
+
                     // If the deleted customer was currently loaded/active, or if screen has no active customer, fully reset screen!
                     if (!activeMob || (activeMob && targetMob && activeMob === targetMob)) {
                         if (typeof clearAutomationScreenSession === 'function') {
@@ -360,6 +366,7 @@
                             localStorage.removeItem('eseva_active_customer_mobile');
                             localStorage.removeItem('eseva_active_customer_name');
                             currentCitizenData = null;
+                            window.currentCitizenData = null;
                             lastRenderedChatHistoryJson = '';
                             lastRenderedChatHistoryLength = 0;
                             if (typeof resetSidebarToOperatorView === 'function') resetSidebarToOperatorView();
@@ -714,3 +721,29 @@
             const box = document.getElementById('customerSuggestionsBox');
             if (box) { box.style.display = 'none'; box.innerHTML = ''; }
         }
+
+        async function downloadCustomerApplicationForm(mobile, appNo) {
+            if (!mobile && !appNo) return;
+            const cleanMob = String(mobile || '').replace(/\D/g, '').slice(-10);
+
+            // 1. If TNPDS Application Number exists (10-18 digits), download official receipt
+            if (appNo && /^\d{10,18}$/.test(String(appNo).trim())) {
+                if (typeof window.downloadTnpdsPdfFromInput === 'function') {
+                    return window.downloadTnpdsPdfFromInput(appNo);
+                }
+            }
+
+            // 2. Drafted Application Summary PDF
+            const url = `/api/drafts/${cleanMob}/application-pdf`;
+            const safeName = `Application_Draft_${cleanMob}${appNo ? '_' + appNo : ''}.pdf`;
+            if (typeof window.triggerDownloadUrl === 'function') {
+                return window.triggerDownloadUrl(url, safeName);
+            }
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = safeName;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 500);
+        }
+        window.downloadCustomerApplicationForm = downloadCustomerApplicationForm;

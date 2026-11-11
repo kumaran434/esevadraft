@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {
@@ -76,6 +76,22 @@
       {
         "from": "../public",
         "to": "public"
+      },
+      {
+        "from": "../node_modules",
+        "to": "node_modules",
+        "filter": [
+          "!**/.bin/**",
+          "!**/*.md",
+          "!**/*.markdown",
+          "!**/*.ts",
+          "!**/*.map",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/docs/**",
+          "!**/example/**",
+          "!**/examples/**"
+        ]
       }
     ],
     "win": {

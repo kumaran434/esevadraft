@@ -357,12 +357,15 @@ function getLocalExpressApp() {
             const Module = require('module');
             const origNodeModulePaths = Module._nodeModulePaths;
             const extraNodePaths = [
-                path.join('d:', 'downloads', 'ai assitant 2', 'node_modules'),
-                path.join(__dirname, '..', 'node_modules'),
-                path.join(__dirname, 'node_modules'),
                 path.join(process.resourcesPath || '', 'node_modules'),
-                path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules')
+                path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules'),
+                path.join(__dirname, '..', 'node_modules'),
+                path.join(__dirname, 'node_modules')
             ];
+            const isPackaged = typeof app !== 'undefined' && app.isPackaged;
+            if (!isPackaged) {
+                extraNodePaths.unshift(path.join('d:', 'downloads', 'ai assitant 2', 'node_modules'));
+            }
             if (typeof app !== 'undefined' && app.getPath) {
                 extraNodePaths.push(path.join(app.getPath('userData'), 'node_modules'));
             }
@@ -377,12 +380,14 @@ function getLocalExpressApp() {
             };
 
             const candidates = [
-                path.join('d:', 'downloads', 'ai assitant 2', 'server.js'),
-                path.join(__dirname, '..', 'server.js'),
-                path.join(__dirname, 'server.js'),
                 path.join(process.resourcesPath || '', 'server.js'),
-                path.join(process.resourcesPath || '', 'app.asar.unpacked', 'server.js')
+                path.join(process.resourcesPath || '', 'app.asar.unpacked', 'server.js'),
+                path.join(__dirname, '..', 'server.js'),
+                path.join(__dirname, 'server.js')
             ];
+            if (!isPackaged) {
+                candidates.unshift(path.join('d:', 'downloads', 'ai assitant 2', 'server.js'));
+            }
             if (typeof app !== 'undefined' && app.getPath) {
                 candidates.push(path.join(app.getPath('userData'), 'server.js'));
             }
@@ -472,14 +477,17 @@ function syncDraftToCloudInBackground(endpoint, method, payload = null, customHe
     } catch (_) {}
 }
 
-let activePort = 3000;
-let activeServerUrl = 'http://127.0.0.1:3000';
+let activePort = null;
+let activeServerUrl = null;
 let serverReadyResolve = null;
 const serverReadyPromise = new Promise((resolve) => { serverReadyResolve = resolve; });
 
-function getActivePort() { return activePort; }
-function getActiveServerUrl() { return activeServerUrl; }
-function whenServerReady() { return serverReadyPromise; }
+function getActivePort() { return activePort || 3000; }
+function getActiveServerUrl() { return activeServerUrl || 'http://127.0.0.1:3000'; }
+function whenServerReady() {
+    if (activePort && activeServerUrl) return Promise.resolve(activeServerUrl);
+    return serverReadyPromise;
+}
 
 function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) {
     try {
@@ -1246,6 +1254,40 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                     }
                 }
 
+                if (subAction === '/application-pdf' && req.method === 'GET') {
+                    try {
+                        const { getCitizenDraft } = require('../firestore_db');
+                        const draft = await getCitizenDraft(mob);
+                        const { getCitizenProfile } = require('../database');
+                        const prof = (draft && draft.citizenProfile) || (getCitizenProfile ? getCitizenProfile(mob) : {}) || {};
+                        const { generateDraftApplicationPdf } = require('../src/services/tnega_receipt_generator');
+                        const os = require('os');
+                        const tmpPath = path.join(os.tmpdir(), `Application_Draft_${mob}_${Date.now()}.pdf`);
+                        await generateDraftApplicationPdf(tmpPath, {
+                            ...prof,
+                            mobileNumber: mob,
+                            applicationNumber: draft?.applicationNumber || null,
+                            service: draft?.service || prof?.service || 'புதிய ரேஷன் கார்டு',
+                            members: prof?.members || []
+                        });
+                        if (fs.existsSync(tmpPath)) {
+                            res.writeHead(200, {
+                                'Content-Type': 'application/pdf',
+                                'Content-Disposition': `attachment; filename="Application_Draft_${mob}.pdf"`,
+                                'Cache-Control': 'no-cache'
+                            });
+                            const stream = fs.createReadStream(tmpPath);
+                            stream.pipe(res);
+                            stream.on('finish', () => {
+                                setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch (_) {} }, 5000);
+                            });
+                            return;
+                        }
+                    } catch (err) {
+                        console.warn('⚠️ [Local Server] application-pdf generation error:', err.message);
+                    }
+                }
+
                 if (subAction && subAction.startsWith('/doc/')) {
                     const docType = subAction.replace('/doc/', '').split('?')[0];
                     try {
@@ -1253,6 +1295,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                         const draft = await getCitizenDraft(mob);
                         const prof = draft?.citizenProfile || draft || {};
                         const dMap = draft?.documents || prof.documents || {};
+                        const b64Map = draft?.base64Docs || prof.base64Docs || {};
                         let docPath = dMap[docType] || prof[docType];
                         if (docType === 'profilePhoto' && !docPath) docPath = prof.headPhotoPath;
                         if (docType === 'headAadhaar' && !docPath) docPath = prof.headAadhaarDocPath || prof.members?.[0]?.docPath;
@@ -1295,6 +1338,8 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                             }
                         }
 
+                        const isDownload = req.url.includes('download=1');
+
                         if (docPath && typeof docPath === 'string' && fs.existsSync(docPath)) {
                             const ext = path.extname(docPath).toLowerCase();
                             let mime = MIME_TYPES[ext] || 'image/jpeg';
@@ -1307,12 +1352,31 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                                     mime = 'application/pdf';
                                 }
                             } catch (_) {}
+                            const safeExt = mime === 'application/pdf' ? '.pdf' : (ext || '.jpg');
+                            const dlFilename = `${mob}_${docType}${safeExt}`;
                             res.writeHead(200, {
                                 'Content-Type': mime,
-                                'Content-Disposition': 'inline',
+                                'Content-Disposition': isDownload ? `attachment; filename="${dlFilename}"` : 'inline',
                                 'Cache-Control': 'no-cache'
                             });
                             return fs.createReadStream(docPath).pipe(res);
+                        }
+
+                        // Base64 document fallback if not on disk
+                        const b64Val = b64Map[`${docType}Base64`] || b64Map[docType];
+                        if (b64Val && typeof b64Val === 'string' && b64Val.length > 50) {
+                            const cleanB64 = b64Val.replace(/^data:[^;]+;base64,/, '');
+                            const buf = Buffer.from(cleanB64, 'base64');
+                            const isPdf = buf.length > 4 && buf.slice(0, 4).toString('utf8').startsWith('%PDF');
+                            const ext = isPdf ? '.pdf' : '.jpg';
+                            const mime = isPdf ? 'application/pdf' : 'image/jpeg';
+                            const dlFilename = `${mob}_${docType}${ext}`;
+                            res.writeHead(200, {
+                                'Content-Type': mime,
+                                'Content-Disposition': isDownload ? `attachment; filename="${dlFilename}"` : 'inline',
+                                'Cache-Control': 'no-cache'
+                            });
+                            return res.end(buf);
                         }
                     } catch (_) {}
                 }
@@ -1434,10 +1498,10 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 console.warn(`   Configure your Android SMS Auto-Forwarder target to: http://<PC-IP>:${currentPort}/api/automation/otp_webhook`);
             }
             if (serverReadyResolve) serverReadyResolve(activeServerUrl);
-            // Pre-warm local Express asynchronously after UI static assets begin streaming
+            // Pre-warm local Express asynchronously after UI static assets have completely loaded
             setTimeout(() => {
                 try { getLocalExpressApp(); } catch (_) {}
-            }, 250);
+            }, 3500);
         });
 
         localServer.listen(currentPort, '0.0.0.0');

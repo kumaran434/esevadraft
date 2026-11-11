@@ -76,20 +76,32 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     if (draft && (draft.isDeleted || draft.status === 'TRASHED')) return [];
 
     const prof = (draft && draft.citizenProfile) || (sess && sess.citizenProfile) || {};
-    const dMap = (draft && draft.documents) || prof.documents || (sess && sess.tempUploads) || {};
-    const b64Map = (draft && draft.base64Docs) || prof.base64Docs || (sess && sess.base64Docs) || {};
-    const storageUrls = (draft && draft.storageUrls) || {};
+    const dMap = {
+        ...(sess?.tempUploads || {}),
+        ...(prof?.documents || {}),
+        ...(draft?.documents || {})
+    };
+    const b64Map = {
+        ...(sess?.base64Docs || {}),
+        ...(prof?.base64Docs || {}),
+        ...(draft?.base64Docs || {})
+    };
+    const storageUrls = {
+        ...(sess?.storageUrls || {}),
+        ...(prof?.storageUrls || {}),
+        ...(draft?.storageUrls || {})
+    };
 
     const docs = [];
     const isExplicitSidebarFilter = Boolean(subServiceFilterArg);
     const activeSubService = String(subServiceFilterArg || prof.subService || draft?.subService || '').toUpperCase();
     const isAddMember = activeSubService === 'ADD_MEMBER' || Boolean(prof.subServiceData?.memberName) || (prof.intakeState && String(prof.intakeState).startsWith('RATION_ADD_MEMBER'));
-    const isNewRationCard = !isAddMember && (draft?.service === 'புதிய ரேஷன் கார்டு' || prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு') && !prof.subService && !draft?.subService;
+    const isNewRationCard = !isAddMember && (draft?.service === 'புதிய ரேஷன் கார்டு' || prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || activeSubService === 'NEW_CARD' || prof.subService === 'NEW_CARD');
 
-    const photoPath = dMap.profilePhoto || dMap.headPhoto || prof.headPhotoPath;
-    const aadhaarPath = dMap.headAadhaar || prof.headAadhaarDocPath;
-    const gasPath = dMap.gasBook || prof.gasDetails?.gasBookPath;
-    const resPath = dMap.residenceProof || prof.residenceProof?.docPath;
+    const photoPath = dMap.profilePhoto || dMap.headPhoto || prof.headPhotoPath || sess?.citizenProfile?.headPhotoPath;
+    const aadhaarPath = dMap.headAadhaar || prof.headAadhaarDocPath || sess?.citizenProfile?.headAadhaarDocPath || dMap.headAadhaarFront;
+    const gasPath = dMap.gasBook || prof.gasDetails?.gasBookPath || sess?.citizenProfile?.gasDetails?.gasBookPath;
+    const resPath = dMap.residenceProof || prof.residenceProof?.docPath || sess?.citizenProfile?.residenceProof?.docPath;
     const sSub = (sess && sess.subServiceData) || (prof && prof.subServiceData);
     const subMemDoc = sSub?.docPath || dMap.subServiceMemberDoc || (typeof dMap.memberAadhaar === 'string' ? dMap.memberAadhaar : '') || dMap.memberAadhaarFront || '';
 

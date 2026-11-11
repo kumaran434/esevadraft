@@ -1,5 +1,66 @@
 // eSevaDraft Domain Module: edit_modal_manager.js
 
+        function formatDocUrl(docPath) {
+            if (typeof window.formatDocUrl === 'function' && window.formatDocUrl !== formatDocUrl) return window.formatDocUrl(docPath);
+            if (!docPath || typeof docPath !== 'string') return '';
+            if (docPath.startsWith('http://') || docPath.startsWith('https://') || docPath.startsWith('data:') || docPath.startsWith('/api/')) return docPath;
+            const clean = docPath.replace(/\\/g, '/').replace(/^\/app\//, '');
+            const upIdx = clean.toLowerCase().indexOf('uploads/');
+            if (upIdx !== -1) return '/' + clean.substring(upIdx);
+            const compIdx = clean.toLowerCase().indexOf('compressed/');
+            if (compIdx !== -1) return '/' + clean.substring(compIdx);
+            const stripped = clean.startsWith('/') ? clean.substring(1) : clean;
+            return '/uploads/' + stripped;
+        }
+        window.formatDocUrl = window.formatDocUrl || formatDocUrl;
+
+        function isPdfPath(docPath) {
+            if (typeof window.isPdfPath === 'function' && window.isPdfPath !== isPdfPath) return window.isPdfPath(docPath);
+            if (!docPath || typeof docPath !== 'string') return false;
+            return docPath.toLowerCase().endsWith('.pdf') || docPath.includes('application/pdf');
+        }
+        window.isPdfPath = window.isPdfPath || isPdfPath;
+
+        function renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId = null, forcedIsPdf = false) {
+            if (typeof window.renderDocPreview === 'function' && window.renderDocPreview !== renderDocPreview) {
+                return window.renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId, forcedIsPdf);
+            }
+            const imgEl = document.getElementById(imgId);
+            const phEl = document.getElementById(phId);
+            const pdfEl = pdfId ? document.getElementById(pdfId) : null;
+            const stEl = document.getElementById(statusId);
+            const vbEl = viewBtnId ? document.getElementById(viewBtnId) : null;
+            const delEl = deleteBtnId ? document.getElementById(deleteBtnId) : null;
+            if (docPath) {
+                const url = formatDocUrl(docPath);
+                const isPdf = Boolean(forcedIsPdf) || isPdfPath(docPath) || isPdfPath(url);
+                if (isPdf) {
+                    if (imgEl) imgEl.style.display = 'none';
+                    if (phEl) phEl.style.display = 'none';
+                    if (pdfEl) pdfEl.style.display = 'flex';
+                } else {
+                    if (imgEl) { imgEl.src = url; imgEl.style.display = 'block'; }
+                    if (phEl) phEl.style.display = 'none';
+                    if (pdfEl) pdfEl.style.display = 'none';
+                }
+                if (stEl) {
+                    const fname = docPath.split('/').pop().split('\\').pop();
+                    stEl.innerText = `✅ ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
+                    stEl.style.color = '#16a34a';
+                }
+                if (vbEl) { vbEl.href = url; vbEl.style.display = 'inline-flex'; }
+                if (delEl) delEl.style.display = 'inline-flex';
+            } else {
+                if (imgEl) imgEl.style.display = 'none';
+                if (phEl) phEl.style.display = 'block';
+                if (pdfEl) pdfEl.style.display = 'none';
+                if (stEl) { stEl.innerText = defaultPrompt; stEl.style.color = '#64748b'; }
+                if (vbEl) vbEl.style.display = 'none';
+                if (delEl) delEl.style.display = 'none';
+            }
+        }
+        window.renderDocPreview = window.renderDocPreview || renderDocPreview;
+
         let currentEditModalIsMasterProfile = false;
         window.forceMasterProfile = false;
         let originalEditingMobile = '';

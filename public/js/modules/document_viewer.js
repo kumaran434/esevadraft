@@ -104,7 +104,7 @@
                                 <div style="font-size: 10px; color: #64748b; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.titleEng || doc.type}</div>
                             </div>
                         </div>
-                        <a href="${doc.downloadUrl}" download title="${doc.title} பதிவிறக்கு (Download)" style="height: 32px; width: 32px; border-radius: 8px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s;" onmouseover="this.style.background='#d1fae5'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='#ecfdf5'; this.style.transform='none';">
+                        <a href="${doc.downloadUrl}" download onclick="event.preventDefault(); window.downloadDocumentFile('${doc.downloadUrl}', '${(doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\\\?%*:|\"<>]/g, '_')}.pdf');" title="${doc.title} பதிவிறக்கு (Download)" style="height: 32px; width: 32px; border-radius: 8px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s;" onmouseover="this.style.background='#d1fae5'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='#ecfdf5'; this.style.transform='none';">
                             <i class="fa-solid fa-download"></i>
                         </a>
                     </div>
@@ -114,11 +114,34 @@
 
         let cachedServerDocsByMobile = {};
 
+        function downloadDocumentFile(url, filename) {
+            if (typeof window.triggerDownloadUrl === 'function') {
+                return window.triggerDownloadUrl(url, filename);
+            }
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'document.pdf';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 500);
+        }
+        window.downloadDocumentFile = downloadDocumentFile;
+
         function resetSidebarDocsCache() {
             cachedServerDocsByMobile = {};
             lastRenderedDocsSignature = '';
         }
         window.resetSidebarDocsCache = resetSidebarDocsCache;
+
+        function clearCustomerDocCache(mobile) {
+            if (!mobile) return;
+            const raw = String(mobile).trim();
+            const clean = raw.replace(/\D/g, '').slice(-10);
+            if (raw) delete cachedServerDocsByMobile[raw];
+            if (clean) delete cachedServerDocsByMobile[clean];
+            lastRenderedDocsSignature = '';
+        }
+        window.clearCustomerDocCache = clearCustomerDocCache;
 
         async function fetchSidebarDocuments(mobile) {
             const cleanMob = mobile || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session';
@@ -130,8 +153,8 @@
                 if (data && data.success && Array.isArray(data.documents) && data.documents.length > 0) {
                     cachedServerDocsByMobile[cleanMob] = data.documents;
                     renderSidebarDocuments(data.documents);
-                } else if (currentCitizenData && Array.isArray(currentCitizenData.documents) && currentCitizenData.documents.length > 0) {
-                    const localDocs = extractDocumentsFromProfile(currentCitizenData, cleanMob);
+                } else {
+                    const localDocs = currentCitizenData ? extractDocumentsFromProfile(currentCitizenData, cleanMob) : [];
                     if (localDocs.length > 0) {
                         cachedServerDocsByMobile[cleanMob] = localDocs;
                         renderSidebarDocuments(localDocs);
@@ -139,9 +162,6 @@
                         cachedServerDocsByMobile[cleanMob] = [];
                         renderSidebarDocuments([]);
                     }
-                } else {
-                    cachedServerDocsByMobile[cleanMob] = [];
-                    renderSidebarDocuments([]);
                 }
             } catch (err) {
                 console.error('Failed to fetch sidebar documents:', err);
@@ -341,8 +361,10 @@
                 const isAddMemberService = !isServiceSelectionOnly && isSubserviceAddMember;
                 const isAddressChangeService = !isServiceSelectionOnly && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
                 const isNewRationCardService = !isServiceSelectionOnly && !isIncomeService && !isResidenceService && !isCommunityService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
-                    curState.includes('MEMBER_COUNT') || curState.includes('HEAD_PHOTO') || curState.includes('RESIDENCE_PROOF') || curState === 'READY_TO_APPLY' ||
-                    svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப')
+                    curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE' ||
+                    a.service === 'new_smart_card' || a.service === 'ration' || a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' || a.subService === 'NEW_CARD' ||
+                    window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
+                    svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card')
                 );
 
                 // 1. Sidebar Head Title & Box Visibility

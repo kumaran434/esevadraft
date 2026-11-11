@@ -1,8 +1,9 @@
 // =========================================================================
 // eSevaDraft Desktop App — Window Manager & Anti-Tamper Shield
 // =========================================================================
-const { BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const localServer = require('./local_server');
 
 let mainWindow = null;
@@ -24,6 +25,10 @@ function applyAntiTamperShield(win) {
 
     // 3. Navigation guard: keep eSevaDraft inside Electron; open govt portals in system browser
     win.webContents.on('will-navigate', (event, url) => {
+        // Essential: Allow blob: and data: URLs so file downloads, photo crops and signatures work smoothly!
+        if (url.startsWith('blob:') || url.startsWith('data:')) {
+            return;
+        }
         const allowedOrigins = ['https://esevadraft.in', 'https://gen-lang-client-0792225149.web.app', 'http://localhost:3000', 'http://127.0.0.1:3000'];
         const isAllowed = allowedOrigins.some(origin => url.startsWith(origin)) || /^http:\/\/(127\.0\.0\.1|localhost):300\d/.test(url);
         const isGovtPortal = url.includes('tnpds.gov.in') || url.includes('esevai.elcot.in') || url.includes('tnreginet.gov.in');
@@ -82,8 +87,46 @@ function createMainWindow() {
     mainWindow.removeMenu();
     mainWindow.setMenuBarVisibility(false);
 
+    // Automatic Native Downloads Handler: Saves directly to Windows Downloads folder & opens in Explorer
+    mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
+        const rawFilename = item.getFilename() || 'download.pdf';
+        const safeFilename = rawFilename.replace(/[<>:"/\\|?*]+/g, '_');
+        let downloadsDir = 'C:\\Users\\ADMIN\\Downloads';
+        try {
+            if (typeof app !== 'undefined' && app.getPath) {
+                downloadsDir = app.getPath('downloads');
+            }
+        } catch (_) {}
+
+        let savePath = path.join(downloadsDir, safeFilename);
+        if (fs.existsSync(savePath)) {
+            const ext = path.extname(safeFilename);
+            const base = path.basename(safeFilename, ext);
+            savePath = path.join(downloadsDir, `${base}_${Date.now()}${ext}`);
+        }
+
+        item.setSavePath(savePath);
+
+        item.once('done', (event, state) => {
+            if (state === 'completed') {
+                console.log(`✅ [Desktop Engine] Download complete: ${savePath}`);
+                try {
+                    shell.showItemInFolder(savePath);
+                } catch (_) {}
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('download-completed', {
+                        fileName: path.basename(savePath),
+                        savePath: savePath
+                    });
+                }
+            } else {
+                console.warn(`⚠️ [Desktop Engine] Download ${state}: ${safeFilename}`);
+            }
+        });
+    });
+
     try {
-        mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' eSevaDraft-Desktop/' + (app.getVersion() || '1.1.15'));
+        mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' eSevaDraft-Desktop/' + (app.getVersion() || '1.1.16'));
     } catch (_) {}
 
     const forceVisibleForeground = () => {

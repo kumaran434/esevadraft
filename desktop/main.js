@@ -4,6 +4,7 @@
 // =========================================================================
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 // Strip default Windows application menu
 Menu.setApplicationMenu(null);
@@ -70,7 +71,7 @@ if (!gotTheLock) {
         // Stale Cache Purge upon Version Upgrade: Prevents zombie UI cache across installer updates
         try {
             const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : '';
-            const currentVer = app.getVersion() || '1.1.15';
+            const currentVer = app.getVersion() || '1.1.16';
             if (userData) {
                 const verFile = path.join(userData, '.installed_version');
                 let prevVer = '';

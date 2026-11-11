@@ -194,6 +194,11 @@
             closeNewCustomerModal();
             showCustomerLoading('வாடிக்கையாளர் அமர்வு தொடங்குகிறது...', `+91 ${mob} தயாராகிறது`);
 
+            if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(mob);
+            if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
+            currentCitizenData = null;
+            window.currentCitizenData = null;
+
             if (window.recordFlightEvent) {
                 window.recordFlightEvent('SESSION_START', `Starting customer session: +91 ${mob}`, { targetService, hasExistingDraft: !!existingDraft });
             }

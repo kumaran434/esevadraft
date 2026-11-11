@@ -77,9 +77,12 @@ async function handleMemberVerification(ctx, req, res) {
         }
 
         if (text === 'MEMBER_DETAILS_CONFIRMED' || text.includes('சரி') || text.includes('Correct') || text.toLowerCase().includes('ok') || text.toLowerCase().includes('continue')) {
-            sess.citizenProfile.members = sess.citizenProfile.members || [];
-            sess.citizenProfile.members.push(sess.tempMember);
-            if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+            const confirmedRelTam = sess.tempMember?.relationshipTam || 'உறுப்பினர்';
+            if (sess.tempMember) {
+                sess.citizenProfile.members = sess.citizenProfile.members || [];
+                sess.citizenProfile.members.push(sess.tempMember);
+                if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+            }
 
             const isHusband = sess.tempMember?.relationship === 'Husband' || sess.tempMember?.relationshipTam === 'கணவர்';
             const isFemaleHead = sess.citizenProfile?.headGender === 'Female';
@@ -88,19 +91,19 @@ async function handleMemberVerification(ctx, req, res) {
             if (isHusband && isFemaleHead && !hasExistingAddress) {
                 sess.intakeState = 'ADDRESS_CHOICE';
 
-                const memAddr = sess.tempMember.address || {};
+                const memAddr = sess.tempMember?.address || {};
                 let headAddrStr = `${sess.citizenProfile.doorNo ? sess.citizenProfile.doorNo + ', ' : ''}${sess.citizenProfile.streetTam || ''}, ${sess.citizenProfile.pincode || ''}`;
                 let memAddrStr = `${memAddr.doorNo ? memAddr.doorNo + ', ' : ''}${memAddr.streetTam || ''}, ${memAddr.pincode || ''}`;
 
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `🏠 **ரேஷன் கார்டு குடும்ப முகவரி தேர்வு (Family Address Gate):**\n\n` +
-                          `திருமணத்திற்குப் பின் புதிய ரேஷன் கார்டு விண்ணப்பிக்கும்போது, குடும்பத் தலைவி (${sess.citizenProfile.fullNameTam}) அவர்களின் பிறந்த வீட்டு ஆதார் முகவரிக்குப் பதிலாகக் கணவர் (${sess.tempMember.nameTam}) அவர்களின் ஆதார் முகவரி அல்லது புதிய குடியிருப்பு முகவரியைப் பயன்படுத்துவது வழக்கமாகும்.\n\n` +
+                          `திருமணத்திற்குப் பின் புதிய ரேஷன் கார்டு விண்ணப்பிக்கும்போது, குடும்பத் தலைவி (${sess.citizenProfile.fullNameTam}) அவர்களின் பிறந்த வீட்டு ஆதார் முகவரிக்குப் பதிலாகக் கணவர் (${sess.tempMember?.nameTam || 'கணவர்'}) அவர்களின் ஆதார் முகவரி அல்லது புதிய குடியிருப்பு முகவரியைப் பயன்படுத்துவது வழக்கமாகும்.\n\n` +
                           `• 👩 **குடும்பத் தலைவி பிறந்த வீட்டு முகவரி:** ${headAddrStr || '—'}\n` +
-                          `• 👨 **கணவர் (${sess.tempMember.nameTam}) ஆதார் முகவரி:** ${memAddrStr || '(இன்னும் உள்ளிடப்படவில்லை)'}\n\n` +
+                          `• 👨 **கணவர் (${sess.tempMember?.nameTam || 'கணவர்'}) ஆதார் முகவரி:** ${memAddrStr || '(இன்னும் உள்ளிடப்படவில்லை)'}\n\n` +
                           `புதிய ரேஷன் கார்டிற்கு எந்த முகவரியைக் குடும்ப முகவரியாகப் பயன்படுத்த விரும்புகிறீர்கள்?`,
                     options: [
-                        { label: `👨 கணவர் (${sess.tempMember.nameTam}) ஆதார் முகவரியைப் பயன்படுத்து`, value: "USE_MEMBER_ADDRESS" },
+                        { label: `👨 கணவர் (${sess.tempMember?.nameTam || 'கணவர்'}) ஆதார் முகவரியைப் பயன்படுத்து`, value: "USE_MEMBER_ADDRESS" },
                         { label: `👩 குடும்பத் தலைவி (${sess.citizenProfile.fullNameTam}) பிறந்த வீட்டு முகவரி`, value: "USE_HEAD_ADDRESS" },
                         { label: "✏️ புதிய முகவரியைத் தட்டச்சு செய்ய / திருத்த (District, Taluk, Village)", value: "TRIGGER_EDIT_MODAL" }
                     ]
@@ -118,7 +121,7 @@ async function handleMemberVerification(ctx, req, res) {
                 sess.tempMember = null;
                 sess.chatHistory.push({
                     sender: 'bot',
-                    text: `✅ **உறுப்பினர் ${sess.currentMemberIdx} (${sess.tempMember.relationshipTam}) வெற்றிகரமாகச் சேர்க்கப்பட்டார்!**\n\n` +
+                    text: `✅ **உறுப்பினர் ${sess.currentMemberIdx} (${confirmedRelTam}) வெற்றிகரமாகச் சேர்க்கப்பட்டார்!**\n\n` +
                           `👥 **படி 3/6: குடும்ப உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டை**\n\n` +
                           `உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையின் **முன்பக்கத்தைப் (Front Side)** பதிவேற்றவும்:`,
                     actionRequired: 'upload',

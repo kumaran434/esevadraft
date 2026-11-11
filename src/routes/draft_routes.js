@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const multer = require('multer');
 const { processUploadedDocument } = require('../services/document_upload_processor');
+const { generateDraftApplicationPdf } = require('../services/tnega_receipt_generator');
 
 const uploadDir = path.join(__dirname, '..', '..', 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -117,6 +119,42 @@ router.get('/api/drafts/:mobileNumber/doc/:docType', async (req, res) => {
     }
 });
 
+// 3.5. GET /api/drafts/:mobileNumber/application-pdf — Official Application Form / Summary PDF
+router.get('/api/drafts/:mobileNumber/application-pdf', async (req, res) => {
+    const rawKey = req.params.mobileNumber || '';
+    const cleanMob = String(rawKey).trim().replace(/\D/g, '').slice(-10);
+    if (!cleanMob) return res.status(400).send('Mobile number required');
+
+    try {
+        let draft = await getCitizenDraft(cleanMob).catch(() => null);
+        const { getCitizenProfile } = require('../../database');
+        let prof = (draft && draft.citizenProfile) || (getCitizenProfile ? getCitizenProfile(cleanMob) : {}) || {};
+
+        const tmpPath = path.join(os.tmpdir(), `Application_Draft_${cleanMob}_${Date.now()}.pdf`);
+        await generateDraftApplicationPdf(tmpPath, {
+            ...prof,
+            mobileNumber: cleanMob,
+            applicationNumber: draft?.applicationNumber || null,
+            service: draft?.service || prof?.service || 'புதிய ரேஷன் கார்டு',
+            members: prof?.members || []
+        });
+
+        if (fs.existsSync(tmpPath)) {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="Application_Draft_${cleanMob}.pdf"`);
+            const stream = fs.createReadStream(tmpPath);
+            stream.pipe(res);
+            stream.on('finish', () => {
+                setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch (_) {} }, 5000);
+            });
+            return;
+        }
+        res.status(404).send('PDF உருவாக்க முடியவில்லை');
+    } catch (e) {
+        res.status(500).send('பிழை: ' + e.message);
+    }
+});
+
 // 4. GET /api/drafts/:mobileNumber/documents-list
 router.get('/api/drafts/:mobileNumber/documents-list', async (req, res) => {
     const rawKey = req.params.mobileNumber || '';
@@ -124,11 +162,22 @@ router.get('/api/drafts/:mobileNumber/documents-list', async (req, res) => {
     if (!cleanMob) return res.status(400).json({ error: 'Missing mobile' });
 
     try {
-        let draft = await getCitizenDraft(cleanMob);
-        if (!draft || draft.isDeleted || draft.status === 'TRASHED') {
+        const digitsOnly = cleanMob.replace(/\D/g, '').slice(-10);
+        let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob) : null;
+        if (!draft && digitsOnly) {
+            draft = await getCitizenDraft(digitsOnly);
+        }
+        const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
+        if (!draft && activeMob && activeMob !== cleanMob) {
+            draft = await getCitizenDraft(activeMob);
+        }
+        const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
+            ? sessions.get(cleanMob)
+            : ((digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || null));
+
+        if ((!draft || draft.isDeleted || draft.status === 'TRASHED') && !sess) {
             return res.json({ success: true, mobileNumber: cleanMob, count: 0, documents: [] });
         }
-        const sess = sessions.get(cleanMob) || null;
         const filterSubService = req.query.subService || req.query.service || null;
         const docs = extractDraftDocumentsList(sess, draft, cleanMob, filterSubService);
         res.json({ success: true, mobileNumber: cleanMob, count: docs.length, documents: docs });

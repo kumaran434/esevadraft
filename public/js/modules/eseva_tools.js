@@ -92,14 +92,54 @@
         return `${kb.toFixed(1)} KB`;
     }
 
-    function triggerDownloadUrl(url, filename) {
+    async function triggerDownloadUrl(url, filename) {
+        if (!url) return;
+        const safeName = filename || 'download.pdf';
+
+        // 1. Electron Desktop Bridge: Direct native save to Windows Downloads folder + reveal in Explorer
+        if (window.esevaDesktopBridge && typeof window.esevaDesktopBridge.saveFileDirect === 'function') {
+            try {
+                let base64Data = null;
+                if (url.startsWith('data:')) {
+                    base64Data = url;
+                } else {
+                    // Fetch blob, data, or relative API URL and convert to Base64
+                    const resp = await fetch(url);
+                    if (resp.ok) {
+                        const blob = await resp.blob();
+                        base64Data = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        });
+                    }
+                }
+
+                if (base64Data) {
+                    const res = await window.esevaDesktopBridge.saveFileDirect({ base64Data, filename: safeName });
+                    if (res && res.success) {
+                        if (typeof showInAppToast === 'function') {
+                            showInAppToast(`✅ கோப்பு Downloads கோப்புறையில் சேமிக்கப்பட்டது: ${res.fileName}`);
+                        }
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[Desktop Direct Downloader Warning]:', e);
+            }
+        }
+
+        // 2. Standard Web Browser Fallback
         const a = document.createElement('a');
         a.href = url;
-        if (filename) a.download = filename;
+        a.download = safeName;
         document.body.appendChild(a);
         a.click();
-        setTimeout(() => a.remove(), 300);
+        setTimeout(() => a.remove(), 500);
     }
+    window.triggerDownloadUrl = triggerDownloadUrl;
+    window.downloadFileDirect = triggerDownloadUrl;
 
     // =========================================================================
     // TOOL 1: PDF COMPRESSOR & SPLITTER (UPLOAD-PREVIEW-FIRST UI)

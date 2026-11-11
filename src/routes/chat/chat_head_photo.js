@@ -1,6 +1,7 @@
 const storageService = require('../../services/storage_service');
 const { updateHeadMember, getVerifiedRationCardDocs } = require('../../services/profile_helpers');
 const { saveCitizenProfile } = require('../../../database');
+const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 
@@ -67,7 +68,21 @@ async function handleHeadPhoto(ctx, req, res) {
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.headAadhaarFront = uploadedFile.path;
         updateHeadMember(sess.citizenProfile, fullPdf);
-        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+        if (activeMobile) {
+            saveCitizenProfile(activeMobile, sess.citizenProfile);
+            saveCitizenDraft(activeMobile, {
+                operatorUid: sess.operatorUid || null,
+                operatorName: sess.operatorName || null,
+                operatorMobile: sess.operatorMobile || null,
+                citizenProfile: sess.citizenProfile,
+                documents: sess.citizenProfile.documents || {},
+                tempUploads: sess.tempUploads || {},
+                intakeState: sess.intakeState,
+                step: sess.step,
+                targetMemberCount: sess.targetMemberCount || 1,
+                chatHistory: sess.chatHistory
+            }).catch(() => {});
+        }
         persistSessions();
 
         sess.chatHistory.push({
@@ -90,7 +105,21 @@ async function handleHeadPhoto(ctx, req, res) {
     sess.citizenProfile.documents.profilePhoto = studioPhoto;
     sess.tempUploads = sess.tempUploads || {};
     sess.tempUploads.profilePhoto = studioPhoto;
-    saveCitizenProfile(activeMobile, sess.citizenProfile);
+    if (activeMobile) {
+        saveCitizenProfile(activeMobile, sess.citizenProfile);
+        saveCitizenDraft(activeMobile, {
+            operatorUid: sess.operatorUid || null,
+            operatorName: sess.operatorName || null,
+            operatorMobile: sess.operatorMobile || null,
+            citizenProfile: sess.citizenProfile,
+            documents: sess.citizenProfile.documents || {},
+            tempUploads: sess.tempUploads || {},
+            intakeState: sess.intakeState,
+            step: sess.step,
+            targetMemberCount: sess.targetMemberCount || 1,
+            chatHistory: sess.chatHistory
+        }).catch(() => {});
+    }
 
     const { hasAadhaarDoc } = getVerifiedRationCardDocs(sess.citizenProfile, sess.tempUploads);
     if (sess.citizenProfile.headAadhaar && hasAadhaarDoc) {

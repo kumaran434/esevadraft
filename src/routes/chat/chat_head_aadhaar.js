@@ -245,18 +245,19 @@ async function handleHeadAadhaar(ctx, req, res) {
                 return true;
             }
 
-            if (sess.targetMemberCount > 1 && existingCount < 2) {
-                sess.currentMemberIdx = 1;
+            if (sess.targetMemberCount > 1 && existingCount < sess.targetMemberCount) {
+                const nextMemberIdx = existingCount >= 1 ? existingCount : 1;
+                sess.currentMemberIdx = nextMemberIdx;
                 sess.tempUploads.currentMemberFront = null;
                 sess.tempUploads.currentMemberBack = null;
                 sess.intakeState = 'MEMBER_AADHAAR_FRONT';
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `✅ **குடும்பத் தலைவர் விவரங்கள் 100% உறுதி செய்யப்பட்டன!**\n\n` +
-                          `👥 **படி 3/6: குடும்ப உறுப்பினர் 2-ன் ஆதார் அட்டை**\n\n` +
-                          `உறுப்பினர் 2-ன் ஆதார் அட்டையின் **முன்பக்கத்தைப் (Front Side)** பதிவேற்றவும்:`,
+                          `👥 **படி 3/6: குடும்ப உறுப்பினர் ${nextMemberIdx + 1}-ன் ஆதார் அட்டை**\n\n` +
+                          `உறுப்பினர் ${nextMemberIdx + 1}-ன் ஆதார் அட்டையின் **முன்பக்கத்தைப் (Front Side)** பதிவேற்றவும்:`,
                     actionRequired: 'upload',
-                    uploadPrompt: 'உறுப்பினர் 2 ஆதார் முன்பக்கம்'
+                    uploadPrompt: `உறுப்பினர் ${nextMemberIdx + 1} ஆதார் முன்பக்கம்`
                 });
                 persistSessions(activeMobile);
                 if (activeMobile) {

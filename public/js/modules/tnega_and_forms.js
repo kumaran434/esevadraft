@@ -466,3 +466,7 @@
                 if (delEl) delEl.style.display = 'none';
             }
         }
+
+        window.formatDocUrl = formatDocUrl;
+        window.isPdfPath = isPdfPath;
+        window.renderDocPreview = renderDocPreview;

@@ -39,6 +39,14 @@ contextBridge.exposeInMainWorld('esevaDesktopBridge', {
     // Download TNPDS Application PDF by Reference Number
     downloadTnpdsPdf: (refNo) => ipcRenderer.invoke('download-tnpds-pdf', refNo),
 
+    // Direct Native File Saver (for Tools, Photos, and Base64 downloads)
+    saveFileDirect: (payload) => ipcRenderer.invoke('save-file-direct', payload),
+
+    // Listen for download completion event
+    onDownloadCompleted: (callback) => {
+        ipcRenderer.on('download-completed', (_event, info) => callback(info));
+    },
+
     // Restore WebContents input focus after dialogs or transitions
     restoreFocus: () => ipcRenderer.invoke('restore-focus'),
 
