@@ -11,7 +11,7 @@ const { persistSessions } = storageService;
 
 async function handleHeadAadhaar(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
-    const activeMobile = storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
     // STATE 4: HEAD_AADHAAR_FRONT
     if (sess.intakeState === 'HEAD_AADHAAR_FRONT') {

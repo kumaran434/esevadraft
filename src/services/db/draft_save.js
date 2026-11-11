@@ -218,7 +218,9 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
         const firestore = getFirestoreInstance();
         if (isFirestoreAvailable() && firestore) {
             try {
-                await firestore.collection(COLLECTION_NAME).doc(String(cleanMob)).set(payload, { merge: true });
+                const cloudPayload = { ...payload };
+                delete cloudPayload.base64Docs;
+                await firestore.collection(COLLECTION_NAME).doc(String(cleanMob)).set(cloudPayload, { merge: true });
                 console.log(`☁️ Draft safely synced to Firestore for +91 ${cleanMob}`);
             } catch (e) {
                 console.warn(`Firestore save fallback to local: ${e.message}`);
@@ -244,7 +246,9 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
                 }
 
                 if (firestoreAvail) {
-                    await firestore.collection(COLLECTION_NAME).doc(String(cleanMob)).set(payload, { merge: true });
+                    const cloudPayload = { ...payload };
+                    delete cloudPayload.base64Docs;
+                    await firestore.collection(COLLECTION_NAME).doc(String(cleanMob)).set(cloudPayload, { merge: true });
                     console.log(`☁️ [Background Sync] Draft safely backed up to Firestore for +91 ${cleanMob}`);
                 }
             } catch (e) {

@@ -344,6 +344,13 @@
                     bubble.appendChild(uploadWrap);
                 }
 
+                // 3b. If message requires opening edit modal
+                if (msg.actionRequired === 'open_edit_modal') {
+                    if (typeof openEditModal === 'function') {
+                        setTimeout(() => openEditModal(), 150);
+                    }
+                }
+
                 // 4. If confirmation submit buttons
                 if (msg.showConfirmButtons) {
                     const confirmWrap = document.createElement('div');

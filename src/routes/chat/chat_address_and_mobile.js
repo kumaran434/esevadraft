@@ -8,7 +8,7 @@ const { sessions, persistSessions } = storageService;
 
 async function handleAddressAndMobile(ctx, req, res) {
     const { text, sess } = ctx;
-    let activeMobile = storageService.getActiveMobile();
+    let activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
     const reqOpUid = req.headers['x-operator-uid'] || null;
 
     // STATE 8.6: ADDRESS_CHOICE

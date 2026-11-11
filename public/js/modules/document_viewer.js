@@ -265,10 +265,10 @@
                 const cachedDocs = cachedServerDocsByMobile[targetMobile];
                 const instantDocs = extractDocumentsFromProfile(a, targetMobile, appNo, pdfUrl);
 
-                if (cachedDocs && cachedDocs.length > 0) {
-                    renderSidebarDocuments(cachedDocs);
-                } else if (instantDocs.length > 0) {
+                if (instantDocs.length > 0) {
                     renderSidebarDocuments(instantDocs);
+                } else if (cachedDocs && cachedDocs.length > 0) {
+                    renderSidebarDocuments(cachedDocs);
                 }
 
                 // 2. Refresh in parallel from server
@@ -502,7 +502,20 @@
                     } else {
                         membersContainer.style.display = 'block';
                         const additionalMembers = (a.members && a.members.length > 1) ? a.members.slice(1) : [];
-                        const membersSnapshot = JSON.stringify({ isSubserviceAddMember, subData, additionalMembers });
+                        const allAdditionalMembers = [...additionalMembers];
+                        if (a.tempMember && (a.tempMember.nameTam || a.tempMember.nameEng || a.tempMember.aadhaarNumber || a.tempMember.docPath)) {
+                            const alreadyInList = allAdditionalMembers.some(m => 
+                                (m.aadhaarNumber && a.tempMember.aadhaarNumber && m.aadhaarNumber.replace(/\s+/g,'') === a.tempMember.aadhaarNumber.replace(/\s+/g,'')) ||
+                                (m.nameTam && a.tempMember.nameTam && m.nameTam === a.tempMember.nameTam)
+                            );
+                            if (!alreadyInList) {
+                                allAdditionalMembers.push({
+                                    ...a.tempMember,
+                                    isInProgress: true
+                                });
+                            }
+                        }
+                        const membersSnapshot = JSON.stringify({ isSubserviceAddMember, subData, allAdditionalMembers });
                         if (membersSnapshot !== lastRenderedMembersJson || membersContainer.children.length === 0) {
                             lastRenderedMembersJson = membersSnapshot;
                             membersContainer.innerHTML = '';
@@ -535,15 +548,15 @@
                         }
 
                         // 2. Normal intake additional members starting from index 1
-                        additionalMembers.forEach((m, idx) => {
+                        allAdditionalMembers.forEach((m, idx) => {
                             const mBox = document.createElement('div');
                             mBox.className = 'card-box';
-                            mBox.style.borderLeft = '4px solid var(--accent)';
+                            mBox.style.borderLeft = m.isInProgress ? '4px solid #eab308' : '4px solid var(--accent)';
                             mBox.innerHTML = `
-                                <h4>👥 ${idx + 2}. குடும்ப உறுப்பினர் (${m.relationshipTam || m.relationship || 'உறுப்பினர்'})</h4>
-                                <div class="card-row">பெயர்: <strong class="badge-green">${m.nameTam ? `${m.nameTam} (${m.nameEng})` : m.nameEng}</strong></div>
-                                <div class="card-row">உறவுமுறை: <strong class="badge-green">${m.relationshipTam || m.relationship}</strong></div>
-                                <div class="card-row">பிறந்த தேதி: <strong class="badge-green">${m.dob} | ${m.genderTam || m.gender}</strong></div>
+                                <h4>👥 ${idx + 2}. குடும்ப உறுப்பினர் (${m.relationshipTam || m.relationship || 'உறுப்பினர்'})${m.isInProgress ? ' <span style="font-size: 10px; background: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: 700;">நேரலை சரிபார்ப்பு</span>' : ''}</h4>
+                                <div class="card-row">பெயர்: <strong class="badge-green">${m.nameTam ? `${m.nameTam} (${m.nameEng})` : (m.nameEng || '—')}</strong></div>
+                                <div class="card-row">உறவுமுறை: <strong class="badge-green">${m.relationshipTam || m.relationship || (m.isInProgress ? 'தேர்வு செய்யப்படுகிறது...' : '—')}</strong></div>
+                                <div class="card-row">பிறந்த தேதி: <strong class="badge-green">${m.dob || '—'} | ${m.genderTam || m.gender || '—'}</strong></div>
                                 <div class="card-row">ஆதார் எண்: <strong class="badge-green">${(m.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim()}</strong></div>
                                 <div class="card-row">ஆதார் ஆவணம்: <strong class="${m.docPath ? 'badge-green' : 'badge-empty'}">${m.docPath ? 'இணைக்கப்பட்டது ✅' : 'தேவை ⚠️'}</strong></div>
                             `;

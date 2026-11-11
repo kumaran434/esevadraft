@@ -9,9 +9,17 @@ const { createFreshProfile, persistSessions } = storageService;
 
 async function handleMemberCount(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
-    const activeMobile = storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
-    if (sess.intakeState !== 'MEMBER_COUNT') return false;
+    const isExplicitMemberCountChoice = text && (
+        MEMBER_COUNT_OPTIONS.some(o => o.value === text || o.label === text) ||
+        /^\s*(\d+)\s*(உறுப்பினர்கள்|உறுப்பினர்|members?)/i.test(text) ||
+        text === '1 உறுப்பினர் (தலைவர் மட்டும்)' ||
+        text === 'CHANGE_MEMBER_COUNT' ||
+        text.includes('உறுப்பினர் எண்ணிக்கை')
+    );
+
+    if (sess.intakeState !== 'MEMBER_COUNT' && !isExplicitMemberCountChoice) return false;
 
     if (uploadedFile) {
         const extracted = await inspectAndExtractDocument(uploadedFile.path);
@@ -65,7 +73,14 @@ async function handleMemberCount(ctx, req, res) {
             });
             sess.intakeState = 'HEAD_PHOTO';
             persistSessions();
-            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+            res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            activeMobile: activeMobile,
+            targetMemberCount: sess.targetMemberCount,
+            documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+        });
             return true;
         }
     }
@@ -78,7 +93,14 @@ async function handleMemberCount(ctx, req, res) {
             options: MEMBER_COUNT_OPTIONS
         });
         persistSessions();
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            activeMobile: activeMobile,
+            targetMemberCount: sess.targetMemberCount,
+            documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+        });
         return true;
     }
 
@@ -115,7 +137,14 @@ async function handleMemberCount(ctx, req, res) {
             ]
         });
         persistSessions();
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            activeMobile: activeMobile,
+            targetMemberCount: sess.targetMemberCount,
+            documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+        });
         return true;
     } else if (existingCount > 0 && sess.targetMemberCount > existingCount) {
         sess.currentMemberIdx = existingCount;
@@ -132,7 +161,14 @@ async function handleMemberCount(ctx, req, res) {
             uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார்`
         });
         persistSessions();
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            activeMobile: activeMobile,
+            targetMemberCount: sess.targetMemberCount,
+            documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+        });
         return true;
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.16",
+  "version": "1.1.17",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {
@@ -25,6 +25,10 @@
     "appId": "in.esevadraft.desktop",
     "productName": "eSevaDraft Desktop",
     "extraResources": [
+      {
+        "from": "../.env",
+        "to": ".env"
+      },
       {
         "from": "../tnpds_automation.js",
         "to": "tnpds_automation.js"

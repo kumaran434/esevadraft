@@ -8,7 +8,7 @@ const { persistSessions } = storageService;
 
 async function handleMemberAadhaar(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
-    const activeMobile = sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
     if (typeof sess.currentMemberIdx !== 'number' || isNaN(sess.currentMemberIdx) || sess.currentMemberIdx < 1) {
         const existingMembers = Array.isArray(sess.citizenProfile?.members) ? sess.citizenProfile.members.length : 1;
@@ -71,6 +71,26 @@ async function handleMemberAadhaar(ctx, req, res) {
                 village: extracted.village || ''
             }
         };
+
+        // Instantly reflect in citizenProfile.members and documents so right sidebar updates immediately!
+        sess.citizenProfile = sess.citizenProfile || {};
+        sess.citizenProfile.members = Array.isArray(sess.citizenProfile.members) ? sess.citizenProfile.members : [];
+        if (sess.citizenProfile.members.length > sess.currentMemberIdx) {
+            sess.citizenProfile.members[sess.currentMemberIdx] = {
+                ...sess.citizenProfile.members[sess.currentMemberIdx],
+                ...sess.tempMember
+            };
+        } else {
+            sess.citizenProfile.members.push(sess.tempMember);
+        }
+        sess.citizenProfile.tempMember = sess.tempMember;
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        const memDocKey = `memberAadhaar${Math.max(0, sess.currentMemberIdx - 1)}`;
+        sess.citizenProfile.documents[memDocKey] = compliantPdf;
+        sess.citizenProfile.documents.memberAadhaar = compliantPdf;
+        sess.tempUploads = sess.tempUploads || {};
+        sess.tempUploads[memDocKey] = compliantPdf;
+        sess.tempUploads.memberAadhaar = compliantPdf;
 
         sess.intakeState = 'MEMBER_RELATIONSHIP';
         sess.chatHistory.push({
@@ -179,6 +199,26 @@ async function handleMemberAadhaar(ctx, req, res) {
         sess.tempMember.aadhaarNumber = sess.tempMember.aadhaarNumber || '491436223971';
         sess.tempMember.docType = 'AADHAAR_CARD';
         sess.tempMember.docPath = finalDocPdf;
+
+        // Instantly reflect in citizenProfile.members and documents so right sidebar updates immediately!
+        sess.citizenProfile = sess.citizenProfile || {};
+        sess.citizenProfile.members = Array.isArray(sess.citizenProfile.members) ? sess.citizenProfile.members : [];
+        if (sess.citizenProfile.members.length > sess.currentMemberIdx) {
+            sess.citizenProfile.members[sess.currentMemberIdx] = {
+                ...sess.citizenProfile.members[sess.currentMemberIdx],
+                ...sess.tempMember
+            };
+        } else {
+            sess.citizenProfile.members.push(sess.tempMember);
+        }
+        sess.citizenProfile.tempMember = sess.tempMember;
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        const memDocKeyMerged = `memberAadhaar${Math.max(0, sess.currentMemberIdx - 1)}`;
+        sess.citizenProfile.documents[memDocKeyMerged] = finalDocPdf;
+        sess.citizenProfile.documents.memberAadhaar = finalDocPdf;
+        sess.tempUploads = sess.tempUploads || {};
+        sess.tempUploads[memDocKeyMerged] = finalDocPdf;
+        sess.tempUploads.memberAadhaar = finalDocPdf;
 
         sess.intakeState = 'MEMBER_RELATIONSHIP';
         sess.chatHistory.push({

@@ -15,12 +15,33 @@ function handleNewRationCardIntake(sess) {
     const headName = prof.fullNameTam || prof.fullNameEng || '';
     const { hasPhotoDoc, hasAadhaarDoc, hasResidenceDoc } = getVerifiedRationCardDocs(prof, sess.tempUploads);
 
-    // 1. All 3 mandatory documents (Photo + Aadhaar + Gas Book/Residence Proof) exist on disk -> READY_TO_APPLY
+    // 1. All 3 mandatory documents (Photo + Aadhaar + Gas Book/Residence Proof) exist on disk
     if (headName && hasPhotoDoc && hasAadhaarDoc && hasResidenceDoc) {
+        if (sess.targetMemberCount && sess.targetMemberCount > existingCount) {
+            sess.currentMemberIdx = existingCount;
+            sess.tempUploads = sess.tempUploads || {};
+            sess.tempUploads.currentMemberFront = null;
+            sess.tempUploads.currentMemberBack = null;
+            sess.tempMember = null;
+            sess.intakeState = 'MEMBER_AADHAAR_FRONT';
+            sess.step = 'MEMBER_AADHAAR_FRONT';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `✅ **ஏற்கெனவே உள்ள ${existingCount} உறுப்பினர்களின் விவரங்கள் பாதுகாக்கப்பட்டுள்ளன!** 👥\n\n` +
+                      `👥 **படி 3/6: கூடுதல் குடும்ப உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டை**\n\n` +
+                      `கூடுதல் உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையைப் (முன்பக்கம் அல்லது முழு ஆதார் அட்டை) பதிவேற்றவும்:`,
+                actionRequired: 'upload',
+                uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார்`
+            });
+            return true;
+        }
+
         const memberNames = existingMembers.map(m => m.nameTam || m.nameEng).filter(Boolean).join(', ');
         sess.intakeState = 'READY_TO_APPLY';
         sess.step = 'READY';
-        sess.targetMemberCount = existingCount;
+        if (!sess.targetMemberCount || sess.targetMemberCount < existingCount) {
+            sess.targetMemberCount = existingCount;
+        }
         sess.chatHistory.push({
             sender: 'bot',
             text: `🎉 **வாடிக்கையாளர் (${headName}) ரேஷன் கார்டு விவரங்கள் ஏற்கெனவே முழுமையாகச் சேமிக்கப்பட்டுள்ளன!** 💾\n\n` +
@@ -31,6 +52,7 @@ function handleNewRationCardIntake(sess) {
                   `\nநேரடியாக TNPDS போர்ட்டலில் விண்ணப்பிக்கலாம்:\n*(வேறு புதிய நபருக்கு விண்ணப்பிக்க, மேலே உள்ள 🧹 துடை (Clear) பொத்தானைப் பயன்படுத்தவும்)*`,
             options: [
                 { label: "🚀 TNPDS போர்ட்டலில் விண்ணப்பி (Submit to Portal)", value: "CONFIRM_SUBMIT" },
+                { label: "👥 மேலும் உறுப்பினர் சேர்க்க (Add Another Member)", value: `${existingCount + 1} உறுப்பினர்கள்` },
                 { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review Details)", value: "TRIGGER_EDIT_MODAL" },
                 { label: "➕ புதிய வாடிக்கையாளர் விண்ணப்பம்", value: "START_NEW_CUSTOMER" }
             ]
@@ -40,7 +62,9 @@ function handleNewRationCardIntake(sess) {
 
     // 2. Delta Prompt: Photo exists, ONLY Aadhaar Card is missing (e.g., Aadhaar was deleted)
     if (hasPhotoDoc && !hasAadhaarDoc) {
-        sess.targetMemberCount = existingCount;
+        if (!sess.targetMemberCount || sess.targetMemberCount < existingCount) {
+            sess.targetMemberCount = existingCount;
+        }
         sess.intakeState = 'HEAD_AADHAAR_FRONT';
         sess.step = 'HEAD_AADHAAR_FRONT';
         sess.chatHistory.push({
@@ -60,7 +84,9 @@ function handleNewRationCardIntake(sess) {
 
     // 3. Delta Prompt: Photo & Aadhaar exist, ONLY Gas Book / Residence Proof is missing (e.g., Gas Book was deleted)
     if (hasPhotoDoc && hasAadhaarDoc && !hasResidenceDoc) {
-        sess.targetMemberCount = existingCount;
+        if (!sess.targetMemberCount || sess.targetMemberCount < existingCount) {
+            sess.targetMemberCount = existingCount;
+        }
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.residenceProofType = 'எரிவாயு நுகர்வோர் அட்டை';
         sess.intakeState = 'RESIDENCE_PROOF_DOC';
@@ -82,7 +108,9 @@ function handleNewRationCardIntake(sess) {
 
     // 4. Delta Prompt: Aadhaar or Residence Proof exists, ONLY Photo is missing (e.g., Photo was deleted)
     if (!hasPhotoDoc && (hasAadhaarDoc || hasResidenceDoc)) {
-        sess.targetMemberCount = existingCount;
+        if (!sess.targetMemberCount || sess.targetMemberCount < existingCount) {
+            sess.targetMemberCount = existingCount;
+        }
         sess.intakeState = 'HEAD_PHOTO';
         sess.step = 'HEAD_PHOTO';
         sess.chatHistory.push({

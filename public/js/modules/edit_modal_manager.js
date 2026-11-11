@@ -44,7 +44,8 @@
                     if (pdfEl) pdfEl.style.display = 'none';
                 }
                 if (stEl) {
-                    const fname = docPath.split('/').pop().split('\\').pop();
+                    const pathStr = typeof docPath === 'object' ? (docPath?.path || docPath?.docPath || '') : String(docPath || '');
+                    const fname = pathStr.split('/').pop().split('\\').pop();
                     stEl.innerText = `✅ ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
                     stEl.style.color = '#16a34a';
                 }
@@ -905,10 +906,11 @@
                         const mName = m.nameTam ? `${m.nameTam} (${m.nameEng || ''})` : (m.nameEng || `உறுப்பினர் ${mIdx}`);
                         const mRel = m.relationshipTam || m.relationship || '';
                         const mDoc = m.docPath || '';
-                        const mUrl = formatDocUrl(mDoc);
-                        const isPdf = isPdfPath(mDoc);
-                        const isImg = mDoc && !isPdf;
-                        const mFileName = mDoc ? mDoc.split('/').pop().split('\\').pop() : '';
+                        const mDocStr = typeof mDoc === 'object' ? (mDoc?.path || mDoc?.docPath || '') : String(mDoc || '');
+                        const mUrl = formatDocUrl(mDocStr);
+                        const isPdf = isPdfPath(mDocStr);
+                        const isImg = mDocStr && !isPdf;
+                        const mFileName = mDocStr ? mDocStr.split('/').pop().split('\\').pop() : '';
 
                         memHtml += `
                             <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 8px;">
@@ -1021,24 +1023,39 @@
             }
             
             const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
-            document.getElementById('editHasGas').checked = hasGas;
-            toggleGasFields(hasGas);
+            const editHasGasEl = document.getElementById('editHasGas');
+            if (editHasGasEl) editHasGasEl.checked = hasGas;
+            if (typeof toggleGasFields === 'function') {
+                toggleGasFields(hasGas);
+            } else {
+                const wrap = document.getElementById('gasFieldsWrap');
+                if (wrap) wrap.style.display = hasGas ? 'grid' : 'none';
+            }
 
             if (document.getElementById('editGasCompany')) {
                 document.getElementById('editGasCompany').value = data.gasDetails?.oilCompany || 'IOC';
             }
-            document.getElementById('editGasNo').value = data.gasDetails?.consumerNumber || '';
-            document.getElementById('editGasAgency').value = data.gasDetails?.agencyName || '';
-            document.getElementById('editGasCyl').value = data.gasDetails?.cylinders || '1';
-            document.getElementById('editModal').style.display = 'flex';
+            if (document.getElementById('editGasNo')) {
+                document.getElementById('editGasNo').value = data.gasDetails?.consumerNumber || '';
+            }
+            if (document.getElementById('editGasAgency')) {
+                document.getElementById('editGasAgency').value = data.gasDetails?.agencyName || '';
+            }
+            if (document.getElementById('editGasCyl')) {
+                document.getElementById('editGasCyl').value = data.gasDetails?.cylinders || '1';
+            }
+            const modalEl = document.getElementById('editModal');
+            if (modalEl) modalEl.style.display = 'flex';
         }
-
+        window.openEditModal = openEditModal;
 
         function closeEditModal() {
-            document.getElementById('editModal').style.display = 'none';
+            const modalEl = document.getElementById('editModal');
+            if (modalEl) modalEl.style.display = 'none';
             currentEditModalIsMasterProfile = false;
             window.forceMasterProfile = false;
         }
+        window.closeEditModal = closeEditModal;
 
         async function submitDirectlyFromEditModal() {
             const btn = document.getElementById('btnSubmitFromEditModal');

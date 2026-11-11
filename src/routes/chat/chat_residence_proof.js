@@ -10,7 +10,7 @@ const { persistSessions } = storageService;
 
 async function handleResidenceProof(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
-    const activeMobile = storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
     const isDevReq = req.headers['x-dev-mode'] === 'true' || 
                      req.query?.dev === 'true' || 
                      (req.headers.host && (req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1')));

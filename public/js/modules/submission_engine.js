@@ -427,7 +427,7 @@
             const sData = prof.subServiceData || window.lastSubServiceData;
             const isAddMember = prof.subService === 'ADD_MEMBER' || window.lastSubService === 'ADD_MEMBER' || Boolean(sData?.memberName || sData?.memberNameTam || sData?.memberNameEng) || (prof.intakeState && String(prof.intakeState).startsWith('RATION_ADD_MEMBER'));
 
-            const isNewRationCard = !isAddMember && (prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || prof.selectedService === 'NEW_RATION_CARD') && !prof.subService;
+            const isNewRationCard = !isAddMember && (prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || prof.selectedService === 'NEW_RATION_CARD' || prof.subService === 'NEW_CARD' || !prof.subService);
 
             // 1. Photo
             if (!isAddMember && (prof.headPhotoPath || dMap.profilePhoto || prof.headPhoto || b64Map.profilePhotoBase64)) {

@@ -9,7 +9,7 @@ const { persistSessions } = storageService;
 
 async function handleHeadPhoto(ctx, req, res) {
     const { uploadedFile, sess } = ctx;
-    const activeMobile = storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
     if (sess.intakeState !== 'HEAD_PHOTO') return false;
 
@@ -20,7 +20,14 @@ async function handleHeadPhoto(ctx, req, res) {
             actionRequired: 'upload',
             uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
         });
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+        chatHistory: sess.chatHistory,
+        citizenProfile: sess.citizenProfile,
+        step: sess.intakeState,
+        activeMobile: activeMobile,
+        targetMemberCount: sess.targetMemberCount || 1,
+        documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+    });
         return true;
     }
 
@@ -34,7 +41,14 @@ async function handleHeadPhoto(ctx, req, res) {
             actionRequired: 'upload',
             uploadPrompt: 'தெளிவான பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்'
         });
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+        chatHistory: sess.chatHistory,
+        citizenProfile: sess.citizenProfile,
+        step: sess.intakeState,
+        activeMobile: activeMobile,
+        targetMemberCount: sess.targetMemberCount || 1,
+        documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+    });
         return true;
     }
 
@@ -95,7 +109,14 @@ async function handleHeadPhoto(ctx, req, res) {
             actionRequired: 'upload',
             uploadPrompt: 'குடும்பத் தலைவர் புகைப்படம் பதிவேற்றவும்'
         });
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        res.json({
+        chatHistory: sess.chatHistory,
+        citizenProfile: sess.citizenProfile,
+        step: sess.intakeState,
+        activeMobile: activeMobile,
+        targetMemberCount: sess.targetMemberCount || 1,
+        documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+    });
         return true;
     }
 
@@ -148,7 +169,14 @@ async function handleHeadPhoto(ctx, req, res) {
         });
     }
     persistSessions();
-    res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+    res.json({
+        chatHistory: sess.chatHistory,
+        citizenProfile: sess.citizenProfile,
+        step: sess.intakeState,
+        activeMobile: activeMobile,
+        targetMemberCount: sess.targetMemberCount || 1,
+        documents: sess.tempUploads || sess.citizenProfile?.documents || {}
+    });
     return true;
 }
 

@@ -8,7 +8,7 @@ const { persistSessions } = storageService;
 
 async function handleMemberVerification(ctx, req, res) {
     const { text, sess } = ctx;
-    const activeMobile = sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
     // STATE 8: MEMBER_RELATIONSHIP
     if (sess.intakeState === 'MEMBER_RELATIONSHIP') {
@@ -19,6 +19,13 @@ async function handleMemberVerification(ctx, req, res) {
         sess.tempMember.gender = relInfo.gender;
         sess.tempMember.genderTam = relInfo.genderTam;
         sess.tempMember.relationshipIndex = sess.currentMemberIdx;
+
+        if (sess.citizenProfile?.members && sess.citizenProfile.members.length > sess.currentMemberIdx) {
+            sess.citizenProfile.members[sess.currentMemberIdx] = {
+                ...sess.citizenProfile.members[sess.currentMemberIdx],
+                ...sess.tempMember
+            };
+        }
 
         if ((relInfo.eng === 'Husband' || relInfo.tam === 'கணவர்') && sess.citizenProfile?.headGender === 'Female') {
             if (sess.tempMember.nameEng) sess.citizenProfile.fatherNameEng = sess.tempMember.nameEng;
@@ -79,8 +86,15 @@ async function handleMemberVerification(ctx, req, res) {
         if (text === 'MEMBER_DETAILS_CONFIRMED' || text.includes('சரி') || text.includes('Correct') || text.toLowerCase().includes('ok') || text.toLowerCase().includes('continue')) {
             const confirmedRelTam = sess.tempMember?.relationshipTam || 'உறுப்பினர்';
             if (sess.tempMember) {
-                sess.citizenProfile.members = sess.citizenProfile.members || [];
-                sess.citizenProfile.members.push(sess.tempMember);
+                sess.citizenProfile.members = Array.isArray(sess.citizenProfile.members) ? sess.citizenProfile.members : [];
+                if (sess.citizenProfile.members.length > sess.currentMemberIdx) {
+                    sess.citizenProfile.members[sess.currentMemberIdx] = {
+                        ...sess.citizenProfile.members[sess.currentMemberIdx],
+                        ...sess.tempMember
+                    };
+                } else {
+                    sess.citizenProfile.members.push(sess.tempMember);
+                }
                 if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
             }
 

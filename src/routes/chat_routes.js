@@ -166,13 +166,13 @@ router.get('/api/chat/history', async (req, res) => {
                 sess.chatHistory = [getInitialWelcomeMessage(sess.citizenProfile, mobile)];
             }
         }
-    } else if (sess.citizenProfile && isProfileDataComplete(sess.citizenProfile, sess.tempUploads) && !isBrowsingServices && (sess.intakeState === 'READY_TO_APPLY' || sess.step === 'ready_to_apply' || sess.selectedService === 'NEW_RATION_CARD')) {
+    } else if (sess.citizenProfile && !isBrowsingServices && (sess.intakeState === 'READY_TO_APPLY' || sess.step === 'ready_to_apply')) {
         const memCount = sess.citizenProfile.members ? sess.citizenProfile.members.length : 1;
-        const isActivelyAdding = (sess.targetMemberCount && sess.targetMemberCount > memCount) && ['MEMBER_AADHAAR_FRONT', 'MEMBER_AADHAAR_BACK', 'MEMBER_RELATIONSHIP', 'MEMBER_DETAILS_VERIFY'].includes(sess.intakeState);
-        if (!isActivelyAdding) {
+        const targetCount = sess.targetMemberCount || memCount;
+        if (targetCount <= memCount) {
+            sess.targetMemberCount = memCount;
             sess.intakeState = 'READY_TO_APPLY';
             sess.step = 'READY';
-            sess.targetMemberCount = memCount;
             const headName = sess.citizenProfile.fullNameTam || sess.citizenProfile.fullNameEng || 'வாடிக்கையாளர்';
             const dist = sess.citizenProfile.district || 'இராணிப்பேட்டை';
             const tlk = sess.citizenProfile.taluk || 'அரக்கோணம்';
