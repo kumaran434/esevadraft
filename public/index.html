@@ -1109,13 +1109,18 @@
                             <div class="card-row">சிலிண்டர்: <strong id="infoGasCyl" class="badge-empty">—</strong></div>
                         </div>
 
-                        <!-- 4. Uploaded & Saved Documents in Firebase / Disk with direct download icon -->
+                        <!-- 4. Uploaded & Saved Documents in Firebase / Disk with direct download & edit icons -->
                         <div class="card-box" id="sidebarDocumentsBox" style="display: none; background: white;">
                             <h4 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <span style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #1e293b;">
                                     <i class="fa-solid fa-folder-open" style="color: var(--accent);"></i> 📁 சேமிக்கப்பட்ட ஆவணங்கள்
                                 </span>
-                                <span id="sidebarDocsCount" style="font-size: 10px; background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 10px; font-weight: 700;">0</span>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <button type="button" onclick="openEditModal()" title="ஆவணங்களைத் திருத்து / மாற்று (Edit Documents)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: var(--accent); cursor: pointer !important; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; transition: all 0.15s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+                                        <i class="fa-solid fa-pen-to-square"></i> திருத்து
+                                    </button>
+                                    <span id="sidebarDocsCount" style="font-size: 10px; background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 10px; font-weight: 700;">0</span>
+                                </div>
                             </h4>
                             <div id="sidebarDocsList" style="display: flex; flex-direction: column; gap: 6px;">
                                 <div style="font-size: 11px; color: #94a3b8; padding: 4px 0;">பதிவேற்றப்பட்ட ஆவணங்கள் எதுவும் இல்லை.</div>
@@ -1123,8 +1128,8 @@
                         </div>
 
                         <div style="display: flex; gap: 8px; width: 100%; margin-top: auto; padding-top: 8px;">
-                            <button id="btnSidebarEdit" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 36px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(2,132,199,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
-                            <button id="btnSidebarSave" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 36px; padding: 0 8px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(5,150,105,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);"><i class="fa-solid fa-floppy-disk"></i> சேமி (Save)</button>
+                            <button id="btnSidebarEdit" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 36px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(2,132,199,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); z-index: 10;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
+                            <button id="btnSidebarSave" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 36px; padding: 0 8px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(5,150,105,0.25); white-space: nowrap; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); z-index: 10;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-floppy-disk"></i> சேமி (Save)</button>
                         </div>
                     </div>
                 </div>

@@ -172,7 +172,8 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
                     downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${memKey}?download=1&index=${idx}`,
                     previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${memKey}?index=${idx}`,
                     icon: 'fa-address-card',
-                    isPdf: isPhysicalPdf(mDoc, mB64)
+                    isPdf: isPhysicalPdf(mDoc, mB64),
+                    memberIndex: idx + 1
                 });
             }
         });

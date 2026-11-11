@@ -503,15 +503,18 @@
 
 
         async function openEditModal(targetMobile, forceMasterProfile = false) {
-            currentEditModalIsMasterProfile = Boolean(forceMasterProfile);
-            window.forceMasterProfile = currentEditModalIsMasterProfile;
-            if (targetMobile) {
-                const cleanMob = String(targetMobile).replace(/\D/g, '');
-                localStorage.setItem('eseva_active_customer_mobile', cleanMob);
-            }
-            let data = currentCitizenData || {};
-            const activeCustMob = (targetMobile ? String(targetMobile).replace(/\D/g, '') : '') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '';
-            originalEditingMobile = activeCustMob;
+            const modalEl = document.getElementById('editModal');
+            if (modalEl) modalEl.style.display = 'flex'; // Instantly display modal to eliminate any lag or unresponsive click perception!
+            try {
+                currentEditModalIsMasterProfile = Boolean(forceMasterProfile);
+                window.forceMasterProfile = currentEditModalIsMasterProfile;
+                if (targetMobile) {
+                    const cleanMob = String(targetMobile).replace(/\D/g, '');
+                    localStorage.setItem('eseva_active_customer_mobile', cleanMob);
+                }
+                let data = currentCitizenData || {};
+                const activeCustMob = (targetMobile ? String(targetMobile).replace(/\D/g, '') : '') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '';
+                originalEditingMobile = activeCustMob;
 
             // If data is empty, missing name/fields, or targetMobile explicitly supplied, pull directly from draft API
             if (activeCustMob && (!data.fullNameEng && !data.fullNameTam || targetMobile)) {
@@ -993,61 +996,110 @@
                 }
             }
 
-            document.getElementById('editNameTam').value = data.fullNameTam || '';
-            document.getElementById('editNameEng').value = data.fullNameEng || '';
-            document.getElementById('editFatherTam').value = data.fatherNameTam || '';
-            document.getElementById('editFatherEng').value = data.fatherNameEng || '';
-            if (document.getElementById('editMotherTam')) {
-                document.getElementById('editMotherTam').value = data.motherNameTam || data.motherName || '';
-            }
-            if (document.getElementById('editMotherEng')) {
-                document.getElementById('editMotherEng').value = data.motherNameEng || data.motherName || '';
-            }
-            document.getElementById('editDob').value = data.headDob || '';
-            document.getElementById('editGender').value = data.headGender || 'Male';
-            document.getElementById('editDoorNo').value = data.doorNo || '';
-            document.getElementById('editStreetTam').value = data.streetTam || data.streetEng || '';
-            document.getElementById('editAreaTam').value = data.areaTam || data.hamletTam || data.hamlet || '';
-            document.getElementById('editPin').value = data.pincode || '';
-            document.getElementById('editDistrict').value = data.district || '';
-            document.getElementById('editTaluk').value = data.taluk || '';
-            document.getElementById('editVillage').value = data.village || '';
-            document.getElementById('editAadhaar').value = data.headAadhaar || '';
-            const smartCardNoEl = document.getElementById('editSmartCardNo');
-            if (smartCardNoEl) {
-                smartCardNoEl.value = data.smartCardNumber || data.rationCardNumber || data.rationCardNo || '';
-            }
-            const canNumberEl = document.getElementById('editCanNumber');
-            if (canNumberEl) {
-                canNumberEl.value = data.canNumber || '';
-            }
-            
-            const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
-            const editHasGasEl = document.getElementById('editHasGas');
-            if (editHasGasEl) editHasGasEl.checked = hasGas;
-            if (typeof toggleGasFields === 'function') {
-                toggleGasFields(hasGas);
-            } else {
-                const wrap = document.getElementById('gasFieldsWrap');
-                if (wrap) wrap.style.display = hasGas ? 'grid' : 'none';
-            }
+                const safeSetVal = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = (val !== undefined && val !== null) ? val : '';
+                };
 
-            if (document.getElementById('editGasCompany')) {
-                document.getElementById('editGasCompany').value = data.gasDetails?.oilCompany || 'IOC';
+                safeSetVal('editNameTam', data.fullNameTam);
+                safeSetVal('editNameEng', data.fullNameEng);
+                safeSetVal('editFatherTam', data.fatherNameTam);
+                safeSetVal('editFatherEng', data.fatherNameEng);
+                safeSetVal('editMotherTam', data.motherNameTam || data.motherName);
+                safeSetVal('editMotherEng', data.motherNameEng || data.motherName);
+                safeSetVal('editDob', data.headDob);
+                safeSetVal('editGender', data.headGender || 'Male');
+                safeSetVal('editDoorNo', data.doorNo);
+                safeSetVal('editStreetTam', data.streetTam || data.streetEng);
+                safeSetVal('editAreaTam', data.areaTam || data.hamletTam || data.hamlet);
+                safeSetVal('editPin', data.pincode);
+                safeSetVal('editDistrict', data.district);
+                safeSetVal('editTaluk', data.taluk);
+                safeSetVal('editVillage', data.village);
+                safeSetVal('editAadhaar', data.headAadhaar);
+                safeSetVal('editSmartCardNo', data.smartCardNumber || data.rationCardNumber || data.rationCardNo);
+                safeSetVal('editCanNumber', data.canNumber);
+                
+                const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
+                const editHasGasEl = document.getElementById('editHasGas');
+                if (editHasGasEl) editHasGasEl.checked = hasGas;
+                if (typeof toggleGasFields === 'function') {
+                    toggleGasFields(hasGas);
+                } else {
+                    const wrap = document.getElementById('gasFieldsWrap');
+                    if (wrap) wrap.style.display = hasGas ? 'grid' : 'none';
+                }
+
+                safeSetVal('editGasCompany', data.gasDetails?.oilCompany || 'IOC');
+                safeSetVal('editGasNo', data.gasDetails?.consumerNumber || '');
+                safeSetVal('editGasAgency', data.gasDetails?.agencyName || '');
+                safeSetVal('editGasCyl', data.gasDetails?.cylinders || '1');
+            } catch (err) {
+                console.error('Error populating edit modal fields:', err);
+            } finally {
+                if (modalEl) modalEl.style.display = 'flex';
             }
-            if (document.getElementById('editGasNo')) {
-                document.getElementById('editGasNo').value = data.gasDetails?.consumerNumber || '';
-            }
-            if (document.getElementById('editGasAgency')) {
-                document.getElementById('editGasAgency').value = data.gasDetails?.agencyName || '';
-            }
-            if (document.getElementById('editGasCyl')) {
-                document.getElementById('editGasCyl').value = data.gasDetails?.cylinders || '1';
-            }
-            const modalEl = document.getElementById('editModal');
-            if (modalEl) modalEl.style.display = 'flex';
         }
         window.openEditModal = openEditModal;
+
+        async function openEditModalForDoc(docType, memberIndex) {
+            try {
+                await openEditModal();
+            } catch (e) {
+                console.error('Error opening edit modal for doc:', e);
+                const modal = document.getElementById('editModal');
+                if (modal) modal.style.display = 'flex';
+            }
+
+            // Scroll & Highlight targeted document section in modal
+            setTimeout(() => {
+                let targetEl = null;
+                const dType = String(docType || '').toLowerCase();
+                const mIdx = memberIndex || (dType.match(/\d+/) ? Number(dType.match(/\d+/)[0]) + 1 : '');
+
+                if (dType.includes('photo')) {
+                    targetEl = document.getElementById('editPhotoPreview')?.closest('div[style*="border"]') || document.getElementById('editPhotoFileInput')?.parentElement;
+                } else if (dType.includes('head') || (dType.includes('aadhaar') && !dType.includes('member'))) {
+                    targetEl = document.getElementById('editHeadAadhaarPreview')?.closest('div[style*="border"]') || document.getElementById('editHeadAadhaarInput')?.parentElement;
+                } else if (dType.includes('gas') || dType.includes('residence') || dType.includes('address')) {
+                    targetEl = document.getElementById('editResidencePreview')?.closest('div[style*="border"]') || document.getElementById('editResidenceDocInput')?.parentElement;
+                } else if (dType.includes('smart') || dType.includes('ration')) {
+                    targetEl = document.getElementById('editSmartCardBox') || document.getElementById('editSmartCardPreview')?.closest('div[style*="border"]');
+                } else if (dType.includes('member')) {
+                    if (mIdx) {
+                        targetEl = document.getElementById(`editMemberAadhaarPreview_${mIdx}`)?.closest('div[style*="border"]') || document.getElementById(`editMemberAadhaarInput_${mIdx}`)?.parentElement;
+                    }
+                    if (!targetEl) {
+                        targetEl = document.getElementById('editMembersAadhaarContainer');
+                    }
+                }
+
+                if (!targetEl) {
+                    if (document.getElementById('editAddMemberAadhaarPreview')?.offsetParent) {
+                        targetEl = document.getElementById('editAddMemberAadhaarPreview').closest('div[style*="border"]');
+                    } else if (document.getElementById('editRemoveMemberProofPreview')?.offsetParent) {
+                        targetEl = document.getElementById('editRemoveMemberProofPreview').closest('div[style*="border"]');
+                    }
+                }
+
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const origShadow = targetEl.style.boxShadow;
+                    const origBorder = targetEl.style.borderColor;
+                    const origTransform = targetEl.style.transform;
+                    targetEl.style.transition = 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+                    targetEl.style.boxShadow = '0 0 0 3.5px #2563eb, 0 8px 24px rgba(37,99,235,0.3)';
+                    targetEl.style.borderColor = '#2563eb';
+                    targetEl.style.transform = 'scale(1.02)';
+                    setTimeout(() => {
+                        targetEl.style.boxShadow = origShadow;
+                        targetEl.style.borderColor = origBorder;
+                        targetEl.style.transform = origTransform;
+                    }, 2200);
+                }
+            }, 120);
+        }
+        window.openEditModalForDoc = openEditModalForDoc;
 
         function closeEditModal() {
             const modalEl = document.getElementById('editModal');

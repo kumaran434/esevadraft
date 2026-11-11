@@ -91,10 +91,16 @@
             }
 
             if (docsCount) docsCount.innerText = filteredDocs.length;
-            docsList.innerHTML = filteredDocs.map(doc => {
+            docsList.innerHTML = filteredDocs.map((doc, dIdx) => {
                 const iconClass = (doc.icon && doc.icon.startsWith('fa-')) ? doc.icon : 'fa-file-lines';
+                const docType = doc.type || '';
+                const mIdx = (doc.memberIndex !== undefined) ? doc.memberIndex : (docType.match(/\d+/) ? Number(docType.match(/\d+/)[0]) + 1 : '');
                 return `
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; gap: 8px; margin-bottom: 4px; transition: background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#f8fafc'">
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; gap: 8px; margin-bottom: 5px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer !important;"
+                         onclick="if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"
+                         onmouseover="this.style.background='#f1f5f9'; this.style.borderColor='#93c5fd'; this.style.boxShadow='0 2px 6px rgba(2,132,199,0.12)';"
+                         onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';"
+                         title="${doc.title} — திருத்த / மாற்ற கிளிக் செய்யவும்">
                         <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
                             <div style="width: 28px; height: 28px; border-radius: 6px; background: #eff6ff; color: #0284c7; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;">
                                 <i class="fa-solid ${iconClass}"></i>
@@ -104,9 +110,24 @@
                                 <div style="font-size: 10px; color: #64748b; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.titleEng || doc.type}</div>
                             </div>
                         </div>
-                        <a href="${doc.downloadUrl}" download onclick="event.preventDefault(); window.downloadDocumentFile('${doc.downloadUrl}', '${(doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\\\?%*:|\"<>]/g, '_')}.pdf');" title="${doc.title} பதிவிறக்கு (Download)" style="height: 32px; width: 32px; border-radius: 8px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s;" onmouseover="this.style.background='#d1fae5'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='#ecfdf5'; this.style.transform='none';">
-                            <i class="fa-solid fa-download"></i>
-                        </a>
+                        <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
+                            <button type="button"
+                                    onclick="event.stopPropagation(); if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"
+                                    title="${doc.title} — திருத்து / மாற்று (Edit/Replace)"
+                                    style="height: 32px; width: 32px; border-radius: 8px; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer !important; transition: all 0.15s; box-shadow: 0 1px 2px rgba(37,99,235,0.12);"
+                                    onmouseover="this.style.background='#dbeafe'; this.style.transform='scale(1.08)';"
+                                    onmouseout="this.style.background='#eff6ff'; this.style.transform='none';">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <a href="${doc.downloadUrl}" download
+                               onclick="event.preventDefault(); event.stopPropagation(); window.downloadDocumentFile('${doc.downloadUrl}', '${(doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\\\?%*:|\"<>]/g, '_')}.pdf');"
+                               title="${doc.title} — பதிவிறக்கு (Download)"
+                               style="height: 32px; width: 32px; border-radius: 8px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #059669; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; box-shadow: 0 1px 2px rgba(16,185,129,0.15); transition: all 0.15s; cursor: pointer !important;"
+                               onmouseover="this.style.background='#d1fae5'; this.style.transform='scale(1.08)';"
+                               onmouseout="this.style.background='#ecfdf5'; this.style.transform='none';">
+                                <i class="fa-solid fa-download"></i>
+                            </a>
+                        </div>
                     </div>
                 `;
             }).join('');

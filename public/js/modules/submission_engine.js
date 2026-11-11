@@ -479,7 +479,8 @@
                             titleEng: `Member Aadhaar (${m.nameEng || idx + 2})`,
                             downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?download=1&index=${idx}`,
                             previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?index=${idx}`,
-                            icon: 'fa-address-card'
+                            icon: 'fa-address-card',
+                            memberIndex: idx + 1
                         });
                     }
                 });
