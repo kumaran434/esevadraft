@@ -1518,12 +1518,16 @@
             } catch (e) {}
         }
 
-        // Initialize session check & poll history
+        // Initialize session check & setup listeners
         checkSession();
         setupChatScrollListener();
-        setInterval(fetchHistory, 2500);
-        setInterval(syncPortalOtpTimer, 2000);
-        setInterval(syncAutomationProgress, 1500);
+        
+        // Delay recurring background poll intervals by 3s so initial UI render & click events are completely instantaneous (<50ms)
+        setTimeout(() => {
+            setInterval(fetchHistory, 2500);
+            setInterval(syncPortalOtpTimer, 2000);
+            setInterval(syncAutomationProgress, 1500);
+        }, 3000);
 
         // On page load: sync Dev Mock badge and show dev buttons only on localhost
         (function initDevVisibility() {

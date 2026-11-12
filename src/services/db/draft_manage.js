@@ -171,7 +171,13 @@ async function listAllDrafts(operatorUid = null) {
     if (shouldFetchCloudSync && isFirestoreAvailable() && firestore) {
         try {
             const col = firestore.collection(COLLECTION_NAME);
-            const snapshot = await col.get();
+            const fetchPromise = col.get();
+            const snapshot = isDesktopLocal 
+                ? await Promise.race([
+                    fetchPromise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud sync timeout in desktop local mode')), 1500))
+                  ])
+                : await fetchPromise;
             snapshot.forEach(doc => {
                 const d = doc.data();
                 if (!isMeaningfulDraft(d)) {

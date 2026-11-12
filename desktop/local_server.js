@@ -1503,10 +1503,10 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 console.warn(`   Configure your Android SMS Auto-Forwarder target to: http://<PC-IP>:${currentPort}/api/automation/otp_webhook`);
             }
             if (serverReadyResolve) serverReadyResolve(activeServerUrl);
-            // Pre-warm local Express asynchronously after UI static assets have completely loaded
-            setTimeout(() => {
+            // Pre-warm local Express immediately on next tick so it is ready before renderer's first API call
+            setImmediate(() => {
                 try { getLocalExpressApp(); } catch (_) {}
-            }, 3500);
+            });
         });
 
         localServer.listen(currentPort, '0.0.0.0');

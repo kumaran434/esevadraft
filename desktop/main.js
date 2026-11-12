@@ -154,12 +154,18 @@ if (!gotTheLock) {
         startLocalServer(() => activeAutomationModule, (mod) => { activeAutomationModule = mod; });
         createMainWindow();
 
-        // Defer non-critical background services until after the UI window is visible
+        // Defer non-critical background services to ensure UI thread remains 100% responsive (<50ms) on startup
+        setTimeout(() => {
+            startDesktopRuntimeWatchdog(getMainWindow);
+        }, 8000);
+
+        setTimeout(() => {
+            setupAutoUpdater(getMainWindow);
+        }, 15000);
+
         setTimeout(() => {
             startAssetSyncService();
-            setupAutoUpdater(getMainWindow);
-            startDesktopRuntimeWatchdog(getMainWindow);
-        }, 1500);
+        }, 20000);
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

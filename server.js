@@ -30,7 +30,14 @@ process.on('uncaughtException', (err) => {
     console.error('⚠️ [Server Runtime] Caught uncaught exception:', err ? (err.stack || err.message || err) : 'Unknown');
 });
 
-const { provideOtp } = require('./tnpds_automation');
+// Lazy-load provideOtp inside /api/automation/otp_webhook to keep server.js startup ultra-fast
+function getProvideOtp() {
+    try {
+        return require('./tnpds_automation').provideOtp;
+    } catch (_) {
+        return () => false;
+    }
+}
 const storageService = require('./src/services/storage_service');
 const { getOrCreateSession } = storageService;
 
@@ -137,6 +144,7 @@ app.all(['/api/automation/otp_webhook', '/api/automation/otp-webhook'], (req, re
         }
 
         const otpCode = otpMatch[0];
+        const provideOtp = getProvideOtp();
         const handled = provideOtp(otpCode);
 
         // Sync to pending_otp.txt for local Desktop Playwright engine

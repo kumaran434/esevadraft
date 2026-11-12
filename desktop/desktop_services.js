@@ -169,12 +169,9 @@ function setupAutoUpdater(getMainWindow) {
     }, 60 * 60 * 1000);
 }
 
-const { startLocalServer } = require('./local_server');
-
 module.exports = {
     syncLatestAutomationEngine,
     reportOperatorTelemetry,
     launchVisibleBrowser,
-    setupAutoUpdater,
-    startLocalOtpWebhookServer: startLocalServer
+    setupAutoUpdater
 };

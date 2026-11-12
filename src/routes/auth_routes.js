@@ -24,7 +24,6 @@ const {
 } = storageService;
 const { isProfileDataComplete } = require('../services/profile_helpers');
 const { mergeDraftIntoSession } = require('../services/session_draft_merger');
-const { stopTnpdsAutomation } = require('../../tnpds_automation');
 
 // 1. GET /api/auth/session
 router.get('/api/auth/session', async (req, res) => {
@@ -306,7 +305,10 @@ router.post('/api/auth/login', async (req, res) => {
 
 // 4. POST /api/auth/logout
 router.post('/api/auth/logout', async (req, res) => {
-    try { await stopTnpdsAutomation(); } catch (e) {}
+    try {
+        const { stopTnpdsAutomation } = require('../../tnpds_automation');
+        await stopTnpdsAutomation();
+    } catch (e) {}
     const activeMob = getActiveMobile();
     if (activeMob && sessions.has(activeMob)) {
         persistSessions();
