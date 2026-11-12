@@ -159,8 +159,8 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                 let vaultCreds = null;
                 try {
                     const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                    const opId = options.operatorUid || options.operatorName || 'admin';
-                    vaultCreds = getOperatorPortalCredentials(opId, 'tnega');
+                    const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
+                    vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
                 } catch (_) {}
 
                 if (vaultCreds && vaultCreds.username && vaultCreds.password) {
@@ -217,7 +217,8 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         let vaultCreds = null;
                         try {
                             const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                            vaultCreds = getOperatorPortalCredentials('admin', 'tnega');
+                            const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
+                            vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
                         } catch (_) {}
                         if (vaultCreds) {
                             onProgress('🔄 [அமர்வு காலாவதியானது] தானியங்கி மீண்டும் Login செய்கிறது...');

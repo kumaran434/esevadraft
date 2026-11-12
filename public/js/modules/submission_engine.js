@@ -422,6 +422,7 @@
             if (!prof) return [];
             const docs = [];
             const cleanMob = mobile || prof.mobileNumber || 'active_session';
+            const cacheBust = prof._updatedAt ? new Date(prof._updatedAt).getTime() : Date.now();
             const dMap = prof.documents || {};
             const b64Map = prof.base64Docs || {};
             const sData = prof.subServiceData || window.lastSubServiceData;
@@ -435,8 +436,8 @@
                     type: 'profilePhoto',
                     title: isNewRationCard ? 'குடும்பத் தலைவர் புகைப்படம்' : 'விண்ணப்பதாரர் புகைப்படம்',
                     titleEng: isNewRationCard ? 'Head Passport Photo' : 'Applicant Photo',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/profilePhoto?_t=${cacheBust}`,
                     icon: 'fa-user',
                     isPdf: false
                 });
@@ -450,8 +451,8 @@
                     type: 'headAadhaar',
                     title: isNewRationCard ? `குடும்பத் தலைவர் ஆதார் (${headName})` : `விண்ணப்பதாரர் ஆதார் (${headName})`,
                     titleEng: isNewRationCard ? 'Head of Family Aadhaar' : 'Applicant Aadhaar',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/headAadhaar?_t=${cacheBust}`,
                     icon: 'fa-id-card',
                     isPdf: hDocStr.toLowerCase().endsWith('.pdf') || hDocStr.toLowerCase().includes('merged')
                 });
@@ -465,8 +466,8 @@
                     type: 'smartCard',
                     title: cardNo ? `ஸ்மார்ட் ரேஷன் கார்டு (${cardNo})` : 'ஸ்மார்ட் ரேஷன் கார்டு',
                     titleEng: 'Smart Ration Card',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/smartCard?_t=${cacheBust}`,
                     icon: 'fa-address-card',
                     isPdf: cardDocStr.toLowerCase().endsWith('.pdf')
                 });
@@ -483,8 +484,8 @@
                             type: `memberAadhaar${idx}`,
                             title: `உறுப்பினர் ஆதார் (${mName})`,
                             titleEng: `Member Aadhaar (${m.nameEng || idx + 2})`,
-                            downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?download=1&index=${idx}`,
-                            previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?index=${idx}`,
+                            downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?download=1&index=${idx}&_t=${cacheBust}`,
+                            previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar${idx}?index=${idx}&_t=${cacheBust}`,
                             icon: 'fa-address-card',
                             isPdf: mDocStr.toLowerCase().endsWith('.pdf') || mDocStr.toLowerCase().includes('merged'),
                             memberIndex: idx + 1
@@ -500,8 +501,8 @@
                     type: 'gasBook',
                     title: 'எரிவாயு இணைப்பு அட்டை / ரசீது',
                     titleEng: 'Gas Consumer Book / Receipt',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/gasBook?_t=${cacheBust}`,
                     icon: 'fa-fire',
                     isPdf: gasDocStr.toLowerCase().endsWith('.pdf')
                 });
@@ -515,8 +516,8 @@
                     type: 'residenceProof',
                     title: `குடியிருப்புச் சான்று (${proofName})`,
                     titleEng: 'Residence Proof',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/residenceProof?_t=${cacheBust}`,
                     icon: 'fa-house',
                     isPdf: resDocStr.toLowerCase().endsWith('.pdf')
                 });
@@ -528,8 +529,8 @@
                     type: 'communityProof',
                     title: 'குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC',
                     titleEng: 'Family Community Certificate / TC',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof?download=1`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof`,
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof?_t=${cacheBust}`,
                     icon: 'fa-certificate'
                 });
             }

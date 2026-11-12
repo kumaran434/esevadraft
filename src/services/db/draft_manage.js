@@ -338,9 +338,15 @@ async function restoreCitizenDraft(mobileNumber) {
 
 async function deleteCitizenDraft(mobileNumber, options = {}) {
     if (!mobileNumber) return false;
-    const cleanMobile = String(mobileNumber).replace(/\D/g, '').slice(-10);
+    const cleanDigits = String(mobileNumber).replace(/\D/g, '').slice(-10);
     const rawKey = String(mobileNumber).trim();
-    const keysToClean = Array.from(new Set([cleanMobile, rawKey].filter(Boolean)));
+    const keysToClean = Array.from(new Set([
+        cleanDigits, 
+        rawKey, 
+        `+91${cleanDigits}`, 
+        `+91 ${cleanDigits}`,
+        `91${cleanDigits}`
+    ].filter(Boolean)));
 
     const firestore = getFirestoreInstance();
     if (isFirestoreAvailable() && firestore) {
@@ -353,7 +359,8 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
         }
     }
 
-    // 1. Delete all Draft JSON files across every known disk location
+    // 0. Collect all physical document and photo file paths owned by this customer before deleting JSON
+    const filesToPurge = new Set();
     const draftDirCandidates = [
         LOCAL_DRAFTS_DIR,
         APPDATA_DRAFTS_DIR,
@@ -363,6 +370,41 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
         path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'data', 'drafts')
     ].filter(Boolean);
 
+    for (const dDir of draftDirCandidates) {
+        for (const k of keysToClean) {
+            const fPath = path.join(dDir, `${k}.json`);
+            if (fs.existsSync(fPath)) {
+                try {
+                    const parsed = JSON.parse(fs.readFileSync(fPath, 'utf8'));
+                    const prof = parsed.citizenProfile || {};
+                    const docs = parsed.documents || prof.documents || {};
+                    if (prof.headPhotoPath) filesToPurge.add(prof.headPhotoPath);
+                    if (prof.headAadhaarDocPath) filesToPurge.add(prof.headAadhaarDocPath);
+                    if (prof.residenceProof?.docPath) filesToPurge.add(prof.residenceProof.docPath);
+                    if (prof.gasDetails?.gasBookPath) filesToPurge.add(prof.gasDetails.gasBookPath);
+                    for (const dp of Object.values(docs)) {
+                        if (typeof dp === 'string') filesToPurge.add(dp);
+                    }
+                    if (Array.isArray(prof.members)) {
+                        for (const m of prof.members) {
+                            if (m.docPath) filesToPurge.add(m.docPath);
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
+    }
+
+    // Delete collected physical files so stale photos/PDFs never linger on disk
+    for (const fp of filesToPurge) {
+        if (fp && typeof fp === 'string' && fs.existsSync(fp)) {
+            const base = path.basename(fp).toLowerCase();
+            if (base.startsWith('test_') || base.includes('sample')) continue;
+            try { fs.unlinkSync(fp); } catch (_) {}
+        }
+    }
+
+    // 1. Delete all Draft JSON files across every known disk location
     for (const dDir of draftDirCandidates) {
         for (const k of keysToClean) {
             const fPath = path.join(dDir, `${k}.json`);

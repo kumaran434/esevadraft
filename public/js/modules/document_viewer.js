@@ -98,7 +98,10 @@
                 const cleanTitle = (doc.titleEng || doc.title || doc.type || 'document').replace(/[/\\?%*:|"<>]/g, '_');
                 const fileExt = doc.isPdf ? 'pdf' : 'jpg';
                 const dlName = `${cleanTitle}.${fileExt}`;
-                const previewTargetUrl = doc.previewUrl || doc.downloadUrl;
+                let previewTargetUrl = doc.previewUrl || doc.downloadUrl;
+                if (previewTargetUrl && !previewTargetUrl.includes('_t=')) {
+                    previewTargetUrl += (previewTargetUrl.includes('?') ? '&' : '?') + `_t=${Date.now()}`;
+                }
                 return `
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; gap: 8px; margin-bottom: 5px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer !important;"
                          onclick="if (typeof window.openEditModalForDoc === 'function') { window.openEditModalForDoc('${docType}', '${mIdx}'); } else if (typeof openEditModal === 'function') { openEditModal(); }"

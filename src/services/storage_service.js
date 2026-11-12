@@ -382,19 +382,26 @@ async function resetActiveSession(stopTnpdsFn) {
 
 function purgeSession(mobile) {
     if (!mobile) return;
-    const cleanMobile = String(mobile).trim();
-    sessions.delete(cleanMobile);
-    sessionAccessTimestamps.delete(cleanMobile);
-    if (activeMobile === cleanMobile) {
+    const cleanDigits = String(mobile).replace(/\D/g, '').slice(-10);
+    const rawKey = String(mobile).trim();
+    const keys = Array.from(new Set([cleanDigits, rawKey, `+91 ${cleanDigits}`, `+91${cleanDigits}`, `91${cleanDigits}`].filter(Boolean)));
+    for (const k of keys) {
+        sessions.delete(k);
+        sessionAccessTimestamps.delete(k);
+    }
+    if (activeMobile && keys.includes(String(activeMobile).trim())) {
         activeMobile = null;
         sessionState = null;
     }
     try {
         if (fs.existsSync(SESSIONS_DATA_PATH)) {
             const disk = JSON.parse(fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8'));
-            if (disk && disk[cleanMobile]) {
-                delete disk[cleanMobile];
-                safeWriteJsonSync(SESSIONS_DATA_PATH, disk);
+            if (disk) {
+                let changed = false;
+                for (const k of keys) {
+                    if (disk[k]) { delete disk[k]; changed = true; }
+                }
+                if (changed) safeWriteJsonSync(SESSIONS_DATA_PATH, disk);
             }
         }
     } catch (_) {}

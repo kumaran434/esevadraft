@@ -357,7 +357,7 @@ router.post('/api/chat/reset', async (req, res) => {
     if (forceClean) {
         setActiveMobile(null);
     }
-    if (targetMobile) {
+    if (targetMobile && !forceClean) {
         try {
             const diskDraft = await getCitizenDraft(targetMobile);
             if (diskDraft) {
@@ -387,6 +387,10 @@ router.post('/api/chat/reset', async (req, res) => {
         } catch (e) {
             console.warn('Draft cleanup warn on reset:', e.message);
         }
+    } else if (targetMobile && forceClean) {
+        try {
+            storageService.purgeSession(targetMobile);
+        } catch (_) {}
     }
     const hasValidProfile = !forceClean && existingProfile && (existingProfile.fullNameEng || existingProfile.fullNameTam || (existingProfile.members && existingProfile.members.length > 0));
     if (existingProfile) {

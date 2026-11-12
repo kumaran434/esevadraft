@@ -160,44 +160,31 @@ function saveOperatorPortalCredentials(operatorUid, portalKey = 'tnega', credent
  * Retrieve decrypted credentials for automation engine (Internal use only)
  */
 function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
+    if (!operatorUid) return null; // Never guess or leak credentials without explicit operator identity
     const pKey = (portalKey || 'tnega').toLowerCase().trim();
     const vault = readRawVault();
 
+    const opId = normalizeOpId(operatorUid);
     let opData = null;
     let resolvedOpId = null;
 
-    if (operatorUid) {
-        const opId = normalizeOpId(operatorUid);
-        if (vault[opId] && vault[opId][pKey]) {
-            opData = vault[opId];
-            resolvedOpId = opId;
-        }
-    }
-
-    if (!opData && vault['admin'] && vault['admin'][pKey]) {
+    if (vault[opId] && vault[opId][pKey]) {
+        opData = vault[opId];
+        resolvedOpId = opId;
+    } else if (opId === 'admin' && vault['admin'] && vault['admin'][pKey]) {
         opData = vault['admin'];
         resolvedOpId = 'admin';
     }
 
-    // Fallback: If specific operator has no portal credentials, check any configured operator in vault
-    if (!opData) {
-        const allOpIds = Object.keys(vault);
-        for (const oid of allOpIds) {
-            if (vault[oid] && vault[oid][pKey] && vault[oid][pKey].username && vault[oid][pKey].passwordEnc) {
-                opData = vault[oid];
-                resolvedOpId = oid;
-                break;
-            }
-        }
-    }
-
+    // STRICT MULTI-TENANT ISOLATION:
+    // If the requesting operator has not saved their own credentials, NEVER fall back to another operator!
     if (!opData || !opData[pKey]) {
         return null;
     }
 
     const portalData = opData[pKey];
     return {
-        operatorUid: resolvedOpId || opData.operatorUid || 'admin',
+        operatorUid: resolvedOpId || opData.operatorUid,
         portal: pKey,
         username: portalData.username || '',
         password: decryptText(portalData.passwordEnc),

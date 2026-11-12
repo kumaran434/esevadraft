@@ -353,16 +353,34 @@ async function cropDocumentToExactBoundary(inputPath, options = {}) {
     }
 }
 
-async function produceDualSidedDocument(frontPath, backPath, produceCompliantDocFallback) {
+async function produceDualSidedDocument(frontPath, backPath, produceCompliantDocFallback, options = {}) {
     if (!fs.existsSync(frontPath)) return null;
     if (!backPath || !fs.existsSync(backPath)) {
         if (produceCompliantDocFallback) return produceCompliantDocFallback(frontPath);
         return frontPath;
     }
 
+    let frontBox = options?.frontBoundingBox || options?.boundingBox || null;
+    let backBox = options?.backBoundingBox || null;
+
+    // Autonomous AI Document Boundary Auto-Resolution if not explicitly supplied
+    if (!frontBox || !backBox) {
+        try {
+            const { inspectAndExtractDocument } = require('../../ai_document_extractor');
+            if (!frontBox && fs.existsSync(frontPath)) {
+                const exf = await inspectAndExtractDocument(frontPath).catch(() => null);
+                if (exf && exf.documentBoundingBox) frontBox = exf.documentBoundingBox;
+            }
+            if (!backBox && fs.existsSync(backPath)) {
+                const exb = await inspectAndExtractDocument(backPath, { skipFaceExtraction: true }).catch(() => null);
+                if (exb && exb.documentBoundingBox) backBox = exb.documentBoundingBox;
+            }
+        } catch (_) {}
+    }
+
     // Universal Exact Document Boundary Auto-Crop BEFORE merging Front + Back
-    const croppedFrontPath = await cropDocumentToExactBoundary(frontPath);
-    const croppedBackPath = await cropDocumentToExactBoundary(backPath);
+    const croppedFrontPath = await cropDocumentToExactBoundary(frontPath, { boundingBox: frontBox });
+    const croppedBackPath = await cropDocumentToExactBoundary(backPath, { boundingBox: backBox });
 
     async function generatePdfAtQuality(targetQuality) {
         const sharp = getSharp();
