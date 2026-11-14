@@ -217,7 +217,15 @@ router.post('/api/auth/login', async (req, res) => {
             drafts = await listAllDrafts(firebaseUid || operatorUid);
         } catch (e) {}
 
-        const finalOperatorName = (storedProfile && storedProfile.displayName) || (displayName && displayName !== 'பயனர்' && displayName !== 'மையம்' ? displayName : 'குமரன் இ-சேவை மையம்');
+        const activeOpUid = firebaseUid || operatorUid || '';
+        const isKumaranOp = !activeOpUid || activeOpUid === 'z9TSOApH0Hh69Du0xPK2GDxK2kr2';
+        let resolvedDisplay = (storedProfile && storedProfile.displayName) || displayName || '';
+        if (!isKumaranOp && resolvedDisplay === 'குமரன் இ-சேவை மையம்') {
+            resolvedDisplay = (activeOpUid === 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2' || cleanMobile === '9790016001') ? 'SUMAN' : 'இ-சேவை மையம்';
+        }
+        const finalOperatorName = (resolvedDisplay && resolvedDisplay !== 'பயனர்' && resolvedDisplay !== 'மையம்')
+            ? resolvedDisplay
+            : (isKumaranOp ? 'குமரன் இ-சேவை மையம்' : ((activeOpUid === 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2' || cleanMobile === '9790016001') ? 'SUMAN' : 'இ-சேவை மையம்'));
         if (typeof saveActiveOperatorSession === 'function' && (firebaseUid || operatorUid)) {
             saveActiveOperatorSession({
                 operatorUid: firebaseUid || operatorUid,

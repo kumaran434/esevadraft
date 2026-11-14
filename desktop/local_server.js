@@ -44,13 +44,24 @@ function resolveLocalFile(reqPath) {
 
     const candidates = [];
 
-    // 0. On external machines, prioritize OTA-synced public assets in userData if newer than packaged resources
+    // 0. On external machines, prioritize OTA-synced public assets in userData ONLY if strictly newer than packaged resources
     try {
         const isLocalDev = process.env.USERNAME === 'ADMIN' && fs.existsSync('d:\\downloads\\ai assitant 2');
         if (!isLocalDev && typeof app !== 'undefined' && app.getPath) {
             const otaCandidate = path.join(app.getPath('userData'), 'public', clean);
+            const packagedCandidate = process.resourcesPath ? path.join(process.resourcesPath, 'public', clean) : null;
             if (fs.existsSync(otaCandidate) && fs.statSync(otaCandidate).isFile()) {
-                candidates.push(otaCandidate);
+                let useOta = true;
+                if (packagedCandidate && fs.existsSync(packagedCandidate)) {
+                    const otaMtime = fs.statSync(otaCandidate).mtimeMs;
+                    const pkgMtime = fs.statSync(packagedCandidate).mtimeMs;
+                    if (pkgMtime >= otaMtime) {
+                        useOta = false;
+                    }
+                }
+                if (useOta) {
+                    candidates.push(otaCandidate);
+                }
             }
         }
     } catch (_) {}
@@ -427,10 +438,21 @@ function getLocalExpressApp() {
     return localExpressAppInstance;
 }
 
+function sanitizeHttpHeaders(rawHeaders = {}) {
+    const clean = {};
+    for (const [k, v] of Object.entries(rawHeaders || {})) {
+        if (v === undefined || v === null) continue;
+        const lowerKey = String(k).toLowerCase();
+        if (lowerKey === 'content-length' || lowerKey === 'host' || lowerKey === 'connection') continue;
+        const strVal = String(v);
+        clean[k] = /[^\x00-\xFF]/.test(strVal) ? encodeURIComponent(strVal) : strVal;
+    }
+    return clean;
+}
+
 function proxyToCloud(req, res) {
     const cloudHost = 'esevadraft.in';
-    const proxyHeaders = { ...req.headers, host: cloudHost };
-    delete proxyHeaders['content-length'];
+    const proxyHeaders = { ...sanitizeHttpHeaders(req.headers), host: cloudHost };
 
     const proxyReq = https.request({
         hostname: cloudHost,
@@ -465,11 +487,11 @@ function proxyToCloud(req, res) {
 function syncDraftToCloudInBackground(endpoint, method, payload = null, customHeaders = {}) {
     try {
         const cloudHost = 'esevadraft.in';
-        const bodyStr = payload ? JSON.stringify(payload) : null;
+        const bodyStr = payload ? (typeof payload === 'string' ? payload : JSON.stringify(payload)) : null;
         const reqHeaders = {
             'host': cloudHost,
             'content-type': 'application/json',
-            ...customHeaders
+            ...sanitizeHttpHeaders(customHeaders)
         };
         if (bodyStr) {
             reqHeaders['content-length'] = Buffer.byteLength(bodyStr);
@@ -1112,11 +1134,114 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
             if (urlPath === '/api/operator/vault') {
                 const decodeHdr = (v) => { try { return v ? decodeURIComponent(String(v)) : ''; } catch (_) { return String(v || ''); } };
                 try {
+                    let vaultSvc = null;
+                    const vaultCandidates = [
+                        path.join(__dirname, '..', 'src', 'services', 'portal_vault_service'),
+                        path.join(process.resourcesPath || '', 'src', 'services', 'portal_vault_service'),
+                        path.join(process.resourcesPath || '', 'app.asar.unpacked', 'src', 'services', 'portal_vault_service')
+                    ];
+                    try {
+                        if (typeof app !== 'undefined' && app.getPath) {
+                            vaultCandidates.push(path.join(app.getPath('userData'), 'src', 'services', 'portal_vault_service'));
+                        }
+                    } catch (_) {}
+                    for (const cand of vaultCandidates) {
+                        try {
+                            vaultSvc = require(cand);
+                            if (vaultSvc && typeof vaultSvc.saveOperatorPortalCredentials === 'function') break;
+                        } catch (_) {}
+                    }
+
+                    // Self-contained fallback if external module path cannot be resolved inside packaged ASAR
+                    if (!vaultSvc || typeof vaultSvc.saveOperatorPortalCredentials !== 'function') {
+                        const crypto = require('crypto');
+                        const CIPHER_KEY = crypto.createHash('sha256').update(process.env.OPERATOR_VAULT_SECRET || 'esevadraft-gov-vault-military-key-2026').digest();
+                        const getFallbackVaultPath = () => {
+                            let dir = path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'data');
+                            try {
+                                if (typeof app !== 'undefined' && app.getPath) dir = path.join(app.getPath('userData'), 'data');
+                            } catch (_) {}
+                            try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+                            return path.join(dir, 'operator_vault.json');
+                        };
+                        const readFb = () => {
+                            const p = getFallbackVaultPath();
+                            try { if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch (_) {}
+                            return {};
+                        };
+                        const writeFb = (v) => {
+                            const p = getFallbackVaultPath();
+                            fs.mkdirSync(path.dirname(p), { recursive: true });
+                            fs.writeFileSync(p, JSON.stringify(v, null, 2), 'utf8');
+                        };
+                        const normOp = (u) => String(u || 'admin').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'admin';
+                        const encTxt = (t) => {
+                            if (!t) return '';
+                            const iv = crypto.randomBytes(16);
+                            const c = crypto.createCipheriv('aes-256-cbc', CIPHER_KEY, iv);
+                            return iv.toString('hex') + ':' + c.update(t, 'utf8', 'hex') + c.final('hex');
+                        };
+                        vaultSvc = {
+                            getOperatorVaultSummary: (operatorUid) => {
+                                const opId = normOp(operatorUid);
+                                const v = readFb();
+                                const opData = v[opId] || {};
+                                const portalsSummary = {};
+                                for (const [k, pVal] of Object.entries(opData)) {
+                                    if (['operatorUid', 'operatorName', 'updatedAt'].includes(k)) continue;
+                                    if (pVal && typeof pVal === 'object') {
+                                        portalsSummary[k] = {
+                                            portal: k,
+                                            portalName: pVal.portalName || k,
+                                            customUrl: pVal.customUrl || '',
+                                            hasCredentials: Boolean(pVal.username && pVal.passwordEnc),
+                                            username: pVal.username || '',
+                                            passwordMasked: pVal.passwordEnc ? '••••••••' : '',
+                                            operatorCode: pVal.operatorCode || 'OM',
+                                            savedAt: pVal.savedAt || null
+                                        };
+                                    }
+                                }
+                                const tnega = portalsSummary.tnega || { portal: 'tnega', portalName: 'TNeGA இ-சேவை', hasCredentials: false, username: '', passwordMasked: '', operatorCode: 'OM', savedAt: null };
+                                return { operatorUid: opId, operatorName: opData.operatorName || opId, updatedAt: opData.updatedAt || null, tnega, portals: { tnega, ...portalsSummary } };
+                            },
+                            saveOperatorPortalCredentials: (operatorUid, portalKey = 'tnega', credentials = {}) => {
+                                const opId = normOp(operatorUid);
+                                const pKey = (portalKey || 'tnega').toLowerCase().trim();
+                                const v = readFb();
+                                if (!v[opId]) v[opId] = { operatorUid: opId, operatorName: credentials.operatorName || opId, updatedAt: new Date().toISOString() };
+                                const ex = v[opId][pKey] || {};
+                                v[opId][pKey] = {
+                                    portal: pKey,
+                                    portalName: credentials.portalName || ex.portalName || pKey,
+                                    customUrl: credentials.customUrl || ex.customUrl || '',
+                                    username: (credentials.username || credentials.userId || ex.username || '').trim(),
+                                    passwordEnc: credentials.password ? encTxt(credentials.password.trim()) : (ex.passwordEnc || ''),
+                                    operatorCode: (credentials.operatorCode || ex.operatorCode || 'OM').trim(),
+                                    savedAt: new Date().toISOString()
+                                };
+                                v[opId].updatedAt = new Date().toISOString();
+                                writeFb(v);
+                                return { success: true, operatorUid: opId, portal: pKey };
+                            },
+                            deleteOperatorPortalCredentials: (operatorUid, portalKey = 'tnega') => {
+                                const opId = normOp(operatorUid);
+                                const pKey = (portalKey || 'tnega').toLowerCase().trim();
+                                const v = readFb();
+                                if (v[opId] && v[opId][pKey]) {
+                                    delete v[opId][pKey];
+                                    writeFb(v);
+                                }
+                                return { success: true, message: 'Credentials removed from vault.' };
+                            }
+                        };
+                    }
+
                     const {
                         getOperatorVaultSummary,
                         saveOperatorPortalCredentials,
                         deleteOperatorPortalCredentials
-                    } = require('../src/services/portal_vault_service');
+                    } = vaultSvc;
 
                     if (req.method === 'GET') {
                         const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);

@@ -184,16 +184,40 @@ async function deleteUserProfile(uid) {
     return true;
 }
 
+const KUMARAN_UID = 'z9TSOApH0Hh69Du0xPK2GDxK2kr2';
+const KNOWN_OPERATOR_NAMES = {
+    'PlzEG1ptSyQMBe2QFjf8AUS7TJr2': 'SUMAN',
+    'plzeg1ptsyqmbe2qfjf8aus7tjr2': 'SUMAN'
+};
+
+function sanitizeOperatorDisplayName(uid, displayName) {
+    const cleanUid = String(uid || '').trim();
+    if (KNOWN_OPERATOR_NAMES[cleanUid] && (!displayName || displayName === 'குமரன் இ-சேவை மையம்' || displayName === 'பயனர்' || displayName === 'மையம்')) {
+        return KNOWN_OPERATOR_NAMES[cleanUid];
+    }
+    if (cleanUid && cleanUid !== KUMARAN_UID && displayName === 'குமரன் இ-சேவை மையம்') {
+        return KNOWN_OPERATOR_NAMES[cleanUid] || 'இ-சேவை மையம்';
+    }
+    return displayName;
+}
+
 async function getUserProfile(uid) {
     if (!uid) return null;
+    let localCached = null;
     const searchDirs = isTestMode() ? [LOCAL_USERS_DIR] : [APPDATA_USERS_DIR, LOCAL_USERS_DIR];
     for (const dir of searchDirs) {
         try {
             const localFile = path.join(dir, `${uid}.json`);
             if (fs.existsSync(localFile)) {
-                return JSON.parse(fs.readFileSync(localFile, 'utf8'));
+                localCached = JSON.parse(fs.readFileSync(localFile, 'utf8'));
+                break;
             }
         } catch (_) {}
+    }
+
+    const isPollutedKumaranName = localCached && uid !== KUMARAN_UID && localCached.displayName === 'குமரன் இ-சேவை மையம்';
+    if (localCached && !isPollutedKumaranName) {
+        return localCached;
     }
 
     const firestore = getFirestoreInstance();
@@ -202,6 +226,7 @@ async function getUserProfile(uid) {
             const doc = await firestore.collection(USERS_COLLECTION).doc(uid).get();
             if (doc.exists) {
                 const data = doc.data();
+                data.displayName = sanitizeOperatorDisplayName(uid, data.displayName);
                 try {
                     if (!isTestMode()) {
                         fs.writeFileSync(path.join(APPDATA_USERS_DIR, `${uid}.json`), JSON.stringify(data, null, 2), 'utf8');
@@ -215,11 +240,17 @@ async function getUserProfile(uid) {
     } else if (!isTestMode() && process.env.DESKTOP_RUNTIME === '1') {
         const cloudData = await fetchCloudJson(`/api/auth/profile?uid=${encodeURIComponent(uid)}`);
         if (cloudData && cloudData.found && cloudData.profile) {
+            cloudData.profile.displayName = sanitizeOperatorDisplayName(uid, cloudData.profile.displayName);
             try {
                 fs.writeFileSync(path.join(APPDATA_USERS_DIR, `${uid}.json`), JSON.stringify(cloudData.profile, null, 2), 'utf8');
             } catch (_) {}
             return cloudData.profile;
         }
+    }
+
+    if (localCached) {
+        localCached.displayName = sanitizeOperatorDisplayName(uid, localCached.displayName);
+        return localCached;
     }
     return null;
 }

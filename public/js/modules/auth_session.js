@@ -38,7 +38,12 @@
                 // 1. Operators: Instant UI boot when cached operator UID exists; Firebase onAuthStateChanged verifies in background.
                 if (userRole === 'operator' || opUid) {
                     if (opUid) {
-                        const dispName = localStorage.getItem('eseva_operator_name') || localStorage.getItem('eseva_user_name') || 'குமரன் இ-சேவை மையம்';
+                        let storedOpName = localStorage.getItem('eseva_operator_name') || localStorage.getItem('eseva_user_name') || '';
+                        if (opUid !== 'z9TSOApH0Hh69Du0xPK2GDxK2kr2' && storedOpName === 'குமரன் இ-சேவை மையம்') {
+                            storedOpName = (opUid === 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2') ? 'SUMAN' : 'இ-சேவை மையம்';
+                            localStorage.setItem('eseva_operator_name', storedOpName);
+                        }
+                        const dispName = storedOpName || (opUid === 'z9TSOApH0Hh69Du0xPK2GDxK2kr2' ? 'குமரன் இ-சேவை மையம்' : 'இ-சேவை மையம்');
                         const screen = document.getElementById('authScreen');
                         if (screen) screen.style.display = 'none';
                         const badge = document.getElementById('authProfileBadge');

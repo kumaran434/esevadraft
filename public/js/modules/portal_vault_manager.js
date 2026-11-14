@@ -67,9 +67,15 @@
     }
 
     function getActiveOperatorName() {
-        return localStorage.getItem('eseva_operator_name') || 
-               localStorage.getItem('eseva_user_name') || 
-               'இ-சேவை மையம்';
+        const rawUid = localStorage.getItem('eseva_operator_uid') || '';
+        let name = localStorage.getItem('eseva_operator_name') || 
+                   localStorage.getItem('eseva_user_name') || 
+                   'இ-சேவை மையம்';
+        if (rawUid && rawUid !== 'z9TSOApH0Hh69Du0xPK2GDxK2kr2' && name === 'குமரன் இ-சேவை மையம்') {
+            name = (rawUid.toLowerCase() === 'plzeg1ptsyqmbe2qfjf8aus7tjr2') ? 'SUMAN' : 'இ-சேவை மையம்';
+            localStorage.setItem('eseva_operator_name', name);
+        }
+        return name;
     }
 
     async function fetchPortalVaultSummary() {
@@ -78,17 +84,28 @@
             const res = await fetch(`/api/operator/vault?operatorUid=${encodeURIComponent(opUid)}`, {
                 method: 'GET',
                 headers: {
-                    'x-operator-uid': toSafeHttpHeader(opUid),
-                    'x-operator-name': encodeURIComponent(getActiveOperatorName())
+                    'x-operator-uid': encodeURIComponent(String(opUid || 'admin').trim())
                 }
             });
             const data = await res.json();
-            currentVaultSummary = data;
-            return data;
+            if (data && (data.portals || data.tnega)) {
+                currentVaultSummary = data;
+                try {
+                    localStorage.setItem('eseva_vault_summary_' + opUid, JSON.stringify(data));
+                } catch (_) {}
+                return data;
+            }
         } catch (e) {
             console.error('[Portal Vault UI] Fetch error:', e);
-            return null;
         }
+        try {
+            const cached = localStorage.getItem('eseva_vault_summary_' + opUid);
+            if (cached) {
+                currentVaultSummary = JSON.parse(cached);
+                return currentVaultSummary;
+            }
+        } catch (_) {}
+        return null;
     }
 
     function renderPortalPillBadges() {
@@ -325,8 +342,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-operator-uid': toSafeHttpHeader(opUid),
-                    'x-operator-name': encodeURIComponent(opName)
+                    'x-operator-uid': encodeURIComponent(String(opUid || 'admin').trim())
                 },
                 body: JSON.stringify({
                     portal: portalKey,
@@ -348,6 +364,11 @@
 
             if (data.success) {
                 currentVaultSummary = data.vault || currentVaultSummary;
+                try {
+                    if (currentVaultSummary) {
+                        localStorage.setItem('eseva_vault_summary_' + opUid, JSON.stringify(currentVaultSummary));
+                    }
+                } catch (_) {}
                 renderPortalPillBadges();
                 onVaultPortalChange();
 

@@ -51,9 +51,15 @@
                     mob = user.email.split('@')[0];
                 }
                 if (!mob) mob = '9876543210';
-                const dispName = (role === 'operator' ? localStorage.getItem('eseva_operator_name') : localStorage.getItem('eseva_user_name'))
+                let cachedOpName = role === 'operator' ? localStorage.getItem('eseva_operator_name') : localStorage.getItem('eseva_user_name');
+                if (role === 'operator' && user.uid !== 'z9TSOApH0Hh69Du0xPK2GDxK2kr2' && cachedOpName === 'குமரன் இ-சேவை மையம்') {
+                    cachedOpName = (user.uid === 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2') ? 'SUMAN' : '';
+                    if (cachedOpName) localStorage.setItem('eseva_operator_name', cachedOpName);
+                    else localStorage.removeItem('eseva_operator_name');
+                }
+                const dispName = cachedOpName
                     || user.displayName 
-                    || (role === 'operator' ? 'இ-சேவை மையம்' : 'விண்ணப்பதாரர்');
+                    || (role === 'operator' ? (user.uid === 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2' ? 'SUMAN' : 'இ-சேவை மையம்') : 'விண்ணப்பதாரர்');
 
                 if (user.email) {
                     localStorage.setItem('eseva_last_auth_email', user.email);

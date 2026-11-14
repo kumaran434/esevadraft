@@ -19,6 +19,9 @@ const VAULT_FILE_NAME = 'operator_vault.json';
 const WORKSPACE_VAULT_PATH = path.join(__dirname, '..', '..', 'data', VAULT_FILE_NAME);
 
 function getVaultFilePath() {
+    if (process.env.NODE_ENV === 'test' || process.env.REGRESSION_TEST === 'true') {
+        return WORKSPACE_VAULT_PATH;
+    }
     let userDataDir = null;
     try {
         const { app } = require('electron');
@@ -31,8 +34,13 @@ function getVaultFilePath() {
         userDataDir = path.join(process.env.APPDATA, 'esevadraft-desktop', 'data');
     }
 
-    if (userDataDir && fs.existsSync(userDataDir)) {
-        return path.join(userDataDir, VAULT_FILE_NAME);
+    if (userDataDir) {
+        try {
+            if (!fs.existsSync(userDataDir)) {
+                fs.mkdirSync(userDataDir, { recursive: true });
+            }
+            return path.join(userDataDir, VAULT_FILE_NAME);
+        } catch (_) {}
     }
     return WORKSPACE_VAULT_PATH;
 }
@@ -97,8 +105,8 @@ function syncVaultEntryToFirestoreInBackground(opId, opEntry) {
     }
     setImmediate(async () => {
         try {
-            const { getFirestoreDb } = require('./db/firestore_client');
-            const db = getFirestoreDb ? getFirestoreDb() : null;
+            const { getFirestoreInstance, isFirestoreAvailable } = require('./db/firestore_client');
+            const db = (isFirestoreAvailable && isFirestoreAvailable() && getFirestoreInstance) ? getFirestoreInstance() : null;
             if (db) {
                 await db.collection('eseva_operator_vaults').doc(opId).set(opEntry, { merge: true });
             }
@@ -112,8 +120,8 @@ function hydrateVaultEntryFromFirestoreInBackground(opId) {
     }
     setImmediate(async () => {
         try {
-            const { getFirestoreDb } = require('./db/firestore_client');
-            const db = getFirestoreDb ? getFirestoreDb() : null;
+            const { getFirestoreInstance, isFirestoreAvailable } = require('./db/firestore_client');
+            const db = (isFirestoreAvailable && isFirestoreAvailable() && getFirestoreInstance) ? getFirestoreInstance() : null;
             if (!db) return;
             const doc = await db.collection('eseva_operator_vaults').doc(opId).get();
             if (doc && doc.exists) {
@@ -131,9 +139,13 @@ function hydrateVaultEntryFromFirestoreInBackground(opId) {
 function writeRawVault(vaultData) {
     const jsonStr = JSON.stringify(vaultData, null, 2);
     const targetPath = getVaultFilePath();
-    const allPaths = [targetPath, WORKSPACE_VAULT_PATH];
+    const allPaths = [targetPath];
+    if (WORKSPACE_VAULT_PATH !== targetPath && !WORKSPACE_VAULT_PATH.includes('app.asar')) {
+        allPaths.push(WORKSPACE_VAULT_PATH);
+    }
 
     for (const p of allPaths) {
+        if (!p || p.includes('app.asar')) continue;
         try {
             const dir = path.dirname(p);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

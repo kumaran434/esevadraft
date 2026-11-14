@@ -94,9 +94,14 @@ async function syncAssetsSilently() {
         }
 
         const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
-        const manifestUrl = `${baseUrl}/api/desktop/asset_manifest`;
-
-        const data = await fetchJson(manifestUrl);
+        let data = null;
+        try {
+            data = await fetchJson(`${baseUrl}/api/desktop/asset_manifest`);
+        } catch (_) {
+            try {
+                data = await fetchJson(`${baseUrl}/asset_manifest.json`);
+            } catch (__) {}
+        }
         if (!data || !data.success || !data.manifest) return;
 
         const manifest = data.manifest;
@@ -119,7 +124,12 @@ async function syncAssetsSilently() {
                     await downloadFile(assetUrl, targetFile);
                     updatedCount++;
                 } catch (dlErr) {
-                    // Non-blocking download failure
+                    if (!relPath.startsWith('__core__/')) {
+                        try {
+                            await downloadFile(`${baseUrl}/${encodeURI(relPath)}`, targetFile);
+                            updatedCount++;
+                        } catch (_) {}
+                    }
                 }
             }
         }
