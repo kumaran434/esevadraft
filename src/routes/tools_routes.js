@@ -176,6 +176,37 @@ async function buildCompressedPdfFromImages(imageBuffers, options = {}) {
                     });
                 }
             }
+        } else if (layoutMode === 'all_in_one_page' && processedJpegs.length >= 1) {
+            // Arrange all uploaded/cropped images neatly on a single A4 page (e.g. 5 cropped photos on 1 page)
+            const pageW = 595.28;
+            const pageH = 841.89;
+            const page = pdfDoc.addPage([pageW, pageH]);
+            const margin = 22;
+            const gap = 14;
+            const n = processedJpegs.length;
+            const cols = n <= 3 ? 1 : (n <= 6 ? 2 : 3);
+            const rows = Math.ceil(n / cols);
+            const cellW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+            const cellH = (pageH - margin * 2 - gap * (rows - 1)) / rows;
+
+            for (let idx = 0; idx < n; idx++) {
+                const item = processedJpegs[idx];
+                const col = idx % cols;
+                const row = Math.floor(idx / cols);
+                const img = await pdfDoc.embedJpg(item.buffer);
+                const scale = Math.min(cellW / item.width, cellH / item.height);
+                const w = item.width * scale;
+                const h = item.height * scale;
+                const cellX = margin + col * (cellW + gap);
+                // PDF coordinates start from bottom-left
+                const cellY = pageH - margin - (row + 1) * cellH - row * gap;
+                page.drawImage(img, {
+                    x: cellX + (cellW - w) / 2,
+                    y: cellY + (cellH - h) / 2,
+                    width: w,
+                    height: h
+                });
+            }
         } else if (layoutMode === 'fit_image') {
             for (const item of processedJpegs) {
                 const img = await pdfDoc.embedJpg(item.buffer);

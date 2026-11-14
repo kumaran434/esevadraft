@@ -587,12 +587,24 @@
     };
 
     // =========================================================================
-    // TOOL 2: TWO-WAY JPG ⇄ PDF CONVERTER (UPLOAD-PREVIEW-FIRST UI)
+    // TOOL 2: TWO-WAY JPG ⇄ PDF CONVERTER (UPLOAD-PREVIEW-FIRST UI + INLINE FREE CROP)
     // =========================================================================
     let tool2State = {
         direction: 'jpg_to_pdf',
         images: [],
-        pdfToJpgPages: []
+        pdfToJpgPages: [],
+        crop: {
+            activeIndex: -1,
+            imgElement: null,
+            rotation: 0,
+            cropBox: { x: 40, y: 25, w: 320, h: 240 },
+            isDragging: false,
+            dragMode: null,
+            startX: 0,
+            startY: 0,
+            startBox: null,
+            _lastImageBounds: null
+        }
     };
 
     window.switchTool2Direction = function (dir) {
@@ -631,7 +643,11 @@
                 tool2State.images.push({
                     name: file.name,
                     size: file.size,
-                    dataUrl: e.target.result
+                    dataUrl: e.target.result,
+                    originalDataUrl: e.target.result,
+                    isCropped: false,
+                    cropWidth: 0,
+                    cropHeight: 0
                 });
                 loaded++;
                 if (loaded === files.length) {
@@ -645,6 +661,9 @@
 
     window.removeTool2Image = function (idx) {
         tool2State.images.splice(idx, 1);
+        if (tool2State.crop.activeIndex >= tool2State.images.length) {
+            closeTool2ImageCropper();
+        }
         renderTool2ImagesList();
     };
 
@@ -654,14 +673,30 @@
         const temp = tool2State.images[idx];
         tool2State.images[idx] = tool2State.images[target];
         tool2State.images[target] = temp;
+        if (tool2State.crop.activeIndex === idx) tool2State.crop.activeIndex = target;
+        else if (tool2State.crop.activeIndex === target) tool2State.crop.activeIndex = idx;
         renderTool2ImagesList();
     };
 
     window.clearTool2Images = function () {
         tool2State.images = [];
+        closeTool2ImageCropper();
         renderTool2ImagesList();
         const res = document.getElementById('tool2JpgToPdfResult');
         if (res) res.innerHTML = '';
+    };
+
+    window.restoreTool2ImageByIndex = function (idx) {
+        const item = tool2State.images[idx];
+        if (!item || !item.originalDataUrl) return;
+        item.dataUrl = item.originalDataUrl;
+        item.isCropped = false;
+        item.cropWidth = 0;
+        item.cropHeight = 0;
+        renderTool2ImagesList();
+        if (tool2State.crop.activeIndex === idx) {
+            openTool2ImageCropper(idx);
+        }
     };
 
     function renderTool2ImagesList() {
@@ -670,7 +705,12 @@
         const grid = document.getElementById('tool2ImagesPreviewGrid');
         const countEl = document.getElementById('tool2ImagesCountBadge');
 
-        if (countEl) countEl.innerText = `${tool2State.images.length} படங்கள்`;
+        const croppedCount = tool2State.images.filter(x => x.isCropped).length;
+        if (countEl) {
+            countEl.innerText = croppedCount > 0
+                ? `${tool2State.images.length} படங்கள் (${croppedCount} கிராப் செய்யப்பட்டது ✅)`
+                : `${tool2State.images.length} படங்கள்`;
+        }
 
         if (tool2State.images.length === 0) {
             if (emptyPrompt) emptyPrompt.style.display = 'block';
@@ -684,21 +724,397 @@
         if (uploadedWrap) uploadedWrap.style.display = 'flex';
         if (!grid) return;
 
-        grid.innerHTML = tool2State.images.map((img, i) => `
-            <div style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; padding:6px; display:flex; flex-direction:column; gap:5px;">
+        grid.innerHTML = tool2State.images.map((img, i) => {
+            const isEditing = (tool2State.crop.activeIndex === i);
+            const borderColor = isEditing ? '#d97706' : (img.isCropped ? '#10b981' : '#cbd5e1');
+            return `
+            <div style="background:white; border:2px solid ${borderColor}; border-radius:9px; padding:7px; display:flex; flex-direction:column; gap:5px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="background:#ecfdf5; color:#047857; font-size:10.5px; font-weight:800; padding:1px 6px; border-radius:4px;">#${i + 1}</span>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span style="background:#ecfdf5; color:#047857; font-size:10.5px; font-weight:800; padding:1px 6px; border-radius:4px;">#${i + 1}</span>
+                        ${img.isCropped ? `<span style="background:#dcfce7; color:#15803d; font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:4px;">✂️ ${img.cropWidth}×${img.cropHeight}</span>` : ''}
+                    </div>
                     <div style="display:flex; gap:3px;">
-                        <button type="button" onclick="moveTool2Image(${i}, -1)" style="border:1px solid #cbd5e1; background:#f8fafc; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">◀</button>
-                        <button type="button" onclick="moveTool2Image(${i}, 1)" style="border:1px solid #cbd5e1; background:#f8fafc; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">▶</button>
-                        <button type="button" onclick="removeTool2Image(${i})" style="border:1px solid #fecaca; background:#fef2f2; color:#dc2626; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">✕</button>
+                        <button type="button" onclick="moveTool2Image(${i}, -1)" title="முன்னால் நகர்த்து" style="border:1px solid #cbd5e1; background:#f8fafc; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">◀</button>
+                        <button type="button" onclick="moveTool2Image(${i}, 1)" title="பின்னால் நகர்த்து" style="border:1px solid #cbd5e1; background:#f8fafc; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">▶</button>
+                        <button type="button" onclick="removeTool2Image(${i})" title="நீக்கு" style="border:1px solid #fecaca; background:#fef2f2; color:#dc2626; border-radius:4px; width:20px; height:20px; font-size:9px; cursor:pointer;">✕</button>
                     </div>
                 </div>
-                <img src="${img.dataUrl}" style="width:100%; height:110px; object-fit:contain; background:#f8fafc; border-radius:4px;">
+                <img src="${img.dataUrl}" onclick="openTool2ImageCropper(${i})" title="கிராப் செய்ய கிளிக் செய்க" style="width:100%; height:105px; object-fit:contain; background:#f8fafc; border-radius:5px; cursor:pointer; border:1px solid #e2e8f0;">
                 <div style="font-size:10.5px; font-weight:700; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${img.name}</div>
+                <div style="display:flex; gap:4px;">
+                    <button type="button" onclick="openTool2ImageCropper(${i})" style="flex:1; height:27px; background:${img.isCropped ? '#ecfdf5' : '#fffbeb'}; color:${img.isCropped ? '#047857' : '#b45309'}; border:1.5px solid ${img.isCropped ? '#6ee7b7' : '#fcd34d'}; border-radius:6px; font-size:11px; font-weight:800; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px;">
+                        <i class="fa-solid fa-crop-simple"></i> ${img.isCropped ? 'மீண்டும் கிராப்' : '✂️ கிராப் செய்'}
+                    </button>
+                    ${img.isCropped ? `<button type="button" onclick="restoreTool2ImageByIndex(${i})" title="அசல் படம் மீட்டமை" style="width:27px; height:27px; background:#f8fafc; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:11px; cursor:pointer;">↺</button>` : ''}
+                </div>
             </div>
-        `).join('');
+        `}).join('');
     }
+
+    function renderTool2CropHeaderPills() {
+        const pillsWrap = document.getElementById('tool2CropImagePills');
+        const titleEl = document.getElementById('tool2CropHeaderTitle');
+        const nextBtn = document.getElementById('btnTool2CropAndNext');
+        const idx = tool2State.crop.activeIndex;
+        const total = tool2State.images.length;
+
+        if (titleEl && idx >= 0 && idx < total) {
+            titleEl.innerText = `✂️ படம் #${idx + 1} / ${total} கிராப் செய்க (Free Crop): ${tool2State.images[idx].name}`;
+        }
+        if (nextBtn) {
+            if (total > 1 && idx < total - 1) {
+                nextBtn.style.display = 'inline-flex';
+                nextBtn.innerHTML = `<i class="fa-solid fa-forward-step"></i> ✅ சேமி & அடுத்த படம் (#${idx + 2}) ➔`;
+            } else if (total > 1 && idx === total - 1) {
+                nextBtn.style.display = 'inline-flex';
+                nextBtn.innerHTML = `<i class="fa-solid fa-check-double"></i> ✅ சேமி & முடி (Finish All)`;
+            } else {
+                nextBtn.style.display = 'none';
+            }
+        }
+        if (!pillsWrap) return;
+        pillsWrap.innerHTML = tool2State.images.map((item, i) => {
+            const active = (i === idx);
+            return `<button type="button" onclick="openTool2ImageCropper(${i})" style="height:26px; padding:0 9px; border-radius:6px; border:1.5px solid ${active ? '#d97706' : (item.isCropped ? '#10b981' : '#cbd5e1')}; background:${active ? '#f59e0b' : (item.isCropped ? '#ecfdf5' : '#f8fafc')}; color:${active ? '#ffffff' : (item.isCropped ? '#065f46' : '#334155')}; font-size:11px; font-weight:800; cursor:pointer;">
+                #${i + 1} ${item.isCropped ? '✓' : ''}
+            </button>`;
+        }).join('');
+    }
+
+    window.openTool2ImageCropper = function (idx) {
+        if (!tool2State.images.length) return;
+        const safeIdx = Math.max(0, Math.min(tool2State.images.length - 1, Number(idx) || 0));
+        const item = tool2State.images[safeIdx];
+        if (!item) return;
+
+        tool2State.crop.activeIndex = safeIdx;
+        const wrap = document.getElementById('tool2InlineCropWrap');
+        if (wrap) wrap.style.display = 'flex';
+
+        const img = new Image();
+        img.onload = () => {
+            tool2State.crop.imgElement = img;
+            tool2State.crop.rotation = 0;
+            initTool2CropCanvasEvents();
+            resetTool2CropBoxInternal();
+            drawTool2CropStage();
+            renderTool2CropHeaderPills();
+            renderTool2ImagesList();
+            if (wrap && typeof wrap.scrollIntoView === 'function') {
+                wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+        img.src = item.dataUrl;
+    };
+
+    window.closeTool2ImageCropper = function () {
+        tool2State.crop.activeIndex = -1;
+        tool2State.crop.imgElement = null;
+        const wrap = document.getElementById('tool2InlineCropWrap');
+        if (wrap) wrap.style.display = 'none';
+        renderTool2ImagesList();
+    };
+
+    window.rotateTool2CropPhoto = function (deg) {
+        if (!tool2State.crop.imgElement) return;
+        tool2State.crop.rotation = (tool2State.crop.rotation + deg + 360) % 360;
+        resetTool2CropBoxInternal();
+        drawTool2CropStage();
+    };
+
+    window.resetTool2CropBox = function () {
+        if (!tool2State.crop.imgElement) return;
+        resetTool2CropBoxInternal();
+        drawTool2CropStage();
+    };
+
+    window.restoreTool2ActiveOriginal = function () {
+        const idx = tool2State.crop.activeIndex;
+        if (idx < 0 || idx >= tool2State.images.length) return;
+        restoreTool2ImageByIndex(idx);
+    };
+
+    function resetTool2CropBoxInternal() {
+        const canvas = document.getElementById('tool2CropCanvas');
+        const img = tool2State.crop.imgElement;
+        if (!canvas || !img) return;
+        const bounds = getRotatedImageDrawBounds(canvas, img, tool2State.crop.rotation);
+        const padX = Math.max(8, Math.round(bounds.dw * 0.06));
+        const padY = Math.max(8, Math.round(bounds.dh * 0.06));
+        tool2State.crop.cropBox = {
+            x: Math.round(bounds.dx + padX),
+            y: Math.round(bounds.dy + padY),
+            w: Math.max(40, Math.round(bounds.dw - padX * 2)),
+            h: Math.max(40, Math.round(bounds.dh - padY * 2))
+        };
+    }
+
+    function drawTool2CropStage() {
+        const canvas = document.getElementById('tool2CropCanvas');
+        const img = tool2State.crop.imgElement;
+        if (!canvas || !img) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const rot = tool2State.crop.rotation;
+        const { dx, dy, dw, dh } = getRotatedImageDrawBounds(canvas, img, rot);
+
+        const off = document.createElement('canvas');
+        off.width = canvas.width;
+        off.height = canvas.height;
+        const octx = off.getContext('2d');
+        octx.save();
+        octx.translate(canvas.width / 2, canvas.height / 2);
+        octx.rotate((rot * Math.PI) / 180);
+        if (rot === 90 || rot === 270) {
+            octx.drawImage(img, -dh / 2, -dw / 2, dh, dw);
+        } else {
+            octx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        }
+        octx.restore();
+        tool2State.crop._lastImageBounds = { dx, dy, dw, dh };
+
+        // Dimmed outside cropBox
+        ctx.drawImage(off, 0, 0);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.62)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Bright inside cropBox
+        const { x, y, w, h } = tool2State.crop.cropBox;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+        ctx.drawImage(off, 0, 0);
+        ctx.restore();
+
+        // Border & Rule-of-Thirds Grid
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + w / 3, y); ctx.lineTo(x + w / 3, y + h);
+        ctx.moveTo(x + (2 * w) / 3, y); ctx.lineTo(x + (2 * w) / 3, y + h);
+        ctx.moveTo(x, y + h / 3); ctx.lineTo(x + w, y + h / 3);
+        ctx.moveTo(x, y + (2 * h) / 3); ctx.lineTo(x + w, y + (2 * h) / 3);
+        ctx.stroke();
+
+        // 8 Interactive Handles (4 corners + 4 edges) for effortless Free Crop
+        const hs = 10;
+        ctx.fillStyle = '#10b981';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        const handles = [
+            [x, y], [x + w / 2, y], [x + w, y],
+            [x, y + h / 2], [x + w, y + h / 2],
+            [x, y + h], [x + w / 2, y + h], [x + w, y + h]
+        ];
+        handles.forEach(([hx, hy]) => {
+            ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+            ctx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+        });
+
+        // Update live pixel dimensions badge
+        const dimBadge = document.getElementById('tool2CropDimBadge');
+        if (dimBadge && dw > 0 && dh > 0) {
+            const isSwap = (rot === 90 || rot === 270);
+            const fullW = isSwap ? img.height : img.width;
+            const fullH = isSwap ? img.width : img.height;
+            const realW = Math.max(20, Math.round((w / dw) * fullW));
+            const realH = Math.max(20, Math.round((h / dh) * fullH));
+            dimBadge.innerText = `📐 Free Crop: ${realW} × ${realH} px`;
+        }
+    }
+
+    function initTool2CropCanvasEvents() {
+        const canvas = document.getElementById('tool2CropCanvas');
+        if (!canvas || canvas.__tool2CropBound) return;
+        canvas.__tool2CropBound = true;
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: (clientX - rect.left) * (canvas.width / rect.width),
+                y: (clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        function onDown(e) {
+            if (!tool2State.crop.imgElement) return;
+            const pos = getPos(e);
+            const b = tool2State.crop.cropBox;
+            const zone = detectCropHitZone(pos, b);
+
+            if (zone) {
+                tool2State.crop.dragMode = zone;
+            } else {
+                // Allow clicking & dragging anywhere outside the box to draw a brand-new Free Crop box!
+                tool2State.crop.dragMode = 'draw_new';
+                b.x = Math.max(0, Math.min(canvas.width - 20, Math.round(pos.x)));
+                b.y = Math.max(0, Math.min(canvas.height - 20, Math.round(pos.y)));
+                b.w = 24;
+                b.h = 24;
+            }
+
+            tool2State.crop.isDragging = true;
+            tool2State.crop.startX = pos.x;
+            tool2State.crop.startY = pos.y;
+            tool2State.crop.startBox = { ...b };
+            e.preventDefault();
+            drawTool2CropStage();
+        }
+
+        function onMove(e) {
+            if (!tool2State.crop.imgElement) return;
+            const pos = getPos(e);
+
+            if (!tool2State.crop.isDragging) {
+                const zone = detectCropHitZone(pos, tool2State.crop.cropBox);
+                const cursorMap = {
+                    nw: 'nwse-resize', se: 'nwse-resize',
+                    ne: 'nesw-resize', sw: 'nesw-resize',
+                    n: 'ns-resize', s: 'ns-resize',
+                    w: 'ew-resize', e: 'ew-resize',
+                    move: 'move'
+                };
+                canvas.style.cursor = cursorMap[zone] || 'crosshair';
+                return;
+            }
+
+            const dx = pos.x - tool2State.crop.startX;
+            const dy = pos.y - tool2State.crop.startY;
+            const sb = tool2State.crop.startBox;
+            const b = tool2State.crop.cropBox;
+            const minSize = 24;
+            const mode = tool2State.crop.dragMode;
+
+            if (mode === 'move') {
+                b.x = Math.round(Math.max(0, Math.min(canvas.width - b.w, sb.x + dx)));
+                b.y = Math.round(Math.max(0, Math.min(canvas.height - b.h, sb.y + dy)));
+            } else if (mode === 'draw_new') {
+                const x1 = Math.max(0, Math.min(canvas.width, Math.min(tool2State.crop.startX, pos.x)));
+                const y1 = Math.max(0, Math.min(canvas.height, Math.min(tool2State.crop.startY, pos.y)));
+                const x2 = Math.max(0, Math.min(canvas.width, Math.max(tool2State.crop.startX, pos.x)));
+                const y2 = Math.max(0, Math.min(canvas.height, Math.max(tool2State.crop.startY, pos.y)));
+                b.x = Math.round(x1);
+                b.y = Math.round(y1);
+                b.w = Math.max(minSize, Math.round(x2 - x1));
+                b.h = Math.max(minSize, Math.round(y2 - y1));
+            } else {
+                let nx = sb.x;
+                let ny = sb.y;
+                let nw = sb.w;
+                let nh = sb.h;
+
+                if (mode.includes('e')) nw = Math.max(minSize, Math.min(canvas.width - sb.x, sb.w + dx));
+                if (mode.includes('s')) nh = Math.max(minSize, Math.min(canvas.height - sb.y, sb.h + dy));
+                if (mode.includes('w')) {
+                    const maxDx = sb.w - minSize;
+                    const clampedDx = Math.max(-sb.x, Math.min(maxDx, dx));
+                    nx = sb.x + clampedDx;
+                    nw = sb.w - clampedDx;
+                }
+                if (mode.includes('n')) {
+                    const maxDy = sb.h - minSize;
+                    const clampedDy = Math.max(-sb.y, Math.min(maxDy, dy));
+                    ny = sb.y + clampedDy;
+                    nh = sb.h - clampedDy;
+                }
+
+                b.x = Math.round(nx);
+                b.y = Math.round(ny);
+                b.w = Math.round(nw);
+                b.h = Math.round(nh);
+            }
+
+            drawTool2CropStage();
+        }
+
+        function onUp() {
+            tool2State.crop.isDragging = false;
+            tool2State.crop.dragMode = null;
+        }
+
+        canvas.addEventListener('mousedown', onDown);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        canvas.addEventListener('touchstart', onDown, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+    }
+
+    window.applyTool2ImageCrop = function (goNext = false) {
+        const idx = tool2State.crop.activeIndex;
+        const img = tool2State.crop.imgElement;
+        const bounds = tool2State.crop._lastImageBounds;
+        if (idx < 0 || idx >= tool2State.images.length || !img || !bounds) return;
+
+        const rot = tool2State.crop.rotation;
+        const b = tool2State.crop.cropBox;
+        const isSwap = (rot === 90 || rot === 270);
+        const fullW = isSwap ? img.height : img.width;
+        const fullH = isSwap ? img.width : img.height;
+
+        const fullOff = document.createElement('canvas');
+        fullOff.width = fullW;
+        fullOff.height = fullH;
+        const fctx = fullOff.getContext('2d');
+        fctx.fillStyle = '#ffffff';
+        fctx.fillRect(0, 0, fullW, fullH);
+        fctx.save();
+        fctx.translate(fullW / 2, fullH / 2);
+        fctx.rotate((rot * Math.PI) / 180);
+        fctx.drawImage(img, -img.width / 2, -img.height / 2);
+        fctx.restore();
+
+        const scaleX = fullW / bounds.dw;
+        const scaleY = fullH / bounds.dh;
+        const sx = Math.max(0, (b.x - bounds.dx) * scaleX);
+        const sy = Math.max(0, (b.y - bounds.dy) * scaleY);
+        const sw = Math.max(20, Math.min(fullW - sx, b.w * scaleX));
+        const sh = Math.max(20, Math.min(fullH - sy, b.h * scaleY));
+
+        const croppedCanvas = document.createElement('canvas');
+        croppedCanvas.width = Math.max(20, Math.round(sw));
+        croppedCanvas.height = Math.max(20, Math.round(sh));
+        const cctx = croppedCanvas.getContext('2d');
+        cctx.fillStyle = '#ffffff';
+        cctx.fillRect(0, 0, croppedCanvas.width, croppedCanvas.height);
+        cctx.drawImage(fullOff, sx, sy, sw, sh, 0, 0, croppedCanvas.width, croppedCanvas.height);
+
+        const croppedDataUrl = croppedCanvas.toDataURL('image/jpeg', 0.94);
+        tool2State.images[idx].dataUrl = croppedDataUrl;
+        tool2State.images[idx].isCropped = true;
+        tool2State.images[idx].cropWidth = croppedCanvas.width;
+        tool2State.images[idx].cropHeight = croppedCanvas.height;
+
+        if (typeof showInAppToast === 'function') {
+            showInAppToast(`✅ படம் #${idx + 1} கிராப் செய்யப்பட்டது (${croppedCanvas.width}×${croppedCanvas.height} px)`);
+        }
+
+        if (goNext) {
+            if (idx + 1 < tool2State.images.length) {
+                openTool2ImageCropper(idx + 1);
+                return;
+            } else {
+                closeTool2ImageCropper();
+                return;
+            }
+        }
+
+        renderTool2ImagesList();
+        renderTool2CropHeaderPills();
+        openTool2ImageCropper(idx);
+    };
 
     window.runTool2JpgToPdf = async function () {
         if (tool2State.images.length === 0) {

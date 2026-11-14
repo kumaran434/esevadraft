@@ -1522,9 +1522,15 @@
 
                                 <!-- Uploaded Images Live View inside the same box -->
                                 <div id="tool2JpgUploadedWrap" style="display: none; flex-direction: column; gap: 10px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span id="tool2ImagesCountBadge" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800;">0 படங்கள்</span>
-                                        <div style="display: flex; gap: 6px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                            <span id="tool2ImagesCountBadge" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800;">0 படங்கள்</span>
+                                            <span style="font-size: 11px; color: #047857; font-weight: 700;">💡 ஒவ்வொரு படத்திலும் <b>✂️ கிராப் (Free Crop)</b> செய்து தேவையான பகுதியை மட்டும் PDF ஆக்கலாம்</span>
+                                        </div>
+                                        <div style="display: flex; gap: 6px; align-items: center;">
+                                            <button type="button" onclick="openTool2ImageCropper(0)" style="height: 30px; padding: 0 12px; background: #d97706; color: white; border: none; border-radius: 6px; font-size: 11.5px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                                <i class="fa-solid fa-crop-simple"></i> ✂️ படங்களை வரிசையாக கிராப் செய் (Free Crop)
+                                            </button>
                                             <button type="button" onclick="document.getElementById('tool2ImagesInput').click()" style="height: 30px; padding: 0 12px; background: #059669; color: white; border: none; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">
                                                 <i class="fa-solid fa-plus"></i> மேலும் சேர்
                                             </button>
@@ -1533,7 +1539,59 @@
                                             </button>
                                         </div>
                                     </div>
-                                    <div id="tool2ImagesPreviewGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 10px; max-height: 240px; overflow-y: auto;"></div>
+                                    <div id="tool2ImagesPreviewGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 270px; overflow-y: auto; padding: 2px;"></div>
+
+                                    <!-- INLINE INTERACTIVE FREE-CROP STAGE FOR JPG-TO-PDF -->
+                                    <div id="tool2InlineCropWrap" style="display: none; flex-direction: column; gap: 10px; background: #ffffff; border: 2px solid #f59e0b; border-radius: 12px; padding: 12px; margin-top: 4px; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                <span id="tool2CropHeaderTitle" style="font-size: 13px; font-weight: 800; color: #b45309;">
+                                                    ✂️ படம் #1 கிராப் செய்க (Free Crop)
+                                                </span>
+                                                <span id="tool2CropDimBadge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800;">Free Crop</span>
+                                            </div>
+                                            <!-- Quick Image Switcher Pills (#1, #2, #3...) -->
+                                            <div id="tool2CropImagePills" style="display: flex; gap: 4px; flex-wrap: wrap;"></div>
+                                        </div>
+
+                                        <!-- Rotate / Reset / Restore Toolbar + Interactive Canvas -->
+                                        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                                            <div style="display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap;">
+                                                <button type="button" onclick="rotateTool2CropPhoto(-90)" title="இடதுபுறம் சுழற்று (Rotate Left)" style="height: 32px; padding: 0 10px; border-radius: 7px; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #334155; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                                    <i class="fa-solid fa-rotate-left"></i> இடது சுழற்று
+                                                </button>
+                                                <button type="button" onclick="rotateTool2CropPhoto(90)" title="வலதுபுறம் சுழற்று (Rotate Right)" style="height: 32px; padding: 0 10px; border-radius: 7px; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #334155; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                                    <i class="fa-solid fa-rotate-right"></i> வலது சுழற்று
+                                                </button>
+                                                <button type="button" onclick="resetTool2CropBox()" title="முழுப் படத்தையும் தேர்ந்தெடு (Select Full Area)" style="height: 32px; padding: 0 10px; border-radius: 7px; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #334155; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                                    <i class="fa-solid fa-expand"></i> முழு அளவு
+                                                </button>
+                                                <button type="button" onclick="restoreTool2ActiveOriginal()" title="கிராப் நீக்கி அசல் படத்தை மீட்டமை (Restore Original)" style="height: 32px; padding: 0 10px; border-radius: 7px; background: #fffbeb; border: 1.5px solid #fcd34d; color: #b45309; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                                    <i class="fa-solid fa-arrow-rotate-left"></i> அசல் படம்
+                                                </button>
+                                            </div>
+
+                                            <canvas id="tool2CropCanvas" width="540" height="340" style="width: 100%; max-width: 540px; height: auto; border-radius: 10px; border: 2px solid #334155; background: #0f172a; touch-action: none; cursor: crosshair;"></canvas>
+                                            <div style="font-size: 11px; color: #64748b; text-align: center;">
+                                                🖱️ பச்சைக் கட்டத்தின் மூலைகள் அல்லது ஓரங்களை மவுஸால் இழுத்து (Free Crop) தேவையான அளவுக்கு சுருக்கிக்கொள்ளவும்.
+                                            </div>
+                                        </div>
+
+                                        <!-- Crop Save & Next Action Bar -->
+                                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 8px;">
+                                            <button type="button" onclick="closeTool2ImageCropper()" style="height: 34px; padding: 0 14px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                                                ✕ மூடு (Close)
+                                            </button>
+                                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                                <button type="button" onclick="applyTool2ImageCrop(false)" style="height: 34px; padding: 0 16px; background: #059669; color: white; border: none; border-radius: 7px; font-size: 12px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                                                    <i class="fa-solid fa-check"></i> ✅ இந்தப் படத்தை கிராப் செய் (Save Crop)
+                                                </button>
+                                                <button type="button" id="btnTool2CropAndNext" onclick="applyTool2ImageCrop(true)" style="height: 34px; padding: 0 16px; background: #2563eb; color: white; border: none; border-radius: 7px; font-size: 12px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                                                    <i class="fa-solid fa-forward-step"></i> ✅ சேமி & அடுத்த படம் ➔ (Crop & Next)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1542,8 +1600,9 @@
                                 <select id="tool2LayoutSelect" style="flex: 1.2; min-width: 190px; height: 36px; padding: 0 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; background: white;">
                                     <option value="two_in_one_vertical">🪪 1 பக்கத்தில் 2 படம் (மேல்-கீழ் / 2-in-1)</option>
                                     <option value="two_in_one_horizontal">🪪 1 பக்கத்தில் 2 படம் (பக்கவாட்டில்)</option>
-                                    <option value="multi_page">📄 தனித்தனி A4 பக்கங்கள்</option>
-                                    <option value="fit_image">🖼️ படத்தின் அசல் அளவு</option>
+                                    <option value="all_in_one_page">🧩 1 பக்கத்தில் அனைத்துப் படங்களும் (All in 1 Page)</option>
+                                    <option value="multi_page">📄 தனித்தனி A4 பக்கங்கள் (1 Per Page)</option>
+                                    <option value="fit_image">🖼️ கிராப் செய்த அசல் அளவு (Fit Cropped Size)</option>
                                 </select>
                                 <select id="tool2TargetKbSelect" style="flex: 1; min-width: 140px; height: 36px; padding: 0 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; background: white;">
                                     <option value="100">&lt; 100 KB (TNPDS)</option>
