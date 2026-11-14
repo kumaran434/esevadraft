@@ -2071,6 +2071,585 @@
                 emptyHint.style.display = 'block';
             }
         }
+
+        if (dataUrl) {
+            const sImg = new Image();
+            sImg.onload = () => {
+                tool4State.sigImgObj = sImg;
+                if (tool4State.docPages && tool4State.docPages.length > 0) {
+                    const activePg = tool4State.docPages[tool4State.activePageIndex || 0];
+                    if (activePg) {
+                        if (!activePg.placements || activePg.placements.length === 0) {
+                            ensureDefaultPlacementOnPage(activePg);
+                        } else {
+                            const selIdx = activePg.selectedPlacementIdx >= 0 ? activePg.selectedPlacementIdx : 0;
+                            if (activePg.placements[selIdx]) {
+                                activePg.placements[selIdx].sigDataUrl = dataUrl;
+                                activePg.placements[selIdx].sigImg = sImg;
+                            }
+                        }
+                    }
+                    drawTool4DocSignStage();
+                }
+            };
+            sImg.src = dataUrl;
+        } else {
+            tool4State.sigImgObj = null;
+            if (tool4State.docPages && tool4State.docPages.length > 0) {
+                drawTool4DocSignStage();
+            }
+        }
     }
+
+    // =========================================================================
+    // TOOL 4 PART B: DOCUMENT UPLOAD, INTERACTIVE SIGNATURE PLACEMENT & FULL DOWNLOAD
+    // =========================================================================
+    tool4State.docFileName = 'Signed_Document';
+    tool4State.docPages = [];
+    tool4State.activePageIndex = 0;
+    tool4State.sigImgObj = null;
+    tool4State.docDrag = {
+        isDragging: false,
+        mode: null,
+        startX: 0,
+        startY: 0,
+        startBox: null
+    };
+
+    function ensureDefaultPlacementOnPage(pageObj) {
+        if (!pageObj) return;
+        if (!pageObj.placements) pageObj.placements = [];
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        const cw = (canvas && canvas.width) || 640;
+        const ch = (canvas && canvas.height) || 860;
+        const defaultW = 160;
+        const defaultH = 65;
+        const newPlacement = {
+            x: Math.max(20, Math.round(cw - defaultW - 45)),
+            y: Math.max(20, Math.round(ch - defaultH - 55)),
+            w: defaultW,
+            h: defaultH,
+            sigDataUrl: tool4State.activeSignatureDataUrl || null,
+            sigImg: tool4State.sigImgObj || null
+        };
+        pageObj.placements.push(newPlacement);
+        pageObj.selectedPlacementIdx = pageObj.placements.length - 1;
+        const slider = document.getElementById('tool4SigScaleSlider');
+        if (slider) slider.value = defaultW;
+    }
+
+    window.handleTool4DocSignSelected = async function (inputOrFile) {
+        ensurePdfJsWorker();
+        const file = inputOrFile instanceof File ? inputOrFile : (inputOrFile && inputOrFile.files && inputOrFile.files[0]);
+        if (!file) return;
+
+        const emptyPrompt = document.getElementById('tool4DocEmptyPrompt');
+        const stageWrap = document.getElementById('tool4DocSignStageWrap');
+        const changeBtn = document.getElementById('btnTool4ChangeDoc');
+        const nameBadge = document.getElementById('tool4DocFileNameBadge');
+        const copyAllBtn = document.getElementById('btnTool4CopySigAllPages');
+        const resBox = document.getElementById('tool4SignedDocResult');
+
+        tool4State.docFileName = file.name.replace(/\.(pdf|jpg|jpeg|png|webp)$/i, '') || 'Document';
+        tool4State.docPages = [];
+        tool4State.activePageIndex = 0;
+        if (resBox) resBox.innerHTML = '';
+
+        // If user hasn't created a signature yet in Step 1, auto-generate a default typed signature or prompt gently
+        if (!tool4State.activeSignatureDataUrl) {
+            const typeInput = document.getElementById('tool4TypeSigInput');
+            const fallbackName = (typeInput && typeInput.value.trim()) || '';
+            if (fallbackName) {
+                const st = TYPED_SIGNATURE_STYLES[tool4State.selectedTypedStyleIdx || 0];
+                const autoUrl = createTypedSignatureDataUrl(fallbackName, st.font, tool4State.penColor);
+                tool4State.activeSignatureDataUrl = autoUrl;
+                updateActiveSignaturePreview(autoUrl);
+            }
+        }
+
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+
+        try {
+            if (isPdf) {
+                if (!window.pdfjsLib) throw new Error('PDF.js தயாராகவில்லை.');
+                const arrayBuf = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const page = await pdf.getPage(p);
+                    const vp = page.getViewport({ scale: 2.0 });
+                    const c = document.createElement('canvas');
+                    c.width = Math.round(vp.width);
+                    c.height = Math.round(vp.height);
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, c.width, c.height);
+                    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                    const dataUrl = c.toDataURL('image/jpeg', 0.92);
+                    const pImg = new Image();
+                    await new Promise((r) => { pImg.onload = r; pImg.src = dataUrl; });
+                    tool4State.docPages.push({
+                        pageNum: p,
+                        imgElement: pImg,
+                        dataUrl,
+                        width: c.width,
+                        height: c.height,
+                        placements: [],
+                        selectedPlacementIdx: -1
+                    });
+                }
+            } else {
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+                const pImg = new Image();
+                await new Promise((r) => { pImg.onload = r; pImg.src = dataUrl; });
+                tool4State.docPages.push({
+                    pageNum: 1,
+                    imgElement: pImg,
+                    dataUrl,
+                    width: pImg.width,
+                    height: pImg.height,
+                    placements: [],
+                    selectedPlacementIdx: -1
+                });
+            }
+
+            if (emptyPrompt) emptyPrompt.style.display = 'none';
+            if (stageWrap) stageWrap.style.display = 'flex';
+            if (changeBtn) changeBtn.style.display = 'inline-flex';
+            if (nameBadge) {
+                nameBadge.innerText = `📄 ${file.name} (${tool4State.docPages.length} பக்கம்)`;
+            }
+            if (copyAllBtn) {
+                copyAllBtn.style.display = tool4State.docPages.length > 1 ? 'inline-flex' : 'none';
+            }
+
+            initTool4DocSignCanvasEvents();
+            selectTool4DocPage(0);
+        } catch (err) {
+            console.error('Document sign load error:', err);
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ ஆவணத்தை ஏற்றுவதில் பிழை: ' + err.message, 'error');
+        }
+        if (inputOrFile && !(inputOrFile instanceof File)) {
+            inputOrFile.value = '';
+        }
+    };
+
+    window.selectTool4DocPage = function (pageIdx) {
+        if (!tool4State.docPages.length) return;
+        const idx = Math.max(0, Math.min(tool4State.docPages.length - 1, Number(pageIdx) || 0));
+        tool4State.activePageIndex = idx;
+        const pageObj = tool4State.docPages[idx];
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        if (canvas && pageObj && pageObj.imgElement) {
+            const aspect = pageObj.width / pageObj.height;
+            if (aspect > 1.1) {
+                canvas.width = 760;
+                canvas.height = Math.round(760 / aspect);
+            } else {
+                canvas.width = 640;
+                canvas.height = Math.round(640 / aspect);
+            }
+        }
+        if (pageObj && (!pageObj.placements || pageObj.placements.length === 0)) {
+            ensureDefaultPlacementOnPage(pageObj);
+        }
+        renderTool4DocPagePills();
+        drawTool4DocSignStage();
+    };
+
+    function renderTool4DocPagePills() {
+        const wrap = document.getElementById('tool4DocPagePills');
+        if (!wrap) return;
+        if (tool4State.docPages.length <= 1) {
+            wrap.innerHTML = '';
+            return;
+        }
+        wrap.innerHTML = tool4State.docPages.map((pg, i) => {
+            const active = (i === tool4State.activePageIndex);
+            const hasSig = pg.placements && pg.placements.length > 0;
+            return `<button type="button" onclick="selectTool4DocPage(${i})" style="height:26px; padding:0 9px; border-radius:6px; border:1.5px solid ${active ? '#7e22ce' : (hasSig ? '#10b981' : '#cbd5e1')}; background:${active ? '#7e22ce' : (hasSig ? '#ecfdf5' : '#f8fafc')}; color:${active ? '#ffffff' : (hasSig ? '#065f46' : '#334155')}; font-size:11px; font-weight:800; cursor:pointer;">
+                பக்கம் ${i + 1} ${hasSig ? '✍️' : ''}
+            </button>`;
+        }).join('');
+    }
+
+    window.resizeTool4PlacedSignature = function (newWidthVal) {
+        const pageObj = tool4State.docPages[tool4State.activePageIndex];
+        if (!pageObj || !pageObj.placements || !pageObj.placements.length) return;
+        const selIdx = pageObj.selectedPlacementIdx >= 0 ? pageObj.selectedPlacementIdx : 0;
+        const pl = pageObj.placements[selIdx];
+        if (!pl) return;
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        const ratio = (pl.h && pl.w) ? (pl.h / pl.w) : 0.4;
+        const nw = Math.max(40, Math.min((canvas ? canvas.width : 640) - 10, Number(newWidthVal) || 150));
+        const nh = Math.max(20, Math.round(nw * ratio));
+        pl.w = nw;
+        pl.h = nh;
+        if (canvas) {
+            if (pl.x + pl.w > canvas.width) pl.x = Math.max(0, canvas.width - pl.w);
+            if (pl.y + pl.h > canvas.height) pl.y = Math.max(0, canvas.height - pl.h);
+        }
+        drawTool4DocSignStage();
+    };
+
+    window.addAnotherTool4SignatureOnPage = function () {
+        const pageObj = tool4State.docPages[tool4State.activePageIndex];
+        if (!pageObj) return;
+        if (!tool4State.activeSignatureDataUrl) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் படி 1-ல் கையொப்பம் வரையவும் அல்லது அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+        if (!pageObj.placements) pageObj.placements = [];
+        const offset = (pageObj.placements.length * 24) % 140;
+        pageObj.placements.push({
+            x: 80 + offset,
+            y: 120 + offset,
+            w: 155,
+            h: 62,
+            sigDataUrl: tool4State.activeSignatureDataUrl,
+            sigImg: tool4State.sigImgObj
+        });
+        pageObj.selectedPlacementIdx = pageObj.placements.length - 1;
+        drawTool4DocSignStage();
+        renderTool4DocPagePills();
+    };
+
+    window.removeSelectedTool4SignatureFromPage = function () {
+        const pageObj = tool4State.docPages[tool4State.activePageIndex];
+        if (!pageObj || !pageObj.placements || !pageObj.placements.length) return;
+        const selIdx = pageObj.selectedPlacementIdx >= 0 ? pageObj.selectedPlacementIdx : (pageObj.placements.length - 1);
+        pageObj.placements.splice(selIdx, 1);
+        pageObj.selectedPlacementIdx = pageObj.placements.length - 1;
+        drawTool4DocSignStage();
+        renderTool4DocPagePills();
+    };
+
+    window.applyTool4SignatureToAllPages = function () {
+        const activePg = tool4State.docPages[tool4State.activePageIndex];
+        if (!activePg || !activePg.placements || !activePg.placements.length) return;
+        const templatePlacements = activePg.placements.map(p => ({ ...p }));
+        tool4State.docPages.forEach((pg, idx) => {
+            if (idx !== tool4State.activePageIndex) {
+                pg.placements = templatePlacements.map(p => ({ ...p }));
+                pg.selectedPlacementIdx = pg.placements.length - 1;
+            }
+        });
+        renderTool4DocPagePills();
+        if (typeof showInAppToast === 'function') {
+            showInAppToast(`✅ அனைத்து ${tool4State.docPages.length} பக்கங்களிலும் கையொப்பம் பொருத்தப்பட்டது!`);
+        }
+    };
+
+    function drawTool4DocSignStage(hideGuides = false) {
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        const pageObj = tool4State.docPages[tool4State.activePageIndex];
+        if (!canvas || !pageObj || !pageObj.imgElement) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(pageObj.imgElement, 0, 0, canvas.width, canvas.height);
+
+        const placements = pageObj.placements || [];
+        placements.forEach((pl, idx) => {
+            const sigImg = pl.sigImg || tool4State.sigImgObj;
+            if (sigImg) {
+                ctx.drawImage(sigImg, pl.x, pl.y, pl.w, pl.h);
+            } else if (!hideGuides) {
+                ctx.fillStyle = 'rgba(126, 34, 206, 0.08)';
+                ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+                ctx.fillStyle = '#7e22ce';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('✍️ கையொப்பம் இங்கே (படி 1-ல் வரைக)', pl.x + pl.w / 2, pl.y + pl.h / 2 + 4);
+            }
+
+            if (!hideGuides) {
+                const isSelected = (idx === pageObj.selectedPlacementIdx || placements.length === 1);
+                ctx.save();
+                ctx.strokeStyle = isSelected ? '#7e22ce' : '#10b981';
+                ctx.lineWidth = isSelected ? 2 : 1.5;
+                ctx.setLineDash([5, 3]);
+                ctx.strokeRect(pl.x, pl.y, pl.w, pl.h);
+                ctx.restore();
+
+                if (isSelected) {
+                    const hs = 9;
+                    ctx.fillStyle = '#7e22ce';
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    const handles = [
+                        [pl.x, pl.y], [pl.x + pl.w / 2, pl.y], [pl.x + pl.w, pl.y],
+                        [pl.x, pl.y + pl.h / 2], [pl.x + pl.w, pl.y + pl.h / 2],
+                        [pl.x, pl.y + pl.h], [pl.x + pl.w / 2, pl.y + pl.h], [pl.x + pl.w, pl.y + pl.h]
+                    ];
+                    handles.forEach(([hx, hy]) => {
+                        ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+                        ctx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+                    });
+                }
+            }
+        });
+    }
+
+    function initTool4DocSignCanvasEvents() {
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        if (!canvas || canvas.__tool4DocSignBound) return;
+        canvas.__tool4DocSignBound = true;
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: (clientX - rect.left) * (canvas.width / rect.width),
+                y: (clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        function onDown(e) {
+            const pageObj = tool4State.docPages[tool4State.activePageIndex];
+            if (!pageObj) return;
+            if (!pageObj.placements || pageObj.placements.length === 0) {
+                ensureDefaultPlacementOnPage(pageObj);
+            }
+            const pos = getPos(e);
+
+            // Check hit against existing signature placements (top-most first)
+            let hitIdx = -1;
+            let hitZone = null;
+            for (let i = pageObj.placements.length - 1; i >= 0; i--) {
+                const z = detectCropHitZone(pos, pageObj.placements[i]);
+                if (z) {
+                    hitIdx = i;
+                    hitZone = z;
+                    break;
+                }
+            }
+
+            if (hitIdx >= 0) {
+                pageObj.selectedPlacementIdx = hitIdx;
+                tool4State.docDrag.mode = hitZone;
+            } else {
+                // Clicking anywhere on the document moves the active signature directly to that spot!
+                const selIdx = pageObj.selectedPlacementIdx >= 0 ? pageObj.selectedPlacementIdx : 0;
+                const pl = pageObj.placements[selIdx];
+                if (pl) {
+                    pl.x = Math.round(Math.max(0, Math.min(canvas.width - pl.w, pos.x - pl.w / 2)));
+                    pl.y = Math.round(Math.max(0, Math.min(canvas.height - pl.h, pos.y - pl.h / 2)));
+                    pageObj.selectedPlacementIdx = selIdx;
+                    tool4State.docDrag.mode = 'move';
+                }
+            }
+
+            const activePl = pageObj.placements[pageObj.selectedPlacementIdx || 0];
+            if (activePl) {
+                tool4State.docDrag.isDragging = true;
+                tool4State.docDrag.startX = pos.x;
+                tool4State.docDrag.startY = pos.y;
+                tool4State.docDrag.startBox = { ...activePl };
+            }
+            e.preventDefault();
+            drawTool4DocSignStage();
+        }
+
+        function onMove(e) {
+            const pageObj = tool4State.docPages[tool4State.activePageIndex];
+            if (!pageObj || !pageObj.placements || !pageObj.placements.length) return;
+            const pos = getPos(e);
+            const selIdx = pageObj.selectedPlacementIdx >= 0 ? pageObj.selectedPlacementIdx : 0;
+            const pl = pageObj.placements[selIdx];
+            if (!pl) return;
+
+            if (!tool4State.docDrag.isDragging) {
+                const zone = detectCropHitZone(pos, pl);
+                const cursorMap = {
+                    nw: 'nwse-resize', se: 'nwse-resize',
+                    ne: 'nesw-resize', sw: 'nesw-resize',
+                    n: 'ns-resize', s: 'ns-resize',
+                    w: 'ew-resize', e: 'ew-resize',
+                    move: 'move'
+                };
+                canvas.style.cursor = cursorMap[zone] || 'pointer';
+                return;
+            }
+
+            const dx = pos.x - tool4State.docDrag.startX;
+            const dy = pos.y - tool4State.docDrag.startY;
+            const sb = tool4State.docDrag.startBox;
+            const minW = 36;
+            const minH = 18;
+            const mode = tool4State.docDrag.mode;
+
+            if (mode === 'move') {
+                pl.x = Math.round(Math.max(0, Math.min(canvas.width - pl.w, sb.x + dx)));
+                pl.y = Math.round(Math.max(0, Math.min(canvas.height - pl.h, sb.y + dy)));
+            } else {
+                let nx = sb.x;
+                let ny = sb.y;
+                let nw = sb.w;
+                let nh = sb.h;
+
+                if (mode.includes('e')) nw = Math.max(minW, Math.min(canvas.width - sb.x, sb.w + dx));
+                if (mode.includes('s')) nh = Math.max(minH, Math.min(canvas.height - sb.y, sb.h + dy));
+                if (mode.includes('w')) {
+                    const maxDx = sb.w - minW;
+                    const clampedDx = Math.max(-sb.x, Math.min(maxDx, dx));
+                    nx = sb.x + clampedDx;
+                    nw = sb.w - clampedDx;
+                }
+                if (mode.includes('n')) {
+                    const maxDy = sb.h - minH;
+                    const clampedDy = Math.max(-sb.y, Math.min(maxDy, dy));
+                    ny = sb.y + clampedDy;
+                    nh = sb.h - clampedDy;
+                }
+
+                pl.x = Math.round(nx);
+                pl.y = Math.round(ny);
+                pl.w = Math.round(nw);
+                pl.h = Math.round(nh);
+
+                const slider = document.getElementById('tool4SigScaleSlider');
+                if (slider) slider.value = pl.w;
+            }
+
+            drawTool4DocSignStage();
+        }
+
+        function onUp() {
+            tool4State.docDrag.isDragging = false;
+            tool4State.docDrag.mode = null;
+        }
+
+        canvas.addEventListener('mousedown', onDown);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        canvas.addEventListener('touchstart', onDown, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+    }
+
+    function renderSignedPageFullResolutionDataUrl(pageObj) {
+        const canvas = document.getElementById('tool4DocSignCanvas');
+        const stageW = (canvas && canvas.width) || 640;
+        const stageH = (canvas && canvas.height) || 860;
+
+        const out = document.createElement('canvas');
+        out.width = pageObj.width || stageW;
+        out.height = pageObj.height || stageH;
+        const ctx = out.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(pageObj.imgElement, 0, 0, out.width, out.height);
+
+        const scaleX = out.width / stageW;
+        const scaleY = out.height / stageH;
+
+        (pageObj.placements || []).forEach(pl => {
+            const sigImg = pl.sigImg || tool4State.sigImgObj;
+            if (sigImg) {
+                ctx.drawImage(
+                    sigImg,
+                    Math.round(pl.x * scaleX),
+                    Math.round(pl.y * scaleY),
+                    Math.round(pl.w * scaleX),
+                    Math.round(pl.h * scaleY)
+                );
+            }
+        });
+
+        return out.toDataURL('image/jpeg', 0.92);
+    }
+
+    window.downloadTool4SignedDocumentJpg = function () {
+        if (!tool4State.docPages.length) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் ஆவணத்தை அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+        if (!tool4State.activeSignatureDataUrl && !tool4State.sigImgObj) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் மேலே கையொப்பம் வரையவும், டைப் செய்யவும் அல்லது போட்டோ அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+
+        const pageObj = tool4State.docPages[tool4State.activePageIndex] || tool4State.docPages[0];
+        const signedDataUrl = renderSignedPageFullResolutionDataUrl(pageObj);
+        const outName = `${tool4State.docFileName}_Signed_Page_${pageObj.pageNum}.jpg`;
+        triggerDownloadUrl(signedDataUrl, outName);
+    };
+
+    window.downloadTool4SignedDocumentPdf = async function () {
+        if (!tool4State.docPages.length) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் ஆவணத்தை அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+        if (!tool4State.activeSignatureDataUrl && !tool4State.sigImgObj) {
+            if (typeof showInAppToast === 'function') showInAppToast('⚠️ முதலில் மேலே கையொப்பம் வரையவும், டைப் செய்யவும் அல்லது போட்டோ அப்லோட் செய்யவும்.', 'warn');
+            return;
+        }
+
+        const btn = document.getElementById('btnTool4DownloadSignedPdf');
+        const resBox = document.getElementById('tool4SignedDocResult');
+        const targetKb = Number(document.getElementById('tool4SignedDocKbSelect')?.value) || 200;
+
+        try {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> கையொப்பமிட்ட PDF உருவாக்கப்படுகிறது...';
+            }
+
+            const signedPageUrls = tool4State.docPages.map(pg => renderSignedPageFullResolutionDataUrl(pg));
+
+            const res = await fetch('/api/tools/jpg-to-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    layoutMode: 'multi_page',
+                    targetKb,
+                    outputName: `${tool4State.docFileName}_Signed`,
+                    imageDataUrls: signedPageUrls
+                })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'கையொப்பமிட்ட PDF உருவாக்குவதில் பிழை');
+
+            triggerDownloadUrl(data.output.downloadUrl, data.output.filename);
+
+            if (resBox) {
+                resBox.innerHTML = `
+                    <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 14px; margin-top:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <div style="font-size:13px; font-weight:800; color:#065f46;">
+                                ✅ கையொப்பமிட்ட முழு ஆவணம் தயார்: ${data.output.filename} (${data.output.sizeKb} KB)
+                            </div>
+                            <div style="font-size:11px; color:#15803d; margin-top:2px;">
+                                📥 உங்கள் கணினியில் தானாகப் பதிவிறக்கப்பட்டது!
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <a href="${data.output.downloadUrl}?inline=1" target="_blank" style="height:32px; padding:0 12px; background:white; border:1.5px solid #86efac; color:#166534; border-radius:6px; font-size:11.5px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-eye"></i> பார்
+                            </a>
+                            <a href="${data.output.downloadUrl}" download="${data.output.filename}" style="height:32px; padding:0 14px; background:#16a34a; color:white; border-radius:6px; font-size:11.5px; font-weight:800; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-download"></i> PDF பதிவிறக்கு
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (err) {
+            if (resBox) resBox.innerHTML = `<div style="color:#dc2626; font-weight:700; margin-top:8px;">⚠️ பிழை: ${err.message}</div>`;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> 📥 கையொப்பமிட்ட முழு ஆவணம் (PDF) பதிவிறக்கு';
+            }
+        }
+    };
 
 })(window);

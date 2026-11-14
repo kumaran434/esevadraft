@@ -1809,19 +1809,111 @@
                             <div id="tool4CleanSigStatus" style="font-size: 11.5px; color: #475569; margin-top: 6px;"></div>
                         </div>
 
-                        <!-- ACTIVE SIGNATURE PREVIEW & DOWNLOAD BAR -->
-                        <div style="background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 16px 16px; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                            <div style="flex: 1; min-width: 200px; min-height: 74px; display: flex; align-items: center; justify-content: center;">
-                                <img id="tool4ActiveSigPreviewImg" src="" style="max-height: 72px; max-width: 280px; object-fit: contain; display: none;">
-                                <span id="tool4ActiveSigEmptyHint" style="font-size: 12px; color: #94a3b8; font-weight: 700;">✍️ கையொப்பம் இங்கே தோன்றும்</span>
+                        <!-- STEP 1 ACTIVE SIGNATURE PREVIEW & STANDALONE DOWNLOAD BAR -->
+                        <div style="background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 16px 16px; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 200px; min-height: 64px;">
+                                <span style="background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800; white-space: nowrap;">
+                                    படி 1: தயாரான கையொப்பம்
+                                </span>
+                                <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                                    <img id="tool4ActiveSigPreviewImg" src="" style="max-height: 64px; max-width: 240px; object-fit: contain; display: none;">
+                                    <span id="tool4ActiveSigEmptyHint" style="font-size: 12px; color: #94a3b8; font-weight: 700;">✍️ மேலே கையொப்பம் வரையவும் / டைப் செய்யவும் / அப்லோட் செய்யவும்</span>
+                                </div>
                             </div>
                             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button type="button" onclick="downloadActiveTransparentSignature()" style="height: 36px; padding: 0 16px; background: #0f172a; color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                                    <i class="fa-solid fa-download"></i> PNG (Transparent)
+                                <button type="button" onclick="downloadActiveTransparentSignature()" title="வெறும் கையொப்பம் மட்டும் PNG ஆக" style="height: 34px; padding: 0 12px; background: #f8fafc; color: #334155; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                    <i class="fa-solid fa-download"></i> கையொப்பம் PNG
                                 </button>
-                                <button type="button" onclick="downloadActiveSignatureAsGovtJpg()" style="height: 36px; padding: 0 16px; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                                    <i class="fa-solid fa-file-image"></i> JPG (&lt;20 KB போர்ட்டல் அளவு)
+                                <button type="button" onclick="downloadActiveSignatureAsGovtJpg()" title="வெறும் கையொப்பம் மட்டும் <20KB JPG ஆக" style="height: 34px; padding: 0 12px; background: #f8fafc; color: #166534; border: 1.5px solid #86efac; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                    <i class="fa-solid fa-file-image"></i> கையொப்பம் JPG (&lt;20 KB)
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- ========================================================================= -->
+                        <!-- STEP 2 & 3: UPLOAD DOCUMENT -> PLACE SIGNATURE -> DOWNLOAD FULL DOCUMENT  -->
+                        <!-- ========================================================================= -->
+                        <div style="border: 2px solid #7e22ce; background: #faf5ff; border-radius: 14px; padding: 16px;">
+                            <input type="file" id="tool4DocSignInput" accept="application/pdf,image/*" style="display: none;" onchange="handleTool4DocSignSelected(this)">
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="background: #7e22ce; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800;">
+                                        படி 2 &amp; 3: ஆவணத்தில் கையொப்பம் இட்டு முழு ஆவணத்தையும் பதிவிறக்குக
+                                    </span>
+                                </div>
+                                <button type="button" id="btnTool4ChangeDoc" onclick="document.getElementById('tool4DocSignInput').click()" style="display: none; height: 30px; padding: 0 12px; background: white; color: #6b21a8; border: 1.5px solid #d8b4fe; border-radius: 6px; font-size: 11.5px; font-weight: 800; cursor: pointer; align-items: center; gap: 5px;">
+                                    <i class="fa-solid fa-folder-open"></i> வேறு ஆவணம் மாற்று
+                                </button>
+                            </div>
+
+                            <!-- Empty Upload Prompt for Document -->
+                            <div id="tool4DocEmptyPrompt" onclick="document.getElementById('tool4DocSignInput').click()" ondragover="event.preventDefault(); this.style.borderColor='#7e22ce';" ondragleave="this.style.borderColor='#c084fc';" ondrop="event.preventDefault(); if(event.dataTransfer.files.length) handleTool4DocSignSelected(event.dataTransfer.files[0]);" style="border: 2px dashed #c084fc; background: white; border-radius: 12px; padding: 26px 16px; text-align: center; cursor: pointer;">
+                                <div style="width: 52px; height: 52px; border-radius: 50%; background: #f3e8ff; color: #7e22ce; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 8px;">
+                                    <i class="fa-solid fa-file-signature"></i>
+                                </div>
+                                <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">
+                                    📄 கையொப்பமிட வேண்டிய ஆவணத்தை அப்லோட் செய்க (PDF / JPG / PNG)
+                                </div>
+                                <div style="font-size: 11.5px; color: #64748b;">
+                                    ஆவணத்தை அப்லோட் செய்து, மேலே உள்ள கையொப்பத்தை மவுஸால் இழுத்துச் சரியான இடத்தில் வைத்து, கையொப்பமிட்ட முழு ஆவணத்தையும் பதிவிறக்கலாம்!
+                                </div>
+                            </div>
+
+                            <!-- Interactive Document + Draggable Signature Stage -->
+                            <div id="tool4DocSignStageWrap" style="display: none; flex-direction: column; gap: 12px;">
+                                <!-- Top Bar: Page Pills (for Multi-Page PDF) + Signature Controls -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: white; padding: 10px 12px; border-radius: 10px; border: 1px solid #e9d5ff;">
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <span id="tool4DocFileNameBadge" style="font-size: 12px; font-weight: 800; color: #581c87;">document.pdf</span>
+                                        <div id="tool4DocPagePills" style="display: flex; gap: 4px; flex-wrap: wrap;"></div>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <div style="display: flex; align-items: center; gap: 5px; background: #f8fafc; padding: 4px 10px; border-radius: 7px; border: 1px solid #cbd5e1;">
+                                            <span style="font-size: 11px; font-weight: 800; color: #475569;">கையொப்ப அளவு:</span>
+                                            <input type="range" id="tool4SigScaleSlider" min="40" max="360" value="150" oninput="resizeTool4PlacedSignature(this.value)" style="width: 95px; cursor: pointer;">
+                                        </div>
+                                        <button type="button" id="btnTool4CopySigAllPages" onclick="applyTool4SignatureToAllPages()" style="display: none; height: 30px; padding: 0 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 11px; font-weight: 800; cursor: pointer;">
+                                            📌 அனைத்துப் பக்கங்களிலும் இடு
+                                        </button>
+                                        <button type="button" onclick="addAnotherTool4SignatureOnPage()" title="இதே பக்கத்தில் மேலும் ஒரு கையொப்பம் சேர்" style="height: 30px; padding: 0 10px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 6px; font-size: 11px; font-weight: 800; cursor: pointer;">
+                                            + மேலும் 1 கையொப்பம்
+                                        </button>
+                                        <button type="button" onclick="removeSelectedTool4SignatureFromPage()" title="தேர்ந்தெடுத்த கையொப்பத்தை நீக்கு" style="height: 30px; padding: 0 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 11px; font-weight: 800; cursor: pointer;">
+                                            🗑️ நீக்கு
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Live Document Canvas where operator drags/resizes signature -->
+                                <div style="display: flex; flex-direction: column; align-items: center; background: #0f172a; border-radius: 12px; padding: 12px; border: 2px solid #334155; overflow: auto; max-height: 540px;">
+                                    <canvas id="tool4DocSignCanvas" width="640" height="860" style="max-width: 100%; height: auto; background: white; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.35); touch-action: none; cursor: move;"></canvas>
+                                </div>
+                                <div style="font-size: 11.5px; color: #6b21a8; font-weight: 700; text-align: center;">
+                                    🖱️ <b>மவுஸால் கையொப்பத்தை இழுத்து (Drag)</b> ஆவணத்தில் எந்த இடத்தில் வேண்டுமானாலும் வைக்கலாம். மூலைகளை இழுத்து (Resize) அளவை மாற்றலாம்!
+                                </div>
+
+                                <!-- Bottom Action Bar: Download Full Signed Document (PDF or JPG) -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: white; padding: 12px 14px; border-radius: 10px; border: 1.5px solid #d8b4fe;">
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <span style="font-size: 12px; font-weight: 800; color: #334155;">PDF அளவு:</span>
+                                        <select id="tool4SignedDocKbSelect" style="height: 36px; padding: 0 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; background: #f8fafc;">
+                                            <option value="200" selected>&lt; 200 KB (TNeGA போர்ட்டல்)</option>
+                                            <option value="100">&lt; 100 KB (TNPDS போர்ட்டல்)</option>
+                                            <option value="500">&lt; 500 KB</option>
+                                            <option value="0">அசல் தரம் (High Quality)</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <button type="button" id="btnTool4DownloadSignedJpg" onclick="downloadTool4SignedDocumentJpg()" style="height: 38px; padding: 0 16px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 12.5px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(37,99,235,0.28);">
+                                            <i class="fa-solid fa-file-image"></i> 🖼️ கையொப்பமிட்ட ஆவணம் (JPG) பதிவிறக்கு
+                                        </button>
+                                        <button type="button" id="btnTool4DownloadSignedPdf" onclick="downloadTool4SignedDocumentPdf()" style="height: 38px; padding: 0 20px; background: linear-gradient(135deg, #16a34a 0%, #059669 100%); color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(22,163,74,0.35);">
+                                            <i class="fa-solid fa-file-pdf"></i> 📥 கையொப்பமிட்ட முழு ஆவணம் (PDF) பதிவிறக்கு
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="tool4SignedDocResult"></div>
                             </div>
                         </div>
                     </div>
