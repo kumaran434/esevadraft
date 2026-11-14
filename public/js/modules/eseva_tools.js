@@ -636,6 +636,7 @@
         const files = Array.from(input.files || []);
         if (files.length === 0) return;
 
+        const firstAddedIdx = tool2State.images.length;
         let loaded = 0;
         files.forEach(file => {
             const reader = new FileReader();
@@ -652,6 +653,7 @@
                 loaded++;
                 if (loaded === files.length) {
                     renderTool2ImagesList();
+                    openTool2ImageCropper(firstAddedIdx);
                 }
             };
             reader.readAsDataURL(file);
