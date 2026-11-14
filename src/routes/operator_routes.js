@@ -787,10 +787,15 @@ router.post('/api/operator/scan-aadhaar', upload.single('file'), async (req, res
 // OPERATOR PORTAL CREDENTIALS VAULT (அரசு போர்ட்டல் லாகின் பெட்டகம்)
 // =========================================================================
 
+function safeDecodeHeader(val) {
+    if (!val) return '';
+    try { return decodeURIComponent(String(val)); } catch (_) { return String(val); }
+}
+
 // GET /api/operator/vault
 router.get('/api/operator/vault', (req, res) => {
     try {
-        const opUid = req.headers['x-operator-uid'] || req.headers['x-operator-name'] || req.query.operatorUid || 'admin';
+        const opUid = safeDecodeHeader(req.headers['x-operator-uid']) || req.query.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
         const summary = getOperatorVaultSummary(opUid);
         res.json({ success: true, ...summary });
     } catch (e) {
@@ -802,12 +807,12 @@ router.get('/api/operator/vault', (req, res) => {
 router.post('/api/operator/vault', (req, res) => {
     try {
         const body = req.body || {};
-        const opUid = req.headers['x-operator-uid'] || req.headers['x-operator-name'] || body.operatorUid || 'admin';
+        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
         const portal = body.portal || 'tnega';
         const username = body.username || body.userId || '';
         const password = body.password || '';
         const operatorCode = body.operatorCode || 'OM';
-        const operatorName = body.operatorName || req.headers['x-operator-name'] || opUid;
+        const operatorName = body.operatorName || safeDecodeHeader(req.headers['x-operator-name']) || opUid;
         const portalName = body.portalName || '';
         const customUrl = body.customUrl || '';
 
@@ -845,7 +850,7 @@ router.post('/api/operator/vault', (req, res) => {
 router.delete('/api/operator/vault', (req, res) => {
     try {
         const body = req.body || {};
-        const opUid = req.headers['x-operator-uid'] || req.headers['x-operator-name'] || body.operatorUid || req.query?.operatorUid || 'admin';
+        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || req.query?.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
         const portal = body.portal || req.query?.portal || 'tnega';
         const result = deleteOperatorPortalCredentials(opUid, portal);
         res.json({

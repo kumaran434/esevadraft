@@ -76,11 +76,19 @@
         };
     } catch (_) {}
 
-    // 0.5 Passive Fetch Response Tracker (Captures 4xx/5xx responses)
+    // 0.5 Passive Fetch Response Tracker & Universal ISO-8859-1 Header Sanitizer
     try {
         const origFetch = window.fetch;
         window.fetch = async function (...args) {
             try {
+                if (args[1] && args[1].headers && typeof args[1].headers === 'object' && !(args[1].headers instanceof Headers)) {
+                    const sanitizedHeaders = {};
+                    for (const [hKey, hVal] of Object.entries(args[1].headers)) {
+                        const strVal = hVal == null ? '' : String(hVal);
+                        sanitizedHeaders[hKey] = /[^\x00-\xFF]/.test(strVal) ? encodeURIComponent(strVal) : strVal;
+                    }
+                    args[1] = { ...args[1], headers: sanitizedHeaders };
+                }
                 const res = await origFetch.apply(this, args);
                 if (!res.ok && res.status >= 400) {
                     const rawUrl = String(args[0] || '').split('?')[0];

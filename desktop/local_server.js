@@ -44,6 +44,17 @@ function resolveLocalFile(reqPath) {
 
     const candidates = [];
 
+    // 0. On external machines, prioritize OTA-synced public assets in userData if newer than packaged resources
+    try {
+        const isLocalDev = process.env.USERNAME === 'ADMIN' && fs.existsSync('d:\\downloads\\ai assitant 2');
+        if (!isLocalDev && typeof app !== 'undefined' && app.getPath) {
+            const otaCandidate = path.join(app.getPath('userData'), 'public', clean);
+            if (fs.existsSync(otaCandidate) && fs.statSync(otaCandidate).isFile()) {
+                candidates.push(otaCandidate);
+            }
+        }
+    } catch (_) {}
+
     // 1. Packaged Installer Resources & Workspace (Always Certified Production Version)
     if (process.resourcesPath) {
         candidates.push(path.join(process.resourcesPath, 'public', clean));
@@ -1095,6 +1106,78 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 const expApp = getLocalExpressApp();
                 if (expApp) return expApp(req, res);
                 return handleNewCustomer(req, res);
+            }
+
+            // 2.75 Direct Local Operator Portal Vault Handler (<1ms Latency, 100% Local Encrypted Storage)
+            if (urlPath === '/api/operator/vault') {
+                const decodeHdr = (v) => { try { return v ? decodeURIComponent(String(v)) : ''; } catch (_) { return String(v || ''); } };
+                try {
+                    const {
+                        getOperatorVaultSummary,
+                        saveOperatorPortalCredentials,
+                        deleteOperatorPortalCredentials
+                    } = require('../src/services/portal_vault_service');
+
+                    if (req.method === 'GET') {
+                        const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
+                        const opUid = parsedUrl.searchParams.get('operatorUid') || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || 'admin';
+                        const summary = getOperatorVaultSummary(opUid);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ success: true, ...summary }));
+                    }
+
+                    if (req.method === 'POST' || req.method === 'DELETE') {
+                        let bodyStr = '';
+                        req.on('data', chunk => { bodyStr += chunk; });
+                        req.on('end', () => {
+                            try {
+                                const body = JSON.parse(bodyStr || '{}');
+                                const opUid = body.operatorUid || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || 'admin';
+                                const portal = body.portal || 'tnega';
+                                if (req.method === 'DELETE') {
+                                    const result = deleteOperatorPortalCredentials(opUid, portal);
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    return res.end(JSON.stringify({
+                                        success: true,
+                                        message: result.message,
+                                        vault: getOperatorVaultSummary(opUid)
+                                    }));
+                                }
+                                const username = body.username || body.userId || '';
+                                if (!username) {
+                                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                                    return res.end(JSON.stringify({ success: false, error: 'பயனர் பெயர் (User ID / Operator Code) கட்டாயம் தேவை.' }));
+                                }
+                                saveOperatorPortalCredentials(opUid, portal, {
+                                    username,
+                                    password: body.password || '',
+                                    operatorCode: body.operatorCode || 'OM',
+                                    operatorName: body.operatorName || decodeHdr(req.headers['x-operator-name']) || opUid,
+                                    portalName: body.portalName || '',
+                                    customUrl: body.customUrl || ''
+                                });
+                                const portalDisplayNames = {
+                                    tnega: 'TNeGA இ-சேவை',
+                                    tnpds: 'TNPDS பொது விநியோகம்',
+                                    eci: 'ECI வாக்காளர் சேவை'
+                                };
+                                const dispName = body.portalName || portalDisplayNames[portal] || portal.toUpperCase();
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                return res.end(JSON.stringify({
+                                    success: true,
+                                    message: `${dispName} லாகின் விவரங்கள் வெற்றிகரமாகப் பாதுகாக்கப்பட்டன!`,
+                                    vault: getOperatorVaultSummary(opUid)
+                                }));
+                            } catch (err) {
+                                res.writeHead(500, { 'Content-Type': 'application/json' });
+                                return res.end(JSON.stringify({ success: false, error: err.message }));
+                            }
+                        });
+                        return;
+                    }
+                } catch (vaultLoadErr) {
+                    console.warn('⚠️ [Local Server] Vault handler fallback:', vaultLoadErr.message);
+                }
             }
 
             // 2.8 Local Desktop Drafts & Customer Desk Engine (Direct Local Disk + Firestore Dual-Store)

@@ -588,6 +588,16 @@
                     const actualRole = data.role || roleToSubmit || 'citizen';
                     localStorage.setItem('eseva_user_role', actualRole);
                     const finalName = data.displayName || displayName || 'பயனர்';
+                    if (actualRole === 'operator' && finalName) {
+                        localStorage.setItem('eseva_operator_name', finalName);
+                        const nameEl = document.getElementById('authProfileName');
+                        const badge = document.getElementById('authProfileBadge');
+                        if (nameEl) nameEl.innerText = finalName;
+                        if (badge) {
+                            badge.setAttribute('data-tooltip', `${finalName} (சுயவிவரம்)`);
+                            badge.setAttribute('title', `${finalName} (சுயவிவரம்)`);
+                        }
+                    }
                     applyRoleUi(actualRole, finalName);
 
                     if (actualRole === 'operator') {

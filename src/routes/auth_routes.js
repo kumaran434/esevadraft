@@ -189,7 +189,10 @@ router.post('/api/auth/login', async (req, res) => {
             } else if (role) {
                 userRole = role;
             }
-            const savedName = (storedProfile && storedProfile.displayName) || displayName || (userRole === 'operator' ? 'குமரன் இ-சேவை மையம்' : 'பயனர்');
+            const isGenericDisplay = !displayName || ['பயனர்', 'மையம்', 'இ-சேவை மையம்', 'குமரன் இ-சேவை மையம்'].includes(displayName);
+            const savedName = (storedProfile && storedProfile.displayName && (isGenericDisplay || storedProfile.displayName !== 'மையம்'))
+                ? storedProfile.displayName
+                : (displayName || (userRole === 'operator' ? 'இ-சேவை மையம்' : 'பயனர்'));
             const savedIsAdmin = (storedProfile && typeof storedProfile.isAdmin === 'boolean') ? storedProfile.isAdmin : (userRole === 'admin');
             await saveUserProfile(firebaseUid, { 
                 role: userRole, 

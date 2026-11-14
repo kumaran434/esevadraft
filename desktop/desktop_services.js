@@ -128,7 +128,7 @@ function checkRemoteVersionFallback(getMainWindow, getPromptShown, setPromptShow
     try {
         const https = require('https');
         const { shell } = require('electron');
-        const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.19';
+        const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.20';
         const currentNum = parseSemver(currentVer);
 
         const req = https.get('https://api.github.com/repos/kumaran434/esevadraft/releases/latest', {

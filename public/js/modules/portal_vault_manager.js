@@ -53,27 +53,33 @@
         }
     };
 
+    function toSafeHttpHeader(val) {
+        const s = String(val || '').trim();
+        return /[^\x00-\xFF]/.test(s) ? encodeURIComponent(s) : s;
+    }
+
     function getActiveOperatorUid() {
-        return localStorage.getItem('eseva_operator_uid') || 
-               localStorage.getItem('eseva_user_id') || 
-               localStorage.getItem('eseva_operator_name') || 
-               'admin';
+        const rawUid = localStorage.getItem('eseva_operator_uid') || 
+                       localStorage.getItem('eseva_user_id') || 
+                       localStorage.getItem('eseva_operator_mobile') || 
+                       'admin';
+        return toSafeHttpHeader(rawUid);
     }
 
     function getActiveOperatorName() {
         return localStorage.getItem('eseva_operator_name') || 
                localStorage.getItem('eseva_user_name') || 
-               'குமரன் இ-சேவை மையம் (Admin)';
+               'இ-சேவை மையம்';
     }
 
     async function fetchPortalVaultSummary() {
         const opUid = getActiveOperatorUid();
         try {
-            const res = await fetch('/api/operator/vault', {
+            const res = await fetch(`/api/operator/vault?operatorUid=${encodeURIComponent(opUid)}`, {
                 method: 'GET',
                 headers: {
-                    'x-operator-uid': opUid,
-                    'x-operator-name': getActiveOperatorName()
+                    'x-operator-uid': toSafeHttpHeader(opUid),
+                    'x-operator-name': encodeURIComponent(getActiveOperatorName())
                 }
             });
             const data = await res.json();
@@ -319,8 +325,8 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-operator-uid': opUid,
-                    'x-operator-name': opName
+                    'x-operator-uid': toSafeHttpHeader(opUid),
+                    'x-operator-name': encodeURIComponent(opName)
                 },
                 body: JSON.stringify({
                     portal: portalKey,
@@ -395,9 +401,9 @@
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-operator-uid': opUid
+                    'x-operator-uid': toSafeHttpHeader(opUid)
                 },
-                body: JSON.stringify({ portal: selectedKey })
+                body: JSON.stringify({ portal: selectedKey, operatorUid: opUid })
             });
             const data = await res.json();
             if (data.success) {

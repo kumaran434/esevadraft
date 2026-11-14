@@ -53,7 +53,7 @@
                 if (!mob) mob = '9876543210';
                 const dispName = (role === 'operator' ? localStorage.getItem('eseva_operator_name') : localStorage.getItem('eseva_user_name'))
                     || user.displayName 
-                    || (role === 'operator' ? 'குமரன் இ-சேவை மையம்' : 'விண்ணப்பதாரர்');
+                    || (role === 'operator' ? 'இ-சேவை மையம்' : 'விண்ணப்பதாரர்');
 
                 if (user.email) {
                     localStorage.setItem('eseva_last_auth_email', user.email);
