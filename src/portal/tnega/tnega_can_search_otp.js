@@ -43,9 +43,8 @@ async function loginTnegaOperator(credentials = {}, onProgress = () => {}, optio
 
         if (!opUsername || !opPassword) {
             try {
-                const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                const targetOp = options.operatorUid || options.operatorName || null;
-                const vaultCreds = targetOp ? getOperatorPortalCredentials(targetOp, 'tnega') : null;
+                const { resolveTnegaVaultCredentials } = require('./tnega_can_register');
+                const vaultCreds = resolveTnegaVaultCredentials(options, credentials);
                 if (vaultCreds) {
                     opUsername = opUsername || vaultCreds.username;
                     opPassword = opPassword || vaultCreds.password;

@@ -13,11 +13,13 @@ const {
 
 // 1. POST /api/tnega/login
 router.post('/api/tnega/login', async (req, res) => {
-    const { username, password, isMockSandbox } = req.body || {};
+    const { username, password, isMockSandbox, operatorUid, operatorName } = req.body || {};
+    const opUid = operatorUid || req.headers['x-operator-uid'] || '';
+    const opName = operatorName || req.headers['x-operator-name'] || '';
     try {
         const result = await loginTnegaOperator({ username, password }, (msg) => {
             console.log('[TNeGA Login]', msg);
-        }, { isMockSandbox: isMockSandbox !== false });
+        }, { isMockSandbox: isMockSandbox !== false, operatorUid: opUid, operatorName: opName });
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -26,11 +28,13 @@ router.post('/api/tnega/login', async (req, res) => {
 
 // 2. POST /api/tnega/can/search
 router.post('/api/tnega/can/search', async (req, res) => {
-    const { aadhaar, mobile, isMockSandbox } = req.body || {};
+    const { aadhaar, mobile, isMockSandbox, operatorUid, operatorName } = req.body || {};
+    const opUid = operatorUid || req.headers['x-operator-uid'] || '';
+    const opName = operatorName || req.headers['x-operator-name'] || '';
     try {
         const result = await searchCitizenCan({ aadhaar, mobile }, (msg) => {
             console.log('[TNeGA CAN Search]', msg);
-        }, { isMockSandbox: isMockSandbox !== false });
+        }, { isMockSandbox: isMockSandbox !== false, operatorUid: opUid, operatorName: opName });
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -64,11 +68,13 @@ router.post('/api/tnega/can/otp/verify', (req, res) => {
 
 // 5. POST /api/tnega/can/register
 router.post('/api/tnega/can/register', async (req, res) => {
-    const { citizenProfile, isMockSandbox } = req.body || {};
+    const { citizenProfile, isMockSandbox, operatorUid, operatorName } = req.body || {};
+    const opUid = operatorUid || req.headers['x-operator-uid'] || citizenProfile?.operatorUid || '';
+    const opName = operatorName || req.headers['x-operator-name'] || citizenProfile?.operatorName || '';
     try {
         const result = await registerNewCan(citizenProfile || {}, (msg) => {
             console.log('[TNeGA CAN Register]', msg);
-        }, { isMockSandbox: isMockSandbox !== false });
+        }, { isMockSandbox: isMockSandbox !== false, operatorUid: opUid, operatorName: opName });
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

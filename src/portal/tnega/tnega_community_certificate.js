@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
-const { performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
+const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { handleTnegaSavedApplication } = require('./tnega_residence_certificate');
 
@@ -137,14 +137,10 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
             onProgress('🌐 TNeGA உள்நுழைவு பக்கம் திறக்கப்படுகிறது...');
             await tnegaPage.goto('https://www.tnesevai.tn.gov.in/Default.aspx', { waitUntil: 'domcontentloaded' });
             await maximizeTnegaWindow(tnegaPage);
-            await tnegaPage.waitForTimeout(2000);
+            const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
+            await userInp.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 
-            let vaultCreds = null;
-            try {
-                const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
-                vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
-            } catch (_) {}
+            const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
 
             if (vaultCreds && vaultCreds.username && vaultCreds.password) {
                 onProgress('🔑 [தானியங்கி உள்நுழைவு] அரசு பெட்டகத்திலிருந்து சான்றுகள் பெறப்பட்டன.');
@@ -197,12 +193,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                 if (currentUrl.includes('default.aspx?msg=') || currentUrl.includes('default.aspx')) {
                     const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
                     if (await userInp.count() > 0 && await userInp.isVisible()) {
-                        let vaultCreds = null;
-                        try {
-                            const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                            const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
-                            vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
-                        } catch (_) {}
+                        const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
                         if (vaultCreds) {
                             onProgress('🔄 [அமர்வு காலாவதியானது] தானியங்கி மீண்டும் Login செய்கிறது...');
                             await performAutomatedTnegaLogin(tnegaPage, vaultCreds, onProgress, options);

@@ -1136,6 +1136,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                                 const portal = body.portal || 'tnega';
                                 if (req.method === 'DELETE') {
                                     const result = deleteOperatorPortalCredentials(opUid, portal);
+                                    syncDraftToCloudInBackground('/api/operator/vault', 'DELETE', bodyStr, req.headers);
                                     res.writeHead(200, { 'Content-Type': 'application/json' });
                                     return res.end(JSON.stringify({
                                         success: true,
@@ -1156,6 +1157,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                                     portalName: body.portalName || '',
                                     customUrl: body.customUrl || ''
                                 });
+                                syncDraftToCloudInBackground('/api/operator/vault', 'POST', bodyStr, req.headers);
                                 const portalDisplayNames = {
                                     tnega: 'TNeGA இ-சேவை',
                                     tnpds: 'TNPDS பொது விநியோகம்',

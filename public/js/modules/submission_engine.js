@@ -12,16 +12,29 @@
                 } catch (_) {}
             }
 
-            const chatText = document.getElementById('chatMessages')?.innerText || '';
-            const isAddMember = (currentCitizenData && (currentCitizenData.subService === 'ADD_MEMBER' || Boolean(currentCitizenData.subServiceData?.memberName))) || 
-                                (window.lastReceivedChatOptions && window.lastReceivedChatOptions.some(o => (o.label || '').includes('உறுப்பினர்'))) ||
-                                chatText.includes('குடும்ப உறுப்பினர் சேர்க்கை') ||
-                                chatText.includes('குழந்தை சேர்க்கை') ||
-                                chatText.includes('குமரன்');
+            const isTnegaActive = Boolean(
+                currentCitizenData && (
+                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
+                    (currentCitizenData.intakeState && (
+                        currentCitizenData.intakeState.includes('INCOME') ||
+                        currentCitizenData.intakeState.includes('RESIDENCE') ||
+                        currentCitizenData.intakeState.includes('NATIVITY') ||
+                        currentCitizenData.intakeState.includes('COMMUNITY') ||
+                        currentCitizenData.intakeState.includes('CAN')
+                    ))
+                )
+            );
+            const isAddMember = !isTnegaActive && Boolean(
+                currentCitizenData && (
+                    currentCitizenData.subService === 'ADD_MEMBER' ||
+                    (currentCitizenData.intakeState && currentCitizenData.intakeState.startsWith('RATION_ADD_MEMBER')) ||
+                    (!currentCitizenData.subService && Boolean(currentCitizenData.subServiceData?.memberName))
+                )
+            );
 
-            const hasHead = currentCitizenData && (currentCitizenData.headAadhaar || (currentCitizenData.members && currentCitizenData.members.length > 0));
+            const hasHead = currentCitizenData && (currentCitizenData.headAadhaar || currentCitizenData.canNumber || isTnegaActive || (currentCitizenData.members && currentCitizenData.members.length > 0));
             if (!hasHead && !isAddMember) {
-                alert('⚠️ ரேஷன் கார்டு விண்ணப்பத்தைத் தொடங்குவதற்கு முன், குடும்ப உறுப்பினர்களின் எண்ணிக்கை மற்றும் ஆவணங்களைச் சேகரிக்க வேண்டும்.');
+                alert('⚠️ விண்ணப்பத்தைத் தொடங்குவதற்கு முன், தேவையான விவரங்கள் மற்றும் ஆவணங்களைச் சேகரிக்க வேண்டும்.');
                 return;
             }
 
@@ -109,10 +122,22 @@
                             if (fEng && !fTam) fTam = fEng;
                             if (fTam && !fEng) fEng = fTam;
 
+                            const activeExplicitServices = [
+                                'INCOME', 'INCOME_CERTIFICATE',
+                                'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE',
+                                'COMMUNITY', 'COMMUNITY_CERTIFICATE',
+                                'CAN_REGISTER', 'CAN_SEARCH',
+                                'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
+                            ];
+                            const effectiveSubService = (draftData.subService && activeExplicitServices.includes(draftData.subService))
+                                ? draftData.subService
+                                : (dJson.draft.subService || prof.subService || draftData.subService);
+                            const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
+
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
-                                subService: dJson.draft.subService || prof.subService || draftData.subService,
-                                subServiceData: dJson.draft.subServiceData || prof.subServiceData || draftData.subServiceData,
-                                intakeState: dJson.draft.intakeState || draftData.intakeState,
+                                subService: effectiveSubService,
+                                subServiceData: draftData.subServiceData || dJson.draft.subServiceData || prof.subServiceData,
+                                intakeState: effectiveIntakeState,
                                 fullNameEng: prof.fullNameEng || draftData.fullNameEng,
                                 fullNameTam: prof.fullNameTam || draftData.fullNameTam,
                                 fatherNameEng: fEng,
@@ -171,12 +196,16 @@
                 const pBar = document.getElementById('automationProgressBar');
                 if (pBar) pBar.classList.add('active');
 
-                appendLiveAutomationStep('🚀 **நேரலை முறை** — Chrome சாளரம் திறக்கப்படுகிறது...\n\nTNPDS போர்ட்டல் தோன்றும். கேப்ட்சா (I am human) வந்தால் நீங்களே திக் செய்யவும்.');
+                const isTnegaFlow = ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
+                                    (draftData.intakeState && (draftData.intakeState.includes('INCOME') || draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('COMMUNITY') || draftData.intakeState.includes('CAN')));
+                const portalLabel = isTnegaFlow ? 'TNeGA' : 'TNPDS';
+
+                appendLiveAutomationStep(`🚀 **நேரலை முறை** — Chrome சாளரம் திறக்கப்படுகிறது...\n\n${portalLabel} போர்ட்டல் தோன்றும்.`);
 
                 try {
                     const result = await window.esevaDesktopBridge.startLiveAutomation(draftData);
                     if (result && result.success) {
-                        appendLiveAutomationStep('✅ TNPDS Chrome சாளரம் திறக்கப்பட்டது! படிவம் நிரப்பப்படுகிறது — கேப்ட்சா வந்தால் திக் செய்யவும்.');
+                        appendLiveAutomationStep(`✅ ${portalLabel} Chrome சாளரம் திறக்கப்பட்டது! படிவம் தானாக நிரப்பப்படுகிறது...`);
                     } else {
                         appendLiveAutomationStep(`⚠️ Chrome திறக்க முடியவில்லை: ${result?.error || 'Chrome நிறுவப்பட்டுள்ளதா சரிபார்க்கவும்.'}`);
                     }
@@ -217,7 +246,24 @@
 
             // Pre-submit confirmation gate & Desktop App live browser trigger
             const lowerText = text.toLowerCase();
-            const isSubmitCmd = lowerText === 'start' || 
+            const upperText = text.trim().toUpperCase();
+            if (!currentCitizenData) currentCitizenData = {};
+            if (upperText === 'START_INCOME_APPLY') currentCitizenData.subService = 'INCOME';
+            else if (upperText === 'START_RESIDENCE_APPLY' || upperText === 'APPLY_RESIDENCE_NOW') currentCitizenData.subService = 'RESIDENCE';
+            else if (upperText === 'START_COMMUNITY_APPLY' || upperText === 'APPLY_COMMUNITY_NOW') currentCitizenData.subService = 'COMMUNITY';
+            else if (upperText === 'LAUNCH_CAN_AUTOMATION') currentCitizenData.subService = 'CAN_REGISTER';
+
+            const isTnegaStartCmd = [
+                'START_INCOME_APPLY',
+                'START_RESIDENCE_APPLY',
+                'APPLY_RESIDENCE_NOW',
+                'START_COMMUNITY_APPLY',
+                'APPLY_COMMUNITY_NOW',
+                'LAUNCH_CAN_AUTOMATION'
+            ].includes(upperText);
+
+            const isSubmitCmd = isTnegaStartCmd ||
+                                lowerText === 'start' || 
                                 lowerText === 'தொடங்கு' || 
                                 lowerText === 'fill' ||
                                 lowerText.includes('real_live_otp') ||
@@ -230,11 +276,11 @@
             if (isSubmitCmd) {
                 if (window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp) {
                     if (!overrideText && userInput) userInput.value = '';
-                    const isRealLive = lowerText.includes('real') || lowerText.includes('நேரலை') || lowerText.includes('submit') || lowerText.includes('start') || !lowerText.includes('mock');
+                    const isRealLive = isTnegaStartCmd || lowerText.includes('real') || lowerText.includes('நேரலை') || lowerText.includes('submit') || lowerText.includes('start') || !lowerText.includes('mock');
                     await proceedConfirmedSubmit(isRealLive);
                     return;
                 }
-                if (!bypassConfirm) {
+                if (!bypassConfirm && !isTnegaStartCmd) {
                     const isSpecialSub = currentCitizenData && (currentCitizenData.subService === 'ADD_MEMBER' || currentCitizenData.subService === 'CHANGE_ADDRESS');
                     const hasHead = currentCitizenData && (currentCitizenData.headAadhaar || (currentCitizenData.members && currentCitizenData.members.length > 0) || isSpecialSub);
                     if (hasHead && !isSpecialSub) {

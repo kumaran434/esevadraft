@@ -57,11 +57,11 @@ async function handleAutomationStarter(ctx, req, res) {
     // TNeGA Dedicated Subservices (Income Certificate & CAN Registration)
     const isIncomeAction = text === 'START_INCOME_APPLY' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'INCOME' || sess.intakeState === 'READY_TO_APPLY_INCOME')
+        (sess.subService === 'INCOME' || sess.subService === 'INCOME_CERTIFICATE' || sess.citizenProfile?.subService === 'INCOME' || sess.intakeState === 'READY_TO_APPLY_INCOME')
     );
     const isCanRegisterAction = text === 'LAUNCH_CAN_AUTOMATION' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
+        (sess.subService === 'CAN_REGISTER' || sess.citizenProfile?.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
     );
 
     if (isIncomeAction) {
@@ -146,7 +146,7 @@ async function handleAutomationStarter(ctx, req, res) {
 
     const isResidenceAction = text === 'START_RESIDENCE_APPLY' || text === 'APPLY_RESIDENCE_NOW' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'RESIDENCE' || sess.intakeState === 'READY_TO_APPLY_RESIDENCE')
+        (sess.subService === 'RESIDENCE' || sess.subService === 'RESIDENCE_CERTIFICATE' || sess.citizenProfile?.subService === 'RESIDENCE' || sess.intakeState === 'READY_TO_APPLY_RESIDENCE')
     );
 
     if (isResidenceAction) {
@@ -191,7 +191,7 @@ async function handleAutomationStarter(ctx, req, res) {
 
     const isCommunityAction = text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'COMMUNITY' || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
+        (sess.subService === 'COMMUNITY' || sess.subService === 'COMMUNITY_CERTIFICATE' || sess.citizenProfile?.subService === 'COMMUNITY' || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
     );
 
     if (isCommunityAction) {

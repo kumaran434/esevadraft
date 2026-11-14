@@ -42,8 +42,9 @@ function runAutomationTask(runner, flowProfile, targetSess, targetMob, isMockTes
             draftData: targetSess, 
             subServiceData: targetSess.subServiceData, 
             keepBrowserOpen: isMockTest,
+            operatorUid: targetSess.operatorUid || req.headers['x-operator-uid'] || req.body?.operatorUid || targetSess.citizenProfile?.operatorUid || '',
             operatorName: targetSess.operatorName || req.body?.operatorName || (req.headers['x-user-role'] === 'admin' ? 'admin' : (req.headers['x-operator-name'] || 'admin')),
-            automationName: isAddMemberAction ? 'add_member' : (isChangeAddressAction ? 'change_address' : 'new_ration_card')
+            automationName: isAddMemberAction ? 'add_member' : (isChangeAddressAction ? 'change_address' : (flowProfile?.subService || 'new_ration_card'))
         }
     ).then((result) => {
         if (!targetSess) return;

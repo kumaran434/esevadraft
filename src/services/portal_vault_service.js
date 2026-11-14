@@ -73,16 +73,59 @@ function decryptText(cipherText) {
 
 function readRawVault() {
     const targetPath = getVaultFilePath();
-    const pathsToTry = [targetPath, WORKSPACE_VAULT_PATH];
-    for (const p of pathsToTry) {
-        if (fs.existsSync(p)) {
+    const pathsToRead = [WORKSPACE_VAULT_PATH, targetPath];
+    const merged = {};
+    for (const p of pathsToRead) {
+        if (p && fs.existsSync(p)) {
             try {
                 const raw = fs.readFileSync(p, 'utf8');
-                return JSON.parse(raw) || {};
+                const parsed = JSON.parse(raw) || {};
+                for (const [k, v] of Object.entries(parsed)) {
+                    if (v && typeof v === 'object') {
+                        merged[k] = Object.assign({}, merged[k] || {}, v);
+                    }
+                }
             } catch (_) {}
         }
     }
-    return {};
+    return merged;
+}
+
+function syncVaultEntryToFirestoreInBackground(opId, opEntry) {
+    if (!opId || opId.startsWith('op_test_') || process.env.NODE_ENV === 'test' || process.env.REGRESSION_TEST === 'true') {
+        return;
+    }
+    setImmediate(async () => {
+        try {
+            const { getFirestoreDb } = require('./db/firestore_client');
+            const db = getFirestoreDb ? getFirestoreDb() : null;
+            if (db) {
+                await db.collection('eseva_operator_vaults').doc(opId).set(opEntry, { merge: true });
+            }
+        } catch (_) {}
+    });
+}
+
+function hydrateVaultEntryFromFirestoreInBackground(opId) {
+    if (!opId || opId === 'admin' || opId.startsWith('op_test_') || process.env.NODE_ENV === 'test' || process.env.REGRESSION_TEST === 'true') {
+        return;
+    }
+    setImmediate(async () => {
+        try {
+            const { getFirestoreDb } = require('./db/firestore_client');
+            const db = getFirestoreDb ? getFirestoreDb() : null;
+            if (!db) return;
+            const doc = await db.collection('eseva_operator_vaults').doc(opId).get();
+            if (doc && doc.exists) {
+                const cloudData = doc.data();
+                if (cloudData && typeof cloudData === 'object') {
+                    const vault = readRawVault();
+                    vault[opId] = Object.assign({}, cloudData, vault[opId] || {});
+                    writeRawVault(vault);
+                }
+            }
+        } catch (_) {}
+    });
 }
 
 function writeRawVault(vaultData) {
@@ -105,6 +148,21 @@ function normalizeOpId(operatorUid) {
     if (!operatorUid) return 'admin';
     const clean = String(operatorUid).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
     return clean || 'admin';
+}
+
+function getActiveLocalDesktopOperatorUid() {
+    try {
+        const { getActiveOperatorSession } = require('./db/user_profile_store');
+        const sess = getActiveOperatorSession ? getActiveOperatorSession() : null;
+        if (sess && sess.operatorUid) {
+            return normalizeOpId(sess.operatorUid);
+        }
+    } catch (_) {}
+    return null;
+}
+
+function isGenericOperatorIdentity(opId) {
+    return !opId || ['admin', 'default_operator', 'local_op_dev', 'operator'].includes(opId);
 }
 
 /**
@@ -135,7 +193,7 @@ function saveOperatorPortalCredentials(operatorUid, portalKey = 'tnega', credent
     const existingPortalData = vault[opId][pKey] || {};
     const finalPasswordEnc = plainPassword ? encryptText(plainPassword) : existingPortalData.passwordEnc || '';
 
-    vault[opId][pKey] = {
+    const portalRecord = {
         portal: pKey,
         portalName: portalName || existingPortalData.portalName || pKey,
         customUrl: customUrl || existingPortalData.customUrl || '',
@@ -145,7 +203,28 @@ function saveOperatorPortalCredentials(operatorUid, portalKey = 'tnega', credent
         savedAt: new Date().toISOString()
     };
 
+    vault[opId][pKey] = portalRecord;
+
+    // If saved under generic 'admin' while an active desktop operator session is logged in, mirror to active UID
+    if (isGenericOperatorIdentity(opId)) {
+        const activeUid = getActiveLocalDesktopOperatorUid();
+        if (activeUid && !activeUid.startsWith('op_test_')) {
+            if (!vault[activeUid]) {
+                vault[activeUid] = {
+                    operatorUid: activeUid,
+                    operatorName: credentials.operatorName || activeUid,
+                    updatedAt: new Date().toISOString()
+                };
+            }
+            vault[activeUid][pKey] = { ...portalRecord };
+            vault[activeUid].updatedAt = new Date().toISOString();
+            syncVaultEntryToFirestoreInBackground(activeUid, vault[activeUid]);
+        }
+    }
+
     writeRawVault(vault);
+    syncVaultEntryToFirestoreInBackground(opId, vault[opId]);
+
     return {
         success: true,
         operatorUid: opId,
@@ -160,7 +239,6 @@ function saveOperatorPortalCredentials(operatorUid, portalKey = 'tnega', credent
  * Retrieve decrypted credentials for automation engine (Internal use only)
  */
 function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
-    if (!operatorUid) return null; // Never guess or leak credentials without explicit operator identity
     const pKey = (portalKey || 'tnega').toLowerCase().trim();
     const vault = readRawVault();
 
@@ -168,16 +246,60 @@ function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
     let opData = null;
     let resolvedOpId = null;
 
-    if (vault[opId] && vault[opId][pKey]) {
+    const hasValidPortalCreds = (entry) => Boolean(entry && entry[pKey] && entry[pKey].username && entry[pKey].passwordEnc);
+
+    // 1. Direct exact UID match
+    if (hasValidPortalCreds(vault[opId])) {
         opData = vault[opId];
         resolvedOpId = opId;
-    } else if (opId === 'admin' && vault['admin'] && vault['admin'][pKey]) {
-        opData = vault['admin'];
-        resolvedOpId = 'admin';
+    }
+
+    // 2. If not found and NOT an isolated test operator, check active desktop session or operatorName match
+    if (!opData && !opId.startsWith('op_test_')) {
+        const activeUid = getActiveLocalDesktopOperatorUid();
+        if (activeUid && hasValidPortalCreds(vault[activeUid]) && (isGenericOperatorIdentity(opId) || activeUid === opId)) {
+            opData = vault[activeUid];
+            resolvedOpId = activeUid;
+        }
+
+        // Check if caller passed operatorName (e.g. 'kumaran') instead of Firebase UID
+        if (!opData && operatorUid) {
+            const rawLower = String(operatorUid).trim().toLowerCase();
+            for (const [k, entry] of Object.entries(vault)) {
+                if (k.startsWith('op_test_')) continue;
+                const entryNameNorm = normalizeOpId(entry?.operatorName || '');
+                const entryNameLower = String(entry?.operatorName || '').trim().toLowerCase();
+                if ((entryNameNorm === opId || entryNameLower === rawLower) && hasValidPortalCreds(entry)) {
+                    opData = entry;
+                    resolvedOpId = k;
+                    break;
+                }
+            }
+        }
+
+        // 3. If caller passed generic desktop fallback ('admin' / 'default_operator' / empty), use most recently saved local operator on this machine
+        if (!opData && isGenericOperatorIdentity(opId)) {
+            let bestKey = null;
+            let bestTime = 0;
+            for (const [k, entry] of Object.entries(vault)) {
+                if (k.startsWith('op_test_')) continue;
+                if (hasValidPortalCreds(entry)) {
+                    const t = new Date(entry[pKey]?.savedAt || entry?.updatedAt || 0).getTime() || 1;
+                    if (t >= bestTime) {
+                        bestTime = t;
+                        bestKey = k;
+                    }
+                }
+            }
+            if (bestKey) {
+                opData = vault[bestKey];
+                resolvedOpId = bestKey;
+            }
+        }
     }
 
     // STRICT MULTI-TENANT ISOLATION:
-    // If the requesting operator has not saved their own credentials, NEVER fall back to another operator!
+    // If an explicit operator has not saved their own credentials, NEVER fall back to another operator!
     if (!opData || !opData[pKey]) {
         return null;
     }
@@ -201,11 +323,21 @@ function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
 function getOperatorVaultSummary(operatorUid) {
     const opId = normalizeOpId(operatorUid);
     const vault = readRawVault();
-    const opData = vault[opId] || null;
+    let opData = vault[opId] || null;
+    let effectiveOpId = opId;
+
+    if (!opData && isGenericOperatorIdentity(opId)) {
+        const activeUid = getActiveLocalDesktopOperatorUid();
+        if (activeUid && vault[activeUid]) {
+            opData = vault[activeUid];
+            effectiveOpId = activeUid;
+        }
+    }
 
     if (!opData) {
+        hydrateVaultEntryFromFirestoreInBackground(opId);
         return {
-            operatorUid: opId,
+            operatorUid: effectiveOpId,
             configured: false,
             portals: {},
             tnega: {

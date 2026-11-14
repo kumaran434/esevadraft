@@ -196,48 +196,34 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     };
 
     const explicitSub = draftData?.subService || draftData?.citizenProfile?.subService;
-    const isNewCard = explicitSub === 'NEW_CARD' || 
-                      explicitSub === 'NEW_RATION_CARD' ||
-                      explicitSub === 'new_smart_card' ||
-                      explicitSub === 'புதிய ரேஷன் கார்டு' ||
-                      explicitSub === 'ration' ||
-                      explicitSub === 'NEW_CARD_REGISTER' ||
-                      explicitSub === 'NEW_SMART_CARD' ||
-                      draftData?.service === 'new_smart_card' ||
-                      draftData?.service === 'புதிய ரேஷன் கார்டு' ||
-                      draftData?.service === 'ration' ||
-                      draftData?.selectedService === 'NEW_RATION_CARD' ||
-                      draftData?.citizenProfile?.service === 'new_smart_card' ||
-                      draftData?.citizenProfile?.service === 'புதிய ரேஷன் கார்டு' ||
-                      draftData?.citizenProfile?.subService === 'NEW_CARD' ||
-                      draftData?.citizenProfile?.subService === 'NEW_RATION_CARD';
 
-    const isCanRegister = !isNewCard && (
-                          explicitSub === 'CAN_REGISTER' ||
+    const isCanRegister = explicitSub === 'CAN_REGISTER' ||
                           draftData?.subService === 'CAN_REGISTER' ||
                           draftData?.serviceId === 'TNEGA_CAN_REGISTER' ||
                           (draftData?.intakeState && draftData.intakeState.startsWith('READY_TO_APPLY_CAN')) ||
                           (draftData?.intakeState && draftData.intakeState.startsWith('CAN_REGISTER_INTAKE')) ||
-                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_CAN'))
-                        );
-    const isCanSearch = !isNewCard && !isCanRegister && (
+                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_CAN'));
+
+    const isCanSearch = !isCanRegister && (
                           explicitSub === 'CAN_SEARCH' ||
                           draftData?.subService === 'CAN_SEARCH' ||
                           draftData?.serviceId === 'TNEGA_CAN_SEARCH' ||
                           (draftData?.intakeState && draftData.intakeState.startsWith('CAN_SEARCH_INTAKE')) ||
                           (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('CAN_SEARCH_INTAKE'))
                         );
-    const isIncome = !isNewCard && !isCanRegister && !isCanSearch && (
+
+    const isIncome = !isCanRegister && !isCanSearch && (
                           explicitSub === 'INCOME' ||
                           explicitSub === 'INCOME_CERTIFICATE' ||
                           draftData?.subService === 'INCOME' ||
                           draftData?.subService === 'INCOME_CERTIFICATE' ||
                           draftData?.serviceId === 'INCOME_CERTIFICATE' ||
-                          (draftData?.intakeState && draftData.intakeState.startsWith('READY_TO_APPLY_INCOME')) ||
-                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_INCOME'))
+                          draftData?.service === 'வருமானச் சான்றிதழ்' ||
+                          (draftData?.intakeState && (draftData.intakeState.startsWith('READY_TO_APPLY_INCOME') || draftData.intakeState.startsWith('INCOME_'))) ||
+                          (draftData?.citizenProfile?.intakeState && (draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_INCOME') || draftData.citizenProfile.intakeState.startsWith('INCOME_')))
                         );
 
-    const isResidence = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && (
+    const isResidence = !isCanRegister && !isCanSearch && !isIncome && (
                           explicitSub === 'RESIDENCE' ||
                           explicitSub === 'RESIDENCE_CERTIFICATE' ||
                           explicitSub === 'NATIVITY' ||
@@ -248,28 +234,40 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                           draftData?.subService === 'NATIVITY_CERTIFICATE' ||
                           draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ||
                           draftData?.serviceId === 'NATIVITY_CERTIFICATE' ||
+                          draftData?.service === 'இருப்பிடச் சான்றிதழ்' ||
                           (draftData?.intakeState && (draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('NATIVITY'))) ||
                           (draftData?.citizenProfile?.intakeState && (draftData.citizenProfile.intakeState.includes('RESIDENCE') || draftData.citizenProfile.intakeState.includes('NATIVITY')))
                         );
 
-    const isCommunity = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && (
+    const isCommunity = !isCanRegister && !isCanSearch && !isIncome && !isResidence && (
                           explicitSub === 'COMMUNITY' ||
                           explicitSub === 'COMMUNITY_CERTIFICATE' ||
                           draftData?.subService === 'COMMUNITY' ||
                           draftData?.subService === 'COMMUNITY_CERTIFICATE' ||
                           draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ||
+                          draftData?.service === 'சாதிச் சான்றிதழ்' ||
                           (draftData?.intakeState && draftData.intakeState.includes('COMMUNITY')) ||
                           (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.includes('COMMUNITY'))
                         );
 
-    const isChangeAddress = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && (
+    const isExplicitNewCard = !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && (
+                          explicitSub === 'NEW_CARD' ||
+                          explicitSub === 'NEW_RATION_CARD' ||
+                          explicitSub === 'new_smart_card' ||
+                          explicitSub === 'புதிய ரேஷன் கார்டு' ||
+                          explicitSub === 'ration' ||
+                          explicitSub === 'NEW_CARD_REGISTER' ||
+                          explicitSub === 'NEW_SMART_CARD'
+                        );
+
+    const isChangeAddress = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && (
                             explicitSub === 'CHANGE_ADDRESS' ||
                             (!explicitSub && (
                                 (draftData?.intakeState && draftData.intakeState.startsWith('RATION_CHANGE_ADDRESS')) ||
                                 Boolean(draftData?.subServiceData?.doorNo) ||
                                 Boolean(draftData?.citizenProfile?.subServiceData?.doorNo)
                             )));
-    const isRemoveMember = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && explicitSub !== 'CHANGE_HEAD' && (
+    const isRemoveMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && explicitSub !== 'CHANGE_HEAD' && (
                                 explicitSub === 'REMOVE_MEMBER' ||
                                 (draftData?.intakeState && draftData.intakeState.startsWith('RATION_REMOVE_MEMBER')) ||
                                 (!explicitSub && (
@@ -277,7 +275,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                     (Boolean(draftData?.citizenProfile?.subServiceData?.memberName) && Boolean(draftData?.citizenProfile?.subServiceData?.reason))
                                 ))
                             );
-    const isAddMember = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && (
+    const isAddMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && (
                             explicitSub === 'ADD_MEMBER' ||
                             (draftData?.intakeState && draftData.intakeState.startsWith('RATION_ADD_MEMBER')) ||
                             (!explicitSub && (
@@ -285,7 +283,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                 Boolean(draftData?.citizenProfile?.subServiceData?.memberName)
                             ))
                         );
-    const isChangeMobile = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && !isAddMember && (
+    const isChangeMobile = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && !isAddMember && (
                             explicitSub === 'UPDATE_MOBILE' ||
                             explicitSub === 'CHANGE_MOBILE' ||
                             explicitSub === 'CHANGE_OF_MOBILE_NUMBER' ||
@@ -295,7 +293,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                 Boolean(draftData?.citizenProfile?.subServiceData?.newMobile)
                             ))
                         );
-    const isChangeHead = !isNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && (
+    const isChangeHead = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && (
                             explicitSub === 'CHANGE_HEAD' ||
                             explicitSub === 'FAMILY_HEAD_MEMBER_CHANGE' ||
                             (draftData?.intakeState && draftData.intakeState.startsWith('RATION_CHANGE_HEAD')) ||
@@ -304,6 +302,9 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                 Boolean(draftData?.citizenProfile?.subServiceData?.newHeadName)
                             ))
                         );
+
+    const isNewCard = !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity &&
+                      !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && !isChangeHead;
 
     const serviceName = isNewCard ? 'NEW_RATION_CARD (புதிய குடும்ப அட்டை)' :
                        (isCommunity ? 'COMMUNITY_CERTIFICATE (சாதிச் சான்றிதழ் - REV-101)' :
@@ -455,7 +456,16 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
         mobileNumber: draftData?.mobileNumber || resolved.mobClean,
-        subService: isNewCard ? 'NEW_CARD' : (isRemoveMember ? 'REMOVE_MEMBER' : (isAddMember ? 'ADD_MEMBER' : (isChangeAddress ? 'CHANGE_ADDRESS' : (isChangeMobile ? 'UPDATE_MOBILE' : (isChangeHead ? 'CHANGE_HEAD' : (draftData?.subService || 'NEW_CARD')))))),
+        subService: isCanRegister ? 'CAN_REGISTER' :
+                    (isCanSearch ? 'CAN_SEARCH' :
+                    (isIncome ? 'INCOME' :
+                    (isResidence ? 'RESIDENCE' :
+                    (isCommunity ? 'COMMUNITY' :
+                    (isRemoveMember ? 'REMOVE_MEMBER' :
+                    (isAddMember ? 'ADD_MEMBER' :
+                    (isChangeAddress ? 'CHANGE_ADDRESS' :
+                    (isChangeMobile ? 'UPDATE_MOBILE' :
+                    (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))),
         subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
         intakeState: draftData?.intakeState || '',
         residenceProof: resolved.effectiveResidence,
@@ -478,6 +488,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         chromium: playwrightChromium,
         draftData,
         subServiceData: targetProfile.subServiceData,
+        operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
         operatorMobile: draftData?.operatorMobile || '',
         operatorName: draftData?.operatorName || 'admin',
         isDryRun: draftData?.isDryRun !== false,
@@ -497,7 +508,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         }
     });
 
-    const portalName = (isCanRegister || isCanSearch || isIncome) ? 'TNeGA' : 'TNPDS';
+    const portalName = (isCanRegister || isCanSearch || isIncome || isResidence || isCommunity) ? 'TNeGA' : 'TNPDS';
     return { success: true, message: `${portalName} Chrome திறக்கப்பட்டது — படிவம் தானாக நிரப்பப்படுகிறது!` };
 }
 

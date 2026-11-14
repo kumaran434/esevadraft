@@ -212,6 +212,38 @@ async function safeSelect(locator, matchVal) {
 }
 
 /**
+ * Resolves saved TNeGA operator credentials across all candidate operator identifiers
+ * (operatorUid -> citizenProfile.operatorUid -> draftData.operatorUid -> operatorName -> active local desktop session)
+ */
+function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
+    try {
+        const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
+        const candidates = [
+            options?.operatorUid,
+            citizenProfile?.operatorUid,
+            options?.draftData?.operatorUid,
+            options?.draftData?.citizenProfile?.operatorUid,
+            options?.operatorName,
+            citizenProfile?.operatorName,
+            options?.draftData?.operatorName,
+            'admin'
+        ].filter(Boolean);
+
+        const seen = new Set();
+        for (const cand of candidates) {
+            const key = String(cand).trim();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            const creds = getOperatorPortalCredentials(key, 'tnega');
+            if (creds && creds.username && creds.password) {
+                return creds;
+            }
+        }
+    } catch (_) {}
+    return null;
+}
+
+/**
  * Automated Operator Login & Captcha Solver with Live HUD
  */
 async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options = {}) {
@@ -235,8 +267,11 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
     page.on('dialog', dialogHandler);
 
     const userInp = page.locator('#txtuserName, input[name*="txtuserName"]').first();
-    const passInp = page.locator('#txtpassword, input[type="password"]').first();
+    const passInp = page.locator('#txtpassword, input[name*="txtpassword"], input[type="password"]').first();
     const ddlOp = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_ddloperator, select[name*="ddloperator"]').first();
+
+    // Ensure login input fields are rendered before starting attempt loop
+    await userInp.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 
     // Check if an orphaned session exists and close it (TNeGA 1-session lock rule)
     const btnCloseSession = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_btnCloseSession, input[value="Close Logged Session"]').first();
@@ -266,16 +301,20 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
 
         // 2. Mandatory Explicit Re-filling of Username, Password, Role on Every Attempt (ASP.NET postback / hashing wipes plain text!)
         if (await userInp.count() > 0) {
+            await userInp.click().catch(() => {});
             await userInp.fill('');
             await userInp.fill(vaultCreds.username);
             await userInp.dispatchEvent('input', { bubbles: true }).catch(() => {});
             await userInp.dispatchEvent('change', { bubbles: true }).catch(() => {});
+            await userInp.dispatchEvent('blur', { bubbles: true }).catch(() => {});
         }
         if (await passInp.count() > 0) {
+            await passInp.click().catch(() => {});
             await passInp.fill('');
             await passInp.fill(vaultCreds.password);
             await passInp.dispatchEvent('input', { bubbles: true }).catch(() => {});
             await passInp.dispatchEvent('change', { bubbles: true }).catch(() => {});
+            await passInp.dispatchEvent('blur', { bubbles: true }).catch(() => {});
         }
         if (await ddlOp.count() > 0) {
             await safeSelect(ddlOp, vaultCreds.operatorCode || 'OM');
@@ -745,13 +784,9 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
 
             // Check if on login page and autofill from vault with automated AI Captcha solving
             const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
+            await userInp.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
             if (await userInp.count() > 0 && await userInp.isVisible()) {
-                let vaultCreds = null;
-                try {
-                    const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                    const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
-                    vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
-                } catch (_) {}
+                const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
 
                 if (vaultCreds && vaultCreds.username && vaultCreds.password) {
                     await performAutomatedTnegaLogin(tnegaPage, vaultCreds, onProgress, options);
@@ -837,12 +872,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                 if (currentUrl.includes('default.aspx') || currentUrl.includes('portallogin.aspx')) {
                     const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
                     if (await userInp.count() > 0 && await userInp.isVisible()) {
-                        let vaultCreds = null;
-                        try {
-                            const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-                            const opId = options.operatorUid || options.operatorName || citizenProfile.operatorUid || null;
-                            vaultCreds = opId ? getOperatorPortalCredentials(opId, 'tnega') : null;
-                        } catch (_) {}
+                        const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
                         if (vaultCreds && vaultCreds.username && vaultCreds.password) {
                             onProgress('🔄 [சுய திருத்தம்] போர்ட்டல் அமர்வு காலாவதியானது — தானாக மீண்டும் உள்நுழைகிறது...');
                             rev103Clicked = false;
@@ -1626,6 +1656,7 @@ async function startTnegaCanRegisterFlow(citizenProfile, onProgress, options = {
 }
 
 module.exports = {
+    resolveTnegaVaultCredentials,
     performAutomatedTnegaLogin,
     performLiveCanLookupOnPage,
     safeSaveCanToDraft,
