@@ -7,7 +7,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('esevaDesktopBridge', {
     isDesktopApp: true,
     platform: process.platform,
-    version: '1.1.1',
+    version: '1.1.19',
     
     // Window Controls for Frameless Desktop Experience
     minimizeWindow: () => ipcRenderer.send('window-minimize'),

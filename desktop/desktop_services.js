@@ -118,8 +118,67 @@ async function launchVisibleBrowser() {
     }
 }
 
+function parseSemver(verStr) {
+    const m = String(verStr || '').replace(/^v/i, '').match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!m) return 0;
+    return parseInt(m[1], 10) * 1000000 + parseInt(m[2], 10) * 1000 + parseInt(m[3], 10);
+}
+
+function checkRemoteVersionFallback(getMainWindow, getPromptShown, setPromptShown) {
+    try {
+        const https = require('https');
+        const { shell } = require('electron');
+        const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.19';
+        const currentNum = parseSemver(currentVer);
+
+        const req = https.get('https://api.github.com/repos/kumaran434/esevadraft/releases/latest', {
+            headers: { 'User-Agent': 'eSevaDraft-Desktop-Updater' },
+            timeout: 8000
+        }, (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                return;
+            }
+            let body = '';
+            res.on('data', c => { body += c; });
+            res.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const latestTag = String(data.tag_name || '').replace(/^v/i, '');
+                    const latestNum = parseSemver(latestTag);
+                    if (latestNum > currentNum && !getPromptShown()) {
+                        setPromptShown(true);
+                        const mainWindow = getMainWindow ? getMainWindow() : null;
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            const exeAsset = Array.isArray(data.assets) ? data.assets.find(a => a.name && a.name.endsWith('.exe')) : null;
+                            const dlUrl = (exeAsset && exeAsset.browser_download_url) || `https://github.com/kumaran434/esevadraft/releases/download/v${latestTag}/eSevaDraft-Desktop-Setup-${latestTag}.exe`;
+                            dialog.showMessageBox(mainWindow, {
+                                type: 'info',
+                                title: 'புதிய பதிப்பு வெளியாகியுள்ளது (New Update Available)',
+                                message: `eSevaDraft புதிய பதிப்பு (v${latestTag}) வெளியாகியுள்ளது! (தற்போதைய பதிப்பு: v${currentVer})`,
+                                detail: 'புதிய பதிப்பில் அனைத்து லாகின் மற்றும் ஆட்டோமேஷன் மேம்பாடுகளும் உள்ளன. இப்போதே பதிவிறக்கம் செய்து அப்டேட் செய்யவா?',
+                                buttons: ['📥 இப்போதே பதிவிறக்கு (Download Update)', 'பின்னர் (Later)'],
+                                defaultId: 0,
+                                cancelId: 1
+                            }).then((result) => {
+                                if (result.response === 0) {
+                                    shell.openExternal(dlUrl);
+                                }
+                            });
+                        }
+                    }
+                } catch (_) {}
+            });
+        });
+        req.on('error', () => {});
+        req.on('timeout', () => { req.destroy(); });
+    } catch (_) {}
+}
+
 function setupAutoUpdater(getMainWindow) {
-    if (!app.isPackaged && process.env.NODE_ENV !== 'production') {
+    let promptShown = false;
+    const isLocalDev = process.env.USERNAME === 'ADMIN' && fs.existsSync('d:\\downloads\\ai assitant 2');
+    if (!app.isPackaged && isLocalDev && process.env.NODE_ENV !== 'production') {
         console.log('[AutoUpdater] Development mode: skipping automatic update check.');
         return;
     }
@@ -128,45 +187,54 @@ function setupAutoUpdater(getMainWindow) {
             autoUpdater = require('electron-updater').autoUpdater;
         } catch (e) {
             console.warn('[AutoUpdater] init bypassed:', e.message);
-            return;
         }
     }
-    if (!autoUpdater) return;
 
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    if (autoUpdater) {
+        autoUpdater.autoDownload = true;
+        autoUpdater.autoInstallOnAppQuit = true;
 
-    autoUpdater.on('update-downloaded', (info) => {
-        console.log('[AutoUpdater] New update downloaded:', info.version);
-        const mainWindow = getMainWindow ? getMainWindow() : null;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            dialog.showMessageBox(mainWindow, {
-                type: 'info',
-                title: 'புதிய பதிப்பு தயார் (Update Ready)',
-                message: `eSevaDraft புதிய பதிப்பு (v${info.version}) தயார் நிலையில் உள்ளது.`,
-                detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பிற்கு மாறவா?',
-                buttons: ['இப்போதே Restart செய் (Restart Now)', 'பின்னர் (Later)'],
-                defaultId: 0,
-                cancelId: 1
-            }).then((result) => {
-                if (result.response === 0) {
-                    autoUpdater.quitAndInstall();
-                }
+        autoUpdater.on('update-downloaded', (info) => {
+            console.log('[AutoUpdater] New update downloaded:', info.version);
+            promptShown = true;
+            const mainWindow = getMainWindow ? getMainWindow() : null;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                dialog.showMessageBox(mainWindow, {
+                    type: 'info',
+                    title: 'புதிய பதிப்பு தயார் (Update Ready)',
+                    message: `eSevaDraft புதிய பதிப்பு (v${info.version}) தயார் நிலையில் உள்ளது.`,
+                    detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பிற்கு மாறவா?',
+                    buttons: ['இப்போதே Restart செய் (Restart Now)', 'பின்னர் (Later)'],
+                    defaultId: 0,
+                    cancelId: 1
+                }).then((result) => {
+                    if (result.response === 0) {
+                        autoUpdater.quitAndInstall();
+                    }
+                });
+            }
+        });
+
+        setTimeout(() => {
+            autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+                console.warn('[AutoUpdater] Check notice:', err.message);
+                checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
             });
-        }
-    });
+        }, 3000);
 
+        setInterval(() => {
+            autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+                console.warn('[AutoUpdater] Periodic check notice:', err.message);
+            });
+        }, 60 * 60 * 1000);
+    }
+
+    // Fallback GitHub release check after 12s in case electron-updater blockmap/yml check is slow or blocked
     setTimeout(() => {
-        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-            console.warn('[AutoUpdater] Check notice:', err.message);
-        });
-    }, 5000);
-
-    setInterval(() => {
-        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-            console.warn('[AutoUpdater] Periodic check notice:', err.message);
-        });
-    }, 60 * 60 * 1000);
+        if (!promptShown) {
+            checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
+        }
+    }, 12000);
 }
 
 module.exports = {

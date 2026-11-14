@@ -1,6 +1,9 @@
         import { initializeApp } from "/vendor/firebase/firebase-app.js";
         import { 
             getAuth, 
+            initializeAuth,
+            browserLocalPersistence,
+            indexedDBLocalPersistence,
             createUserWithEmailAndPassword, 
             signInWithEmailAndPassword, 
             signInWithPopup, 
@@ -20,8 +23,16 @@
         };
 
         const fbApp = initializeApp(firebaseConfig);
-        const fbAuth = getAuth(fbApp);
+        let fbAuth;
+        try {
+            fbAuth = initializeAuth(fbApp, {
+                persistence: [browserLocalPersistence, indexedDBLocalPersistence]
+            });
+        } catch (_) {
+            fbAuth = getAuth(fbApp);
+        }
         window.fbAuth = fbAuth;
+        window.firebaseApiKey = firebaseConfig.apiKey;
         window.GoogleAuthProvider = GoogleAuthProvider;
         window.signInWithPopup = signInWithPopup;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
@@ -36,7 +47,7 @@
                 // Authenticated Firebase users in eSevaDraft are operators unless specifically saved otherwise
                 const role = localStorage.getItem('eseva_user_role') || 'operator';
                 let mob = (role === 'operator' ? localStorage.getItem('eseva_operator_mobile') : localStorage.getItem('eseva_user_mobile'));
-                if (!mob && user.email && user.email.includes('@esevadraft.in')) {
+                if (!mob && user.email && user.email.includes('@esevadraft.')) {
                     mob = user.email.split('@')[0];
                 }
                 if (!mob) mob = '9876543210';
@@ -73,16 +84,17 @@
                 // Background reload check (non-blocking)
                 user.reload().catch(async (reloadErr) => {
                     console.warn('Firebase user reload check:', reloadErr.code || reloadErr.message);
-                    if (reloadErr.code === 'auth/user-disabled' || reloadErr.code === 'auth/user-not-found') {
+                    if (reloadErr.code === 'auth/user-disabled') {
                         await logoutUser();
                     }
                 });
             } else {
-                console.log('Firebase user logged out / no session');
-                const badge = document.getElementById('authProfileBadge');
-                if (badge) badge.style.display = 'none';
-                if (localStorage.getItem('eseva_operator_uid') || localStorage.getItem('eseva_user_role') === 'operator') {
-                    await logoutUser();
+                // CRITICAL: Never auto-logout an operator who already has a valid local/disk session!
+                // Operators only log out when explicitly clicking the Logout button.
+                const hasStoredOperator = !!(localStorage.getItem('eseva_operator_uid') || localStorage.getItem('eseva_user_role') === 'operator');
+                if (!hasStoredOperator) {
+                    const badge = document.getElementById('authProfileBadge');
+                    if (badge) badge.style.display = 'none';
                 }
             }
         });
@@ -93,8 +105,8 @@
                 try {
                     await window.fbAuth.currentUser.reload();
                 } catch (e) {
-                    if (e.code === 'auth/user-disabled' || e.code === 'auth/user-not-found') {
-                        console.warn('Periodic auth verification detected user removal:', e.code);
+                    if (e.code === 'auth/user-disabled') {
+                        console.warn('Periodic auth verification detected disabled user:', e.code);
                         await logoutUser();
                     }
                 }

@@ -5,6 +5,9 @@ const {
     getUserProfile, 
     saveUserProfile, 
     lookupUserByMobile, 
+    saveActiveOperatorSession,
+    getActiveOperatorSession,
+    clearActiveOperatorSession,
     listAllDrafts, 
     getCitizenDraft, 
     saveCitizenDraft 
@@ -31,17 +34,40 @@ router.get('/api/auth/session', async (req, res) => {
     const reqRole = req.query.role || null;
     const targetMobile = (req.query.mobile || req.headers['x-session-mobile'] || '').trim();
 
-    // 1. Operator session check: UID must be provided and valid
+    // 1. Operator session check: UID must be provided and valid, or restored from local desktop disk session
     if (opUid) {
         let opProfile = null;
         try { opProfile = await getUserProfile(opUid); } catch (e) {}
         if (opProfile && (opProfile.role === 'operator' || opProfile.role === 'admin')) {
             return res.json({
                 isLoggedIn: true,
+                operatorUid: opUid,
                 mobileNumber: opProfile.mobileNumber || null,
+                email: opProfile.email || null,
                 displayName: opProfile.displayName || 'இ-சேவை மையம்',
                 role: opProfile.role || 'operator',
                 isAdmin: opProfile.isAdmin === true || opProfile.role === 'admin',
+                citizenProfile: null,
+                resumedSession: false,
+                intakeState: 'SERVICE_SELECTION',
+                chatHistory: [getInitialWelcomeMessage()],
+                applicationNumber: null,
+                applicationPdfUrl: null
+            });
+        }
+    }
+
+    if ((reqRole === 'operator' || process.env.DESKTOP_RUNTIME === '1') && !targetMobile) {
+        const diskOp = typeof getActiveOperatorSession === 'function' ? getActiveOperatorSession() : null;
+        if (diskOp && diskOp.operatorUid) {
+            return res.json({
+                isLoggedIn: true,
+                operatorUid: diskOp.operatorUid,
+                mobileNumber: diskOp.mobileNumber || null,
+                email: diskOp.email || null,
+                displayName: diskOp.displayName || 'இ-சேவை மையம்',
+                role: diskOp.role || 'operator',
+                isAdmin: !!diskOp.isAdmin,
                 citizenProfile: null,
                 resumedSession: false,
                 intakeState: 'SERVICE_SELECTION',
@@ -90,25 +116,52 @@ router.get('/api/auth/session', async (req, res) => {
 
 // 2. GET /api/auth/lookup-mobile
 router.get('/api/auth/lookup-mobile', async (req, res) => {
-    const rawMobile = req.query.mobile || '';
-    const digitsOnly = String(rawMobile).replace(/\D/g, '');
+    const rawMobile = String(req.query.mobile || '').trim();
+    const digitsOnly = rawMobile.replace(/\D/g, '');
     const cleanMobile = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
-    if (cleanMobile.length !== 10) {
+    if (cleanMobile.length !== 10 && rawMobile.length < 3) {
         return res.status(400).json({ error: '10-இலக்க மொபைல் எண் தேவை.' });
     }
     try {
-        const user = await lookupUserByMobile(cleanMobile);
+        const user = await lookupUserByMobile(cleanMobile.length === 10 ? cleanMobile : rawMobile);
         if (user) {
             return res.json({
                 found: true,
-                authEmail: user.email || `${cleanMobile}@esevadraft.in`,
+                uid: user.uid || null,
+                authEmail: user.email || (cleanMobile.length === 10 ? `${cleanMobile}@esevadraft.in` : `${rawMobile.toLowerCase()}@esevadraft.in`),
                 role: user.role || 'citizen',
-                displayName: user.displayName || 'பயனர்'
+                displayName: user.displayName || 'பயனர்',
+                mobileNumber: user.mobileNumber || (cleanMobile.length === 10 ? cleanMobile : null)
             });
         }
         return res.json({ found: false });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// 2.5 GET /api/auth/profile & POST /api/auth/sync-profile (Cloud-Desktop Operator Profile Sync)
+router.get('/api/auth/profile', async (req, res) => {
+    const uid = String(req.query.uid || '').trim();
+    if (!uid) return res.status(400).json({ found: false });
+    try {
+        const profile = await getUserProfile(uid);
+        if (profile) return res.json({ found: true, profile });
+        return res.json({ found: false });
+    } catch (e) {
+        res.status(500).json({ found: false, error: e.message });
+    }
+});
+
+router.post('/api/auth/sync-profile', async (req, res) => {
+    const body = req.body || {};
+    const uid = body.uid || body.firebaseUid || body.operatorUid;
+    if (!uid) return res.status(400).json({ success: false });
+    try {
+        const saved = await saveUserProfile(uid, body);
+        res.json({ success: true, profile: saved });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -162,6 +215,16 @@ router.post('/api/auth/login', async (req, res) => {
         } catch (e) {}
 
         const finalOperatorName = (storedProfile && storedProfile.displayName) || (displayName && displayName !== 'பயனர்' && displayName !== 'மையம்' ? displayName : 'குமரன் இ-சேவை மையம்');
+        if (typeof saveActiveOperatorSession === 'function' && (firebaseUid || operatorUid)) {
+            saveActiveOperatorSession({
+                operatorUid: firebaseUid || operatorUid,
+                displayName: finalOperatorName,
+                mobileNumber: cleanMobile,
+                email: email || (storedProfile && storedProfile.email) || `${cleanMobile}@esevadraft.in`,
+                role: userRole,
+                isAdmin: userRole === 'admin'
+            });
+        }
         return res.json({
             success: true,
             isOperatorOnly: true,
@@ -309,6 +372,9 @@ router.post('/api/auth/logout', async (req, res) => {
         const { stopTnpdsAutomation } = require('../../tnpds_automation');
         await stopTnpdsAutomation();
     } catch (e) {}
+    if (typeof clearActiveOperatorSession === 'function') {
+        clearActiveOperatorSession();
+    }
     const activeMob = getActiveMobile();
     if (activeMob && sessions.has(activeMob)) {
         persistSessions();

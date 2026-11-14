@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {

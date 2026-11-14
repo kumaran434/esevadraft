@@ -2,10 +2,38 @@
 
         async function checkSession() {
             try {
-                const opUid = localStorage.getItem('eseva_operator_uid') || '';
-                const userRole = localStorage.getItem('eseva_user_role') || '';
+                let opUid = localStorage.getItem('eseva_operator_uid') || '';
+                let userRole = localStorage.getItem('eseva_user_role') || '';
                 const activeCustMobile = localStorage.getItem('eseva_active_customer_mobile') || '';
                 const citizenMobile = localStorage.getItem('eseva_user_mobile') || '';
+
+                // 0. Desktop Disk Session Recovery: If localStorage lost operator UID (e.g. after close/restart or port switch),
+                // check local server's persistent disk session (operator_auth_session.json) first!
+                if (!opUid && !citizenMobile) {
+                    try {
+                        const diskRes = await fetch('/api/auth/session?role=operator');
+                        const diskData = await diskRes.json();
+                        if (diskData && diskData.isLoggedIn && diskData.operatorUid && (diskData.role === 'operator' || diskData.role === 'admin')) {
+                            opUid = diskData.operatorUid;
+                            userRole = 'operator';
+                            localStorage.setItem('eseva_operator_uid', opUid);
+                            localStorage.setItem('eseva_user_role', 'operator');
+                            if (diskData.displayName) {
+                                localStorage.setItem('eseva_operator_name', diskData.displayName);
+                                localStorage.setItem('eseva_user_name', diskData.displayName);
+                            }
+                            if (diskData.mobileNumber && diskData.mobileNumber !== '9876543210') {
+                                localStorage.setItem('eseva_operator_mobile', diskData.mobileNumber);
+                                localStorage.setItem('eseva_user_mobile', diskData.mobileNumber);
+                                localStorage.setItem('eseva_last_mobile', diskData.mobileNumber);
+                            }
+                            if (diskData.email) {
+                                localStorage.setItem('eseva_auth_email', diskData.email);
+                                localStorage.setItem('eseva_last_auth_email', diskData.email);
+                            }
+                        }
+                    } catch (_) {}
+                }
                 
                 // 1. Operators: Instant UI boot when cached operator UID exists; Firebase onAuthStateChanged verifies in background.
                 if (userRole === 'operator' || opUid) {
@@ -185,6 +213,7 @@
             let altEmail = null;
             let detectedRole = null;
             let detectedName = null;
+            let lookupFound = false;
 
             if (isEmail) {
                 primaryEmail = rawInput.trim().toLowerCase().replace(/\s+/g, '');
@@ -199,6 +228,7 @@
                         const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${cleanMobile}`);
                         const lData = await lRes.json();
                         if (lData && lData.found) {
+                            lookupFound = true;
                             if (lData.authEmail && lData.authEmail.trim().toLowerCase() !== primaryEmail) {
                                 altEmail = lData.authEmail.trim().toLowerCase();
                             }
@@ -207,10 +237,21 @@
                         }
                     } catch (e) {}
                 } else {
-                    // Alphanumeric username support (e.g. "kumaran", "admin")
+                    // Alphanumeric username/centerName support (e.g. "kumaran", "SUMAN", "admin")
                     const cleanUser = rawInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
                     if (cleanUser && cleanUser.length >= 3) {
                         primaryEmail = `${cleanUser}@esevadraft.in`;
+                        try {
+                            const lRes = await fetch(`/api/auth/lookup-mobile?mobile=${encodeURIComponent(rawInput.trim())}`);
+                            const lData = await lRes.json();
+                            if (lData && lData.found) {
+                                lookupFound = true;
+                                if (lData.authEmail) primaryEmail = lData.authEmail.trim().toLowerCase();
+                                if (lData.mobileNumber) cleanMobile = String(lData.mobileNumber).replace(/\D/g, '').slice(-10);
+                                if (lData.role) detectedRole = lData.role;
+                                if (lData.displayName) detectedName = lData.displayName;
+                            }
+                        } catch (_) {}
                     } else {
                         showAuthError('சரியான 10-இலக்க மொபைல் எண் அல்லது மின்னஞ்சலை உள்ளிடவும்.');
                         return;
@@ -218,12 +259,7 @@
                 }
             }
 
-            // Resilient Whitespace & Space Tolerance Engine:
-            // 1. Trimmed password (handles clipboard paste spaces, mobile keyboard auto-spaces)
-            // 2. Raw password (in case password intentionally has leading/trailing space)
-            // 3. Trimmed password + ' ' (in case user originally registered with an accidental trailing space)
-            // 4. ' ' + Trimmed password (leading space tolerance)
-            // 5. Password with internal spaces removed
+            // Resilient Whitespace, Space & First-Letter Case Tolerance Engine:
             const trimmedPass = rawPassword.trim();
             const passwordCandidates = [];
             if (trimmedPass) passwordCandidates.push(trimmedPass);
@@ -232,6 +268,11 @@
             if (trimmedPass && !passwordCandidates.includes(' ' + trimmedPass)) passwordCandidates.push(' ' + trimmedPass);
             const noSpacePass = rawPassword.replace(/\s+/g, '');
             if (noSpacePass && !passwordCandidates.includes(noSpacePass)) passwordCandidates.push(noSpacePass);
+            if (trimmedPass && trimmedPass.length > 0) {
+                const firstChar = trimmedPass.charAt(0);
+                const toggledFirst = (firstChar === firstChar.toUpperCase() ? firstChar.toLowerCase() : firstChar.toUpperCase()) + trimmedPass.slice(1);
+                if (!passwordCandidates.includes(toggledFirst)) passwordCandidates.push(toggledFirst);
+            }
 
             const emailCandidates = [primaryEmail];
             if (cleanMobile) {
@@ -252,25 +293,82 @@
 
             let userCred = null;
             let lastAuthErr = null;
+            const fbApiKey = window.firebaseApiKey || 'AIzaSyDliMuHXhnuE_k8TGaQVOnSAU56WNW-beA';
+
+            async function restSignInFallback(email, password) {
+                const resp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fbApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, returnSecureToken: true })
+                });
+                const json = await resp.json();
+                if (resp.ok && json && json.localId) {
+                    return {
+                        user: {
+                            uid: json.localId,
+                            email: json.email || email,
+                            displayName: json.displayName || null
+                        }
+                    };
+                }
+                const errMsg = json?.error?.message || 'INVALID_LOGIN_CREDENTIALS';
+                const errObj = new Error(errMsg);
+                if (errMsg.includes('TOO_MANY_ATTEMPTS')) errObj.code = 'auth/too-many-requests';
+                else if (errMsg.includes('INVALID_EMAIL')) errObj.code = 'auth/invalid-email';
+                else errObj.code = 'auth/invalid-credential';
+                throw errObj;
+            }
 
             try {
-                if (!window.signInWithEmailAndPassword || !window.fbAuth) {
-                    throw new Error('Firebase Auth தயாராகவில்லை. சிறிது நேரத்தில் மீண்டும் முயலவும்.');
-                }
-
                 for (const emailToTry of emailCandidates) {
                     for (const passToTry of passwordCandidates) {
                         try {
-                            userCred = await window.signInWithEmailAndPassword(window.fbAuth, emailToTry, passToTry);
+                            if (window.signInWithEmailAndPassword && window.fbAuth) {
+                                userCred = await window.signInWithEmailAndPassword(window.fbAuth, emailToTry, passToTry);
+                            } else {
+                                userCred = await restSignInFallback(emailToTry, passToTry);
+                            }
                             if (userCred && userCred.user) break;
                         } catch (err) {
-                            lastAuthErr = err;
-                            if (err.code === 'auth/too-many-requests' || err.code === 'auth/network-request-failed') {
-                                throw err;
+                            // If modular SDK failed due to local IndexedDB/persistence lock, retry via direct HTTPS REST API
+                            if (err.code !== 'auth/invalid-credential' && err.code !== 'auth/wrong-password' && err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-email' && err.code !== 'auth/too-many-requests') {
+                                try {
+                                    userCred = await restSignInFallback(emailToTry, passToTry);
+                                    if (userCred && userCred.user) break;
+                                } catch (restErr) {
+                                    lastAuthErr = restErr;
+                                }
+                            } else {
+                                lastAuthErr = err;
+                            }
+                            if (lastAuthErr && (lastAuthErr.code === 'auth/too-many-requests' || lastAuthErr.code === 'auth/network-request-failed')) {
+                                throw lastAuthErr;
                             }
                         }
                     }
                     if (userCred && userCred.user) break;
+                }
+
+                // If account does not exist yet in Firebase Auth and operator typed a valid 10-digit mobile + password (>=6 chars),
+                // attempt auto-provisioning; if account already exists in Firebase, it throws email-already-in-use so we know password was wrong.
+                if ((!userCred || !userCred.user) && cleanMobile.length === 10 && trimmedPass.length >= 6 && !lookupFound) {
+                    try {
+                        if (window.createUserWithEmailAndPassword && window.fbAuth) {
+                            userCred = await window.createUserWithEmailAndPassword(window.fbAuth, primaryEmail, trimmedPass);
+                        } else {
+                            const sResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${fbApiKey}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: primaryEmail, password: trimmedPass, returnSecureToken: true })
+                            });
+                            const sJson = await sResp.json();
+                            if (sResp.ok && sJson && sJson.localId) {
+                                userCred = { user: { uid: sJson.localId, email: sJson.email || primaryEmail, displayName: null } };
+                            }
+                        }
+                    } catch (_) {
+                        // Email already exists -> keep original invalid-credential error
+                    }
                 }
 
                 if (!userCred || !userCred.user) {
@@ -346,16 +444,45 @@
             }
 
             try {
-                if (!window.createUserWithEmailAndPassword || !window.fbAuth) {
-                    throw new Error('Firebase Auth தயாராகவில்லை. சிறிது நேரத்தில் மீண்டும் முயலவும்.');
-                }
                 localStorage.setItem('eseva_user_mobile', cleanMobile);
                 localStorage.setItem('eseva_user_name', name);
                 localStorage.setItem('eseva_operator_name', name);
                 localStorage.setItem('eseva_operator_mobile', cleanMobile);
                 localStorage.setItem('eseva_user_role', 'operator');
 
-                const userCred = await window.createUserWithEmailAndPassword(window.fbAuth, authEmail, password);
+                let userCred = null;
+                const fbApiKey = window.firebaseApiKey || 'AIzaSyDliMuHXhnuE_k8TGaQVOnSAU56WNW-beA';
+                try {
+                    if (window.createUserWithEmailAndPassword && window.fbAuth) {
+                        userCred = await window.createUserWithEmailAndPassword(window.fbAuth, authEmail, password);
+                    } else {
+                        const sResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${fbApiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: authEmail, password, returnSecureToken: true })
+                        });
+                        const sJson = await sResp.json();
+                        if (sResp.ok && sJson && sJson.localId) {
+                            userCred = { user: { uid: sJson.localId, email: sJson.email || authEmail } };
+                        } else {
+                            const errObj = new Error(sJson?.error?.message || 'SIGNUP_FAILED');
+                            if (String(sJson?.error?.message || '').includes('EMAIL_EXISTS')) errObj.code = 'auth/email-already-in-use';
+                            throw errObj;
+                        }
+                    }
+                } catch (signupErr) {
+                    if (signupErr.code === 'auth/email-already-in-use') {
+                        // If operator already registered this number and entered the right password in signup, sign them in seamlessly!
+                        try {
+                            if (window.signInWithEmailAndPassword && window.fbAuth) {
+                                userCred = await window.signInWithEmailAndPassword(window.fbAuth, authEmail, password);
+                            }
+                        } catch (_) {}
+                        if (!userCred) throw signupErr;
+                    } else {
+                        throw signupErr;
+                    }
+                }
                 console.log('Firebase operator signup success:', userCred.user.email);
                 await completeAuthSession(cleanMobile, name, userCred.user.email, userCred.user.uid, 'operator');
             } catch (e) {

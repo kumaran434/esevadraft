@@ -28,12 +28,12 @@
     "redirects": [
       {
         "source": "/api/download/desktop-app",
-        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.15/eSevaDraft-Desktop-Setup-1.1.15.exe",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.19/eSevaDraft-Desktop-Setup-1.1.19.exe",
         "type": 302
       },
       {
         "source": "/download/desktop-app",
-        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.15/eSevaDraft-Desktop-Setup-1.1.15.exe",
+        "destination": "https://github.com/kumaran434/esevadraft/releases/download/v1.1.19/eSevaDraft-Desktop-Setup-1.1.19.exe",
         "type": 302
       }
     ],

@@ -82,7 +82,7 @@ if (!gotTheLock) {
         // Stale Cache Purge upon Version Upgrade: Prevents zombie UI cache across installer updates
         try {
             const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : '';
-            const currentVer = app.getVersion() || '1.1.18';
+            const currentVer = app.getVersion() || '1.1.19';
             if (userData) {
                 const verFile = path.join(userData, '.installed_version');
                 let prevVer = '';
@@ -92,6 +92,11 @@ if (!gotTheLock) {
                     const userPublic = path.join(userData, 'public');
                     if (fs.existsSync(userPublic)) {
                         try { fs.rmSync(userPublic, { recursive: true, force: true }); } catch (_) {}
+                    }
+                    // Self-heal any corrupted Chromium IndexedDB from legacy app.exit(0) while preserving Local Storage & user profiles
+                    const userIndexedDb = path.join(userData, 'IndexedDB');
+                    if (fs.existsSync(userIndexedDb)) {
+                        try { fs.rmSync(userIndexedDb, { recursive: true, force: true }); } catch (_) {}
                     }
                     try { fs.writeFileSync(verFile, currentVer, 'utf8'); } catch (_) {}
                 }
@@ -107,10 +112,6 @@ if (!gotTheLock) {
                 const resVault = path.join(resData, 'operator_vault.json');
                 if (fs.existsSync(resVault)) {
                     try { fs.unlinkSync(resVault); } catch (_) {}
-                }
-                const resUsers = path.join(resData, 'users');
-                if (fs.existsSync(resUsers)) {
-                    try { fs.rmSync(resUsers, { recursive: true, force: true }); } catch (_) {}
                 }
                 const resCitizens = path.join(resData, 'citizens.json');
                 if (fs.existsSync(resCitizens)) {
@@ -156,12 +157,12 @@ if (!gotTheLock) {
 
         // Defer non-critical background services to ensure UI thread remains 100% responsive (<50ms) on startup
         setTimeout(() => {
-            startDesktopRuntimeWatchdog(getMainWindow);
-        }, 8000);
+            setupAutoUpdater(getMainWindow);
+        }, 5000);
 
         setTimeout(() => {
-            setupAutoUpdater(getMainWindow);
-        }, 15000);
+            startDesktopRuntimeWatchdog(getMainWindow);
+        }, 8000);
 
         setTimeout(() => {
             startAssetSyncService();
@@ -173,7 +174,24 @@ if (!gotTheLock) {
     });
 }
 
+function flushAllBrowserStorage() {
+    try {
+        const { session } = require('electron');
+        if (session && session.defaultSession && typeof session.defaultSession.flushStorageData === 'function') {
+            session.defaultSession.flushStorageData();
+        }
+        BrowserWindow.getAllWindows().forEach(w => {
+            try {
+                if (!w.isDestroyed() && w.webContents && w.webContents.session) {
+                    w.webContents.session.flushStorageData();
+                }
+            } catch (_) {}
+        });
+    } catch (_) {}
+}
+
 async function cleanupAutomation() {
+    flushAllBrowserStorage();
     try {
         if (activeAutomationModule && typeof activeAutomationModule.stopTnpdsAutomation === 'function') {
             await activeAutomationModule.stopTnpdsAutomation();
@@ -187,13 +205,18 @@ async function cleanupAutomation() {
 }
 
 app.on('before-quit', () => {
+    flushAllBrowserStorage();
     cleanupAutomation();
 });
 
 app.on('window-all-closed', () => {
+    flushAllBrowserStorage();
     try { cleanupAutomation(); } catch (_) {}
     if (process.platform !== 'darwin') {
-        app.exit(0);
+        app.quit();
+        setTimeout(() => {
+            process.exit(0);
+        }, 1200);
     }
 });
 
