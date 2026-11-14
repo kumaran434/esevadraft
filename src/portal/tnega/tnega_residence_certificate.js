@@ -212,7 +212,10 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
 
         // Check if page is already logged in
         const existingUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
-        const isAlreadyLoggedIn = (existingUrl.includes('tnesevai.tn.gov.in') || existingUrl.includes('tnedistrict.tn.gov.in')) && 
+        const hasLoginBox = await tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first().isVisible().catch(() => false);
+        const isRootLoginUrl = /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(existingUrl);
+        const isAlreadyLoggedIn = !hasLoginBox && !isRootLoginUrl &&
+                                  (existingUrl.includes('tnesevai.tn.gov.in') || existingUrl.includes('tnedistrict.tn.gov.in')) && 
                                   !existingUrl.includes('default.aspx') && 
                                   !existingUrl.includes('portallogin.aspx') &&
                                   !existingUrl.includes('internalerror') &&
@@ -291,7 +294,7 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                 const currentUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
 
                 // Timeout redirect recovery
-                if (currentUrl.includes('default.aspx?msg=') || currentUrl.includes('default.aspx')) {
+                if (currentUrl.includes('default.aspx?msg=') || currentUrl.includes('default.aspx') || currentUrl.includes('portallogin.aspx') || /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(currentUrl)) {
                     const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
                     if (await userInp.count() > 0 && await userInp.isVisible()) {
                         const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
@@ -653,7 +656,12 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                     const compliantPhotoPath = path.join(process.cwd(), 'compressed', 'studio_passport_compliant.jpeg');
 
                     try {
-                        const sharp = require(path.join('d:', 'downloads', 'ai assitant 2', 'node_modules', 'sharp'));
+                        let sharp;
+                        try { sharp = require('sharp'); } catch (_) {
+                            try { sharp = require(path.join(process.resourcesPath || '', 'node_modules', 'sharp')); } catch (__) {
+                                sharp = require(path.join('d:', 'downloads', 'ai assitant 2', 'node_modules', 'sharp'));
+                            }
+                        }
                         if (fs.existsSync(photoPath)) {
                             const meta = await sharp(photoPath).metadata();
                             if (meta.width > 240 || meta.height > 240 || fs.statSync(photoPath).size > 50000) {

@@ -17,6 +17,29 @@ function getFileHash(filePath) {
     }
 }
 
+const CORE_OTA_FILES = [
+    'tnpds_automation.js',
+    'tnega_can_automation.js',
+    'govt_automation_core.js',
+    'photo_studio.js',
+    'tn_district_mapper.js',
+    'firestore_db.js',
+    'database.js',
+    'src/services/portal_vault_service.js',
+    'src/services/tnega_receipt_generator.js',
+    'src/services/db/user_profile_store.js',
+    'src/services/db/firestore_client.js',
+    'src/utils/bilingual_helper.js',
+    'src/portal/common/ai_captcha_solver.js',
+    'src/portal/tnega/tnega_browser_manager.js',
+    'src/portal/tnega/tnega_hud.js',
+    'src/portal/tnega/tnega_can_register.js',
+    'src/portal/tnega/tnega_can_search_otp.js',
+    'src/portal/tnega/tnega_income_certificate.js',
+    'src/portal/tnega/tnega_residence_certificate.js',
+    'src/portal/tnega/tnega_community_certificate.js'
+];
+
 // 1. GET /api/desktop/asset_manifest
 router.get('/api/desktop/asset_manifest', (req, res) => {
     try {
@@ -41,9 +64,8 @@ router.get('/api/desktop/asset_manifest', (req, res) => {
         }
 
         scan(publicDir);
-        // Include core automation files
-        const coreFiles = ['tnpds_automation.js', 'govt_automation_core.js', 'photo_studio.js', 'tn_district_mapper.js'];
-        coreFiles.forEach(f => {
+        // Include core automation & vault files
+        CORE_OTA_FILES.forEach(f => {
             const full = path.join(__dirname, '..', '..', f);
             if (fs.existsSync(full)) manifest[`__core__/${f}`] = getFileHash(full);
         });
@@ -62,8 +84,7 @@ router.use('/api/desktop/asset', (req, res) => {
 
         if (reqPath.startsWith('__core__/')) {
             const coreFile = reqPath.replace('__core__/', '');
-            const safeCore = ['tnpds_automation.js', 'govt_automation_core.js', 'photo_studio.js', 'tn_district_mapper.js'];
-            if (!safeCore.includes(coreFile)) return res.status(403).send('Forbidden');
+            if (!CORE_OTA_FILES.includes(coreFile)) return res.status(403).send('Forbidden');
             const target = path.join(__dirname, '..', '..', coreFile);
             return res.sendFile(target);
         }

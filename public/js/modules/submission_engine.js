@@ -166,9 +166,32 @@
                         console.warn('Draft fetch error in desktop submit:', e);
                     }
                 }
+                const activeOpUid = localStorage.getItem('eseva_operator_uid') ||
+                                    localStorage.getItem('eseva_user_id') ||
+                                    localStorage.getItem('eseva_operator_mobile') ||
+                                    localStorage.getItem('eseva_user_mobile') ||
+                                    'admin';
+                const activeOpName = localStorage.getItem('eseva_operator_name') ||
+                                     localStorage.getItem('eseva_user_name') ||
+                                     'admin';
                 draftData.mobileNumber = activeMob;
-                draftData.operatorMobile = localStorage.getItem('eseva_user_mobile') || '';
-                draftData.operatorUid = localStorage.getItem('eseva_operator_uid') || '';
+                draftData.operatorMobile = localStorage.getItem('eseva_user_mobile') || localStorage.getItem('eseva_operator_mobile') || '';
+                draftData.operatorUid = activeOpUid;
+                draftData.operatorName = activeOpName;
+                if (draftData.citizenProfile && typeof draftData.citizenProfile === 'object') {
+                    draftData.citizenProfile.operatorUid = activeOpUid;
+                    draftData.citizenProfile.operatorName = activeOpName;
+                }
+                try {
+                    const rawVaultCreds = localStorage.getItem('eseva_vault_creds_tnega_' + activeOpUid) ||
+                                          localStorage.getItem('eseva_vault_creds_tnega_active');
+                    if (rawVaultCreds) {
+                        const parsedCreds = JSON.parse(rawVaultCreds);
+                        if (parsedCreds && parsedCreds.username && parsedCreds.password) {
+                            draftData.tnegaVaultCredentials = parsedCreds;
+                        }
+                    }
+                } catch (_) {}
                 draftData.isMockSandbox = false;
                 draftData.forceRealGovtOtp = true;
 

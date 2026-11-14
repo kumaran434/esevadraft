@@ -217,26 +217,54 @@ async function safeSelect(locator, matchVal) {
  */
 function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
     try {
-        const { getOperatorPortalCredentials } = require('../../services/portal_vault_service');
-        const candidates = [
-            options?.operatorUid,
-            citizenProfile?.operatorUid,
-            options?.draftData?.operatorUid,
-            options?.draftData?.citizenProfile?.operatorUid,
-            options?.operatorName,
-            citizenProfile?.operatorName,
-            options?.draftData?.operatorName,
-            'admin'
-        ].filter(Boolean);
+        let vaultSvc = null;
+        try {
+            vaultSvc = require('../../services/portal_vault_service');
+        } catch (_) {}
 
-        const seen = new Set();
-        for (const cand of candidates) {
-            const key = String(cand).trim();
-            if (!key || seen.has(key)) continue;
-            seen.add(key);
-            const creds = getOperatorPortalCredentials(key, 'tnega');
-            if (creds && creds.username && creds.password) {
-                return creds;
+        const inlineCreds = options?.tnegaVaultCredentials ||
+                            citizenProfile?.tnegaVaultCredentials ||
+                            options?.draftData?.tnegaVaultCredentials ||
+                            options?.draftData?.citizenProfile?.tnegaVaultCredentials;
+        if (inlineCreds && inlineCreds.username && inlineCreds.password) {
+            if (vaultSvc && typeof vaultSvc.saveOperatorPortalCredentials === 'function') {
+                try {
+                    const targetUid = options?.operatorUid || citizenProfile?.operatorUid || inlineCreds.operatorUid || 'admin';
+                    vaultSvc.saveOperatorPortalCredentials(targetUid, 'tnega', inlineCreds);
+                } catch (_) {}
+            }
+            return {
+                username: String(inlineCreds.username).trim(),
+                password: String(inlineCreds.password).trim(),
+                operatorCode: String(inlineCreds.operatorCode || 'OM').trim()
+            };
+        }
+
+        if (vaultSvc && typeof vaultSvc.getOperatorPortalCredentials === 'function') {
+            const { getOperatorPortalCredentials } = vaultSvc;
+            const candidates = [
+                options?.operatorUid,
+                citizenProfile?.operatorUid,
+                options?.draftData?.operatorUid,
+                options?.draftData?.citizenProfile?.operatorUid,
+                options?.operatorMobile,
+                citizenProfile?.operatorMobile,
+                options?.draftData?.operatorMobile,
+                options?.operatorName,
+                citizenProfile?.operatorName,
+                options?.draftData?.operatorName,
+                'admin'
+            ].filter(Boolean);
+
+            const seen = new Set();
+            for (const cand of candidates) {
+                const key = String(cand).trim();
+                if (!key || seen.has(key)) continue;
+                seen.add(key);
+                const creds = getOperatorPortalCredentials(key, 'tnega');
+                if (creds && creds.username && creds.password) {
+                    return creds;
+                }
             }
         }
     } catch (_) {}
@@ -271,6 +299,13 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
     const ddlOp = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_ddloperator, select[name*="ddloperator"]').first();
 
     // Ensure login input fields are rendered before starting attempt loop
+    if (!(await userInp.isVisible().catch(() => false))) {
+        const franchiseeBtn = page.locator('a:has-text("Franchisee Login"), #btnFranchiseeLogin, a[href*="Franchisee"]').first();
+        if (await franchiseeBtn.count() > 0 && await franchiseeBtn.isVisible().catch(() => false)) {
+            await franchiseeBtn.click().catch(() => {});
+            await page.waitForTimeout(600);
+        }
+    }
     await userInp.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 
     // Check if an orphaned session exists and close it (TNeGA 1-session lock rule)
@@ -282,11 +317,14 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
         await page.waitForTimeout(1500);
     }
 
+    const isStillLoginUrl = (u) => u.includes('default.aspx') || u.includes('portallogin.aspx') || /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(u);
+
     // Captcha Solve & Login Retry Loop (up to 4 attempts)
     let loginSuccess = false;
     for (let attempt = 1; attempt <= 4; attempt++) {
         const currentUrl = page.url().toLowerCase();
-        if (!currentUrl.includes('default.aspx') && !currentUrl.includes('portallogin.aspx')) {
+        const hasLoginInput = (await userInp.count() > 0) && (await userInp.isVisible().catch(() => false));
+        if (!isStillLoginUrl(currentUrl) && !hasLoginInput) {
             loginSuccess = true;
             break;
         }
@@ -397,7 +435,8 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
         }
 
         const postUrl = page.url().toLowerCase();
-        if (!postUrl.includes('default.aspx') && !postUrl.includes('portallogin.aspx')) {
+        const postHasLoginInput = (await userInp.count() > 0) && (await userInp.isVisible().catch(() => false));
+        if (!isStillLoginUrl(postUrl) && !postHasLoginInput) {
             loginSuccess = true;
             onProgress('🎉 TNeGA போர்ட்டலில் வெற்றிகரமாக உள்நுழைந்தது!');
             await updateTnegaHud(page, {
@@ -756,7 +795,10 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
 
         // Check if page is already logged in to prevent duplicate login attempts (Anti-Block Law)
         const existingUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
-        const isAlreadyLoggedIn = (existingUrl.includes('tnesevai.tn.gov.in') || existingUrl.includes('tnedistrict.tn.gov.in')) && 
+        const hasLoginBox = await tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first().isVisible().catch(() => false);
+        const isRootLoginUrl = /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(existingUrl);
+        const isAlreadyLoggedIn = !hasLoginBox && !isRootLoginUrl &&
+                                  (existingUrl.includes('tnesevai.tn.gov.in') || existingUrl.includes('tnedistrict.tn.gov.in')) && 
                                   !existingUrl.includes('default.aspx') && 
                                   !existingUrl.includes('portallogin.aspx') &&
                                   !existingUrl.includes('internalerror') &&
@@ -869,7 +911,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                 const currentUrl = tnegaPage.url().toLowerCase();
 
                 // Self-healing re-login if session timed out mid-run and landed on Default.aspx
-                if (currentUrl.includes('default.aspx') || currentUrl.includes('portallogin.aspx')) {
+                const isLoopLoginUrl = currentUrl.includes('default.aspx') || currentUrl.includes('portallogin.aspx') || /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(currentUrl);
+                if (isLoopLoginUrl) {
                     const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
                     if (await userInp.count() > 0 && await userInp.isVisible()) {
                         const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
@@ -884,7 +927,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                 }
 
                 // If on service list or dashboard (logged in)
-                if (!currentUrl.includes('default.aspx') && !currentUrl.includes('portallogin.aspx')) {
+                if (!isLoopLoginUrl) {
                     if (state.context) {
                         try {
                             const cookiePath = path.join(__dirname, '..', '..', '..', 'data', 'tnega_cookies.json');

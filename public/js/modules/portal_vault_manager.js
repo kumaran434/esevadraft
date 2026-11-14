@@ -296,7 +296,7 @@
         const btnSave = document.getElementById('btnVaultSaveCreds');
 
         const username = userInp ? userInp.value.trim() : '';
-        const password = passInp ? passInp.value.trim() : '';
+        let password = passInp ? passInp.value.trim() : '';
         const operatorCode = roleSelect ? roleSelect.value : 'OM';
         const customName = customNameInp ? customNameInp.value.trim() : '';
         const customUrl = customUrlInp ? customUrlInp.value.trim() : '';
@@ -305,6 +305,17 @@
 
         let portalKey = selectedKey;
         let portalName = (PORTAL_CONFIG[selectedKey] && PORTAL_CONFIG[selectedKey].name) || selectedKey;
+
+        if (!password) {
+            try {
+                const prevRaw = localStorage.getItem('eseva_vault_creds_' + portalKey + '_' + opUid) ||
+                                localStorage.getItem('eseva_vault_creds_' + portalKey + '_active');
+                if (prevRaw) {
+                    const prevObj = JSON.parse(prevRaw);
+                    if (prevObj && prevObj.password) password = prevObj.password;
+                }
+            } catch (_) {}
+        }
 
         if (selectedKey === 'custom') {
             if (!customName) {
@@ -368,6 +379,21 @@
                     if (currentVaultSummary) {
                         localStorage.setItem('eseva_vault_summary_' + opUid, JSON.stringify(currentVaultSummary));
                     }
+                    if (username && password) {
+                        const localCredObj = {
+                            portal: portalKey,
+                            portalName: portalName,
+                            customUrl: customUrl,
+                            username: username,
+                            password: password,
+                            operatorCode: operatorCode || 'OM',
+                            operatorUid: opUid,
+                            operatorName: opName,
+                            savedAt: new Date().toISOString()
+                        };
+                        localStorage.setItem('eseva_vault_creds_' + portalKey + '_' + opUid, JSON.stringify(localCredObj));
+                        localStorage.setItem('eseva_vault_creds_' + portalKey + '_active', JSON.stringify(localCredObj));
+                    }
                 } catch (_) {}
                 renderPortalPillBadges();
                 onVaultPortalChange();
@@ -429,6 +455,10 @@
             const data = await res.json();
             if (data.success) {
                 currentVaultSummary = data.vault || currentVaultSummary;
+                try {
+                    localStorage.removeItem('eseva_vault_creds_' + selectedKey + '_' + opUid);
+                    localStorage.removeItem('eseva_vault_creds_' + selectedKey + '_active');
+                } catch (_) {}
                 renderPortalPillBadges();
                 onVaultPortalChange();
 

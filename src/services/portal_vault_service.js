@@ -308,6 +308,36 @@ function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
                 resolvedOpId = bestKey;
             }
         }
+
+        // 4. Physical Desktop App Single-PC Recovery:
+        // If running on a real operator's Desktop PC (not test mode) and the operator saved credentials in their local AppData vault
+        // under an alias (e.g. 'admin' or mobile or name) while running automation under their Firebase UID, use their local AppData entry
+        // (strictly excluding Kumaran's UID 'z9tsoaph0hh69du0xpk2gdxk2kr2' unless the active operator IS Kumaran).
+        if (!opData && process.env.NODE_ENV !== 'test' && process.env.REGRESSION_TEST !== 'true') {
+            const targetPath = getVaultFilePath();
+            if (targetPath && targetPath !== WORKSPACE_VAULT_PATH && fs.existsSync(targetPath)) {
+                try {
+                    const localAppDataVault = JSON.parse(fs.readFileSync(targetPath, 'utf8')) || {};
+                    let bestKey = null;
+                    let bestTime = 0;
+                    for (const [k, entry] of Object.entries(localAppDataVault)) {
+                        if (k.startsWith('op_test_')) continue;
+                        if (k === 'z9tsoaph0hh69du0xpk2gdxk2kr2' && opId !== 'z9tsoaph0hh69du0xpk2gdxk2kr2') continue;
+                        if (hasValidPortalCreds(entry)) {
+                            const t = new Date(entry[pKey]?.savedAt || entry?.updatedAt || 0).getTime() || 1;
+                            if (t >= bestTime) {
+                                bestTime = t;
+                                bestKey = k;
+                            }
+                        }
+                    }
+                    if (bestKey) {
+                        opData = localAppDataVault[bestKey];
+                        resolvedOpId = bestKey;
+                    }
+                } catch (_) {}
+            }
+        }
     }
 
     // STRICT MULTI-TENANT ISOLATION:

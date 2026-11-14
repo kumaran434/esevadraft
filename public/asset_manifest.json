@@ -1,6 +1,6 @@
 {
   "success": true,
-  "timestamp": 1794656481365,
+  "timestamp": 1794657929813,
   "manifest": {
     "chrome_debug.png": "4a10c7211ffe7d824a9f5f16beda4317",
     "css/auth_cards.css": "9611efafe67a710eb643f626aec728bc",
@@ -38,8 +38,8 @@
     "js/modules/eseva_tools.js": "354445d241446b07fc83de83e52b7896",
     "js/modules/operator_drafts.js": "b5b0abff35b4ab3c29e2a4359e497d77",
     "js/modules/operator_intake.js": "6581d126045af7bbe842927c68649786",
-    "js/modules/portal_vault_manager.js": "32ecdedb7edfbe5a87ae3809c08c15ef",
-    "js/modules/submission_engine.js": "df6ec52c1ddfefc369245c95bc330178",
+    "js/modules/portal_vault_manager.js": "c6a25c87beb7bfeb113e4b659545da2c",
+    "js/modules/submission_engine.js": "74b93609b98a5900c05cab57855dc635",
     "js/modules/tnega_and_forms.js": "2a84eaed4b38c1c18f898728f9b981e6",
     "js/otp_ui_manager.js": "68a7e00a4ea313ccbe65fbc7088857e3",
     "js/tailwind_theme.js": "830c4ae672d87350c6ca48cdd6c1f62a",
@@ -55,8 +55,24 @@
     "vendor/pdf.worker.min.js": "a53a71a2a5d618ed0f86ebf099db032a",
     "vendor/tailwind/tailwind.js": "7a614b9a197e532c00d09a23b0996b5f",
     "__core__/tnpds_automation.js": "c39d89cd087cb92aa6dc85968f0a133f",
+    "__core__/tnega_can_automation.js": "e921ccd1b244a5fc1c9847199257212a",
     "__core__/govt_automation_core.js": "20fb6b8eeb400e2b12bbe6b2da262398",
     "__core__/photo_studio.js": "9d26bb88261fa60d4a8d9d981b488ca3",
-    "__core__/tn_district_mapper.js": "d3c45f701f58c84aa8a8b22cfc07071f"
+    "__core__/tn_district_mapper.js": "d3c45f701f58c84aa8a8b22cfc07071f",
+    "__core__/firestore_db.js": "98b34a870fbc548726a56f0f63bf6742",
+    "__core__/database.js": "c03d24a6f1acbac947e09d1192d218fa",
+    "__core__/src/services/portal_vault_service.js": "f7dbb4ad8f3e88c79c966a22715fef11",
+    "__core__/src/services/tnega_receipt_generator.js": "1585ab63303225bc95dab6bc9d5b1c3e",
+    "__core__/src/services/db/user_profile_store.js": "fcf30e6d6cc6fd80ce08c32d640942c0",
+    "__core__/src/services/db/firestore_client.js": "37da6547ca11c31507aea13d47500279",
+    "__core__/src/utils/bilingual_helper.js": "de9e91e1232909810c29bc026d9ae984",
+    "__core__/src/portal/common/ai_captcha_solver.js": "b749e2d3cf77a9511cd1f6ad69fecfce",
+    "__core__/src/portal/tnega/tnega_browser_manager.js": "709a66f0932cffd88803b5bf32bff128",
+    "__core__/src/portal/tnega/tnega_hud.js": "b93d3ce199db910b262ba7dafe6dce03",
+    "__core__/src/portal/tnega/tnega_can_register.js": "fbb70ed6adedc550756ae532de53ea60",
+    "__core__/src/portal/tnega/tnega_can_search_otp.js": "b71e172e048c0731033e9c733c3099d2",
+    "__core__/src/portal/tnega/tnega_income_certificate.js": "ad63c3389cacf176af8cc0e3d9d42bae",
+    "__core__/src/portal/tnega/tnega_residence_certificate.js": "9d4d248a33dc90daca8b162418c3e2b4",
+    "__core__/src/portal/tnega/tnega_community_certificate.js": "ac2d8b966c9e4ecd9c1b14255c3833be"
   }
 }
