@@ -760,6 +760,22 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
+    // STEP 5.5: Parent Caste Confirmation Gate (TNeGA REV-101 Portal Rule)
+    const hasParentCaste = Boolean(p.parentCasteConfirmed || (p.fatherCaste && p.motherCaste));
+    if (!hasParentCaste) {
+        sess.intakeState = 'COMMUNITY_PARENTS_CASTE_GATE';
+        const cName = p.caste || p.subCaste || '';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👨‍👩‍👦 **பெற்றோரின் சாதி விவரங்கள் (Parents Caste):**\n\n` +
+            `அரசு விதிப்படி விண்ணப்பத்தில் தந்தை மற்றும் தாயாரின் சாதிப் பிரிவு தனித்தனியாக நிரப்பப்பட வேண்டும்.\n\n` +
+            `தாய் மற்றும் தந்தை இருவருமே **${cName}** சாதிப் பிரிவைச் சேர்ந்தவர்களா?`;
+        const options = [
+            { label: `✅ ஆம், இருவருமே ${cName}`, value: "PARENTS_SAME_CASTE" },
+            { label: "❌ இல்லை, பெற்றோர் வெவ்வேறு சாதிப் பிரிவு", value: "PARENTS_DIFF_CASTE" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
     // STEP 6: Bucket A Demographics check (for brand-new customer with no Aadhaar on file)
     if (!hasBasicDemographics) {
         sess.intakeState = 'COMMUNITY_AADHAAR_WAIT';
@@ -813,7 +829,9 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
         `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
         `• 🕉️ **மதம்:** ${p.religion || 'Hindu'}\n` +
         `• 🏛️ **வகுப்பு / பிரிவு:** ${p.community || 'MBC'} ✅\n` +
-        `• 🏷️ **சாதி உட்பிரிவு:** ${p.caste || p.subCaste || '—'} ✅\n` +
+        `• 🏷️ **விண்ணப்பதாரர் சாதி:** ${p.caste || p.subCaste || '—'} ✅\n` +
+        `• 👨‍👦 **தந்தை சாதி:** ${p.fatherCaste || p.caste || '—'} ✅\n` +
+        `• 👩‍👦 **தாய் சாதி:** ${p.motherCaste || p.caste || '—'} ✅\n` +
         `• 📜 **குடும்ப சாதிச் சான்று:** ${p.communityProof ? 'பதிவேற்றப்பட்டது ✅' : (p.communityProofSkipped ? 'பிறகு பதிவேற்றப்படும் ⏳' : '—')}\n` +
         `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
         (chk && chk.summaryTamil ? `${chk.summaryTamil}\n\n` : '') +

@@ -602,6 +602,85 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     }
 
     // -------------------------------------------------------------------------
+    // PARENTS CASTE INTAKE GATE (TNeGA REV-101 Community Certificate)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE' || text === 'PARENTS_SAME_CASTE' || text === 'PARENTS_DIFF_CASTE' || (sess.subService === 'COMMUNITY' && (text.includes('இருவருமே') || text.includes('வெவ்வேறு சாதி')))) {
+        if (text === 'PARENTS_SAME_CASTE' || text.includes('இருவருமே') || text.includes('ஆம்')) {
+            const c = sess.citizenProfile.caste || sess.citizenProfile.subCaste || 'வன்னியகுல சத்ரியர்';
+            sess.citizenProfile.fatherCaste = c;
+            sess.citizenProfile.motherCaste = c;
+            sess.citizenProfile.requestedCaste = c;
+            sess.citizenProfile.fatherCommunity = sess.citizenProfile.community || 'MBC';
+            sess.citizenProfile.motherCommunity = sess.citizenProfile.community || 'MBC';
+            sess.citizenProfile.requestedCommunity = sess.citizenProfile.community || 'MBC';
+            sess.citizenProfile.parentCasteConfirmed = true;
+            persistSessions();
+
+            const flowStep = advanceTnegaCommunityFlow(sess, `✅ தந்தை மற்றும் தாய் இருவரின் சாதியும் **${c}** எனப் பதிவானது!`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        } else if (text === 'PARENTS_DIFF_CASTE' || text.includes('வெவ்வேறு சாதி') || text.includes('இல்லை')) {
+            sess.intakeState = 'COMMUNITY_FATHER_CASTE_WAIT';
+            persistSessions();
+
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `👨 **தந்தையின் சாதி உட்பிரிவு (Father's Caste) என்ன?**\n\nதட்டச்சு செய்யவும் அல்லது விருப்பத்தைத் தேர்ந்தெடுக்கவும்:`,
+                options: [
+                    { label: "வன்னியகுல சத்ரியர்", value: "FATHER_CASTE_வன்னியகுல சத்ரியர்" },
+                    { label: "அகமுடையார்", value: "FATHER_CASTE_அகமுடையார்" },
+                    { label: "கொங்கு வேளாளர்", value: "FATHER_CASTE_கொங்கு வேளாளர்" },
+                    { label: "நாடார்", value: "FATHER_CASTE_நாடார்" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    if (sess.intakeState === 'COMMUNITY_FATHER_CASTE_WAIT' && text && !text.startsWith('TRIGGER_')) {
+        const cleaned = text.replace('FATHER_CASTE_', '').trim();
+        sess.citizenProfile.fatherCaste = cleaned;
+        sess.intakeState = 'COMMUNITY_MOTHER_CASTE_WAIT';
+        persistSessions();
+
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `✅ தந்தையின் சாதி: **${cleaned}** எனப் பதிவானது!\n\n👩 **தாயின் சாதி உட்பிரிவு (Mother's Caste) என்ன?**`,
+            options: [
+                { label: "வன்னியகுல சத்ரியர்", value: "MOTHER_CASTE_வன்னியகுல சத்ரியர்" },
+                { label: "அகமுடையார்", value: "MOTHER_CASTE_அகமுடையார்" },
+                { label: "கொங்கு வேளாளர்", value: "MOTHER_CASTE_கொங்கு வேளாளர்" },
+                { label: "நாடார்", value: "MOTHER_CASTE_நாடார்" }
+            ]
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if (sess.intakeState === 'COMMUNITY_MOTHER_CASTE_WAIT' && text && !text.startsWith('TRIGGER_')) {
+        const cleaned = text.replace('MOTHER_CASTE_', '').trim();
+        sess.citizenProfile.motherCaste = cleaned;
+        sess.citizenProfile.requestedCaste = sess.citizenProfile.caste || sess.citizenProfile.fatherCaste || cleaned;
+        sess.citizenProfile.parentCasteConfirmed = true;
+        persistSessions();
+
+        const flowStep = advanceTnegaCommunityFlow(sess, `✅ தாயின் சாதி: **${cleaned}** எனப் பதிவானது!`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
     // FAMILY MEMBER COUNT INTAKE GATE (TNeGA Income Certificate)
     // -------------------------------------------------------------------------
     if ((sess.intakeState === 'INCOME_MEMBER_COUNT_WAIT' || (sess.subService === 'INCOME' && text && (text.includes('நபர்') || text.includes('நபர்கள்')))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
@@ -848,9 +927,28 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             sess.tempUploads.communityProof = uploadedFile.path;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.communityProof = uploadedFile.path;
+
+            let extraInfo = '';
+            try {
+                const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
+                const extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }).catch(() => null);
+                if (extracted && (extracted.caste || extracted.subCaste)) {
+                    const c = extracted.caste || extracted.subCaste;
+                    sess.citizenProfile.caste = c;
+                    if (extracted.community) sess.citizenProfile.community = extracted.community;
+                    sess.citizenProfile.fatherCaste = extracted.fatherCaste || c;
+                    sess.citizenProfile.motherCaste = extracted.motherCaste || c;
+                    sess.citizenProfile.requestedCaste = c;
+                    sess.citizenProfile.parentCasteConfirmed = true;
+                    extraInfo = `\n\n📄 **சான்றிதழிலிருந்து விவரங்கள் தானாகப் பெறப்பட்டன:**\n• வகுப்பு: **${sess.citizenProfile.community}** | சாதி: **${c}**\n• தந்தை சாதி: **${sess.citizenProfile.fatherCaste}** | தாய் சாதி: **${sess.citizenProfile.motherCaste}** ✅`;
+                } else if (!sess.citizenProfile.caste) {
+                    extraInfo = `\n\n⚠️ **குறிப்பு:** பதிவேற்றப்பட்ட ஆவணத்தில் சாதி விவரங்கள் இல்லை. எனவே அடுத்த படியில் பெற்றோர் மற்றும் விண்ணப்பதாரரின் சாதி விவரங்களை உள்ளிடவும்.`;
+                }
+            } catch (_) {}
+
             persistSessions();
 
-            const flowStep = advanceTnegaCommunityFlow(sess, `✅ **குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            const flowStep = advanceTnegaCommunityFlow(sess, `✅ **குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️${extraInfo}`);
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,

@@ -75,13 +75,23 @@ TASK 1: QUALITY ASSESSMENT:
 
 TASK 2: PRECISE DATA EXTRACTION & DOCUMENT CLASSIFICATION (If isQualityAcceptable is true):
 Extract ONLY the fields actually visible on the uploaded image and classify the document (use null for any field not visible on the image; NEVER copy example placeholder values):
-- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
+- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "COMMUNITY_CERTIFICATE" | "TRANSFER_CERTIFICATE" | "SCHOOL_TC" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
   * AADHAAR_FULL: The image or PDF contains BOTH front details (Photo, Name, DOB, Aadhaar Number) AND back details (Address, S/O or W/O Care of, Pincode), or is a downloaded e-Aadhaar single-page letter containing full front and address sections.
   * AADHAAR_FRONT: The image contains ONLY the cropped front side of the card (Photo, Name, DOB, Aadhaar number) and DOES NOT have the address or back side.
   * AADHAAR_BACK: The image contains ONLY the back side of the card (Address, QR, C/O father/husband).
   * SMART_CARD: Tamil Nadu Smart Ration Card (குடும்ப அட்டை / TNPDS Smart Card).
+  * COMMUNITY_CERTIFICATE: Tamil Nadu Government Community Certificate (ஜாதிச் சான்றிதழ் / E-Certificate).
+  * TRANSFER_CERTIFICATE / SCHOOL_TC: School / College Transfer Certificate (பள்ளி மாற்றுச் சான்றிதழ் / TC) showing student Community & Caste.
 - isFullAadhaar: boolean (true if BOTH front details AND address details are visible on this document; false if only one side).
 - hasAddress: boolean (true if address fields like doorNo, street, or pincode are visible on this document).
+- Community & Caste Details (if this is a Community Certificate, Transfer Certificate, or School TC):
+  * "community": "MBC" | "BC" | "BCM" | "SC" | "ST" | "OC" | null
+  * "caste": Name of the caste/sub-caste printed on the document (e.g. "Vanniakula Kshatriya", "Vanniyar", "Agamudayar", "Adi Dravidar", etc.)
+  * "subCaste": Sub-caste name if separately printed
+  * "fatherCaste": Father's caste if printed
+  * "motherCaste": Mother's caste if printed
+  * "religion": "Hindu" | "Christian" | "Muslim" | null
+  * "certificateNumber": Certificate or TC serial number if visible
 - Residence Proof Category: If this is a residence proof document, identify if it is:
   * "PROPERTY_TAX" (சொத்து வரி ரசீது / வீட்டு வரி ரசீது)
   * "EB_BILL" (மின் கட்டண ரசீது / TNEB Electricity Bill)
@@ -140,6 +150,12 @@ Respond strictly in JSON format (use null for fields not present in the image):
   "taluk": "",
   "village": "",
   "pincode": "",
+  "community": null,
+  "caste": null,
+  "subCaste": null,
+  "fatherCaste": null,
+  "motherCaste": null,
+  "certificateNumber": null,
   "gasDetails": {
     "hasGas": false,
     "consumerNumber": "",

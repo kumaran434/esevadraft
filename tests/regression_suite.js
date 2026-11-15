@@ -3284,6 +3284,13 @@ async function runTests() {
             // Fresh step 5: Caste
             sessFresh.citizenProfile.caste = 'வன்னியகுல சத்ரியர்';
             advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Caste entered -> prompts Parents Caste Gate");
+
+            // Fresh step 5.5: Confirm Parent Caste
+            sessFresh.citizenProfile.parentCasteConfirmed = true;
+            sessFresh.citizenProfile.fatherCaste = 'வன்னியகுல சத்ரியர்';
+            sessFresh.citizenProfile.motherCaste = 'வன்னியகுல சத்ரியர்';
+            advanceTnegaCommunityFlow(sessFresh);
             assert(sessFresh.intakeState === 'COMMUNITY_AADHAAR_WAIT', "Caste entered -> prompts Demographics / Aadhaar");
 
             // Fresh step 6: Demographics
@@ -3338,10 +3345,17 @@ async function runTests() {
             // Auto-skips CAN, Mother Name, Religion, Community, Demographics -> asks ONLY missing Caste!
             assert(sessExist.intakeState === 'COMMUNITY_CASTE_WAIT', "Existing customer auto-skips known details and asks ONLY missing Caste");
 
-            // Kumaran K provides missing Caste -> Prompts Family Community Proof
+            // Kumaran K provides missing Caste -> Prompts Parents Caste Gate
             sessExist.citizenProfile.caste = 'Agamudayar';
             advanceTnegaCommunityFlow(sessExist);
-            assert(sessExist.intakeState === 'COMMUNITY_PROOF_WAIT', "Missing Caste entered -> prompts Family Community Proof");
+            assert(sessExist.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Missing Caste entered -> prompts Parents Caste Gate");
+
+            // Confirms Parents Caste -> Prompts Family Community Proof
+            sessExist.citizenProfile.parentCasteConfirmed = true;
+            sessExist.citizenProfile.fatherCaste = 'Agamudayar';
+            sessExist.citizenProfile.motherCaste = 'Agamudayar';
+            advanceTnegaCommunityFlow(sessExist);
+            assert(sessExist.intakeState === 'COMMUNITY_PROOF_WAIT', "Parents Caste confirmed -> prompts Family Community Proof");
 
             // Kumaran K provides / skips Community Proof -> Jumps directly to 100% Ready Station!
             sessExist.citizenProfile.communityProof = 'compressed/sample_comm_proof.pdf';
