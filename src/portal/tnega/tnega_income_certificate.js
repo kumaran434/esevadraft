@@ -63,7 +63,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
 
     onProgress('📜 வருமானச் சான்றிதழ் விண்ணப்ப செயல்முறை (REV-103 Income Certificate) தொடங்குகிறது...');
 
-    const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || '').replace(/\D+/g, '');
+    const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || options.canNumber || options.draftData?.canNumber || options.draftData?.citizenProfile?.canNumber || '').replace(/\D+/g, '');
     const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '9842367866').replace(/\D+/g, '');
     const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '575567662931').replace(/\D+/g, '');
 

@@ -103,7 +103,10 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
     const p = sess.citizenProfile;
     const members = p.members || [];
     const hasFamily = members.length > 1;
-    const hasCan = Boolean(p.canNumber && String(p.canNumber).length >= 13);
+    const resolvedCan = String(p.canNumber || sess.canNumber || p.can || '').replace(/\D+/g, '');
+    if (resolvedCan && !p.canNumber) p.canNumber = resolvedCan;
+    if (resolvedCan && !sess.canNumber) sess.canNumber = resolvedCan;
+    const hasCan = Boolean(resolvedCan && resolvedCan.length >= 11);
     const hasMother = Boolean(p.motherNameTam || p.motherNameEng || p.motherName);
     const hasCommunity = Boolean(p.community || p.caste || p.socialCategory);
     const hasIncome = Boolean(p.annualIncome);
@@ -471,7 +474,10 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
     const p = sess.citizenProfile;
     const members = p.members || [];
     const hasFamily = members.length > 1;
-    const hasCan = Boolean(p.canNumber && String(p.canNumber).length >= 13);
+    const resolvedCan = String(p.canNumber || sess.canNumber || p.can || '').replace(/\D+/g, '');
+    if (resolvedCan && !p.canNumber) p.canNumber = resolvedCan;
+    if (resolvedCan && !sess.canNumber) sess.canNumber = resolvedCan;
+    const hasCan = Boolean(resolvedCan && resolvedCan.length >= 11);
     const hasYears = Boolean(p.yearsOfResidence);
     const hasPurpose = Boolean(p.purposeOfCertificate);
     const hasBasicDemographics = Boolean(p.headAadhaar || p.aadhaarNumber || p.fullNameTam || p.fullNameEng);
@@ -613,7 +619,10 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
     const p = sess.citizenProfile;
     const members = p.members || [];
     const hasFamily = members.length > 1;
-    const hasCan = Boolean(p.canNumber && String(p.canNumber).length >= 13);
+    const resolvedCan = String(p.canNumber || sess.canNumber || p.can || '').replace(/\D+/g, '');
+    if (resolvedCan && !p.canNumber) p.canNumber = resolvedCan;
+    if (resolvedCan && !sess.canNumber) sess.canNumber = resolvedCan;
+    const hasCan = Boolean(resolvedCan && resolvedCan.length >= 11);
     const hasMother = Boolean(p.motherNameTam || p.motherNameEng || p.motherName);
     const hasReligion = Boolean(p.religion);
     const hasCommunity = Boolean(p.community || p.socialCategory);

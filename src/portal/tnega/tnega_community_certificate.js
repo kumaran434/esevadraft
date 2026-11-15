@@ -47,7 +47,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
     onProgress('📜 சாதிச் சான்றிதழ் விண்ணப்ப செயல்முறை (REV-101 Community Certificate) தொடங்குகிறது...');
 
-    const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || '').replace(/\D+/g, '');
+    const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || options.canNumber || options.draftData?.canNumber || options.draftData?.citizenProfile?.canNumber || '').replace(/\D+/g, '');
     const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '9842367866').replace(/\D+/g, '');
     const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '575567662931').replace(/\D+/g, '');
 
@@ -314,6 +314,42 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                             if (await proceedCanBtn.count() > 0 && await proceedCanBtn.isVisible()) {
                                 const popupPromise = state.context ? state.context.waitForEvent('page', { timeout: 8000 }).catch(() => null) : null;
                                 await proceedCanBtn.click().catch(() => {});
+
+                                // Check if "Service Already applied" warning appears (Golden Rule 8 & 11 Saved App Recovery)
+                                await tnegaPage.waitForTimeout(1200);
+                                const errorMsg = await tnegaPage.evaluate(() => {
+                                    const msgEl = document.querySelector('#statusform\\:SubmitMsg, .rf-msgs-sum, [id*="SubmitMsg"], [id*="msg"], .ui-messages-error');
+                                    const bodyTxt = document.body ? document.body.innerText : '';
+                                    return (msgEl ? msgEl.innerText : '') + ' ' + bodyTxt;
+                                }).catch(() => '');
+
+                                if (errorMsg && (errorMsg.includes('Already applied') || errorMsg.includes('same CAN Number') || errorMsg.includes('ஏற்கனவே விண்ணப்பிக்கப்பட்டுள்ளது'))) {
+                                    onProgress('⚠️ [டூப்ளிகேட் எச்சரிக்கை] சாதிச் சான்றிதழுக்கு "Service Already applied with same CAN Number" கண்டறியப்பட்டது!');
+                                    
+                                    await updateTnegaHud(tnegaPage, {
+                                        title: '📂 சேமிக்கப்பட்ட விண்ணப்பம் மீட்பு',
+                                        desc: 'Already applied கண்டறியப்பட்டது -> Saved Application மூலம் தொடர்கிறது...',
+                                        badge: 'Saved App Recovery',
+                                        type: 'working'
+                                    });
+
+                                    // Navigate to Saved Application
+                                    const saveAppLink = tnegaPage.locator('a:has-text("Saved Application"), a[href*="saveapp"]').first();
+                                    if (await saveAppLink.count() > 0 && await saveAppLink.isVisible()) {
+                                        await saveAppLink.click().catch(() => {});
+                                        await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
+                                        await tnegaPage.waitForTimeout(2000);
+                                    } else {
+                                        await tnegaPage.goto('https://tnedistrict.tn.gov.in/web/common/saveapp.xhtml?faces-redirect=true', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+                                        await tnegaPage.waitForTimeout(2000);
+                                    }
+
+                                    const actionType = options.forceFreshReapply ? 'delete' : 'resume';
+                                    const recoveryRes = await handleTnegaSavedApplication(tnegaPage, 'REV-101', fullNameEng, actionType, onProgress);
+                                    if (recoveryRes.found) {
+                                        continue;
+                                    }
+                                }
 
                                 if (popupPromise) {
                                     const newP = await popupPromise;

@@ -483,6 +483,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
         mobileNumber: draftData?.mobileNumber || resolved.mobClean,
+        canNumber: String(draftData?.canNumber || draftData?.citizenProfile?.canNumber || resolved.diskDraft?.canNumber || resolved.diskDraft?.citizenProfile?.canNumber || '').replace(/\D+/g, ''),
         subService: isCommunity ? 'COMMUNITY' :
                     (isResidence ? 'RESIDENCE' :
                     (isIncome ? 'INCOME' :
@@ -515,6 +516,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         headless: false,
         chromium: playwrightChromium,
         targetService: detectedTargetService || targetProfile.targetService,
+        canNumber: targetProfile.canNumber,
         draftData,
         subServiceData: targetProfile.subServiceData,
         operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
