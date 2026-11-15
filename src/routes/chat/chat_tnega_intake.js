@@ -293,12 +293,6 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.headAadhaar = fullPdf;
 
-            if (extracted.extractedFacePhotoPath && !sess.citizenProfile.headPhotoPath) {
-                sess.citizenProfile.headPhotoPath = extracted.extractedFacePhotoPath;
-                sess.tempUploads.profilePhoto = extracted.extractedFacePhotoPath;
-                sess.citizenProfile.documents.profilePhoto = extracted.extractedFacePhotoPath;
-            }
-
             if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
             if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
             if (extracted.fatherNameEng) sess.citizenProfile.fatherNameEng = extracted.fatherNameEng;
@@ -339,12 +333,6 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         // Card front only
         sess.tempUploads.headAadhaarFront = uploadedFile.path;
         sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
-        if (extracted.extractedFacePhotoPath && !sess.citizenProfile.headPhotoPath) {
-            sess.citizenProfile.headPhotoPath = extracted.extractedFacePhotoPath;
-            sess.tempUploads.profilePhoto = extracted.extractedFacePhotoPath;
-            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
-            sess.citizenProfile.documents.profilePhoto = extracted.extractedFacePhotoPath;
-        }
         if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
         if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
         if (extracted.aadhaarNumber) sess.citizenProfile.headAadhaar = extracted.aadhaarNumber;

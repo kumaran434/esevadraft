@@ -153,30 +153,6 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
         }
     }
 
-    const isAddMemberDraft = (draft?.subService === 'ADD_MEMBER') || (draft?.citizenProfile?.subService === 'ADD_MEMBER');
-    if (!isAddMemberDraft && docType === 'profilePhoto' && (!docPath || !fs.existsSync(docPath)) && !b64Docs.profilePhotoBase64) {
-        const fCand = docs.headAadhaarFront || docs.headAadhaar;
-        const fB64 = b64Docs.headAadhaarFrontBase64 || b64Docs.headAadhaarBase64;
-        const candidateFront = await resolveOrRestoreFile(fCand, fB64, `${cleanMob}_face_source`);
-        if (candidateFront && fs.existsSync(candidateFront) && !candidateFront.toLowerCase().endsWith('.pdf')) {
-            const extractedFace = await extractFacePassportFromDocument(candidateFront);
-            if (extractedFace && fs.existsSync(extractedFace)) {
-                docPath = extractedFace;
-                const faceB64 = fs.readFileSync(extractedFace).toString('base64');
-                b64Docs.profilePhotoBase64 = faceB64;
-                if (draft) {
-                    draft.citizenProfile = draft.citizenProfile || {};
-                    draft.citizenProfile.headPhotoPath = extractedFace;
-                    draft.documents = draft.documents || {};
-                    draft.documents.profilePhoto = extractedFace;
-                    draft.base64Docs = draft.base64Docs || {};
-                    draft.base64Docs.profilePhotoBase64 = faceB64;
-                    try { await saveCitizenDraft(cleanMob, draft); } catch (e) {}
-                }
-            }
-        }
-    }
-
     let resolvedExistingPath = null;
     if (docPath) {
         if (fs.existsSync(docPath)) {
@@ -534,6 +510,15 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         unlinkSafe(draft?.documents?.gasBook);
         unlinkSafe(draft?.citizenProfile?.residenceProof?.docPath);
         unlinkSafe(draft?.citizenProfile?.gasDetails?.gasBookPath);
+    } else {
+        unlinkSafe(draft?.documents?.[docType]);
+        unlinkSafe(draft?.citizenProfile?.documents?.[docType]);
+        unlinkSafe(draft?.citizenProfile?.[docType]);
+        if (docType === 'communityProof') {
+            unlinkSafe(draft?.citizenProfile?.communityCertificatePath);
+            unlinkSafe(draft?.citizenProfile?.familyCommunityProofPath);
+            unlinkSafe(draft?.citizenProfile?.communityProof);
+        }
     }
 
     // 2. Session Clean-up

@@ -168,16 +168,6 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
                 }
             }
         }
-        if (!isAddMemService && !docPackage.profilePhoto && !prof.headPhotoPath) {
-            const photoSource = headFront || docPackage.headAadhaar;
-            if (photoSource && !photoSource.toLowerCase().endsWith('.pdf')) {
-                const extractedFace = await extractFacePassportFromDocument(photoSource);
-                if (extractedFace) {
-                    docPackage.profilePhoto = extractedFace;
-                    prof.headPhotoPath = extractedFace;
-                }
-            }
-        }
     } catch (_) {}
 
     await handleDoc(docPackage.profilePhoto, 'profilePhoto');

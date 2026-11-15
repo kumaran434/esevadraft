@@ -219,6 +219,13 @@
                 statusId = 'editRemoveMemberProofStatus';
                 viewBtnId = 'editRemoveMemberProofViewBtn';
                 delBtnId = 'editRemoveMemberProofDeleteBtn';
+            } else {
+                imgId = `editDocPreview_${baseType}`;
+                phId = `editDocPlaceholder_${baseType}`;
+                pdfId = `editDocPdfBadge_${baseType}`;
+                statusId = `editDocStatus_${baseType}`;
+                viewBtnId = `editDocViewBtn_${baseType}`;
+                delBtnId = `editDocDeleteBtn_${baseType}`;
             }
 
             const imgEl = imgId ? document.getElementById(imgId) : null;
@@ -576,6 +583,18 @@
                 if (fin) fin.value = '';
                 if (currentCitizenData && currentCitizenData.subServiceData) {
                     delete currentCitizenData.subServiceData.deathCertDocPath;
+                }
+            } else {
+                renderDocPreview('', `editDocPreview_${docType}`, `editDocPlaceholder_${docType}`, `editDocPdfBadge_${docType}`, `editDocStatus_${docType}`, `editDocViewBtn_${docType}`, 'ஆவணம் தேவை', `editDocDeleteBtn_${docType}`);
+                const fin = document.getElementById(`editUniversalDocInput_${docType}`);
+                if (fin) fin.value = '';
+                if (currentCitizenData) {
+                    if (currentCitizenData.documents) delete currentCitizenData.documents[docType];
+                    if (currentCitizenData[docType]) delete currentCitizenData[docType];
+                    if (docType === 'communityProof') {
+                        delete currentCitizenData.communityCertificatePath;
+                        delete currentCitizenData.familyCommunityProofPath;
+                    }
                 }
             }
 
@@ -960,7 +979,7 @@
 
             if (forceMasterProfile) {
                 if (titleEl) titleEl.innerHTML = '👤 வாடிக்கையாளர் மாஸ்டர் சுயவிவரம் (Citizen Master Profile Vault)';
-                if (subTitleEl) subTitleEl.innerText = 'குடும்பத் தலைவரின் நிரந்தர சுயவிவரம் மற்றும் அனைத்து அசல் ஆவணங்கள்';
+                if (subTitleEl) subTitleEl.innerText = 'வாடிக்கையாளரின் நிரந்தர சுயவிவரம் மற்றும் அனைத்து அசல் ஆவணங்கள்';
                 if (hasActiveSub) {
                     if (btnMaster) btnMaster.style.display = 'none';
                     if (btnSubSvc) btnSubSvc.style.display = 'inline-flex';
@@ -968,6 +987,26 @@
                     if (btnMaster) btnMaster.style.display = 'none';
                     if (btnSubSvc) btnSubSvc.style.display = 'none';
                 }
+            } else if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY') || sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY') {
+                if (titleEl) titleEl.innerHTML = '📜 சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Community Certificate)';
+                if (subTitleEl) subTitleEl.innerText = 'சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (curSub === 'INCOME' || curIntake.includes('INCOME') || sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME') {
+                if (titleEl) titleEl.innerHTML = '💰 வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Income Certificate)';
+                if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (curSub === 'RESIDENCE' || curIntake.includes('RESIDENCE') || sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE') {
+                if (titleEl) titleEl.innerHTML = '🏠 இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Residence Certificate)';
+                if (subTitleEl) subTitleEl.innerText = 'இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (curSub === 'CAN_REGISTER' || curIntake.includes('CAN')) {
+                if (titleEl) titleEl.innerHTML = '📝 புதிய CAN பதிவு விவரங்கள் (New CAN Registration)';
+                if (subTitleEl) subTitleEl.innerText = 'CAN பதிவிற்கான விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
             } else {
                 if (titleEl) titleEl.innerHTML = '✏️ புதிய குடும்ப அட்டை விண்ணப்ப விவரங்கள் (New Ration Card)';
                 if (subTitleEl) subTitleEl.innerText = 'அனைத்து விவரங்களையும் சரிபார்த்து திருத்தவும்';
@@ -1040,6 +1079,88 @@
             const hasScBack = Boolean(dMap.smartCardBack || scStr.includes('merged') || scStr.includes('dual') || scStr.includes('2in1') || scStr.endsWith('.pdf'));
             const hasScFront = Boolean(foundSmartCard || dMap.smartCardFront || dMap.smartCard || currentCitizenData?.smartCardDocPath);
             updateDualSideButtonStates('smartCard', hasScFront, hasScBack);
+
+            // 5. Universal / Dynamic Additional Documents (Community Proof, Income Proof, School TC, etc.)
+            const universalContainer = document.getElementById('editUniversalDocsContainer');
+            if (universalContainer) {
+                universalContainer.innerHTML = '';
+                const dynamicDocTypesToShow = [];
+
+                if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY') || sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY') {
+                    dynamicDocTypesToShow.push({
+                        type: 'communityProof',
+                        title: '📜 குடும்ப சாதிச் சான்றிதழ் (தந்தை/தாய்/TC)',
+                        titleEng: 'Family Community Certificate / TC',
+                        icon: 'fa-certificate',
+                        defaultPrompt: 'சாதிச் சான்றிதழ் அல்லது பள்ளி TC தேவை'
+                    });
+                }
+                if (curSub === 'INCOME' || curIntake.includes('INCOME') || sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME') {
+                    dynamicDocTypesToShow.push({
+                        type: 'incomeProof',
+                        title: '💰 வருமானச் சான்று / சம்பள ரசீது (Income Proof)',
+                        titleEng: 'Income Proof / Salary Slip',
+                        icon: 'fa-receipt',
+                        defaultPrompt: 'வருமானச் சான்று அல்லது சம்பள ரசீது தேவை'
+                    });
+                }
+
+                const standardTypes = new Set(['profilePhoto', 'headPhoto', 'headAadhaar', 'residenceProof', 'gasBook', 'smartCard', 'rationCard', 'applicationPdf']);
+                for (const vDoc of verifiedPhysicalDocs) {
+                    if (!standardTypes.has(vDoc.type) && !vDoc.type.startsWith('memberAadhaar')) {
+                        if (!dynamicDocTypesToShow.some(d => d.type === vDoc.type)) {
+                            dynamicDocTypesToShow.push({
+                                type: vDoc.type,
+                                title: vDoc.title || `📄 ஆவணம் (${vDoc.type})`,
+                                titleEng: vDoc.titleEng || vDoc.type,
+                                icon: vDoc.icon || 'fa-file-lines',
+                                defaultPrompt: `${vDoc.title || vDoc.type} தேவை`
+                            });
+                        }
+                    }
+                }
+
+                for (const dMeta of dynamicDocTypesToShow) {
+                    const docType = dMeta.type;
+                    const vDoc = getVerifiedDoc(docType);
+                    const docUrl = vDoc ? vDoc.previewUrl : (dMap[docType] ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/${docType}` : '');
+                    const isPdf = vDoc ? Boolean(vDoc.isPdf) : Boolean(String(dMap[docType] || '').toLowerCase().endsWith('.pdf'));
+                    const hasDoc = Boolean(docUrl);
+
+                    const cardEl = document.createElement('div');
+                    cardEl.id = `editDocBox_${docType}`;
+                    cardEl.style.cssText = 'background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);';
+                    cardEl.innerHTML = `
+                        <div style="width: 72px; height: 88px; border-radius: 8px; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; border: 1.5px solid #cbd5e1; flex-shrink: 0; position: relative;">
+                            <img id="editDocPreview_${docType}" src="${hasDoc && !isPdf ? docUrl : ''}" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; display: ${hasDoc && !isPdf ? 'block' : 'none'};">
+                            <i id="editDocPlaceholder_${docType}" class="fa-solid ${dMeta.icon || 'fa-file-lines'}" style="font-size: 26px; color: #0284c7; display: ${hasDoc ? 'none' : 'block'};"></i>
+                            <div id="editDocPdfBadge_${docType}" style="display: ${hasDoc && isPdf ? 'flex' : 'none'}; width: 100%; height: 100%; background: #fee2e2; color: #dc2626; font-weight: 800; font-size: 13px; align-items: center; justify-content: center; flex-direction: column; gap: 2px;">
+                                <i class="fa-solid fa-file-pdf" style="font-size: 24px;"></i>
+                                <span>PDF</span>
+                            </div>
+                        </div>
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
+                            <div style="font-weight: 700; font-size: 12px; color: #0f172a; margin-bottom: 2px;">${dMeta.title}</div>
+                            <div id="editDocStatus_${docType}" style="font-size: 11px; color: ${hasDoc ? '#16a34a' : '#64748b'}; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: ${hasDoc ? '700' : 'normal'};">
+                                ${hasDoc ? '✅ சேமிக்கப்பட்டது (அரசு தரத்தில் இணைக்கப்பட்டது)' : dMeta.defaultPrompt}
+                            </div>
+                            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                <input type="file" id="editUniversalDocInput_${docType}" accept="image/*,application/pdf" style="display: none;" onchange="handleEditDocChosen('${docType}', event)">
+                                <button type="button" onclick="document.getElementById('editUniversalDocInput_${docType}').click()" style="height: 32px; padding: 0 12px; background: #eff6ff; border: 1.5px solid #93c5fd; color: #1d4ed8; border-radius: 7px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                                    <i class="fa-solid fa-file-arrow-up"></i> மாற்று
+                                </button>
+                                <a id="editDocViewBtn_${docType}" href="${hasDoc ? docUrl : '#'}" target="_blank" style="display: ${hasDoc ? 'inline-flex' : 'none'}; height: 32px; padding: 0 10px; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #334155; border-radius: 7px; font-size: 11px; font-weight: 600; text-decoration: none; align-items: center; gap: 4px;">
+                                    <i class="fa-solid fa-eye"></i> பார்
+                                </a>
+                                <button type="button" id="editDocDeleteBtn_${docType}" onclick="handleEditDocDelete('${docType}')" style="display: ${hasDoc ? 'inline-flex' : 'none'}; height: 32px; padding: 0 9px; background: #fef2f2; border: 1.5px solid #fca5a5; color: #b91c1c; border-radius: 7px; font-size: 11px; font-weight: 700; cursor: pointer; align-items: center; gap: 4px;">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    universalContainer.appendChild(cardEl);
+                }
+            }
 
             // 4. Family Members Aadhaar
             const membersContainer = document.getElementById('editMembersAadhaarContainer');
@@ -1216,6 +1337,13 @@
                     if (!targetEl) {
                         targetEl = document.getElementById('editMembersAadhaarContainer');
                     }
+                } else if (dType.includes('community') || dType.includes('tc') || dType.includes('school')) {
+                    targetEl = document.getElementById('editDocBox_communityProof') || document.getElementById('editDocPreview_communityProof')?.closest('div[style*="border"]');
+                } else {
+                    targetEl = document.getElementById(`editDocBox_${docType}`) ||
+                               document.getElementById(`editDocBox_${dType}`) ||
+                               document.getElementById(`editDocPreview_${docType}`)?.closest('div[style*="border"]') ||
+                               document.getElementById(`editDocPreview_${dType}`)?.closest('div[style*="border"]');
                 }
 
                 if (!targetEl) {

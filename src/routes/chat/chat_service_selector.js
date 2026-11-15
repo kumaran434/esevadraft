@@ -139,23 +139,6 @@ async function handleServiceSelector(ctx, req, res) {
                     delete sess.base64Docs.headAadhaarBase64;
                     delete sess.base64Docs.headAadhaarName;
                 }
-            } else if (extractedDoc?.extractedFacePhotoPath && !sess.citizenProfile?.headPhotoPath) {
-                sess.citizenProfile = sess.citizenProfile || {};
-                sess.citizenProfile.headPhotoPath = extractedDoc.extractedFacePhotoPath;
-                sess.tempUploads = sess.tempUploads || {};
-                sess.tempUploads.profilePhoto = extractedDoc.extractedFacePhotoPath;
-                if (fs.existsSync(extractedDoc.extractedFacePhotoPath)) {
-                    try {
-                        const b64 = fs.readFileSync(extractedDoc.extractedFacePhotoPath).toString('base64');
-                        const bName = path.basename(extractedDoc.extractedFacePhotoPath);
-                        sess.base64Docs = sess.base64Docs || {};
-                        sess.citizenProfile.base64Docs = sess.citizenProfile.base64Docs || {};
-                        sess.base64Docs.profilePhotoBase64 = b64;
-                        sess.base64Docs.profilePhotoName = bName;
-                        sess.citizenProfile.base64Docs.profilePhotoBase64 = b64;
-                        sess.citizenProfile.base64Docs.profilePhotoName = bName;
-                    } catch (e) {}
-                }
             }
 
             sess.citizenProfile = sess.citizenProfile || {};

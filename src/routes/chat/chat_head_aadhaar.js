@@ -48,13 +48,7 @@ async function handleHeadAadhaar(ctx, req, res) {
             const fullPdf = await produceCompliantDocument(uploadedFile.path);
             sess.tempUploads.headAadhaar = fullPdf;
             sess.tempUploads.headAadhaarFront = uploadedFile.path;
-        sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
-        if (extracted.extractedFacePhotoPath && !sess.citizenProfile.headPhotoPath) {
-            sess.citizenProfile.headPhotoPath = extracted.extractedFacePhotoPath;
-            sess.tempUploads.profilePhoto = extracted.extractedFacePhotoPath;
-            sess.citizenProfile.documents = sess.citizenProfile.documents || {};
-            sess.citizenProfile.documents.profilePhoto = extracted.extractedFacePhotoPath;
-        }
+            sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
             sess.tempUploads.headAadhaarBack = null;
             sess.citizenProfile.headAadhaarDocPath = fullPdf;
             sess.citizenProfile.documents = sess.citizenProfile.documents || {};
@@ -109,12 +103,6 @@ async function handleHeadAadhaar(ctx, req, res) {
 
         sess.tempUploads.headAadhaarFront = uploadedFile.path;
         sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
-        if (extracted.extractedFacePhotoPath && !sess.citizenProfile.headPhotoPath) {
-            sess.citizenProfile.headPhotoPath = extracted.extractedFacePhotoPath;
-            sess.tempUploads.profilePhoto = extracted.extractedFacePhotoPath;
-            sess.citizenProfile.documents = sess.citizenProfile.documents || {};
-            sess.citizenProfile.documents.profilePhoto = extracted.extractedFacePhotoPath;
-        }
         if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
         if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
         if (extracted.aadhaarNumber) sess.citizenProfile.headAadhaar = extracted.aadhaarNumber;

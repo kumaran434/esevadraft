@@ -21,7 +21,7 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
         const isBackSide = (docType === 'headAadhaarBack');
         let extractedAadhaar = null;
         try {
-            extractedAadhaar = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: isBackSide });
+            extractedAadhaar = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
         } catch (aErr) {}
 
         try {
@@ -99,22 +99,6 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                 if (sess.citizenProfile.headAadhaar) sess.citizenProfile.members[0].aadhaarNumber = sess.citizenProfile.headAadhaar;
             }
 
-            if (extractedAadhaar.extractedFacePhotoPath && !sess.citizenProfile.headPhotoPath) {
-                sess.citizenProfile.headPhotoPath = extractedAadhaar.extractedFacePhotoPath;
-                sess.tempUploads.profilePhoto = extractedAadhaar.extractedFacePhotoPath;
-                sess.citizenProfile.documents.profilePhoto = extractedAadhaar.extractedFacePhotoPath;
-            }
-        }
-
-        if (!sess.citizenProfile.headPhotoPath && !optimizedPath.toLowerCase().endsWith('.pdf')) {
-            try {
-                const extractedFace = await extractFacePassportFromDocument(optimizedPath);
-                if (extractedFace) {
-                    sess.citizenProfile.headPhotoPath = extractedFace;
-                    sess.tempUploads.profilePhoto = extractedFace;
-                    sess.citizenProfile.documents.profilePhoto = extractedFace;
-                }
-            } catch (e) {}
         }
     } else if (docType === 'memberAadhaar' || docType === 'memberAadhaarFront' || docType === 'memberAadhaarBack') {
         const isBackSide = (docType === 'memberAadhaarBack');

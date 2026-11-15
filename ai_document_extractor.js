@@ -187,22 +187,9 @@ Respond strictly in JSON format (use null for fields not present in the image):
         }
         console.log('📄 ------------------------------------\n');
 
-        // Auto-extract passport portrait if face detected on Aadhaar (ONLY for New Ration Card head photo, NEVER for Add Member)
-        const shouldSkipFace = options.skipFaceExtraction || options.subService === 'ADD_MEMBER' || options.isAddMember;
-        if (!shouldSkipFace && (result.faceDetected || result.documentType === 'AADHAAR_FRONT' || result.documentType === 'AADHAAR_FULL')) {
-            try {
-                const { extractFacePassportFromDocument } = require('./photo_studio');
-                const extractedFace = await extractFacePassportFromDocument(filePath, result.faceBoundingBox);
-                if (extractedFace) {
-                    result.extractedFacePhotoPath = extractedFace;
-                    console.log(`✨ AI Auto-Extracted Passport Photo: ${extractedFace}`);
-                }
-            } catch (faceErr) {
-                console.warn('Face auto-extraction notice:', faceErr.message);
-            }
-        } else {
-            result.extractedFacePhotoPath = null;
-        }
+        // Auto-extracting face passport from Aadhaar is STRICTLY ABOLISHED per Founder Mandate.
+        // Profile/passport photo must ONLY exist when the user explicitly uploads a real passport photo.
+        result.extractedFacePhotoPath = null;
 
         // TN District Bifurcation Auto-Correction using dedicated mapper:
         const { resolveTnDistrict } = require('./tn_district_mapper');
