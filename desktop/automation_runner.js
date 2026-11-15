@@ -196,61 +196,76 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     };
 
     const explicitSub = draftData?.subService || draftData?.citizenProfile?.subService;
+    const targetServiceHint = String(draftData?.targetService || draftData?.citizenProfile?.targetService || '').toUpperCase();
+    const serviceHint = String(draftData?.service || draftData?.citizenProfile?.service || '').toUpperCase();
+    const serviceIdHint = String(draftData?.serviceId || draftData?.citizenProfile?.serviceId || '').toUpperCase();
+    const intakeStateHint = String(draftData?.intakeState || draftData?.citizenProfile?.intakeState || '').toUpperCase();
 
-    const isCanRegister = explicitSub === 'CAN_REGISTER' ||
-                          draftData?.subService === 'CAN_REGISTER' ||
-                          draftData?.serviceId === 'TNEGA_CAN_REGISTER' ||
-                          (draftData?.intakeState && draftData.intakeState.startsWith('READY_TO_APPLY_CAN')) ||
-                          (draftData?.intakeState && draftData.intakeState.startsWith('CAN_REGISTER_INTAKE')) ||
-                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_CAN'));
+    const hasCan = Boolean(
+        (draftData?.canNumber && /^\d{11,15}$/.test(String(draftData.canNumber).trim())) ||
+        (draftData?.citizenProfile?.canNumber && /^\d{11,15}$/.test(String(draftData.citizenProfile.canNumber).trim()))
+    );
 
-    const isCanSearch = !isCanRegister && (
-                          explicitSub === 'CAN_SEARCH' ||
-                          draftData?.subService === 'CAN_SEARCH' ||
-                          draftData?.serviceId === 'TNEGA_CAN_SEARCH' ||
-                          (draftData?.intakeState && draftData.intakeState.startsWith('CAN_SEARCH_INTAKE')) ||
-                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.startsWith('CAN_SEARCH_INTAKE'))
-                        );
+    // 1. High-Priority Certificate Service Detection (Golden Rule 6 & 11)
+    const isCommunity = Boolean(
+        explicitSub === 'COMMUNITY' ||
+        explicitSub === 'COMMUNITY_CERTIFICATE' ||
+        targetServiceHint === 'COMMUNITY' ||
+        targetServiceHint.includes('COMMUNITY') ||
+        serviceIdHint === 'COMMUNITY_CERTIFICATE' ||
+        serviceIdHint === 'TNEGA_COMMUNITY' ||
+        serviceHint.includes('சாதி') ||
+        serviceHint.includes('COMMUNITY') ||
+        intakeStateHint.includes('COMMUNITY') ||
+        Boolean(draftData?.citizenProfile?.caste || draftData?.caste)
+    );
 
-    const isIncome = !isCanRegister && !isCanSearch && (
-                          explicitSub === 'INCOME' ||
-                          explicitSub === 'INCOME_CERTIFICATE' ||
-                          draftData?.subService === 'INCOME' ||
-                          draftData?.subService === 'INCOME_CERTIFICATE' ||
-                          draftData?.serviceId === 'INCOME_CERTIFICATE' ||
-                          draftData?.service === 'வருமானச் சான்றிதழ்' ||
-                          (draftData?.intakeState && (draftData.intakeState.startsWith('READY_TO_APPLY_INCOME') || draftData.intakeState.startsWith('INCOME_'))) ||
-                          (draftData?.citizenProfile?.intakeState && (draftData.citizenProfile.intakeState.startsWith('READY_TO_APPLY_INCOME') || draftData.citizenProfile.intakeState.startsWith('INCOME_')))
-                        );
+    const isResidence = !isCommunity && Boolean(
+        explicitSub === 'RESIDENCE' ||
+        explicitSub === 'RESIDENCE_CERTIFICATE' ||
+        explicitSub === 'NATIVITY' ||
+        explicitSub === 'NATIVITY_CERTIFICATE' ||
+        targetServiceHint === 'RESIDENCE' ||
+        targetServiceHint.includes('RESIDENCE') ||
+        serviceIdHint === 'RESIDENCE_CERTIFICATE' ||
+        serviceIdHint === 'NATIVITY_CERTIFICATE' ||
+        serviceIdHint === 'TNEGA_RESIDENCE' ||
+        serviceHint.includes('இருப்பிடம்') ||
+        serviceHint.includes('RESIDENCE') ||
+        intakeStateHint.includes('RESIDENCE') ||
+        intakeStateHint.includes('NATIVITY')
+    );
 
-    const isResidence = !isCanRegister && !isCanSearch && !isIncome && (
-                          explicitSub === 'RESIDENCE' ||
-                          explicitSub === 'RESIDENCE_CERTIFICATE' ||
-                          explicitSub === 'NATIVITY' ||
-                          explicitSub === 'NATIVITY_CERTIFICATE' ||
-                          draftData?.subService === 'RESIDENCE' ||
-                          draftData?.subService === 'RESIDENCE_CERTIFICATE' ||
-                          draftData?.subService === 'NATIVITY' ||
-                          draftData?.subService === 'NATIVITY_CERTIFICATE' ||
-                          draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ||
-                          draftData?.serviceId === 'NATIVITY_CERTIFICATE' ||
-                          draftData?.service === 'இருப்பிடச் சான்றிதழ்' ||
-                          (draftData?.intakeState && (draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('NATIVITY'))) ||
-                          (draftData?.citizenProfile?.intakeState && (draftData.citizenProfile.intakeState.includes('RESIDENCE') || draftData.citizenProfile.intakeState.includes('NATIVITY')))
-                        );
+    const isIncome = !isCommunity && !isResidence && Boolean(
+        explicitSub === 'INCOME' ||
+        explicitSub === 'INCOME_CERTIFICATE' ||
+        targetServiceHint === 'INCOME' ||
+        targetServiceHint.includes('INCOME') ||
+        serviceIdHint === 'INCOME_CERTIFICATE' ||
+        serviceIdHint === 'TNEGA_INCOME' ||
+        serviceHint.includes('வருமானம்') ||
+        serviceHint.includes('INCOME') ||
+        intakeStateHint.includes('INCOME') ||
+        Boolean(draftData?.citizenProfile?.annualIncome || draftData?.annualIncome)
+    );
 
-    const isCommunity = !isCanRegister && !isCanSearch && !isIncome && !isResidence && (
-                          explicitSub === 'COMMUNITY' ||
-                          explicitSub === 'COMMUNITY_CERTIFICATE' ||
-                          draftData?.subService === 'COMMUNITY' ||
-                          draftData?.subService === 'COMMUNITY_CERTIFICATE' ||
-                          draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ||
-                          draftData?.service === 'சாதிச் சான்றிதழ்' ||
-                          (draftData?.intakeState && draftData.intakeState.includes('COMMUNITY')) ||
-                          (draftData?.citizenProfile?.intakeState && draftData.citizenProfile.intakeState.includes('COMMUNITY'))
-                        );
+    // 2. CAN Operations Detection (ONLY if no target certificate goal is active, and NOT already having a CAN)
+    const isCanRegister = !isCommunity && !isResidence && !isIncome && !hasCan && Boolean(
+        explicitSub === 'CAN_REGISTER' ||
+        draftData?.subService === 'CAN_REGISTER' ||
+        serviceIdHint === 'TNEGA_CAN_REGISTER' ||
+        intakeStateHint.startsWith('READY_TO_APPLY_CAN') ||
+        intakeStateHint.startsWith('CAN_REGISTER_INTAKE')
+    );
 
-    const isExplicitNewCard = !isCanRegister && !isCanSearch && !isIncome && !isResidence && !isCommunity && (
+    const isCanSearch = !isCommunity && !isResidence && !isIncome && !isCanRegister && Boolean(
+        explicitSub === 'CAN_SEARCH' ||
+        draftData?.subService === 'CAN_SEARCH' ||
+        serviceIdHint === 'TNEGA_CAN_SEARCH' ||
+        intakeStateHint.startsWith('CAN_SEARCH_INTAKE')
+    );
+
+    const isExplicitNewCard = !isCommunity && !isResidence && !isIncome && !isCanRegister && !isCanSearch && (
                           explicitSub === 'NEW_CARD' ||
                           explicitSub === 'NEW_RATION_CARD' ||
                           explicitSub === 'new_smart_card' ||
@@ -399,14 +414,31 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }
 
     let runner = null;
-    if (isNewCard) {
-        runner = automationModule.startTnpdsRationCardFlow;
-    } else if (isRemoveMember && automationModule.startTnpdsRemoveMemberFlow) runner = automationModule.startTnpdsRemoveMemberFlow;
-    else if (isAddMember && automationModule.startTnpdsAddMemberFlow) runner = automationModule.startTnpdsAddMemberFlow;
-    else if (isChangeAddress && automationModule.startTnpdsAddressChangeFlow) runner = automationModule.startTnpdsAddressChangeFlow;
-    else if (isChangeMobile && automationModule.startTnpdsMobileChangeFlow) runner = automationModule.startTnpdsMobileChangeFlow;
-    else if (isChangeHead && automationModule.startTnpdsChangeHeadFlow) runner = automationModule.startTnpdsChangeHeadFlow;
-    else if (isCanRegister) {
+    if (isCommunity) {
+        if (tnegaModule?.startTnegaCommunityFlow) {
+            runner = tnegaModule.startTnegaCommunityFlow;
+        } else {
+            const err = 'TNeGA Community Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
+            writeLogEntry(`❌ ${err}`);
+            return { success: false, error: err };
+        }
+    } else if (isResidence) {
+        if (tnegaModule?.startTnegaResidenceFlow) {
+            runner = tnegaModule.startTnegaResidenceFlow;
+        } else {
+            const err = 'TNeGA Residence Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
+            writeLogEntry(`❌ ${err}`);
+            return { success: false, error: err };
+        }
+    } else if (isIncome) {
+        if (tnegaModule?.startTnegaIncomeFlow) {
+            runner = tnegaModule.startTnegaIncomeFlow;
+        } else {
+            const err = 'TNeGA Income Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
+            writeLogEntry(`❌ ${err}`);
+            return { success: false, error: err };
+        }
+    } else if (isCanRegister) {
         if (tnegaModule?.startTnegaCanRegisterFlow) {
             runner = tnegaModule.startTnegaCanRegisterFlow;
         } else {
@@ -422,59 +454,46 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
             writeLogEntry(`❌ ${err}`);
             return { success: false, error: err };
         }
-    } else if (isIncome) {
-        if (tnegaModule?.startTnegaIncomeFlow) {
-            runner = tnegaModule.startTnegaIncomeFlow;
-        } else if (tnegaModule?.startTnegaCanRegisterFlow) {
-            runner = tnegaModule.startTnegaCanRegisterFlow;
-        } else {
-            const err = 'TNeGA Income Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
-            writeLogEntry(`❌ ${err}`);
-            return { success: false, error: err };
-        }
-    } else if (isResidence) {
-        if (tnegaModule?.startTnegaResidenceFlow) {
-            runner = tnegaModule.startTnegaResidenceFlow;
-        } else {
-            const err = 'TNeGA Residence Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
-            writeLogEntry(`❌ ${err}`);
-            return { success: false, error: err };
-        }
-    } else if (isCommunity) {
-        if (tnegaModule?.startTnegaCommunityFlow) {
-            runner = tnegaModule.startTnegaCommunityFlow;
-        } else {
-            const err = 'TNeGA Community Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
-            writeLogEntry(`❌ ${err}`);
-            return { success: false, error: err };
-        }
+    } else if (isRemoveMember && automationModule.startTnpdsRemoveMemberFlow) {
+        runner = automationModule.startTnpdsRemoveMemberFlow;
+    } else if (isAddMember && automationModule.startTnpdsAddMemberFlow) {
+        runner = automationModule.startTnpdsAddMemberFlow;
+    } else if (isChangeAddress && automationModule.startTnpdsAddressChangeFlow) {
+        runner = automationModule.startTnpdsAddressChangeFlow;
+    } else if (isChangeMobile && automationModule.startTnpdsMobileChangeFlow) {
+        runner = automationModule.startTnpdsMobileChangeFlow;
+    } else if (isChangeHead && automationModule.startTnpdsChangeHeadFlow) {
+        runner = automationModule.startTnpdsChangeHeadFlow;
     } else {
         runner = automationModule.startTnpdsRationCardFlow;
     }
 
-    const detectedTargetService = draftData?.targetService || 
-                                  draftData?.citizenProfile?.targetService || 
-                                  draftData?.parentService || 
-                                  draftData?.citizenProfile?.parentService ||
-                                  (draftData?.service === 'சாதிச் சான்றிதழ்' || draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ? 'COMMUNITY' :
-                                  (draftData?.service === 'இருப்பிடச் சான்றிதழ்' || draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ? 'RESIDENCE' :
-                                  (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : '')));
+    const detectedTargetService = isCommunity ? 'COMMUNITY' :
+                                  (isResidence ? 'RESIDENCE' :
+                                  (isIncome ? 'INCOME' :
+                                  (draftData?.targetService || 
+                                   draftData?.citizenProfile?.targetService || 
+                                   draftData?.parentService || 
+                                   draftData?.citizenProfile?.parentService ||
+                                   (draftData?.service === 'சாதிச் சான்றிதழ்' || draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ? 'COMMUNITY' :
+                                   (draftData?.service === 'இருப்பிடச் சான்றிதழ்' || draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ? 'RESIDENCE' :
+                                   (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : ''))))));
 
     const targetProfile = {
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
         mobileNumber: draftData?.mobileNumber || resolved.mobClean,
-        subService: isCanRegister ? 'CAN_REGISTER' :
-                    (isCanSearch ? 'CAN_SEARCH' :
-                    (isIncome ? 'INCOME' :
+        subService: isCommunity ? 'COMMUNITY' :
                     (isResidence ? 'RESIDENCE' :
-                    (isCommunity ? 'COMMUNITY' :
+                    (isIncome ? 'INCOME' :
+                    (isCanRegister ? 'CAN_REGISTER' :
+                    (isCanSearch ? 'CAN_SEARCH' :
                     (isRemoveMember ? 'REMOVE_MEMBER' :
                     (isAddMember ? 'ADD_MEMBER' :
                     (isChangeAddress ? 'CHANGE_ADDRESS' :
                     (isChangeMobile ? 'UPDATE_MOBILE' :
                     (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))),
-        targetService: detectedTargetService || draftData?.targetService || draftData?.citizenProfile?.targetService,
+        targetService: detectedTargetService || targetProfile?.targetService,
         subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
         intakeState: draftData?.intakeState || '',
         residenceProof: resolved.effectiveResidence,

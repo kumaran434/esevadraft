@@ -129,13 +129,33 @@
                                 'CAN_REGISTER', 'CAN_SEARCH',
                                 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
                             ];
-                            const effectiveSubService = (draftData.subService && activeExplicitServices.includes(draftData.subService))
+                            let effectiveSubService = (draftData.subService && activeExplicitServices.includes(draftData.subService))
                                 ? draftData.subService
                                 : (dJson.draft.subService || prof.subService || draftData.subService);
+
+                            // Golden Rule 6 & 11: Promote CAN_REGISTER to target certificate service if CAN is present or certificate details exist
+                            const knownCan = draftData.canNumber || dJson.draft?.canNumber || prof.canNumber;
+                            const targetServiceHint = String(draftData.targetService || dJson.draft?.targetService || prof.targetService || draftData.service || dJson.draft?.service || prof.service || draftData.serviceId || dJson.draft?.serviceId || prof.serviceId || '').toUpperCase();
+                            const intakeHint = String(draftData.intakeState || dJson.draft?.intakeState || prof.intakeState || '').toUpperCase();
+
+                            let resolvedTargetService = draftData.targetService || dJson.draft?.targetService || prof.targetService || '';
+
+                            if (targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || prof.caste || draftData.caste) {
+                                effectiveSubService = 'COMMUNITY';
+                                resolvedTargetService = 'COMMUNITY';
+                            } else if (targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeHint.includes('RESIDENCE') || intakeHint.includes('NATIVITY')) {
+                                effectiveSubService = 'RESIDENCE';
+                                resolvedTargetService = 'RESIDENCE';
+                            } else if (targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
+                                effectiveSubService = 'INCOME';
+                                resolvedTargetService = 'INCOME';
+                            }
+
                             const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
 
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
                                 subService: effectiveSubService,
+                                targetService: resolvedTargetService || draftData.targetService,
                                 subServiceData: draftData.subServiceData || dJson.draft.subServiceData || prof.subServiceData,
                                 intakeState: effectiveIntakeState,
                                 fullNameEng: prof.fullNameEng || draftData.fullNameEng,

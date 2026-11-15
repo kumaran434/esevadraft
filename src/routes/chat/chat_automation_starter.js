@@ -54,15 +54,147 @@ async function handleAutomationStarter(ctx, req, res) {
 
     const isMockTest = !isRealGovtOtpRequested;
 
-    // TNeGA Dedicated Subservices (Income Certificate & CAN Registration)
-    const isIncomeAction = text === 'START_INCOME_APPLY' || (
+    // TNeGA Dedicated Subservices (Community, Residence, Income & CAN Registration)
+    // Golden Rule 6 & 11: Priority resolution to ensure Community/Residence/Income are never hijacked by CAN_REGISTER
+    const pProfile = sess.citizenProfile || {};
+    const hasCan = Boolean(sess.canNumber || pProfile.canNumber || pProfile.can);
+    const targetServiceHint = String(sess.targetService || pProfile.targetService || sess.service || pProfile.service || sess.serviceId || pProfile.serviceId || '').toUpperCase();
+    const intakeStateHint = String(sess.intakeState || pProfile.intakeState || '').toUpperCase();
+
+    const isCommunityService = targetServiceHint.includes('COMMUNITY') || 
+                               targetServiceHint.includes('சாதி') || 
+                               intakeStateHint.includes('COMMUNITY') || 
+                               sess.subService === 'COMMUNITY' || 
+                               sess.subService === 'COMMUNITY_CERTIFICATE' || 
+                               pProfile.subService === 'COMMUNITY' || 
+                               Boolean(pProfile.caste || pProfile.community);
+
+    const isResidenceService = !isCommunityService && (
+                               targetServiceHint.includes('RESIDENCE') || 
+                               targetServiceHint.includes('NATIVITY') || 
+                               targetServiceHint.includes('இருப்பிடம்') || 
+                               intakeStateHint.includes('RESIDENCE') || 
+                               intakeStateHint.includes('NATIVITY') || 
+                               sess.subService === 'RESIDENCE' || 
+                               sess.subService === 'RESIDENCE_CERTIFICATE' || 
+                               pProfile.subService === 'RESIDENCE');
+
+    const isIncomeService = !isCommunityService && !isResidenceService && (
+                            targetServiceHint.includes('INCOME') || 
+                            targetServiceHint.includes('வருமானம்') || 
+                            intakeStateHint.includes('INCOME') || 
+                            sess.subService === 'INCOME' || 
+                            sess.subService === 'INCOME_CERTIFICATE' || 
+                            pProfile.subService === 'INCOME');
+
+    const isCommunityAction = text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'INCOME' || sess.subService === 'INCOME_CERTIFICATE' || sess.citizenProfile?.subService === 'INCOME' || sess.intakeState === 'READY_TO_APPLY_INCOME')
+        (isCommunityService || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
     );
-    const isCanRegisterAction = text === 'LAUNCH_CAN_AUTOMATION' || (
-        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'CAN_REGISTER' || sess.citizenProfile?.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
+
+    const isResidenceAction = !isCommunityAction && (
+        text === 'START_RESIDENCE_APPLY' || text === 'APPLY_RESIDENCE_NOW' || (
+            (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
+            (isResidenceService || sess.intakeState === 'READY_TO_APPLY_RESIDENCE')
+        )
     );
+
+    const isIncomeAction = !isCommunityAction && !isResidenceAction && (
+        text === 'START_INCOME_APPLY' || (
+            (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
+            (isIncomeService || sess.intakeState === 'READY_TO_APPLY_INCOME')
+        )
+    );
+
+    const isCanRegisterAction = !isCommunityAction && !isResidenceAction && !isIncomeAction && (
+        text === 'LAUNCH_CAN_AUTOMATION' || (
+            (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
+            !hasCan &&
+            (sess.subService === 'CAN_REGISTER' || pProfile.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
+        )
+    );
+
+    if (isCommunityAction) {
+        sess.subService = 'COMMUNITY';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'COMMUNITY';
+        const p = sess.citizenProfile || {};
+        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA சாதிச் சான்றிதழ் (REV-101) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
+                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
+                  `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
+                  `• 🕉️ **மதம்:** ${p.religion || 'Hindu'}\n` +
+                  `• 🏛️ **வகுப்பு:** ${p.community || 'MBC'} ✅\n` +
+                  `• 🏷️ **சாதி உட்பிரிவு:** ${p.caste || p.subCaste || 'Agamudayar'} ✅\n` +
+                  `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
+                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் சாதிச் சான்றிதழ் படிவம் திறக்கப்படுகிறது...`
+        });
+        sess.isAutomating = true;
+        sess.isAutomationRunning = true;
+        sess.automationStep = 1;
+        persistSessions();
+
+        runAutomationTask(
+            startTnegaCommunityFlow,
+            p,
+            sess,
+            p.mobileNumber || targetMobile || activeMobile,
+            isMockTest,
+            false,
+            false,
+            req
+        );
+
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            isAutomating: true
+        });
+        return true;
+    }
+
+    if (isResidenceAction) {
+        sess.subService = 'RESIDENCE';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'RESIDENCE';
+        const p = sess.citizenProfile || {};
+        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
+                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
+                  `• 📅 **வசிக்கும் காலம்:** ${p.yearsOfResidence || 'பிறப்பிலிருந்து'} ✅\n` +
+                  `• 🎯 **நோக்கம்:** ${p.purposeOfCertificate || 'கல்வி / வேலைவாய்ப்பு'}\n` +
+                  `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
+                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் இருப்பிடச் சான்றிதழ் படிவம் திறக்கப்படுகிறது...`
+        });
+        sess.isAutomating = true;
+        sess.isAutomationRunning = true;
+        sess.automationStep = 1;
+        persistSessions();
+
+        runAutomationTask(
+            startTnegaResidenceFlow,
+            p,
+            sess,
+            p.mobileNumber || targetMobile || activeMobile,
+            isMockTest,
+            false,
+            false,
+            req
+        );
+
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            isAutomating: true
+        });
+        return true;
+    }
 
     if (isIncomeAction) {
         sess.subService = 'INCOME';
@@ -133,98 +265,6 @@ async function handleAutomationStarter(ctx, req, res) {
 
         runAutomationTask(
             startTnegaCanRegisterFlow,
-            p,
-            sess,
-            p.mobileNumber || targetMobile || activeMobile,
-            isMockTest,
-            false,
-            false,
-            req
-        );
-
-        res.json({
-            chatHistory: sess.chatHistory,
-            citizenProfile: sess.citizenProfile,
-            step: sess.intakeState,
-            isAutomating: true
-        });
-        return true;
-    }
-
-    const isResidenceAction = text === 'START_RESIDENCE_APPLY' || text === 'APPLY_RESIDENCE_NOW' || (
-        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'RESIDENCE' || sess.subService === 'RESIDENCE_CERTIFICATE' || sess.citizenProfile?.subService === 'RESIDENCE' || sess.intakeState === 'READY_TO_APPLY_RESIDENCE')
-    );
-
-    if (isResidenceAction) {
-        sess.subService = 'RESIDENCE';
-        if (sess.citizenProfile) sess.citizenProfile.subService = 'RESIDENCE';
-        const p = sess.citizenProfile || {};
-        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
-                  `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
-                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
-                  `• 📅 **வசிக்கும் காலம்:** ${p.yearsOfResidence || 'பிறப்பிலிருந்து'} ✅\n` +
-                  `• 🎯 **நோக்கம்:** ${p.purposeOfCertificate || 'கல்வி / வேலைவாய்ப்பு'}\n` +
-                  `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
-                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் இருப்பிடச் சான்றிதழ் படிவம் திறக்கப்படுகிறது...`
-        });
-        sess.isAutomating = true;
-        sess.isAutomationRunning = true;
-        sess.automationStep = 1;
-        persistSessions();
-
-        runAutomationTask(
-            startTnegaResidenceFlow,
-            p,
-            sess,
-            p.mobileNumber || targetMobile || activeMobile,
-            isMockTest,
-            false,
-            false,
-            req
-        );
-
-        res.json({
-            chatHistory: sess.chatHistory,
-            citizenProfile: sess.citizenProfile,
-            step: sess.intakeState,
-            isAutomating: true
-        });
-        return true;
-    }
-
-    const isCommunityAction = text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
-        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (sess.subService === 'COMMUNITY' || sess.subService === 'COMMUNITY_CERTIFICATE' || sess.citizenProfile?.subService === 'COMMUNITY' || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
-    );
-
-    if (isCommunityAction) {
-        sess.subService = 'COMMUNITY';
-        if (sess.citizenProfile) sess.citizenProfile.subService = 'COMMUNITY';
-        const p = sess.citizenProfile || {};
-        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA சாதிச் சான்றிதழ் (REV-101) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
-                  `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
-                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
-                  `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
-                  `• 🕉️ **மதம்:** ${p.religion || 'Hindu'}\n` +
-                  `• 🏛️ **வகுப்பு:** ${p.community || 'MBC'} ✅\n` +
-                  `• 🏷️ **சாதி உட்பிரிவு:** ${p.caste || p.subCaste || 'Agamudayar'} ✅\n` +
-                  `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
-                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் சாதிச் சான்றிதழ் படிவம் திறக்கப்படுகிறது...`
-        });
-        sess.isAutomating = true;
-        sess.isAutomationRunning = true;
-        sess.automationStep = 1;
-        persistSessions();
-
-        runAutomationTask(
-            startTnegaCommunityFlow,
             p,
             sess,
             p.mobileNumber || targetMobile || activeMobile,

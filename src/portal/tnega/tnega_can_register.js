@@ -66,6 +66,60 @@ async function safeSaveCanToDraft(mobile, citizenProfile, canNumber, subService 
 }
 
 /**
+ * Accurately detects whether the citizen/draft goal is Community, Residence, or Income Certificate.
+ * Strictly adheres to Golden Rule 6 & 11 (Strict 1-to-1 Portal Dropdown/Link Mapping).
+ */
+function detectTargetGoal(citizenProfile = {}, options = {}) {
+    const rawTarget = options.targetService || 
+                      citizenProfile.targetService || 
+                      options.draftData?.targetService ||
+                      options.draftData?.citizenProfile?.targetService ||
+                      options.draftData?.service ||
+                      options.draftData?.serviceId ||
+                      citizenProfile.service ||
+                      citizenProfile.serviceId ||
+                      citizenProfile.parentService || 
+                      options.parentService ||
+                      options.subService ||
+                      citizenProfile.subService || '';
+    const targetUpper = String(rawTarget).toUpperCase();
+    const intakeState = String(citizenProfile.intakeState || options.draftData?.intakeState || options.intakeState || '').toUpperCase();
+
+    // Check Community Goal
+    const isCommunityGoal = targetUpper.includes('COMMUNITY') || 
+                            targetUpper.includes('சாதி') || 
+                            intakeState.includes('COMMUNITY') || 
+                            Boolean(citizenProfile.caste || citizenProfile.community || options.draftData?.citizenProfile?.caste || options.draftData?.caste);
+
+    // Check Residence Goal
+    const isResidenceGoal = !isCommunityGoal && (
+                            targetUpper.includes('RESIDENCE') || 
+                            targetUpper.includes('NATIVITY') || 
+                            targetUpper.includes('இருப்பிடம்') || 
+                            intakeState.includes('RESIDENCE') || 
+                            intakeState.includes('NATIVITY') ||
+                            Boolean(citizenProfile.yearsOfResidence || options.draftData?.citizenProfile?.yearsOfResidence));
+
+    // Check Income Goal
+    const isIncomeGoal = !isCommunityGoal && !isResidenceGoal && (
+                            targetUpper.includes('INCOME') || 
+                            targetUpper.includes('வருமானம்') || 
+                            intakeState.includes('INCOME') || 
+                            Boolean(citizenProfile.annualIncome || options.draftData?.citizenProfile?.annualIncome));
+
+    const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+    const resolvedTarget = isCommunityGoal ? 'COMMUNITY' : (isResidenceGoal ? 'RESIDENCE' : (isIncomeGoal ? 'INCOME' : (targetUpper === 'CAN_SEARCH' ? 'CAN_SEARCH' : 'CAN_REGISTER')));
+
+    return {
+        isCommunityGoal,
+        isResidenceGoal,
+        isIncomeGoal,
+        hasCertificateGoal,
+        targetUpper: resolvedTarget
+    };
+}
+
+/**
  * Extracts all pre-filled citizen details from an open TNeGA Certificate/CAN page
  * (e.g., IncomeCertificate.xhtml or canregistration.xhtml) to reverse-populate a customer's Master Profile.
  */
@@ -759,12 +813,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         onProgress(`🌟 புதிய CAN எண்: ${mockNewCan}`);
         onProgress(`📄 CAN பதிவு ஒப்புதல் ரசீது PDF உருவாக்கப்பட்டது.`);
 
-        const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
-        const targetUpper = String(rawTarget).toUpperCase();
-        const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
-        const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
-        const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
-        const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+        const goal = detectTargetGoal(citizenProfile, options);
+        const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal } = goal;
 
         if (hasCertificateGoal) {
             const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
@@ -1008,11 +1058,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             }
 
                             // Click matching service link based on target service (Golden Rule 6 & 11)
-                            const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
-                            const targetUpper = String(rawTarget).toUpperCase();
-                            const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
-                            const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
-                            const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
+                            const goal = detectTargetGoal(citizenProfile, options);
+                            const { isCommunityGoal, isResidenceGoal, isIncomeGoal } = goal;
 
                             let certLink = null;
                             if (isCommunityGoal) {
@@ -1021,9 +1068,12 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             } else if (isResidenceGoal) {
                                 certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-102"), a:has-text("REV-102 Residence certificate"), a:has-text("REV-102"), a:has-text("Residence certificate"), td:has-text("REV-102") a').first();
                                 onProgress('🔍 [DOM பகுப்பாய்வு] இருப்பிடச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-102 Residence certificate) — கிளிக் செய்யப்படுகிறது...');
-                            } else {
+                            } else if (isIncomeGoal) {
                                 certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-103"), a:has-text("REV-103 Income Certificate"), a:has-text("REV-103"), a:has-text("Income Certificate"), td:has-text("REV-103") a').first();
-                                onProgress('🔍 [DOM பகுப்பாய்வு] வருவாய்ச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-103) — கிளிக் செய்யப்படுகிறது...');
+                                onProgress('🔍 [DOM பகுப்பாய்வு] வருமானச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-103 Income Certificate) — கிளிக் செய்யப்படுகிறது...');
+                            } else {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-101"), a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a:has-text("Community certificate"), td:has-text("REV-101") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] சேவை தேர்ந்தெடுக்கப்படுகிறது (REV-101 Community certificate)...');
                             }
                                 rev103Clicked = true;
                                 rev103ClickTime = Date.now();
@@ -1049,9 +1099,10 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                     // 3.5 If browser was left on canregistration.xhtml, IncomeCertificate.xhtml, community_certificate.xhtml, or residence_certificate.xhtml from a previous run
                     // and we haven't done the validateAadhar.xhtml CAN pre-search yet, navigate to validateAadhar.xhtml via matching service menu
                     if (!preSearchDone && options.forceNewCanRegister !== true && (currentUrl.includes('canregistration.xhtml') || currentUrl.includes('incomecertificate.xhtml') || currentUrl.includes('community_certificate.xhtml') || currentUrl.includes('residence_certificate.xhtml'))) {
-                        const revMenuLink = isCommunityGoal 
+                        const curGoal = detectTargetGoal(citizenProfile, options);
+                        const revMenuLink = curGoal.isCommunityGoal 
                             ? tnegaPage.locator('a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a[href*="instruction.xhtml"]').first()
-                            : (isResidenceGoal 
+                            : (curGoal.isResidenceGoal 
                                 ? tnegaPage.locator('a:has-text("REV-102 Residence certificate"), a:has-text("REV-102"), a[href*="instruction.xhtml"]').first()
                                 : tnegaPage.locator('a:has-text("REV-103 Income Certificate"), a:has-text("REV-103"), a[href*="instruction.xhtml"]').first());
                         if (await revMenuLink.count() > 0 && await revMenuLink.isVisible()) {
@@ -1119,9 +1170,10 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                     if (options.draftData && options.draftData.citizenProfile) {
                                         options.draftData.citizenProfile.canNumber = foundCan;
                                     }
-                                    await safeSaveCanToDraft(mobile, citizenProfile, foundCan, citizenProfile.subService || options.subService || 'CAN_REGISTER');
+                                    const canGoal = detectTargetGoal(citizenProfile, options);
+                                    const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal, targetUpper } = canGoal;
+                                    await safeSaveCanToDraft(mobile, citizenProfile, foundCan, targetUpper || citizenProfile.subService || options.subService || 'CAN_REGISTER');
 
-                                    const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
                                     if (hasCertificateGoal) {
                                         const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
                                         onProgress(`🎉 ஏற்கனவே பதிவு செய்யப்பட்ட CAN எண் (${foundCan}) தேர்ந்தெடுக்கப்பட்டது! ${goalNameTam} படிவத்திற்கு (Proceed) செல்கிறது...`);
@@ -1760,12 +1812,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             options.draftData.citizenProfile.canNumber = newCan;
                         }
 
-                        const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
-                        const targetUpper = String(rawTarget).toUpperCase();
-                        const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
-                        const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
-                        const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
-                        const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+                        const goal = detectTargetGoal(citizenProfile, options);
+                        const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal, targetUpper } = goal;
 
                         await safeSaveCanToDraft(mobile, citizenProfile, newCan, hasCertificateGoal ? targetUpper : 'CAN_REGISTER');
 

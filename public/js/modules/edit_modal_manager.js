@@ -643,7 +643,15 @@
                     const dRes = await fetch(`/api/drafts/${activeCustMob}`);
                     const dJson = await dRes.json();
                     if (dJson && dJson.draft && dJson.draft.citizenProfile) {
-                        data = Object.assign({}, dJson.draft.citizenProfile, {
+                        data = Object.assign({}, dJson.draft, dJson.draft.citizenProfile, {
+                            service: dJson.draft.service || data.service,
+                            serviceId: dJson.draft.serviceId || data.serviceId,
+                            subService: dJson.draft.subService || data.subService,
+                            targetService: dJson.draft.targetService || data.targetService,
+                            intakeState: dJson.draft.intakeState || data.intakeState,
+                            canNumber: dJson.draft.canNumber || dJson.draft.citizenProfile?.canNumber || data.canNumber,
+                            caste: dJson.draft.citizenProfile?.caste || dJson.draft.caste || data.caste,
+                            community: dJson.draft.citizenProfile?.community || dJson.draft.community || data.community,
                             headPhotoPath: dJson.draft.citizenProfile.headPhotoPath || dJson.draft.documents?.profilePhoto || data.headPhotoPath,
                             members: dJson.draft.citizenProfile.members || data.members,
                             documents: dJson.draft.documents || data.documents
@@ -665,14 +673,28 @@
             pendingDocUploads = {};
 
             // Subservice mode determination: strictly based on active citizen subService state, NEVER scraping chat text DOM!
+            const serviceStr = String(data.service || data.serviceId || window.lastSubService || '').toUpperCase();
             const curSub = String(data.subService || window.lastSubService || '').toUpperCase();
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isAddMember = !forceMasterProfile && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
-            const hasActiveSub = Boolean(curSub === 'ADD_MEMBER' || curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER') || curIntake.startsWith('RATION_CHANGE_ADDRESS') || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isCommunityMode = curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curIntake.includes('COMMUNITY') || 
+                                    serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || 
+                                    sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY' ||
+                                    Boolean(data.caste || data.community);
+            const isResidenceMode = !isCommunityMode && (curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || 
+                                     curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || 
+                                     serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || 
+                                     sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE');
+            const isIncomeMode = !isCommunityMode && !isResidenceMode && (curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curIntake.includes('INCOME') || 
+                                  serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || 
+                                  sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME');
+            const isCanMode = !isCommunityMode && !isIncomeMode && !isResidenceMode && (curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN'));
+
+            const isAddMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
+            const isRemoveMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isChangeAddress = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const hasActiveSub = Boolean(isCommunityMode || isResidenceMode || isIncomeMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
 
             const titleEl = document.getElementById('editModalTitle');
             const subTitleEl = document.getElementById('editModalSubtitle');
@@ -680,14 +702,14 @@
             const btnSubSvc = document.getElementById('btnSwitchToSubService');
             const submitBtn = document.getElementById('btnSubmitFromEditModal');
             if (submitBtn) {
-                if (curSub === 'CAN_REGISTER' || curIntake.includes('CAN')) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
-                } else if (curSub === 'INCOME' || curIntake.includes('INCOME')) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
-                } else if (curSub === 'RESIDENCE' || curIntake.includes('RESIDENCE')) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
-                } else if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY')) {
+                if (isCommunityMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)';
+                } else if (isResidenceMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
+                } else if (isIncomeMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
+                } else if (isCanMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
                 } else if (isAddMember) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-user-plus"></i> 🚀 குடும்ப உறுப்பினர் சேர்க்க (Add Member in TNPDS)';
                 } else if (isRemoveMember) {
@@ -971,11 +993,11 @@
             const getVerifiedDoc = (type) => verifiedPhysicalDocs.find(d => d.type === type);
 
             // Subservice vs Master vs New Ration Card Mode Dynamic Labeling
-            const isRationHead = !forceMasterProfile && (
+            const isRationHead = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && !isRemoveMember && !isChangeAddress && (
                 String(data.service || '').toLowerCase().includes('ration') || 
                 String(data.service || '').includes('ரேஷன்') || 
                 String(data.service || '').includes('smart_card')
-            ) && !isAddMember && !isRemoveMember && !isChangeAddress;
+            );
 
             if (forceMasterProfile) {
                 if (titleEl) titleEl.innerHTML = '👤 வாடிக்கையாளர் மாஸ்டர் சுயவிவரம் (Citizen Master Profile Vault)';
@@ -987,22 +1009,22 @@
                     if (btnMaster) btnMaster.style.display = 'none';
                     if (btnSubSvc) btnSubSvc.style.display = 'none';
                 }
-            } else if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY') || sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY') {
+            } else if (isCommunityMode) {
                 if (titleEl) titleEl.innerHTML = '📜 சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Community Certificate)';
                 if (subTitleEl) subTitleEl.innerText = 'சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (curSub === 'INCOME' || curIntake.includes('INCOME') || sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME') {
-                if (titleEl) titleEl.innerHTML = '💰 வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Income Certificate)';
-                if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (curSub === 'RESIDENCE' || curIntake.includes('RESIDENCE') || sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE') {
+            } else if (isResidenceMode) {
                 if (titleEl) titleEl.innerHTML = '🏠 இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Residence Certificate)';
                 if (subTitleEl) subTitleEl.innerText = 'இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (curSub === 'CAN_REGISTER' || curIntake.includes('CAN')) {
+            } else if (isIncomeMode) {
+                if (titleEl) titleEl.innerHTML = '💰 வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Income Certificate)';
+                if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isCanMode) {
                 if (titleEl) titleEl.innerHTML = '📝 புதிய CAN பதிவு விவரங்கள் (New CAN Registration)';
                 if (subTitleEl) subTitleEl.innerText = 'CAN பதிவிற்கான விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
