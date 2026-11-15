@@ -113,6 +113,23 @@
        - **Existing Customer (e.g., Kumaran K)**: Automatically skip Bucket A and any already-saved Bucket B fields ➡️ Ask ONLY the missing Bucket B fields sequentially ➡️ Go straight to Pre-Submit Automation Start.
      - Verify both journeys (1. Brand-New Customer, 2. Existing Customer) live inside the desktop app UI before declaring completion.
 
+### 🎥 Golden Rule 12: The 360° Operator Video Intelligence & Error-Proof Protocol (ஆப்ரேட்டர் வீடியோ ஆய்வு ➡️ DOM துல்லியம் ➡️ முழுமையான எரர்-ப்ரூஃப் விதி)
+- **Why Pure-Code Assumptions Fail (ஏன் குறியீட்டு அனுமானங்கள் தோற்கின்றன)**:
+  - அரசு போர்ட்டல்கள் எப்போதும் நேரான வழியில் செயல்படுவதில்லை. நிஜ உலகில் மக்கள் மற்றும் ஈ-சேவை மைய ஆப்ரேட்டர்கள் எதிர்கொள்ளும் நடைமுறை சிக்கல்கள் (உதா: "Service Already applied with same CAN", "Application in draft", "Saved Application மீட்பு", "தந்தை சான்றிதழ் இல்லாதபோது மாற்று TC ஏற்றுக்கொள்வது", "CAN எண்ணில் பொது விவரங்கள் நிரம்பி விடுபட்டவற்றை மட்டும் கேட்பது") வெறும் HTML குறியீட்டைப் பார்த்தால் முழுமையாகத் தெரியாது.
+- **The Mandatory Pre-Engineering Discovery (கட்டாய முன்-ஆய்வு நெறிமுறை)**:
+  - எந்தவொரு புதிய அரசு சேவையை உருவாக்கும் முன்போ அல்லது ஏற்கனவே உள்ள சேவையை மாற்றியமைக்கும் முன்போ:
+  1. **Step 1 — 3 to 4 Operator Video Transcripts Analysis (3-4 நிஜ ஆப்ரேட்டர் வீடியோ ஆய்வு)**:
+     - YouTube / Web-ல் அந்த சேவைக்காக நிஜ ஈ-சேவை ஆப்ரேட்டர்கள் வெளியிட்ட 3 முதல் 4 முன்னணி வழிகாட்டி வீடியோக்களின் உரை வடிவத்தை (Transcripts / Subtitles) உடனே எடுத்து ஆய்வு செய்ய வேண்டும்.
+     - இதிலிருந்து:
+       - சாதாரண வெற்றிப் பாதை (Happy Path).
+       - சாத்தியமான அனைத்து எரர்கள் மற்றும் எச்சரிக்கைகள் (உதா: "Service Already Applied", "CAN Not Found", "Verification Timeout").
+       - மாற்று வழிகள் (உதா: `saveapp.xhtml` Saved Application-ல் Resume செய்து ஆவணப் பக்கத்திற்குச் செல்வது).
+       - கட்டாய மற்றும் விருப்ப ஆவணங்களின் உண்மை நிலவரம்.
+  2. **Step 2 — Precision DOM & Event Mapping (போர்ட்டல் DOM & நிகழ்வுப் பொருத்தம்)**:
+     - வீடியோக்களில் கண்டறிந்த நடைமுறை விதிகளின்படி, போர்ட்டலின் நேரடி DOM-ஐ ஆய்வு செய்து சரியான Element IDs, Dropdown Codes (உதா: MBC=5, Hindu=3), மற்றும் RichFaces/JSF நிகழ்வுகளைப் பொருத்த வேண்டும்.
+  3. **Step 3 — Zero-Regress Memory Sync Guarantee (நினைவக ஒத்திசைவு உத்தரவாதம்)**:
+     - புதிய குறியீடு மாற்றப்பட்டவுடன் `npm run sync:desktop` இயக்கி, டெஸ்க்டாப் எலக்ட்ரான் பிராசஸை முழுமையாக மறுதொடக்கம் செய்து (`launch_desktop_visible.ps1`), ரேம் நினைவகத்தில் புதிய குறியீடு இயங்குவதை உறுதி செய்ய வேண்டும்.
+
 ---
 
 ## 3. Lean 2-Tier Working Model (எளிய 2-அடுக்கு பணி மாதிரி)
