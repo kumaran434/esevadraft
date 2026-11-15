@@ -66,7 +66,7 @@ module.exports = {
     ],
 
     getRunner: () => {
-        const { runRemoveMemberFlow } = require('../../portal/tnpds_remove_member_flow');
-        return runRemoveMemberFlow;
+        const { startTnpdsRemoveMemberFlow } = require('../../../tnpds_automation');
+        return startTnpdsRemoveMemberFlow;
     }
 };

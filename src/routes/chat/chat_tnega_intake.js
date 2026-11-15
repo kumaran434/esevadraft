@@ -390,10 +390,29 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     if (text === 'CAN_REGISTER_PROMPT' || text === 'START_CAN_REGISTER' || sess.intakeState === 'CAN_REGISTER_INTAKE' || sess.intakeState === 'CAN_AADHAAR_BACK_WAIT' || sess.intakeState === 'CAN_MOTHER_NAME_WAIT' || sess.intakeState === 'CAN_COMMUNITY_WAIT') {
         const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
 
+        // Preserve parent certificate goal if transitioning from Community, Residence, or Income
+        if (!sess.targetService) {
+            if (sess.subService && sess.subService !== 'CAN_REGISTER' && sess.subService !== 'CAN_SEARCH') {
+                sess.targetService = sess.subService;
+            } else if (sess.intakeState && sess.intakeState.includes('COMMUNITY')) {
+                sess.targetService = 'COMMUNITY';
+            } else if (sess.intakeState && sess.intakeState.includes('RESIDENCE')) {
+                sess.targetService = 'RESIDENCE';
+            } else if (sess.intakeState && sess.intakeState.includes('INCOME')) {
+                sess.targetService = 'INCOME';
+            }
+        }
+        if (sess.citizenProfile) {
+            sess.citizenProfile.targetService = sess.targetService || sess.citizenProfile.targetService;
+        }
+
         if (text === 'START_CAN_REGISTER') {
             sess.intakeState = 'READY_TO_APPLY_CAN';
             sess.subService = 'CAN_REGISTER';
-            if (sess.citizenProfile) sess.citizenProfile.subService = 'CAN_REGISTER';
+            if (sess.citizenProfile) {
+                sess.citizenProfile.subService = 'CAN_REGISTER';
+                sess.citizenProfile.targetService = sess.targetService || sess.citizenProfile.targetService;
+            }
             persistSessions();
             const p = sess.citizenProfile || {};
             const mob = p.mobileNumber || sess.mobileNumber || '';
@@ -401,17 +420,19 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             const nameEng = p.fullNameEng || p.headNameEng || '';
             const aadh = p.headAadhaar || p.aadhaar || '';
             const aadhDisp = aadh ? aadh.replace(/(\d{4})/g, '$1 ').trim() : '—';
+            const targetNameTam = sess.targetService === 'COMMUNITY' ? 'சாதிச் சான்றிதழ்' : (sess.targetService === 'RESIDENCE' ? 'இருப்பிடச் சான்றிதழ்' : (sess.targetService === 'INCOME' ? 'வருமானச் சான்றிதழ்' : 'CAN பதிவு'));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: `📋 **விண்ணப்ப விவரங்களை ஒருமுறை சரிபார்க்கவும்:** 🛡️\n\n` +
-                      `அரசு TNeGA போர்ட்டலில் புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்குவதற்கு முன், அனைத்து விவரங்களையும் (பெயர், முகவரி, ஆவணங்கள்) ஒருமுறை சரிபார்த்து உறுதிப்படுத்த **'விவரங்களைச் சரிபார்' (Edit / Review)** சாளரம் திறக்கப்பட்டுள்ளது.\n\n` +
+                      `அரசு TNeGA போர்ட்டலில் ${targetNameTam} ஆட்டோமேஷன் தொடங்குவதற்கு முன், அனைத்து விவரங்களையும் (பெயர், முகவரி, ஆவணங்கள்) ஒருமுறை சரிபார்த்து உறுதிப்படுத்த **'விவரங்களைச் சரிபார்' (Edit / Review)** சாளரம் திறக்கப்பட்டுள்ளது.\n\n` +
+                      (sess.targetService ? `💡 **முதன்மை இலக்கு:** போர்ட்டலில் CAN எண் உள்ளதா என முதலில் சரிபார்க்கப்பட்டு, CAN இருப்பின் நேரடியாக **${targetNameTam}** விண்ணப்பப் படிவத்திற்குச் செல்லும்!\n\n` : '') +
                       `• விண்ணப்பதாரர்: ${nameTam || nameEng}\n` +
                       `• கைபேசி: +91 ${mob}\n` +
                       `• ஆதார்: ${aadhDisp}\n\n` +
-                      `சாளரத்தில் விவரங்கள் சரியாக உள்ளதா எனப் பார்த்துவிட்டு, அதில் உள்ள **'🚀 புதிய CAN பதிவு தொடங்க' (Start CAN Automation)** பொத்தானை அழுத்தவும்:`,
+                      `சாளரத்தில் விவரங்கள் சரியாக உள்ளதா எனப் பார்த்துவிட்டு, அதில் உள்ள **'🚀 ஆட்டோமேஷன் தொடங்கு'** பொத்தானை அழுத்தவும்:`,
                 actionRequired: 'open_edit_modal',
                 options: [
-                    { label: "🚀 புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்கு", value: "LAUNCH_CAN_AUTOMATION" },
+                    { label: `🚀 ${targetNameTam} ஆட்டோமேஷன் தொடங்கு`, value: "LAUNCH_CAN_AUTOMATION" },
                     { label: "✏️ விவரங்களை மாற்று (Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });

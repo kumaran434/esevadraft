@@ -391,8 +391,73 @@ async function runSimulation() {
         assert(resRes4.body.isAutomating === true, 'Sets isAutomating to true');
         console.log('   ✅ RESIDENCE STEP 4 PASSED: Successfully dispatches startTnegaResidenceFlow automation!\n');
 
+        // =====================================================================
+        // JOURNEY 4: COMMUNITY CERTIFICATE & CAN CONTINUITY SIMULATION (Kumaran K)
+        // =====================================================================
+        console.log('▶️ [SIMULATION 4] Community Certificate & CAN Continuity: Kumaran K (+91 9790170026)');
+        console.log('   Known: Name, Father, Aadhaar, Address | Trigger: CAN Register -> Smart Discovery -> Handoff to Community\n');
+
+        const simMob5 = '9790170088';
+        await request('POST', '/api/profile/update', {
+            mobileNumber: simMob5,
+            fullNameTam: 'குமரன் கி',
+            fullNameEng: 'Kumaran K',
+            fatherNameTam: 'கிருபாகரன்',
+            fatherNameEng: 'Kirubakaran',
+            headAadhaar: '575567662931',
+            headDob: '1993-06-10',
+            headGenderTam: 'ஆண்',
+            doorNo: '216',
+            streetTam: 'மேட்டு தெரு, நரசிங்கபுரம்',
+            village: 'Minnal',
+            taluk: 'Arakkonam',
+            district: 'Ranipet',
+            pincode: '632510'
+        }, { 'x-session-mobile': simMob5 });
+
+        // Step 1: Select "சாதிச் சான்றிதழ்"
+        console.log('Community Step 1: Selecting "சாதிச் சான்றிதழ்"...');
+        const commRes1 = await request('POST', '/api/chat', { text: 'சாதிச் சான்றிதழ்' }, { 'x-session-mobile': simMob5 });
+        assert.strictEqual(commRes1.status, 200);
+        assert.strictEqual(commRes1.body.intakeState, 'COMMUNITY_CAN_GATE');
+        console.log('   ✅ COMMUNITY STEP 1 PASSED: Strict CAN verification gate enforced.\n');
+
+        // Step 2: User clicks "CAN_REGISTER_PROMPT" (புதிய CAN பதிவு செய்)
+        console.log('Community Step 2: Clicking "CAN_REGISTER_PROMPT"...');
+        const commRes2 = await request('POST', '/api/chat', { text: 'CAN_REGISTER_PROMPT' }, { 'x-session-mobile': simMob5 });
+        assert.strictEqual(commRes2.status, 200);
+        assert.strictEqual(commRes2.body.intakeState, 'CAN_MOTHER_NAME_WAIT');
+        console.log('   ✅ COMMUNITY STEP 2 PASSED: Mother name prompt triggered.\n');
+
+        // Step 3: Enters Mother's Name "தேவகி கி"
+        console.log('Community Step 3: Entering Mother\'s Name "தேவகி கி"...');
+        const commRes3 = await request('POST', '/api/chat', { text: 'தேவகி கி' }, { 'x-session-mobile': simMob5 });
+        assert.strictEqual(commRes3.status, 200);
+        assert.strictEqual(commRes3.body.intakeState, 'CAN_COMMUNITY_WAIT');
+        console.log('   ✅ COMMUNITY STEP 3 PASSED: Transitions to Community selection.\n');
+
+        // Step 4: Selects Community "COMMUNITY_MBC"
+        console.log('Community Step 4: Selecting "COMMUNITY_MBC"...');
+        const commRes4 = await request('POST', '/api/chat', { text: 'COMMUNITY_MBC' }, { 'x-session-mobile': simMob5 });
+        assert.strictEqual(commRes4.status, 200);
+        assert.strictEqual(commRes4.body.intakeState, 'READY_TO_APPLY_CAN');
+        assert.strictEqual(commRes4.body.citizenProfile.targetService, 'COMMUNITY', 'targetService preserved as COMMUNITY');
+        console.log('   ✅ COMMUNITY STEP 4 PASSED: Ready to apply CAN with targetService=COMMUNITY preserved.\n');
+
+        // Step 5: Test startTnegaCanRegisterFlow mock handoff with targetService='COMMUNITY'
+        console.log('Community Step 5: Executing startTnegaCanRegisterFlow with targetService=COMMUNITY in mock sandbox...');
+        const { startTnegaCanRegisterFlow } = require('../src/portal/tnega/tnega_can_register');
+        const runnerRes = await startTnegaCanRegisterFlow(
+            { ...commRes4.body.citizenProfile, targetService: 'COMMUNITY' },
+            (msg) => console.log('   [TNeGA Runner Log]', msg),
+            { isMockSandbox: true, targetService: 'COMMUNITY' }
+        );
+        assert.strictEqual(runnerRes.success, true, 'Mock handoff succeeds');
+        assert(runnerRes.message.includes('சாதிச் சான்றிதழ்'), 'Runner hands off seamlessly to Community Certificate flow!');
+        console.log('   ✅ COMMUNITY STEP 5 PASSED: Seamless handoff to Community Certificate executed successfully!\n');
+
         // Cleanup simulation files
-        ['9790170099.json', '9840011223.json', '9123456780.json'].forEach(f => {
+        ['9790170099.json', '9840011223.json', '9123456780.json', '9790170088.json'].forEach(f => {
             const p = path.join(draftsDir, f);
             if (fs.existsSync(p)) fs.unlinkSync(p);
         });

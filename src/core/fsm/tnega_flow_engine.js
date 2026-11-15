@@ -334,9 +334,18 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
  * @returns {Object} { text, options, step }
  */
 function advanceTnegaCanRegisterFlow(sess, prefixMessage = '') {
+    // Preserve parent service goal (e.g. COMMUNITY, RESIDENCE, INCOME)
+    if (!sess.targetService) {
+        if (sess.subService && sess.subService !== 'CAN_REGISTER' && sess.subService !== 'CAN_SEARCH') {
+            sess.targetService = sess.subService;
+        }
+    }
     sess.subService = 'CAN_REGISTER';
     if (!sess.citizenProfile) sess.citizenProfile = {};
     sess.citizenProfile.subService = 'CAN_REGISTER';
+    if (sess.targetService) {
+        sess.citizenProfile.targetService = sess.targetService;
+    }
 
     const p = sess.citizenProfile;
     const mob = p.mobileNumber || sess.mobileNumber || '';

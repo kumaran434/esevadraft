@@ -99,7 +99,7 @@ module.exports = {
     ],
 
     getRunner: () => {
-        const { submitTnpdsApplication } = require('../../../tnpds_automation');
-        return submitTnpdsApplication;
+        const { startTnpdsRationCardFlow } = require('../../../tnpds_automation');
+        return startTnpdsRationCardFlow;
     }
 };

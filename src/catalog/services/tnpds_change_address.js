@@ -61,7 +61,7 @@ module.exports = {
     ],
 
     getRunner: () => {
-        const { runAddressChangeFlow } = require('../../portal/tnpds_change_address_flow');
-        return runAddressChangeFlow;
+        const { startTnpdsAddressChangeFlow } = require('../../../tnpds_automation');
+        return startTnpdsAddressChangeFlow;
     }
 };

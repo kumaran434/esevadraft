@@ -452,6 +452,14 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         runner = automationModule.startTnpdsRationCardFlow;
     }
 
+    const detectedTargetService = draftData?.targetService || 
+                                  draftData?.citizenProfile?.targetService || 
+                                  draftData?.parentService || 
+                                  draftData?.citizenProfile?.parentService ||
+                                  (draftData?.service === 'சாதிச் சான்றிதழ்' || draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ? 'COMMUNITY' :
+                                  (draftData?.service === 'இருப்பிடச் சான்றிதழ்' || draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ? 'RESIDENCE' :
+                                  (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : '')));
+
     const targetProfile = {
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
@@ -466,6 +474,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                     (isChangeAddress ? 'CHANGE_ADDRESS' :
                     (isChangeMobile ? 'UPDATE_MOBILE' :
                     (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))),
+        targetService: detectedTargetService || draftData?.targetService || draftData?.citizenProfile?.targetService,
         subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
         intakeState: draftData?.intakeState || '',
         residenceProof: resolved.effectiveResidence,
@@ -486,6 +495,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         isMockSandboxMode: false,
         headless: false,
         chromium: playwrightChromium,
+        targetService: detectedTargetService || targetProfile.targetService,
         draftData,
         subServiceData: targetProfile.subServiceData,
         operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',

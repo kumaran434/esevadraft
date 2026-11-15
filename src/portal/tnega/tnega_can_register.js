@@ -759,6 +759,28 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         onProgress(`🌟 புதிய CAN எண்: ${mockNewCan}`);
         onProgress(`📄 CAN பதிவு ஒப்புதல் ரசீது PDF உருவாக்கப்பட்டது.`);
 
+        const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
+        const targetUpper = String(rawTarget).toUpperCase();
+        const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
+        const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
+        const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
+        const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+
+        if (hasCertificateGoal) {
+            const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
+            onProgress(`🎉 [Safe Mock Sandbox] புதிய CAN எண் (${mockNewCan}) உருவாக்கப்பட்டது! ${goalNameTam} படிவத்திற்குத் தானாகத் தொடர்கிறது...`);
+            if (isCommunityGoal) {
+                const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
+                return await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
+            } else if (isResidenceGoal) {
+                const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
+                return await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
+            } else {
+                const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
+                return await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
+            }
+        }
+
         return {
             success: true,
             message: `🎉 [Safe Mock Sandbox] புதிய 13-இலக்க CAN எண் வெற்றிகரமாக உருவாக்கப்பட்டது! எண்: ${mockNewCan}`,
@@ -985,10 +1007,24 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                 await tnegaPage.waitForTimeout(1200);
                             }
 
-                            // Click REV-103 Income Certificate
-                            const certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-103"), a:has-text("REV-103 Income Certificate"), a:has-text("REV-103"), a:has-text("Income Certificate")').first();
-                            if (await certLink.count() > 0 && await certLink.isVisible()) {
+                            // Click matching service link based on target service (Golden Rule 6 & 11)
+                            const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
+                            const targetUpper = String(rawTarget).toUpperCase();
+                            const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
+                            const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
+                            const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
+
+                            let certLink = null;
+                            if (isCommunityGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-101"), a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a:has-text("Community certificate"), td:has-text("REV-101") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] சாதிச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-101 Community certificate) — கிளிக் செய்யப்படுகிறது...');
+                            } else if (isResidenceGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-102"), a:has-text("REV-102 Residence certificate"), a:has-text("REV-102"), a:has-text("Residence certificate"), td:has-text("REV-102") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] இருப்பிடச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-102 Residence certificate) — கிளிக் செய்யப்படுகிறது...');
+                            } else {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-103"), a:has-text("REV-103 Income Certificate"), a:has-text("REV-103"), a:has-text("Income Certificate"), td:has-text("REV-103") a').first();
                                 onProgress('🔍 [DOM பகுப்பாய்வு] வருவாய்ச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-103) — கிளிக் செய்யப்படுகிறது...');
+                            }
                                 rev103Clicked = true;
                                 rev103ClickTime = Date.now();
 
@@ -1010,10 +1046,14 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                         }
                     }
 
-                    // 3.5 If browser was left on canregistration.xhtml or IncomeCertificate.xhtml from a previous run
-                    // and we haven't done the validateAadhar.xhtml CAN pre-search yet, navigate to validateAadhar.xhtml via REV-103 menu
-                    if (!preSearchDone && options.forceNewCanRegister !== true && (currentUrl.includes('canregistration.xhtml') || currentUrl.includes('incomecertificate.xhtml'))) {
-                        const revMenuLink = tnegaPage.locator('a:has-text("REV-103 Income Certificate"), a[href*="instruction.xhtml"]').first();
+                    // 3.5 If browser was left on canregistration.xhtml, IncomeCertificate.xhtml, community_certificate.xhtml, or residence_certificate.xhtml from a previous run
+                    // and we haven't done the validateAadhar.xhtml CAN pre-search yet, navigate to validateAadhar.xhtml via matching service menu
+                    if (!preSearchDone && options.forceNewCanRegister !== true && (currentUrl.includes('canregistration.xhtml') || currentUrl.includes('incomecertificate.xhtml') || currentUrl.includes('community_certificate.xhtml') || currentUrl.includes('residence_certificate.xhtml'))) {
+                        const revMenuLink = isCommunityGoal 
+                            ? tnegaPage.locator('a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a[href*="instruction.xhtml"]').first()
+                            : (isResidenceGoal 
+                                ? tnegaPage.locator('a:has-text("REV-102 Residence certificate"), a:has-text("REV-102"), a[href*="instruction.xhtml"]').first()
+                                : tnegaPage.locator('a:has-text("REV-103 Income Certificate"), a:has-text("REV-103"), a[href*="instruction.xhtml"]').first());
                         if (await revMenuLink.count() > 0 && await revMenuLink.isVisible()) {
                             onProgress('🔄 [CAN முன்-சரிபார்ப்பு] முதலில் CAN எண் உள்ளதா எனச் சரிபார்க்க தேடல் பக்கத்திற்கு (validateAadhar.xhtml) செல்கிறது...');
                             proceedClicked = false;
@@ -1081,16 +1121,51 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                     }
                                     await safeSaveCanToDraft(mobile, citizenProfile, foundCan, citizenProfile.subService || options.subService || 'CAN_REGISTER');
 
-                                    const isIncomeMode = citizenProfile.subService === 'INCOME' || citizenProfile.subService === 'INCOME_CERTIFICATE' || options.subService === 'INCOME';
-                                    if (isIncomeMode && options.searchOnly !== true) {
-                                        onProgress(`🎉 ஏற்கனவே பதிவு செய்யப்பட்ட CAN எண் (${foundCan}) தேர்ந்தெடுக்கப்பட்டது! வருமானச் சான்றிதழ் படிவத்திற்கு (Proceed) செல்கிறது...`);
+                                    const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+                                    if (hasCertificateGoal) {
+                                        const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
+                                        onProgress(`🎉 ஏற்கனவே பதிவு செய்யப்பட்ட CAN எண் (${foundCan}) தேர்ந்தெடுக்கப்பட்டது! ${goalNameTam} படிவத்திற்கு (Proceed) செல்கிறது...`);
                                         await updateTnegaHud(tnegaPage, {
                                             title: `🎉 CAN எண் கண்டறியப்பட்டது: ${foundCan}`,
-                                            desc: `${foundRec.name} — வருமானச் சான்றிதழ் படிவத்திற்கு (Proceed) செல்கிறது...`,
+                                            desc: `${foundRec.name} — ${goalNameTam} படிவத்திற்கு (Proceed) செல்கிறது...`,
                                             badge: 'CAN Found ✅',
                                             type: 'success'
                                         });
-                                        const proceedCanBtn = tnegaPage.locator('#statusform input[value="Proceed"]').first();
+
+                                        // Safety check: If we are on REV-103 page while user requested Community (REV-101) or Residence (REV-102)
+                                        const isRev103Page = currentUrl.includes('rev-103') || (await tnegaPage.locator('text="REV-103 Income Certificate"').count() > 0);
+                                        if (isCommunityGoal && isRev103Page) {
+                                            onProgress('🔄 [சேவை பொருத்தம்] தற்போது REV-103 பக்கத்தில் உள்ளது. சாதிச் சான்றிதழ் (REV-101) பக்கத்திற்கு மாறுகிறது...');
+                                            const rev101Left = tnegaPage.locator('a:has-text("REV-101"), a:has-text("Community certificate"), td:has-text("REV-101") a').first();
+                                            if (await rev101Left.count() > 0 && await rev101Left.isVisible()) {
+                                                await rev101Left.click().catch(() => {});
+                                                await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
+                                                await tnegaPage.waitForTimeout(1500);
+                                            } else {
+                                                await tnegaPage.goto('https://tnedistrict.tn.gov.in/web/common/dashboard.xhtml?faces-redirect=true').catch(() => {});
+                                                await tnegaPage.waitForTimeout(1500);
+                                            }
+                                            const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
+                                            return await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
+                                        }
+
+                                        if (isResidenceGoal && isRev103Page) {
+                                            onProgress('🔄 [சேவை பொருத்தம்] தற்போது REV-103 பக்கத்தில் உள்ளது. இருப்பிடச் சான்றிதழ் (REV-102) பக்கத்திற்கு மாறுகிறது...');
+                                            const rev102Left = tnegaPage.locator('a:has-text("REV-102"), a:has-text("Residence certificate"), td:has-text("REV-102") a').first();
+                                            if (await rev102Left.count() > 0 && await rev102Left.isVisible()) {
+                                                await rev102Left.click().catch(() => {});
+                                                await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
+                                                await tnegaPage.waitForTimeout(1500);
+                                            } else {
+                                                await tnegaPage.goto('https://tnedistrict.tn.gov.in/web/common/dashboard.xhtml?faces-redirect=true').catch(() => {});
+                                                await tnegaPage.waitForTimeout(1500);
+                                            }
+                                            const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
+                                            return await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
+                                        }
+
+                                        // Click Proceed on validateAadhar.xhtml
+                                        const proceedCanBtn = tnegaPage.locator('#statusform input[value*="Proceed"], #statusform input[type="submit"][value*="Proceed"], input[value="Proceed"]').first();
                                         if (await proceedCanBtn.count() > 0 && await proceedCanBtn.isVisible()) {
                                             await proceedCanBtn.click().catch(() => {});
                                             await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
@@ -1100,21 +1175,48 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                                 for (const [ek, ev] of Object.entries(extracted)) {
                                                     if (ev && !citizenProfile[ek]) citizenProfile[ek] = ev;
                                                 }
-                                                await safeSaveCanToDraft(mobile, citizenProfile, foundCan, citizenProfile.subService || options.subService || 'INCOME');
+                                                await safeSaveCanToDraft(mobile, citizenProfile, foundCan, targetUpper);
                                                 onProgress(`💾 போர்ட்டலின் CAN விவரங்கள் வாடிக்கையாளரின் Master Profile-ல் தானாகவே சேமிக்கப்பட்டன!`);
                                             }
                                         }
-                                        // Hand off directly to Income Certificate Automation Engine to complete the form
-                                        try {
-                                            const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
-                                            return await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
-                                        } catch (flowErr) {
-                                            onProgress(`⚠️ வருமானப் படிவ நிரப்புதலில் பிழை: ${flowErr.message}`);
-                                            return {
-                                                success: false,
-                                                error: flowErr.message,
-                                                canNumber: foundCan
-                                            };
+
+                                        // Hand off directly to the target Certificate Engine
+                                        if (isCommunityGoal) {
+                                            try {
+                                                const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
+                                                return await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
+                                            } catch (flowErr) {
+                                                onProgress(`⚠️ சாதிச் சான்றிதழ் படிவ நிரப்புதலில் பிழை: ${flowErr.message}`);
+                                                return {
+                                                    success: false,
+                                                    error: flowErr.message,
+                                                    canNumber: foundCan
+                                                };
+                                            }
+                                        } else if (isResidenceGoal) {
+                                            try {
+                                                const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
+                                                return await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
+                                            } catch (flowErr) {
+                                                onProgress(`⚠️ இருப்பிடச் சான்றிதழ் படிவ நிரப்புதலில் பிழை: ${flowErr.message}`);
+                                                return {
+                                                    success: false,
+                                                    error: flowErr.message,
+                                                    canNumber: foundCan
+                                                };
+                                            }
+                                        } else {
+                                            try {
+                                                const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
+                                                return await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
+                                            } catch (flowErr) {
+                                                onProgress(`⚠️ வருமானப் படிவ நிரப்புதலில் பிழை: ${flowErr.message}`);
+                                                return {
+                                                    success: false,
+                                                    error: flowErr.message,
+                                                    canNumber: foundCan
+                                                };
+                                            }
                                         }
                                     }
 
@@ -1208,7 +1310,6 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             }
                         }
                     }
-                }
 
                 // Check if CAN form or Citizen Registration form is active
                 const hasAadhaarInp = (await tnegaPage.locator('#canreg\\:aadharnum, input[name*="aadharnum"], input#txtAadhaar, input[name*="Aadhaar"]').count()) > 0;
@@ -1659,11 +1760,36 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             options.draftData.citizenProfile.canNumber = newCan;
                         }
 
-                        await safeSaveCanToDraft(mobile, citizenProfile, newCan, 'CAN_REGISTER');
+                        const rawTarget = options.targetService || citizenProfile.targetService || citizenProfile.parentService || citizenProfile.subService || options.subService || '';
+                        const targetUpper = String(rawTarget).toUpperCase();
+                        const isCommunityGoal = targetUpper.includes('COMMUNITY') || targetUpper.includes('சாதி');
+                        const isResidenceGoal = targetUpper.includes('RESIDENCE') || targetUpper.includes('NATIVITY') || targetUpper.includes('இருப்பிடம்');
+                        const isIncomeGoal = targetUpper.includes('INCOME') || targetUpper.includes('வருமானம்');
+                        const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+
+                        await safeSaveCanToDraft(mobile, citizenProfile, newCan, hasCertificateGoal ? targetUpper : 'CAN_REGISTER');
 
                         onProgress(`🎉 [நேரலை உற்பத்தி முறை] புதிய 13-இலக்க CAN எண் வெற்றிகரமாக உருவாக்கப்பட்டது!`);
                         onProgress(`🌟 புதிய CAN எண்: ${newCan}`);
                         onProgress(`📄 ஒப்புதல் ரசீது PDF தயாராக உள்ளது.`);
+
+                        if (hasCertificateGoal) {
+                            const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
+                            onProgress(`🎉 [முதன்மை இலக்கு தொடர்ச்சி] புதிய CAN எண் (${newCan}) பதிவு செய்யப்பட்டது! ${goalNameTam} விண்ணப்பத்திற்குத் தானாகத் தொடர்கிறது...`);
+                            if (isCommunityGoal) {
+                                const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
+                                const flowRes = await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
+                                return resolve(flowRes);
+                            } else if (isResidenceGoal) {
+                                const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
+                                const flowRes = await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
+                                return resolve(flowRes);
+                            } else {
+                                const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
+                                const flowRes = await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
+                                return resolve(flowRes);
+                            }
+                        }
 
                         resolve({
                             success: true,

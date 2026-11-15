@@ -77,7 +77,7 @@ module.exports = {
     ],
 
     getRunner: () => {
-        const { runAddMemberFlow } = require('../../portal/tnpds/add_member/add_member_pipeline');
-        return runAddMemberFlow;
+        const { startTnpdsAddMemberFlow } = require('../../../tnpds_automation');
+        return startTnpdsAddMemberFlow;
     }
 };

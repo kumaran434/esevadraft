@@ -106,18 +106,25 @@ async function handleAutomationStarter(ctx, req, res) {
     }
 
     if (isCanRegisterAction) {
+        const targetSvc = sess.targetService || sess.citizenProfile?.targetService;
         sess.subService = 'CAN_REGISTER';
-        if (sess.citizenProfile) sess.citizenProfile.subService = 'CAN_REGISTER';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'CAN_REGISTER';
+            if (targetSvc) sess.citizenProfile.targetService = targetSvc;
+        }
         const p = sess.citizenProfile || {};
+        if (targetSvc) p.targetService = targetSvc;
+        const targetNameTam = targetSvc === 'COMMUNITY' ? 'சாதிச் சான்றிதழ்' : (targetSvc === 'RESIDENCE' ? 'இருப்பிடச் சான்றிதழ்' : (targetSvc === 'INCOME' ? 'வருமானச் சான்றிதழ்' : 'CAN பதிவு'));
         const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
         sess.chatHistory.push({
             sender: 'bot',
-            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA ${targetNameTam} ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  (targetSvc ? `💡 **முதன்மை இலக்கு:** போர்ட்டலில் CAN எண் உள்ளதா எனச் சரிபார்க்கப்பட்டு, CAN இருப்பின் நேரடியாக **${targetNameTam}** விண்ணப்பப் படிவத்திற்குச் செல்லும்!\n\n` : '') +
                   `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
                   `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
                   `• 🏛️ **வகுப்பு:** ${p.community || '—'}\n` +
                   `• 📱 **கைபேசி:** +91 ${p.mobileNumber || targetMobile || activeMobile}\n\n` +
-                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் CAN பதிவு படிவம் திறக்கப்படுகிறது...`
+                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் படிவம் திறக்கப்படுகிறது...`
         });
         sess.isAutomating = true;
         sess.isAutomationRunning = true;
