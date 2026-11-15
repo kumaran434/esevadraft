@@ -105,7 +105,14 @@ class TnpdsLoginPage {
 
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-                this.onProgress(`⚡ [AI Captcha OCR] TNPDS கேப்ட்சா படம் அதிவேகமாக ஆய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)...`);
+                // Operator Co-Pilot: Check if user already typed captcha directly
+                const alreadyTyped = await capInput.inputValue().catch(() => '');
+                if (alreadyTyped && alreadyTyped.trim().length >= 4) {
+                    this.onProgress(`⌨️ [ஆப்ரேட்டர் நேரடி உள்ளீடு] TNPDS கேப்ட்சா குறியீடு மனிதரால் உள்ளிட்டது கண்டறியப்பட்டது: "${alreadyTyped.trim()}" ✅`);
+                    return alreadyTyped.trim();
+                }
+
+                this.onProgress(`⚡ [AI Captcha OCR] TNPDS கேப்ட்சா படம் அதிவேகமாக ஆய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/3)... (நீங்களே உள்ளிட்டாலும் தொடரும் ⌨️)`);
 
                 let imgPayload = null;
                 const srcAttr = await capImg.getAttribute('src').catch(() => '');
@@ -117,7 +124,36 @@ class TnpdsLoginPage {
 
                 if (!imgPayload) continue;
 
-                const code = await AiCaptchaSolver.solve(imgPayload, options);
+                // Race AI OCR against manual operator typing
+                const aiPromise = AiCaptchaSolver.solve(imgPayload, options).catch(() => null);
+                let watcherActive = true;
+                const userWatcher = (async () => {
+                    const start = Date.now();
+                    while (Date.now() - start < 8000 && watcherActive) {
+                        const val = await capInput.inputValue().catch(() => '');
+                        if (val && val.trim().length >= 4) return val.trim();
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                    return null;
+                })();
+
+                const raceRes = await Promise.race([
+                    aiPromise.then(c => ({ source: 'ai', code: c })),
+                    userWatcher.then(c => ({ source: 'user', code: c }))
+                ]);
+                watcherActive = false;
+
+                let code = (raceRes && raceRes.code) || '';
+                if (raceRes && raceRes.source === 'user' && code) {
+                    this.onProgress(`⌨️ [ஆப்ரேட்டர் நேரடி உள்ளீடு] TNPDS கேப்ட்சா குறியீடு ஏற்கப்பட்டது: "${code}" ✅`);
+                    return code;
+                }
+
+                const postCheckTyped = await capInput.inputValue().catch(() => '');
+                if (postCheckTyped && postCheckTyped.trim().length >= 4) {
+                    return postCheckTyped.trim();
+                }
+
                 if (code && code.length >= 4 && code.length <= 8) {
                     this.onProgress(`⚡ [AI Captcha OCR] கேப்ட்சா குறியீடு பெறப்பட்டது: "${code}" ✅`);
                     await capInput.fill(code);

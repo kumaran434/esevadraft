@@ -326,10 +326,11 @@ function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
 }
 
 /**
- * Automated Operator Login & Captcha Solver with Live HUD
+ * Automated Operator Login & Captcha Solver with Immortal Live HUD & Operator Co-Pilot
  */
 async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options = {}) {
     onProgress(`🔐 [அரசு பெட்டகம்] சேமிக்கப்பட்ட TNeGA ஆப்ரேட்டர் லாகின் (${vaultCreds.username}) தொடங்குகிறது...`);
+    await initTnegaHud(page).catch(() => {});
     await updateTnegaHud(page, {
         title: '🔐 TNeGA ஆப்ரேட்டர் உள்நுழைவு',
         desc: `பயனர்: ${vaultCreds.username} விவரங்கள் தானாக நிரப்பப்படுகின்றன...`,
@@ -348,14 +349,20 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
     };
     page.on('dialog', dialogHandler);
 
+    const isStillLoginUrl = (u) => {
+        if (!u) return true;
+        const lower = u.toLowerCase();
+        return lower.includes('default.aspx') || lower.includes('portallogin.aspx') || /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(lower);
+    };
+
+    // Ensure login input fields are rendered before starting attempt loop
     const userInp = page.locator('#txtuserName, input[name*="txtuserName"]').first();
     const passInp = page.locator('#txtpassword, input[name*="txtpassword"], input[type="password"]').first();
     const ddlOp = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_ddloperator, select[name*="ddloperator"]').first();
 
-    // Ensure login input fields are rendered before starting attempt loop
     if (!(await userInp.isVisible().catch(() => false))) {
         const franchiseeBtn = page.locator('a:has-text("Franchisee Login"), #btnFranchiseeLogin, a[href*="Franchisee"]').first();
-        if (await franchiseeBtn.count() > 0 && await franchiseeBtn.isVisible().catch(() => false)) {
+        if (await franchiseeBtn.count().catch(() => 0) > 0 && await franchiseeBtn.isVisible().catch(() => false)) {
             await franchiseeBtn.click().catch(() => {});
             await page.waitForTimeout(600);
         }
@@ -364,162 +371,283 @@ async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options 
 
     // Check if an orphaned session exists and close it (TNeGA 1-session lock rule)
     const btnCloseSession = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_btnCloseSession, input[value="Close Logged Session"]').first();
-    if (await btnCloseSession.count() > 0 && await btnCloseSession.isVisible()) {
+    if (await btnCloseSession.count().catch(() => 0) > 0 && await btnCloseSession.isVisible().catch(() => false)) {
         onProgress('🔄 [அமர்வு மீட்டமைப்பு] முந்தைய திறந்த அமர்வு கண்டறியப்பட்டது — Close Logged Session அழுத்தப்படுகிறது...');
         await btnCloseSession.click().catch(() => {});
         await page.waitForLoadState('domcontentloaded').catch(() => {});
         await page.waitForTimeout(1500);
     }
 
-    const isStillLoginUrl = (u) => u.includes('default.aspx') || u.includes('portallogin.aspx') || /^https?:\/\/(www\.)?tnesevai\.tn\.gov\.in\/?(\?.*)?$/.test(u);
-
-    // Captcha Solve & Login Retry Loop (up to 4 attempts)
+    // Captcha Solve & Login Retry Loop (Golden Rule 5 & 13 Operator Co-Pilot: up to 10 attempts, non-stop)
     let loginSuccess = false;
-    for (let attempt = 1; attempt <= 4; attempt++) {
-        const currentUrl = page.url().toLowerCase();
-        const hasLoginInput = (await userInp.count() > 0) && (await userInp.isVisible().catch(() => false));
-        if (!isStillLoginUrl(currentUrl) && !hasLoginInput) {
-            loginSuccess = true;
-            break;
-        }
-
-        // 1. Golden Rule 8: Check for any disclaimer / maintenance popup modal and click "Close" or "Proceed" button
-        const closeDisclaimerBtn = page.locator('button:has-text("Close"), input[value*="Close"], a:has-text("Close"), button:has-text("Proceed"), input[value*="Proceed"], button:has-text("OK"), input[value="OK"], .modal-footer button, #btnClose, .close, div.modal:has-text("maintenance") button').first();
-        if (await closeDisclaimerBtn.count() > 0 && await closeDisclaimerBtn.isVisible()) {
-            onProgress('ℹ️ [விதி 8] தகவல் அறிவிப்பு பாப்-அப் கண்டறியப்பட்டது — Close பொத்தான் அழுத்தப்படுகிறது...');
-            await closeDisclaimerBtn.click().catch(() => {});
-            await page.waitForTimeout(600);
-        }
-
-        // 2. Mandatory Explicit Re-filling of Username, Password, Role on Every Attempt (ASP.NET postback / hashing wipes plain text!)
-        if (await userInp.count() > 0) {
-            await userInp.click().catch(() => {});
-            await userInp.fill('');
-            await userInp.fill(vaultCreds.username);
-            await userInp.dispatchEvent('input', { bubbles: true }).catch(() => {});
-            await userInp.dispatchEvent('change', { bubbles: true }).catch(() => {});
-            await userInp.dispatchEvent('blur', { bubbles: true }).catch(() => {});
-        }
-        if (await passInp.count() > 0) {
-            await passInp.click().catch(() => {});
-            await passInp.fill('');
-            await passInp.fill(vaultCreds.password);
-            await passInp.dispatchEvent('input', { bubbles: true }).catch(() => {});
-            await passInp.dispatchEvent('change', { bubbles: true }).catch(() => {});
-            await passInp.dispatchEvent('blur', { bubbles: true }).catch(() => {});
-        }
-        if (await ddlOp.count() > 0) {
-            await safeSelect(ddlOp, vaultCreds.operatorCode || 'OM');
-        }
-
-        const captchaImg = page.locator('img[src*="CaptchaImage"], img[src*="Captcha"], #imgCaptcha').first();
-        const captchaInp = page.locator('#txtCaptcha, input[name*="txtCaptcha"]').first();
-
-        await captchaImg.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-        if (await captchaImg.count() === 0 || !(await captchaImg.isVisible())) {
-            await page.waitForTimeout(1000);
-            continue;
-        }
-
-        // Ensure captcha image is fully rendered and downloaded with valid dimensions
-        await captchaImg.evaluate((img) => img.complete && img.naturalWidth > 0).catch(() => false);
-
-        onProgress(`⚡ [AI Captcha OCR] கேப்ட்சா படம் அதிவேகமாக ஆய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/4)...`);
-
-        // Screenshot the captcha element with high-speed canvas extraction (compact JPEG for fastest transmission)
-        let captchaBuf = await page.evaluate(() => {
-            try {
-                const img = document.querySelector('img[src*="CaptchaImage"], img[src*="Captcha"], #imgCaptcha');
-                if (!img || !img.complete || img.naturalWidth === 0) return null;
-                const canvas = document.createElement('canvas');
-                const scale = 1.8;
-                canvas.width = Math.round(img.naturalWidth * scale);
-                canvas.height = Math.round(img.naturalHeight * scale);
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                return canvas.toDataURL('image/jpeg', 0.9);
-            } catch (_) {
-                return null;
+    for (let attempt = 1; attempt <= 10; attempt++) {
+        try {
+            if (page.isClosed()) break;
+            const currentUrl = page.url() ? page.url().toLowerCase() : '';
+            const hasLoginInput = (await userInp.count().catch(() => 0) > 0) && (await userInp.isVisible().catch(() => false));
+            if (!isStillLoginUrl(currentUrl) && !hasLoginInput) {
+                loginSuccess = true;
+                break;
             }
-        }).catch(() => null);
 
-        if (!captchaBuf) {
-            captchaBuf = await captchaImg.screenshot().catch(() => null);
-        }
-        if (!captchaBuf) {
-            await page.waitForTimeout(200);
-            continue;
-        }
+            // 1. Golden Rule 8: Close any disclaimer / maintenance popup modal
+            const closeDisclaimerBtn = page.locator('button:has-text("Close"), input[value*="Close"], a:has-text("Close"), button:has-text("Proceed"), input[value*="Proceed"], button:has-text("OK"), input[value="OK"], .modal-footer button, #btnClose, .close, div.modal:has-text("maintenance") button').first();
+            if (await closeDisclaimerBtn.count().catch(() => 0) > 0 && await closeDisclaimerBtn.isVisible().catch(() => false)) {
+                onProgress('ℹ️ [விதி 8] தகவல் அறிவிப்பு பாப்-அப் கண்டறியப்பட்டது — Close பொத்தான் அழுத்தப்படுகிறது...');
+                await closeDisclaimerBtn.click().catch(() => {});
+                await page.waitForTimeout(500);
+            }
 
-        const solvedCode = await AiCaptchaSolver.solve(captchaBuf, { ...options, isTnega: true, portal: 'tnega', captchaLen: 5 });
+            // 2. Mandatory Explicit Re-filling & Invariant Check (ASP.NET postback / F5 reload wipes password!)
+            await page.evaluate(({ u, p, op }) => {
+                const userEl = document.querySelector('#txtuserName, input[name*="txtuserName"]');
+                const passEl = document.querySelector('#txtpassword, input[name*="txtpassword"], input[type="password"]');
+                const opEl = document.querySelector('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_ddloperator, select[name*="ddloperator"]');
 
-        if (!solvedCode || solvedCode.length < 4) {
-            onProgress(`⚠️ [AI Captcha] முயற்சி ${attempt}: குறியீடு தெளிவாகப் பெறப்படவில்லை, உடனடியாக மீண்டும் முயற்சிக்கிறது...`);
-            const refreshBtn = page.locator('a[id*="Captcha"], img[src*="refresh"], a:has-text("Refresh")').first();
-            if (await refreshBtn.count() > 0) await refreshBtn.click().catch(() => {});
-            await page.waitForTimeout(250);
-            continue;
-        }
+                if (userEl && (!userEl.value || userEl.value.trim() !== u)) {
+                    userEl.value = u;
+                    userEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    userEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (passEl && (!passEl.value || passEl.value.trim() !== p)) {
+                    passEl.value = p;
+                    passEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    passEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (opEl && op && (!opEl.value || opEl.value !== op)) {
+                    for (let i = 0; i < opEl.options.length; i++) {
+                        if (opEl.options[i].value === op || opEl.options[i].text.includes(op)) {
+                            opEl.selectedIndex = i;
+                            opEl.dispatchEvent(new Event('change', { bubbles: true }));
+                            break;
+                        }
+                    }
+                }
+            }, { u: vaultCreds.username, p: vaultCreds.password, op: vaultCreds.operatorCode || 'OM' }).catch(() => {});
 
-        onProgress(`⚡ [AI Captcha] குறியீடு பெறப்பட்டது: ${solvedCode} ✅`);
+            const captchaImg = page.locator('img[src*="CaptchaImage"], img[src*="Captcha"], #imgCaptcha').first();
+            const captchaInp = page.locator('#txtCaptcha, input[name*="txtCaptcha"]').first();
 
-        // Instant Fill & Event Dispatch (Zero latency typing)
-        await captchaInp.fill(solvedCode);
-        await captchaInp.dispatchEvent('input', { bubbles: true }).catch(() => {});
-        await captchaInp.dispatchEvent('change', { bubbles: true }).catch(() => {});
+            await captchaImg.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+            if (await captchaImg.count().catch(() => 0) === 0 || !(await captchaImg.isVisible().catch(() => false))) {
+                await page.waitForTimeout(800);
+                continue;
+            }
 
-        lastDialogMessage = '';
-        const btnLogin = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_btnLogin, input[value="Login"]').first();
-        if (await btnLogin.count() > 0) {
-            onProgress('🚀 தானியங்கி Login பொத்தான் அழுத்தப்படுகிறது...');
-            const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => null);
-            await btnLogin.click().catch(() => {});
-            await Promise.race([
-                navPromise,
-                page.waitForFunction(() => {
-                    const u = window.location.href.toLowerCase();
-                    if (!u.includes('default.aspx') && !u.includes('portallogin.aspx')) return true;
-                    const err = document.querySelector('#lblMessage, #lblError, #lblMsg, .alert-danger');
-                    return Boolean(err && err.offsetParent !== null && err.innerText.trim());
-                }, { timeout: 4000 }).catch(() => null)
-            ]);
-            await page.waitForTimeout(400);
-        }
+            // Ensure captcha image is fully rendered and downloaded with valid dimensions
+            await captchaImg.evaluate((img) => img.complete && img.naturalWidth > 0).catch(() => false);
 
-        const postUrl = page.url().toLowerCase();
-        const postHasLoginInput = (await userInp.count() > 0) && (await userInp.isVisible().catch(() => false));
-        if (!isStillLoginUrl(postUrl) && !postHasLoginInput) {
-            loginSuccess = true;
-            onProgress('🎉 TNeGA போர்ட்டலில் வெற்றிகரமாக உள்நுழைந்தது!');
+            // Update HUD to show active captcha analysis with Co-Pilot notification
             await updateTnegaHud(page, {
-                title: '🎉 TNeGA உள்நுழைவு வெற்றி!',
-                desc: 'ஆப்ரேட்டர் கணக்கு வெற்றிகரமாக உள்நுழைந்தது.',
-                badge: 'Logged In ✅',
-                type: 'success'
+                title: `⚡ AI கேப்ட்சா பகுப்பாய்வு (முயற்சி ${attempt}/10)`,
+                desc: 'குறியீடு ஆய்வு செய்யப்படுகிறது... (நீங்களே உள்ளிட்டாலும் தொடரும் ⌨️)',
+                badge: 'AI Captcha ⚡',
+                type: 'working'
             });
-            break;
-        }
 
-        if (lastDialogMessage) {
-            onProgress(`⚠️ போர்ட்டல் எச்சரிக்கை செய்தி: "${lastDialogMessage}"`);
-        }
+            onProgress(`⚡ [AI Captcha OCR] கேப்ட்சா படம் ஆய்வு செய்யப்படுகிறது (முயற்சி ${attempt}/10)... (நீங்களே நேரடியாக உள்ளிட்டாலும் தொடரும் ⌨️)`);
 
-        const errorText = await page.evaluate(() => {
-            const msgEl = document.querySelector('#lblMessage, #lblError, #lblMsg, .alert-danger');
-            if (msgEl && msgEl.offsetParent !== null && msgEl.innerText.trim()) return msgEl.innerText.trim();
-            const maintEl = document.querySelector('span[style*="red"]');
-            if (maintEl && maintEl.offsetParent !== null && maintEl.innerText.includes('maintenance')) {
-                return 'அரசு தளம் பராமரிப்பில் உள்ளது (Server Under Maintenance)';
+            // Extract Captcha image via canvas
+            let captchaBuf = await page.evaluate(() => {
+                try {
+                    const img = document.querySelector('img[src*="CaptchaImage"], img[src*="Captcha"], #imgCaptcha');
+                    if (!img || !img.complete || img.naturalWidth === 0) return null;
+                    const canvas = document.createElement('canvas');
+                    const scale = 1.8;
+                    canvas.width = Math.round(img.naturalWidth * scale);
+                    canvas.height = Math.round(img.naturalHeight * scale);
+                    const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    return canvas.toDataURL('image/jpeg', 0.9);
+                } catch (_) {
+                    return null;
+                }
+            }).catch(() => null);
+
+            if (!captchaBuf) {
+                captchaBuf = await captchaImg.screenshot().catch(() => null);
             }
-            return '';
-        }).catch(() => '');
+            if (!captchaBuf) {
+                await page.waitForTimeout(500);
+                continue;
+            }
 
-        if (errorText) {
-            onProgress(`⚠️ போர்ட்டல் தகவல்: ${errorText} — மீண்டும் புதிய கேப்ட்சா முயலப்படுகிறது...`);
+            // =========================================================================
+            // OPERATOR CO-PILOT: Race AI OCR against Operator Manual Input
+            // =========================================================================
+            const aiSolvePromise = AiCaptchaSolver.solve(captchaBuf, {
+                ...options,
+                isTnega: true,
+                portal: 'tnega',
+                captchaLen: 5
+            }).catch(() => null);
+
+            let watcherActive = true;
+            const operatorWatcherPromise = (async () => {
+                const startWait = Date.now();
+                while (Date.now() - startWait < 12000 && watcherActive) {
+                    if (page.isClosed()) return null;
+
+                    const u = page.url() ? page.url().toLowerCase() : '';
+                    if (!isStillLoginUrl(u)) {
+                        return { source: 'navigated', code: '__NAVIGATED__' };
+                    }
+
+                    // Check if operator typed captcha in #txtCaptcha
+                    const userVal = await page.evaluate(() => {
+                        const inp = document.querySelector('#txtCaptcha, input[name*="txtCaptcha"]');
+                        return inp ? inp.value.trim() : '';
+                    }).catch(() => '');
+
+                    if (userVal && userVal.length >= 4) {
+                        return { source: 'operator', code: userVal };
+                    }
+
+                    // Auto-repair empty password field continuously (protects against ASP.NET postback wiping)
+                    await page.evaluate(({ p }) => {
+                        const passEl = document.querySelector('#txtpassword, input[name*="txtpassword"], input[type="password"]');
+                        if (passEl && !passEl.value.trim()) {
+                            passEl.value = p;
+                            passEl.dispatchEvent(new Event('input', { bubbles: true }));
+                            passEl.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, { p: vaultCreds.password }).catch(() => {});
+
+                    await new Promise(r => setTimeout(r, 200));
+                }
+                return null;
+            })();
+
+            const raceWinner = await Promise.race([
+                aiSolvePromise.then(code => ({ source: 'ai', code })),
+                operatorWatcherPromise
+            ]);
+            watcherActive = false;
+
+            if (raceWinner && raceWinner.source === 'navigated') {
+                loginSuccess = true;
+                break;
+            }
+
+            let finalCaptchaCode = '';
+            if (raceWinner && raceWinner.source === 'operator' && raceWinner.code) {
+                finalCaptchaCode = raceWinner.code;
+                onProgress(`⌨️ [ஆப்ரேட்டர் நேரடி உள்ளீடு] கேப்ட்சா குறியீடு மனிதரால் உள்ளிட்டது கண்டறியப்பட்டது: "${finalCaptchaCode}" ✅`);
+                await updateTnegaHud(page, {
+                    title: '⌨️ கேப்ட்சா பெறப்பட்டது',
+                    desc: `ஆப்ரேட்டர் குறியீடு ஏற்கப்பட்டது: ${finalCaptchaCode}`,
+                    badge: 'Manual Code',
+                    type: 'working'
+                });
+            } else {
+                // Check if user typed while AI was solving
+                const userManualEntry = await page.evaluate(() => {
+                    const inp = document.querySelector('#txtCaptcha, input[name*="txtCaptcha"]');
+                    return inp ? inp.value.trim() : '';
+                }).catch(() => '');
+
+                if (userManualEntry && userManualEntry.length >= 4) {
+                    finalCaptchaCode = userManualEntry;
+                    onProgress(`⌨️ [ஆப்ரேட்டர் நேரடி உள்ளீடு] குறியீடு ஏற்கப்பட்டது: "${finalCaptchaCode}" ✅`);
+                } else if (raceWinner && raceWinner.source === 'ai' && raceWinner.code && raceWinner.code.length >= 4) {
+                    finalCaptchaCode = raceWinner.code;
+                    onProgress(`⚡ [AI Captcha OCR] குறியீடு பெறப்பட்டது: ${finalCaptchaCode} ✅`);
+                    // Fill into input field
+                    await page.evaluate((c) => {
+                        const inp = document.querySelector('#txtCaptcha, input[name*="txtCaptcha"]');
+                        if (inp) {
+                            inp.value = c;
+                            inp.dispatchEvent(new Event('input', { bubbles: true }));
+                            inp.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, finalCaptchaCode).catch(() => {});
+                }
+            }
+
+            if (!finalCaptchaCode || finalCaptchaCode.length < 4) {
+                onProgress(`⚠️ [AI Captcha] முயற்சி ${attempt}: குறியீடு தெளிவாகப் பெறப்படவில்லை, மீண்டும் முயற்சிக்கிறது...`);
+                const refreshBtn = page.locator('a[id*="Captcha"], img[src*="refresh"], a:has-text("Refresh")').first();
+                if (await refreshBtn.count().catch(() => 0) > 0) {
+                    await refreshBtn.click().catch(() => {});
+                }
+                await page.waitForTimeout(500);
+                continue;
+            }
+
+            // =========================================================================
+            // PRE-SUBMIT INTEGRITY CHECK: Re-verify Username & Password Are Never Empty!
+            // =========================================================================
+            await page.evaluate(({ u, p }) => {
+                const userEl = document.querySelector('#txtuserName, input[name*="txtuserName"]');
+                const passEl = document.querySelector('#txtpassword, input[name*="txtpassword"], input[type="password"]');
+                if (userEl && (!userEl.value || userEl.value.trim() !== u)) {
+                    userEl.value = u;
+                    userEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    userEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (passEl && (!passEl.value || passEl.value.trim() !== p)) {
+                    passEl.value = p;
+                    passEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    passEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }, { u: vaultCreds.username, p: vaultCreds.password }).catch(() => {});
+
+            lastDialogMessage = '';
+            const btnLogin = page.locator('#ContentPlaceHolderTop_OuterContentPlaceHolderBody_btnLogin, input[value="Login"]').first();
+            if (await btnLogin.count().catch(() => 0) > 0) {
+                onProgress('🚀 தானியங்கி Login பொத்தான் அழுத்தப்படுகிறது...');
+                const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => null);
+                await btnLogin.click().catch(() => {});
+                await Promise.race([
+                    navPromise,
+                    page.waitForFunction(() => {
+                        const u = window.location.href.toLowerCase();
+                        if (!u.includes('default.aspx') && !u.includes('portallogin.aspx')) return true;
+                        const err = document.querySelector('#lblMessage, #lblError, #lblMsg, .alert-danger');
+                        return Boolean(err && err.offsetParent !== null && err.innerText.trim());
+                    }, { timeout: 4000 }).catch(() => null)
+                ]);
+                await page.waitForTimeout(500);
+            }
+
+            const postUrl = page.url() ? page.url().toLowerCase() : '';
+            const postHasLoginInput = (await userInp.count().catch(() => 0) > 0) && (await userInp.isVisible().catch(() => false));
+            if (!isStillLoginUrl(postUrl) && !postHasLoginInput) {
+                loginSuccess = true;
+                onProgress('🎉 TNeGA போர்ட்டலில் வெற்றிகரமாக உள்நுழைந்தது!');
+                await updateTnegaHud(page, {
+                    title: '🎉 TNeGA உள்நுழைவு வெற்றி!',
+                    desc: 'ஆப்ரேட்டர் கணக்கு வெற்றிகரமாக உள்நுழைந்தது.',
+                    badge: 'Logged In ✅',
+                    type: 'success'
+                });
+                break;
+            }
+
+            if (lastDialogMessage) {
+                onProgress(`⚠️ போர்ட்டல் எச்சரிக்கை செய்தி: "${lastDialogMessage}"`);
+            }
+
+            const errorText = await page.evaluate(() => {
+                const msgEl = document.querySelector('#lblMessage, #lblError, #lblMsg, .alert-danger');
+                if (msgEl && msgEl.offsetParent !== null && msgEl.innerText.trim()) return msgEl.innerText.trim();
+                const maintEl = document.querySelector('span[style*="red"]');
+                if (maintEl && maintEl.offsetParent !== null && maintEl.innerText.includes('maintenance')) {
+                    return 'அரசு தளம் பராமரிப்பில் உள்ளது (Server Under Maintenance)';
+                }
+                return '';
+            }).catch(() => '');
+
+            if (errorText) {
+                onProgress(`⚠️ போர்ட்டல் தகவல்: ${errorText} — மீண்டும் புதிய கேப்ட்சா முயலப்படுகிறது...`);
+            }
+            await page.waitForTimeout(400);
+        } catch (attemptErr) {
+            onProgress(`⚠️ [மீட்பு நிலை] பக்க மறுஏற்றம்/மாற்றம் கண்டறியப்பட்டது (${attemptErr.message || attemptErr}) — தொடர்கிறது...`);
+            await page.waitForTimeout(1000);
         }
-        await page.waitForTimeout(300);
     }
 
     try { page.off('dialog', dialogHandler); } catch (_) {}
