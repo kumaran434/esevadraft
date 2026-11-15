@@ -345,6 +345,14 @@ async function runSimulation() {
         console.log('----------------------------------------------------------------------\n');
 
         const simMob4 = '9842367866'; // Customer Kumaran K (known CAN 133370337878397)
+        await request('POST', '/api/profile/update', {
+            mobileNumber: simMob4,
+            fullNameTam: 'குமரன் கி',
+            fullNameEng: 'Kumaran K',
+            canNumber: '133370337878397',
+            fatherNameTam: 'கிருபாகரன்',
+            headAadhaar: '575567662931'
+        }, { 'x-session-mobile': simMob4 });
         // Step 1: Selecting "இருப்பிடச் சான்றிதழ்"
         console.log('Step 1: Selecting "இருப்பிடச் சான்றிதழ்" for Kumaran K...');
         const resRes1 = await request('POST', '/api/chat', { text: 'இருப்பிடச் சான்றிதழ்' }, { 'x-session-mobile': simMob4 });

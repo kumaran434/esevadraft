@@ -282,6 +282,17 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
+    if (sess.tempUploads?.headAadhaarFront && !sess.tempUploads?.headAadhaarBack && !p.fatherNameTam && !p.fatherNameEng && !p.pincode) {
+        sess.intakeState = 'INCOME_AADHAAR_BACK_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! தந்தை/கணவர் பெயர் மற்றும் முகவரி உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
+        const options = [
+            { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
     // -------------------------------------------------------------------------
     // STEP 10: All 100% Ready Station (Pre-Submit Approval Gate)
     // -------------------------------------------------------------------------
@@ -362,6 +373,19 @@ function advanceTnegaCanRegisterFlow(sess, prefixMessage = '') {
             `விண்ணப்பதாரரின் ஆதார் அட்டை படம் / PDF பதிவேற்றவும் (அல்லது விவரங்களை உள்ளிடவும்):`;
         const options = [
             { label: "📷 ஆதார் அட்டை அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // Check if Aadhaar Back Side is pending (front uploaded, but back side / address pending)
+    const hasAddressOrBack = Boolean(sess.tempUploads?.headAadhaarBack || (fatTam || fatEng) || (door && pin));
+    if (sess.tempUploads?.headAadhaarFront && !hasAddressOrBack) {
+        sess.intakeState = 'CAN_AADHAAR_BACK_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! தந்தை/கணவர் பெயர் மற்றும் முகவரி உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
+        const options = [
+            { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
@@ -522,6 +546,17 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
             `விண்ணப்பதாரரின் முகவரி விவரங்களைத் தானாகப் பெற **ஆதார் அட்டை (படம் / PDF)** பதிவேற்றவும்:`;
         const options = [
             { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    if (sess.tempUploads?.headAadhaarFront && !sess.tempUploads?.headAadhaarBack && !p.fatherNameTam && !p.fatherNameEng && !p.pincode) {
+        sess.intakeState = 'RESIDENCE_AADHAAR_BACK_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! முகவரி மற்றும் தந்தை/கணவர் பெயர் உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
+        const options = [
+            { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
@@ -717,6 +752,17 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
             `விண்ணப்பதாரரின் முகவரி விவரங்களைத் தானாகப் பெற **ஆதார் அட்டை (படம் / PDF)** பதிவேற்றவும்:`;
         const options = [
             { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    if (sess.tempUploads?.headAadhaarFront && !sess.tempUploads?.headAadhaarBack && !p.fatherNameTam && !p.fatherNameEng && !p.pincode) {
+        sess.intakeState = 'COMMUNITY_AADHAAR_BACK_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! தந்தை/கணவர் பெயர் மற்றும் முகவரி உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
+        const options = [
+            { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };

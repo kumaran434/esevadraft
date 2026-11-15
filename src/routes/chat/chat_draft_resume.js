@@ -95,13 +95,22 @@ async function handleDraftResume(ctx, req, res) {
     }
 
     if (text === 'TRIGGER_EDIT_MODAL' || text.includes('திருத்து') || text.toLowerCase().includes('edit')) {
+        let actionBtn = { label: "🚀 விவரங்கள் சரி - TNPDS-ல் விண்ணப்பி", value: "CONFIRM_SUBMIT" };
+        if (sess.subService === 'CAN_REGISTER' || (sess.intakeState && sess.intakeState.startsWith('CAN_'))) {
+            actionBtn = { label: "🚀 புதிய CAN பதிவு தொடங்கு", value: "START_CAN_REGISTER" };
+        } else if (sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.startsWith('INCOME_'))) {
+            actionBtn = { label: "🚀 இ-சேவை போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கு", value: "START_INCOME_APPLY" };
+        } else if (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE_'))) {
+            actionBtn = { label: "🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்கத் தொடங்கு", value: "START_RESIDENCE_APPLY" };
+        } else if (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY_'))) {
+            actionBtn = { label: "🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்கத் தொடங்கு", value: "START_COMMUNITY_APPLY" };
+        }
+
         sess.chatHistory.push({
             sender: 'bot',
             text: `✏️ **விவரங்களைத் திருத்தும் சாளரம் (Edit Window) திறக்கப்பட்டுள்ளது!**\n\nதிரையில் தோன்றும் படிவத்தில் சரியான எழுத்துக் கூட்டலை உள்ளிட்டு **'சேமி & உறுதிப்படுத்து'** பட்டனை அழுத்தவும்.`,
             actionRequired: 'open_edit_modal',
-            options: [
-                { label: "🚀 விவரங்கள் சரி - TNPDS-ல் விண்ணப்பி", value: "CONFIRM_SUBMIT" }
-            ]
+            options: [actionBtn]
         });
         persistSessions();
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
