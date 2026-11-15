@@ -3,12 +3,25 @@ const fs = require('fs');
 
 const { produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
+const { validateUploadedDocument } = require('./document_validator');
 
 async function processUploadedDocument(sess, docType, uploadedFile, memberIndex, targetMobile) {
     let optimizedPath = uploadedFile.path;
     let extractedData = null;
 
-    if (docType === 'headPhoto') {
+    if (docType === 'headPhoto' || docType === 'profilePhoto') {
+        let extractedPhoto = null;
+        try {
+            extractedPhoto = await inspectAndExtractDocument(uploadedFile.path);
+        } catch (_) {}
+        const validation = validateUploadedDocument('profilePhoto', extractedPhoto);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+            const err = new Error(validation.errorTamil);
+            err.status = 400;
+            throw err;
+        }
+
         try {
             optimizedPath = await produceCompliantPassportPhoto(uploadedFile.path);
         } catch (e) {
@@ -23,6 +36,14 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
         try {
             extractedAadhaar = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
         } catch (aErr) {}
+
+        const validation = validateUploadedDocument(docType, extractedAadhaar);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+            const err = new Error(validation.errorTamil);
+            err.status = 400;
+            throw err;
+        }
 
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
@@ -189,6 +210,14 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
             extracted = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
         } catch (extErr) {}
 
+        const validation = validateUploadedDocument('residenceProof', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+            const err = new Error(validation.errorTamil);
+            err.status = 400;
+            throw err;
+        }
+
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
                 boundingBox: extracted?.documentBoundingBox
@@ -292,10 +321,21 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
             };
         }
     } else {
+        const isCommunityDoc = (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof');
         let extractedOther = null;
         try {
-            extractedOther = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
+            extractedOther = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true, isTnega: isCommunityDoc });
         } catch (_) {}
+
+        if (isCommunityDoc) {
+            const validation = validateUploadedDocument('communityProof', extractedOther);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+                const err = new Error(validation.errorTamil);
+                err.status = 400;
+                throw err;
+            }
+        }
 
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
@@ -338,6 +378,15 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
 
         if (extractedOther && extractedOther.isQualityAcceptable !== false) {
             extractedData = extractedOther;
+            if (isCommunityDoc && (extractedOther.caste || extractedOther.subCaste)) {
+                const c = extractedOther.caste || extractedOther.subCaste;
+                sess.citizenProfile.caste = c;
+                if (extractedOther.community) sess.citizenProfile.community = extractedOther.community;
+                sess.citizenProfile.fatherCaste = extractedOther.fatherCaste || c;
+                sess.citizenProfile.motherCaste = extractedOther.motherCaste || c;
+                sess.citizenProfile.requestedCaste = c;
+                sess.citizenProfile.parentCasteConfirmed = true;
+            }
             if (extractedOther.smartCardNumber) {
                 sess.citizenProfile.smartCardNumber = extractedOther.smartCardNumber;
                 sess.citizenProfile.rationCardNo = extractedOther.smartCardNumber;
@@ -415,6 +464,17 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
             if (canonicalKey === 'memberAadhaar') {
                 sess.base64Docs.memberAadhaarsBase64 = [{ name: bName, base64: b64 }];
                 sess.citizenProfile.base64Docs.memberAadhaarsBase64 = [{ name: bName, base64: b64 }];
+            }
+            if (canonicalKey === 'communityProof' || canonicalKey === 'familyCommunityProof' || canonicalKey === 'communityCertificate') {
+                sess.citizenProfile.communityProof = optimizedPath;
+                sess.citizenProfile.communityCertificatePath = optimizedPath;
+                sess.citizenProfile.familyCommunityProofPath = optimizedPath;
+                sess.citizenProfile.documents.communityProof = optimizedPath;
+                sess.base64Docs.communityProofBase64 = b64;
+                sess.base64Docs.communityProofName = bName;
+                sess.citizenProfile.base64Docs.communityProofBase64 = b64;
+                sess.citizenProfile.base64Docs.communityProofName = bName;
+                sess.citizenProfile.communityProofSkipped = false;
             }
         }
     } catch (bErr) {}

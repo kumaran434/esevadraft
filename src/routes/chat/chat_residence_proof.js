@@ -52,15 +52,34 @@ async function handleResidenceProof(ctx, req, res) {
             return true;
         }
 
-        const optDoc = await produceCompliantDocument(uploadedFile.path);
-        const proofType = sess.tempUploads?.residenceProofType || 'எரிவாயு நுகர்வோர் அட்டை';
-
         let extracted = null;
         try {
             extracted = await inspectAndExtractDocument(uploadedFile.path);
         } catch (err) {
             console.warn('[RESIDENCE_PROOF_DOC] AI extraction fallback:', err.message);
         }
+
+        const { validateUploadedDocument } = require('../../services/document_validator');
+        const validation = validateUploadedDocument('residenceProof', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+            const curProofLabel = sess.tempUploads?.residenceProofType || 'குடியிருப்புச் சான்று';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: validation.errorTamil,
+                actionRequired: 'upload',
+                uploadPrompt: `${curProofLabel} பதிவேற்றவும்`,
+                options: [
+                    { label: "📷 சரியான குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+            return true;
+        }
+
+        const optDoc = await produceCompliantDocument(uploadedFile.path);
+        const proofType = sess.tempUploads?.residenceProofType || 'எரிவாயு நுகர்வோர் அட்டை';
 
         const isGasDoc = proofType.includes('எரிவாயு') || 
                          extracted?.documentType === 'GAS_BOOK' || 

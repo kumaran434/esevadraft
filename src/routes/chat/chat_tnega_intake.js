@@ -1,5 +1,7 @@
+const fs = require('fs');
 const storageService = require('../../services/storage_service');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
+const { validateUploadedDocument } = require('../../services/document_validator');
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { searchCitizenCan, registerNewCan } = require('../../../tnega_can_automation');
 const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow } = require('../../core/fsm/tnega_flow_engine');
@@ -175,12 +177,27 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     // -------------------------------------------------------------------------
     if (sess.intakeState === backWaitState) {
         if (uploadedFile) {
-            sess.tempUploads.headAadhaarBack = uploadedFile.path;
             let extractedBack = null;
             try {
                 extractedBack = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
             } catch (_) {}
 
+            const validation = validateUploadedDocument('headAadhaarBack', extractedBack);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            sess.tempUploads.headAadhaarBack = uploadedFile.path;
             sess.tempUploads.headAadhaarBackBoundingBox = extractedBack?.documentBoundingBox || null;
 
             const mergedPdf = await produceDualSidedDocument(
@@ -261,6 +278,21 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     // -------------------------------------------------------------------------
     if (uploadedFile) {
         const extracted = await inspectAndExtractDocument(uploadedFile.path);
+
+        const validation = validateUploadedDocument('headAadhaar', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: validation.errorTamil,
+                options: [
+                    { label: "📷 ஆதார் அட்டை அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
 
         if (extracted && extracted.isQualityAcceptable === false) {
             sess.chatHistory.push({
@@ -920,6 +952,36 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     // -------------------------------------------------------------------------
     if (sess.intakeState === 'COMMUNITY_PROOF_WAIT') {
         if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('communityProof', extracted);
+            if (!validation.valid) {
+                try {
+                    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+                } catch (_) {}
+
+                delete sess.citizenProfile.communityProof;
+                delete sess.citizenProfile.communityCertificatePath;
+                delete sess.citizenProfile.familyCommunityProofPath;
+                if (sess.tempUploads) delete sess.tempUploads.communityProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.communityProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "⏩ ஏற்கெனவே உள்ளது / பிறகு பதிவேற்றுக", value: "SKIP_COMMUNITY_PROOF" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
             sess.citizenProfile.communityProof = uploadedFile.path;
             sess.citizenProfile.communityCertificatePath = uploadedFile.path;
             sess.citizenProfile.familyCommunityProofPath = uploadedFile.path;
@@ -929,22 +991,18 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             sess.citizenProfile.documents.communityProof = uploadedFile.path;
 
             let extraInfo = '';
-            try {
-                const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
-                const extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }).catch(() => null);
-                if (extracted && (extracted.caste || extracted.subCaste)) {
-                    const c = extracted.caste || extracted.subCaste;
-                    sess.citizenProfile.caste = c;
-                    if (extracted.community) sess.citizenProfile.community = extracted.community;
-                    sess.citizenProfile.fatherCaste = extracted.fatherCaste || c;
-                    sess.citizenProfile.motherCaste = extracted.motherCaste || c;
-                    sess.citizenProfile.requestedCaste = c;
-                    sess.citizenProfile.parentCasteConfirmed = true;
-                    extraInfo = `\n\n📄 **சான்றிதழிலிருந்து விவரங்கள் தானாகப் பெறப்பட்டன:**\n• வகுப்பு: **${sess.citizenProfile.community}** | சாதி: **${c}**\n• தந்தை சாதி: **${sess.citizenProfile.fatherCaste}** | தாய் சாதி: **${sess.citizenProfile.motherCaste}** ✅`;
-                } else if (!sess.citizenProfile.caste) {
-                    extraInfo = `\n\n⚠️ **குறிப்பு:** பதிவேற்றப்பட்ட ஆவணத்தில் சாதி விவரங்கள் இல்லை. எனவே அடுத்த படியில் பெற்றோர் மற்றும் விண்ணப்பதாரரின் சாதி விவரங்களை உள்ளிடவும்.`;
-                }
-            } catch (_) {}
+            if (extracted && (extracted.caste || extracted.subCaste)) {
+                const c = extracted.caste || extracted.subCaste;
+                sess.citizenProfile.caste = c;
+                if (extracted.community) sess.citizenProfile.community = extracted.community;
+                sess.citizenProfile.fatherCaste = extracted.fatherCaste || c;
+                sess.citizenProfile.motherCaste = extracted.motherCaste || c;
+                sess.citizenProfile.requestedCaste = c;
+                sess.citizenProfile.parentCasteConfirmed = true;
+                extraInfo = `\n\n📄 **சான்றிதழிலிருந்து விவரங்கள் தானாகப் பெறப்பட்டன:**\n• வகுப்பு: **${sess.citizenProfile.community}** | சாதி: **${c}**\n• தந்தை சாதி: **${sess.citizenProfile.fatherCaste}** | தாய் சாதி: **${sess.citizenProfile.motherCaste}** ✅`;
+            } else if (!sess.citizenProfile.caste) {
+                extraInfo = `\n\n⚠️ **குறிப்பு:** பதிவேற்றப்பட்ட ஆவணத்தில் சாதி விவரங்கள் இல்லை. எனவே அடுத்த படியில் பெற்றோர் மற்றும் விண்ணப்பதாரரின் சாதி விவரங்களை உள்ளிடவும்.`;
+            }
 
             persistSessions();
 

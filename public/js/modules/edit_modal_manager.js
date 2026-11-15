@@ -341,17 +341,26 @@
                     }
                     fetchOperatorDrafts();
                 } else {
+                    delete pendingDocUploads[key];
                     if (stEl) {
                         stEl.innerText = `⚠️ ${upData.error || 'சேமிக்க முடியவில்லை'}`;
                         stEl.style.color = '#dc2626';
+                        stEl.style.fontWeight = '700';
+                    }
+                    const inputEl = document.getElementById(`docUploadInput_${key}`);
+                    if (inputEl) inputEl.value = '';
+                    if (typeof showEsevaToast === 'function') {
+                        showEsevaToast(upData.error || 'தவறான ஆவணம்! சேமிக்க முடியவில்லை', 'error');
+                    } else if (window.showAppToast) {
+                        window.showAppToast(upData.error || 'தவறான ஆவணம்! சேமிக்க முடியவில்லை', 'error');
                     }
                 }
             } catch (err) {
                 console.warn('Doc background upload fallback:', err);
+                delete pendingDocUploads[key];
                 if (stEl) {
-                    stEl.innerText = `✅ புதிய கோப்பு: ${file.name}`;
-                    stEl.style.color = '#16a34a';
-                    stEl.style.fontWeight = '700';
+                    stEl.innerText = `⚠️ ${err.message || 'பிழை ஏற்பட்டது'}`;
+                    stEl.style.color = '#dc2626';
                 }
             }
         }

@@ -314,6 +314,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     const isHeadAadhaar = docType === 'headAadhaar' || (docType === 'memberAadhaar' && (!memberIndex || memberIndex === 0));
     const isResidence = docType === 'residenceProof' || docType === 'gasBook' || docType === 'newAddressProof';
     const isSmartCard = docType === 'smartCard' || docType === 'rationCard';
+    const isCommunity = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
 
     function purgeBase64Keys(target) {
         if (!target || typeof target !== 'object') return;
@@ -379,6 +380,17 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete target.removeProofName;
             delete target.removeProof;
         }
+        if (isCommunity) {
+            delete target.communityProofBase64;
+            delete target.communityProofName;
+            delete target.communityProof;
+            delete target.familyCommunityProofBase64;
+            delete target.familyCommunityProofName;
+            delete target.familyCommunityProof;
+            delete target.communityCertificateBase64;
+            delete target.communityCertificateName;
+            delete target.communityCertificate;
+        }
     }
 
     function purgeDocMapKeys(docMap) {
@@ -418,6 +430,13 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         }
         if (docType === 'memberProof') delete docMap.relationshipProof;
         if (docType === 'removeProof') delete docMap.deathCertificate;
+        if (isCommunity) {
+            delete docMap.communityProof;
+            delete docMap.communityCertificate;
+            delete docMap.familyCommunityProof;
+            delete docMap.familyCommunityProofPath;
+            delete docMap.communityCertificatePath;
+        }
     }
 
     function purgeProfileObject(prof) {
@@ -480,6 +499,12 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         }
         if (docType === 'removeProof' && prof.subServiceData) {
             delete prof.subServiceData.deathCertDocPath;
+        }
+        if (isCommunity) {
+            delete prof.communityProof;
+            delete prof.communityCertificatePath;
+            delete prof.familyCommunityProofPath;
+            prof.communityProofSkipped = true;
         }
     }
 
