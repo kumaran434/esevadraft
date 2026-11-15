@@ -236,9 +236,9 @@
                     appendLiveAutomationStep(`⚠️ பிழை: ${e.message}`);
                 }
             } else if (runAsRealLive) {
-                sendTextMessage('Start', true, { forceRealGovtOtp: true, isMockSandbox: false });
+                sendTextMessage('Start', true, { forceRealGovtOtp: true, isMockSandbox: false, fromEditModal: true });
             } else {
-                sendTextMessage('Mock Test', true, { forceRealGovtOtp: false, isMockSandbox: true });
+                sendTextMessage('Mock Test', true, { forceRealGovtOtp: false, isMockSandbox: true, fromEditModal: true });
             }
         }
 

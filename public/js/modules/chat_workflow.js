@@ -310,13 +310,21 @@
                                 openOfficialPortal();
                                 return;
                             }
-                            if (val === 'TRIGGER_EDIT_MODAL') {
-                                openEditModal();
-                                return;
-                            }
-                            if (val === 'CONFIRM_SUBMIT' || val === 'Start') {
-                                openPreSubmitModal();
-                                return;
+                            const preSubmitGateValues = [
+                                'TRIGGER_EDIT_MODAL',
+                                'START_CAN_REGISTER',
+                                'LAUNCH_CAN_AUTOMATION',
+                                'START_INCOME_APPLY',
+                                'START_RESIDENCE_APPLY',
+                                'START_COMMUNITY_APPLY',
+                                'CONFIRM_SUBMIT',
+                                'Start'
+                            ];
+                            if (preSubmitGateValues.includes(val)) {
+                                if (typeof openEditModal === 'function') {
+                                    openEditModal();
+                                    return;
+                                }
                             }
                             if (val === 'START_NEW_CUSTOMER' || val === 'RESET_SCREEN') {
                                 if (typeof clearAutomationScreenSession === 'function') {

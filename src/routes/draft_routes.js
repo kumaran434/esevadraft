@@ -477,6 +477,7 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
         const { processUploadedDocument: liveProcessDoc } = require('../services/document_upload_processor');
         const { optimizedPath, extractedData, fileSizeKB } = await liveProcessDoc(sess, docType, uploadedFile, memberIndex, targetMobile);
         let relativeUrl = null;
+        let previewUrl = null;
 
         const normPath = String(optimizedPath).replace(/\\/g, '/');
         if (normPath.includes('/compressed/')) {
@@ -485,6 +486,18 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
             relativeUrl = normPath.substring(normPath.indexOf('/uploads/'));
         } else {
             relativeUrl = '/' + path.basename(normPath);
+        }
+
+        const previewCandidate = String(optimizedPath).replace(/\.pdf$/i, '_preview.jpg');
+        if (fs.existsSync(previewCandidate)) {
+            const normPrev = String(previewCandidate).replace(/\\/g, '/');
+            if (normPrev.includes('/compressed/')) {
+                previewUrl = normPrev.substring(normPrev.indexOf('/compressed/'));
+            } else if (normPrev.includes('/uploads/')) {
+                previewUrl = normPrev.substring(normPrev.indexOf('/uploads/'));
+            } else {
+                previewUrl = '/' + path.basename(normPrev);
+            }
         }
 
         saveCitizenProfile(targetMobile, sess.citizenProfile);
@@ -507,6 +520,7 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
             docType,
             filePath: optimizedPath,
             relativeUrl,
+            previewUrl,
             fileSizeKB,
             citizenProfile: sess.citizenProfile,
             extracted: extractedData

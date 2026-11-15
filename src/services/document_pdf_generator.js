@@ -412,6 +412,27 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
                 .jpeg({ quality: targetQuality, chromaSubsampling: '4:2:0' })
                 .toFile(tempBackJpg);
 
+            // Generate high-resolution 2-in-1 composite preview JPEG alongside the PDF
+            const previewImgPath = outputPdfPath.replace(/\.pdf$/i, '_preview.jpg');
+            try {
+                await sharp({
+                    create: {
+                        width: 1000,
+                        height: 1400,
+                        channels: 3,
+                        background: { r: 255, g: 255, b: 255 }
+                    }
+                })
+                .composite([
+                    { input: tempFrontJpg, top: 20, left: 0 },
+                    { input: tempBackJpg, top: 720, left: 0 }
+                ])
+                .jpeg({ quality: 80 })
+                .toFile(previewImgPath);
+            } catch (prevErr) {
+                console.warn('Dual-side preview generation warning:', prevErr.message);
+            }
+
             const resultPath = await new Promise((resolve) => {
                 const doc = new PDFDocument({ size: 'A4', margin: 36 });
                 const writeStream = fs.createWriteStream(outputPdfPath);

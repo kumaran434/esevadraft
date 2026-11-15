@@ -35,9 +35,23 @@
                 const url = formatDocUrl(docPath);
                 const isPdf = Boolean(forcedIsPdf) || isPdfPath(docPath) || isPdfPath(url);
                 if (isPdf) {
-                    if (imgEl) imgEl.style.display = 'none';
-                    if (phEl) phEl.style.display = 'none';
-                    if (pdfEl) pdfEl.style.display = 'flex';
+                    const previewUrl = url + (url.includes('?') ? '&' : '?') + 'preview=1';
+                    if (imgEl) {
+                        imgEl.src = previewUrl;
+                        imgEl.onload = () => {
+                            imgEl.style.display = 'block';
+                            if (pdfEl) pdfEl.style.display = 'none';
+                            if (phEl) phEl.style.display = 'none';
+                        };
+                        imgEl.onerror = () => {
+                            imgEl.style.display = 'none';
+                            if (pdfEl) pdfEl.style.display = 'flex';
+                            if (phEl) phEl.style.display = 'none';
+                        };
+                    } else if (pdfEl) {
+                        pdfEl.style.display = 'flex';
+                        if (phEl) phEl.style.display = 'none';
+                    }
                 } else {
                     if (imgEl) { imgEl.src = url; imgEl.style.display = 'block'; }
                     if (phEl) phEl.style.display = 'none';
@@ -61,6 +75,52 @@
             }
         }
         window.renderDocPreview = window.renderDocPreview || renderDocPreview;
+
+        function updateDualSideButtonStates(docType, hasFront, hasBack) {
+            let fBtn = null;
+            let bBtn = null;
+            if (docType === 'headAadhaar') {
+                fBtn = document.getElementById('editHeadAadhaarFrontBtn');
+                bBtn = document.getElementById('editHeadAadhaarBackBtn');
+            } else if (docType === 'smartCard' || docType === 'rationCard') {
+                fBtn = document.getElementById('editSmartCardFrontBtn');
+                bBtn = document.getElementById('editSmartCardBackBtn');
+            } else if (docType === 'memberAadhaar') {
+                fBtn = document.getElementById('editAddMemberAadhaarFrontBtn');
+                bBtn = document.getElementById('editAddMemberAadhaarBackBtn');
+            }
+            if (fBtn) {
+                if (hasFront) {
+                    fBtn.innerHTML = '<i class="fa-solid fa-check"></i> முன்பக்கம்';
+                    fBtn.style.background = '#f0fdf4';
+                    fBtn.style.borderColor = '#86efac';
+                    fBtn.style.color = '#166534';
+                    fBtn.title = 'முன்பக்கம் இணைக்கப்பட்டுள்ளது (மாற்ற கிளிக் செய்யவும்)';
+                } else {
+                    fBtn.innerHTML = '<i class="fa-solid fa-file-arrow-up"></i> முன்பக்கம்';
+                    fBtn.style.background = '#eff6ff';
+                    fBtn.style.borderColor = '#93c5fd';
+                    fBtn.style.color = '#1d4ed8';
+                    fBtn.title = 'முன்பக்கம் தேர்ந்தெடுக்கவும்';
+                }
+            }
+            if (bBtn) {
+                if (hasBack) {
+                    bBtn.innerHTML = '<i class="fa-solid fa-check"></i> பின்பக்கம்';
+                    bBtn.style.background = '#f0fdf4';
+                    bBtn.style.borderColor = '#86efac';
+                    bBtn.style.color = '#166534';
+                    bBtn.title = 'பின்பக்கம் இணைக்கப்பட்டுள்ளது (மாற்ற கிளிக் செய்யவும்)';
+                } else {
+                    bBtn.innerHTML = '<i class="fa-solid fa-plus"></i> பின்பக்கம்';
+                    bBtn.style.background = '#eef2ff';
+                    bBtn.style.borderColor = '#a5b4fc';
+                    bBtn.style.color = '#4338ca';
+                    bBtn.title = 'பின்பக்கம் (2-in-1 ஆகத் தானாக இணைக்கப்படும்)';
+                }
+            }
+        }
+        window.updateDualSideButtonStates = updateDualSideButtonStates;
 
         let currentEditModalIsMasterProfile = false;
         window.forceMasterProfile = false;
@@ -182,15 +242,19 @@
             } else {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    if (imgEl) {
-                        imgEl.src = e.target.result;
-                        imgEl.style.display = 'block';
-                    }
-                    if (phEl) phEl.style.display = 'none';
-                    if (pdfEl) pdfEl.style.display = 'none';
-                    if (vbEl) {
-                        vbEl.href = e.target.result;
-                        vbEl.style.display = 'inline-flex';
+                    // If uploading back side of a dual-sided card, do not overwrite thumbnail with raw back image;
+                    // Keep existing front or wait for server to return 2-in-1 merged preview!
+                    if (!isSecondSide) {
+                        if (imgEl) {
+                            imgEl.src = e.target.result;
+                            imgEl.style.display = 'block';
+                        }
+                        if (phEl) phEl.style.display = 'none';
+                        if (pdfEl) pdfEl.style.display = 'none';
+                        if (vbEl) {
+                            vbEl.href = e.target.result;
+                            vbEl.style.display = 'inline-flex';
+                        }
                     }
                 };
                 reader.readAsDataURL(file);
@@ -241,10 +305,23 @@
                         stEl.style.fontWeight = '700';
                     }
                     const isReturnedPdf = isPdfPath(upData.relativeUrl || upData.filePath);
-                    if (!isReturnedPdf && imgEl && finalUrl) {
-                        imgEl.src = finalUrl + (finalUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-                        imgEl.style.display = 'block';
-                        if (pdfEl) pdfEl.style.display = 'none';
+                    const previewToLoad = upData.previewUrl ? formatDocUrl(upData.previewUrl) : (finalUrl + (finalUrl.includes('?') ? '&' : '?') + 'preview=1');
+                    if (imgEl && (finalUrl || upData.previewUrl)) {
+                        imgEl.src = previewToLoad + (previewToLoad.includes('?') ? '&' : '?') + 't=' + Date.now();
+                        imgEl.onload = () => {
+                            imgEl.style.display = 'block';
+                            if (pdfEl) pdfEl.style.display = 'none';
+                            if (phEl) phEl.style.display = 'none';
+                        };
+                        imgEl.onerror = () => {
+                            if (isReturnedPdf) {
+                                imgEl.style.display = 'none';
+                                if (pdfEl) pdfEl.style.display = 'flex';
+                            }
+                        };
+                    }
+                    if (baseType === 'headAadhaar' || baseType === 'smartCard' || baseType === 'memberAadhaar') {
+                        updateDualSideButtonStates(baseType, true, isSecondSide || Boolean(upData.citizenProfile?.documents?.[baseType + 'Back']));
                     }
                     if (upData.citizenProfile) {
                         syncEditModalInputsFromProfile(upData.citizenProfile, baseType, memberIndex);
@@ -403,12 +480,19 @@
                 }
             } else if (docType === 'headAadhaar') {
                 renderDocPreview('', 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn');
+                updateDualSideButtonStates('headAadhaar', false, false);
                 const fin = document.getElementById('editHeadAadhaarInput');
                 if (fin) fin.value = '';
+                const finBack = document.getElementById('editHeadAadhaarBackInput');
+                if (finBack) finBack.value = '';
                 if (currentCitizenData) {
                     delete currentCitizenData.headAadhaarDocPath;
                     if (currentCitizenData.members && currentCitizenData.members[0]) delete currentCitizenData.members[0].docPath;
-                    if (currentCitizenData.documents) delete currentCitizenData.documents.headAadhaar;
+                    if (currentCitizenData.documents) {
+                        delete currentCitizenData.documents.headAadhaar;
+                        delete currentCitizenData.documents.headAadhaarFront;
+                        delete currentCitizenData.documents.headAadhaarBack;
+                    }
                 }
             } else if (docType === 'residenceProof') {
                 renderDocPreview('', 'editResidencePreview', 'editResidencePlaceholder', 'editResidencePdfBadge', 'editResidenceDocStatus', 'editResidenceViewBtn', 'கேஸ் புக் / இருப்பிடம் தேவை', 'editResidenceDeleteBtn');
@@ -427,24 +511,37 @@
                 }
             } else if (docType === 'smartCard' || docType === 'rationCard') {
                 renderDocPreview('', 'editSmartCardPreview', 'editSmartCardPlaceholder', 'editSmartCardPdfBadge', 'editSmartCardStatus', 'editSmartCardViewBtn', 'ஸ்மார்ட் கார்டு தேவை', 'editSmartCardDeleteBtn');
+                updateDualSideButtonStates('smartCard', false, false);
                 const fin = document.getElementById('editSmartCardInput');
                 if (fin) fin.value = '';
+                const finBack = document.getElementById('editSmartCardBackInput');
+                if (finBack) finBack.value = '';
                 if (currentCitizenData) {
                     delete currentCitizenData.smartCardDocPath;
                     delete currentCitizenData.rationCardDocPath;
                     if (currentCitizenData.documents) {
                         delete currentCitizenData.documents.smartCard;
+                        delete currentCitizenData.documents.smartCardFront;
+                        delete currentCitizenData.documents.smartCardBack;
                         delete currentCitizenData.documents.rationCard;
                     }
                 }
             } else if (docType === 'memberAadhaar') {
                 if (memberIndex === 0) {
                     renderDocPreview('', 'editAddMemberAadhaarPreview', 'editAddMemberAadhaarPlaceholder', 'editAddMemberAadhaarPdfBadge', 'editAddMemberAadhaarStatus', 'editAddMemberAadhaarViewBtn', 'உறுப்பினர் ஆதார் அட்டை தேவை', 'editAddMemberAadhaarDeleteBtn');
+                    updateDualSideButtonStates('memberAadhaar', false, false);
                     const fin = document.getElementById('editAddMemberAadhaarInput');
                     if (fin) fin.value = '';
+                    const finBack = document.getElementById('editAddMemberAadhaarBackInput');
+                    if (finBack) finBack.value = '';
                     if (currentCitizenData && currentCitizenData.subServiceData) {
                         delete currentCitizenData.subServiceData.docPath;
                         delete currentCitizenData.subServiceData.memberDocPath;
+                        if (currentCitizenData.documents) {
+                            delete currentCitizenData.documents.memberAadhaar;
+                            delete currentCitizenData.documents.memberAadhaarFront;
+                            delete currentCitizenData.documents.memberAadhaarBack;
+                        }
                     }
                 } else {
                     const imgEl = document.getElementById(`editMemberAadhaarPreview_${memberIndex}`);
@@ -557,6 +654,28 @@
             const subTitleEl = document.getElementById('editModalSubtitle');
             const btnMaster = document.getElementById('btnSwitchToMasterProfile');
             const btnSubSvc = document.getElementById('btnSwitchToSubService');
+            const submitBtn = document.getElementById('btnSubmitFromEditModal');
+            if (submitBtn) {
+                if (curSub === 'CAN_REGISTER' || curIntake.includes('CAN')) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
+                } else if (curSub === 'INCOME' || curIntake.includes('INCOME')) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
+                } else if (curSub === 'RESIDENCE' || curIntake.includes('RESIDENCE')) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
+                } else if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY')) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)';
+                } else if (isAddMember) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-user-plus"></i> 🚀 குடும்ப உறுப்பினர் சேர்க்க (Add Member in TNPDS)';
+                } else if (isRemoveMember) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-user-minus"></i> 🚀 குடும்ப உறுப்பினர் நீக்க (Remove Member in TNPDS)';
+                } else if (isChangeAddress) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-map-location-dot"></i> 🚀 முகவரி மாற்றம் செய்ய (Change Address in TNPDS)';
+                } else if (forceMasterProfile && !curSub) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 💾 மாற்றங்களைச் சேமி (Save Changes)';
+                } else {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 அரசு போர்ட்டலில் சமர்ப்பி (Submit Application)';
+                }
+            }
 
             if (isAddMember) {
                 // Configure UI elements for Add Member mode
@@ -599,6 +718,10 @@
                 }
 
                 renderDocPreview(memAadhaarPath, 'editAddMemberAadhaarPreview', 'editAddMemberAadhaarPlaceholder', 'editAddMemberAadhaarPdfBadge', 'editAddMemberAadhaarStatus', 'editAddMemberAadhaarViewBtn', 'உறுப்பினர் ஆதார் அட்டை தேவை', 'editAddMemberAadhaarDeleteBtn');
+                const memDocStr = String(memAadhaarPath || '');
+                const hasMemBack = Boolean(sData.aadhaarBackPath || memDocStr.includes('merged') || memDocStr.includes('dual') || memDocStr.includes('2in1') || memDocStr.endsWith('.pdf'));
+                const hasMemFront = Boolean(memAadhaarPath);
+                updateDualSideButtonStates('memberAadhaar', hasMemFront, hasMemBack);
 
                 const proofBox = document.getElementById('editAddMemberProofBox');
                 if (proofBox) {
@@ -888,6 +1011,11 @@
             // 2. Aadhaar (Strict Physical Disk Verification)
             const foundHeadAadh = getVerifiedDoc('headAadhaar');
             renderDocPreview(foundHeadAadh ? foundHeadAadh.previewUrl : '', 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn', foundHeadAadh ? foundHeadAadh.isPdf : false);
+            const dMap = Object.assign({}, currentCitizenData?.documents || {}, data?.documents || {});
+            const aadhStr = String(foundHeadAadh ? (foundHeadAadh.previewUrl || foundHeadAadh.path || '') : (dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath || ''));
+            const hasAadhBack = Boolean(dMap.headAadhaarBack || aadhStr.includes('merged') || aadhStr.includes('dual') || aadhStr.includes('2in1') || aadhStr.endsWith('.pdf'));
+            const hasAadhFront = Boolean(foundHeadAadh || dMap.headAadhaarFront || dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath);
+            updateDualSideButtonStates('headAadhaar', hasAadhFront, hasAadhBack);
 
             // 3. Residence Proof / Gas Book (Strict Physical Disk Verification)
             const foundResidence = getVerifiedDoc('residenceProof') || getVerifiedDoc('gasBook');
@@ -896,6 +1024,10 @@
             // 4. Smart Ration Card (Strict Physical Disk Verification)
             const foundSmartCard = getVerifiedDoc('smartCard') || getVerifiedDoc('rationCard');
             renderDocPreview(foundSmartCard ? foundSmartCard.previewUrl : '', 'editSmartCardPreview', 'editSmartCardPlaceholder', 'editSmartCardPdfBadge', 'editSmartCardStatus', 'editSmartCardViewBtn', 'ஸ்மார்ட் கார்டு தேவை', 'editSmartCardDeleteBtn', foundSmartCard ? foundSmartCard.isPdf : false);
+            const scStr = String(foundSmartCard ? (foundSmartCard.previewUrl || foundSmartCard.path || '') : (dMap.smartCard || currentCitizenData?.smartCardDocPath || ''));
+            const hasScBack = Boolean(dMap.smartCardBack || scStr.includes('merged') || scStr.includes('dual') || scStr.includes('2in1') || scStr.endsWith('.pdf'));
+            const hasScFront = Boolean(foundSmartCard || dMap.smartCardFront || dMap.smartCard || currentCitizenData?.smartCardDocPath);
+            updateDualSideButtonStates('smartCard', hasScFront, hasScBack);
 
             // 4. Family Members Aadhaar
             const membersContainer = document.getElementById('editMembersAadhaarContainer');
@@ -1119,7 +1251,16 @@
                 // 1. Save all edited fields & pending uploads silently
                 await saveEditedProfile(true);
                 closeEditModal();
-                // 2. Direct portal submit
+
+                // If purely Master Profile Vault (no active application flow), do not launch portal automation
+                if (currentEditModalIsMasterProfile && !currentCitizenData?.subService) {
+                    if (typeof showEsevaToast === 'function') {
+                        showEsevaToast('✅ மாஸ்டர் சுயவிவர விவரங்கள் வெற்றிகரமாகச் சேமிக்கப்பட்டன!', 'success');
+                    }
+                    return;
+                }
+
+                // 2. Direct portal submit to physical visible Chrome
                 proceedConfirmedSubmit(true);
             } catch (e) {
                 alert('பிழை: ' + e.message);

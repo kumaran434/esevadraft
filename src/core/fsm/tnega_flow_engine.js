@@ -322,7 +322,7 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Details)", value: "TRIGGER_EDIT_MODAL" },
         { label: "🔄 புதிய விண்ணப்பம் தொடங்க (Reset)", value: "reset" }
     ];
-    return { text: welcomeText, options, step: sess.intakeState };
+    return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
 }
 
 /**
@@ -441,7 +441,7 @@ function advanceTnegaCanRegisterFlow(sess, prefixMessage = '') {
         { label: "🚀 புதிய CAN பதிவு தொடங்கு (Start CAN Registration)", value: "START_CAN_REGISTER" },
         { label: "✏️ விவரங்களை மாற்று (Edit Details)", value: "TRIGGER_EDIT_MODAL" }
     ];
-    return { text: welcomeText, options, step: sess.intakeState };
+    return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
 }
 
 /**
@@ -581,7 +581,7 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
         { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Details)", value: "TRIGGER_EDIT_MODAL" },
         { label: "🔄 புதிய விண்ணப்பம் தொடங்க (Reset)", value: "reset" }
     ];
-    return { text: welcomeText, options, step: sess.intakeState };
+    return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
 }
 
 /**
@@ -805,7 +805,7 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
         { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Details)", value: "TRIGGER_EDIT_MODAL" },
         { label: "🔄 புதிய விண்ணப்பம் தொடங்க (Reset)", value: "reset" }
     ];
-    return { text: welcomeText, options, step: sess.intakeState };
+    return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
 }
 
 module.exports = {

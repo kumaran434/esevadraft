@@ -391,6 +391,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         if (text === 'START_CAN_REGISTER') {
             sess.intakeState = 'READY_TO_APPLY_CAN';
             sess.subService = 'CAN_REGISTER';
+            if (sess.citizenProfile) sess.citizenProfile.subService = 'CAN_REGISTER';
             persistSessions();
             const p = sess.citizenProfile || {};
             const mob = p.mobileNumber || sess.mobileNumber || '';
@@ -400,17 +401,19 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             const aadhDisp = aadh ? aadh.replace(/(\d{4})/g, '$1 ').trim() : '—';
             sess.chatHistory.push({
                 sender: 'bot',
-                text: `🚀 **புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்கத் தயாராக உள்ளது!** 🛡️\n\n` +
+                text: `📋 **விண்ணப்ப விவரங்களை ஒருமுறை சரிபார்க்கவும்:** 🛡️\n\n` +
+                      `அரசு TNeGA போர்ட்டலில் புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்குவதற்கு முன், அனைத்து விவரங்களையும் (பெயர், முகவரி, ஆவணங்கள்) ஒருமுறை சரிபார்த்து உறுதிப்படுத்த **'விவரங்களைச் சரிபார்' (Edit / Review)** சாளரம் திறக்கப்பட்டுள்ளது.\n\n` +
                       `• விண்ணப்பதாரர்: ${nameTam || nameEng}\n` +
                       `• கைபேசி: +91 ${mob}\n` +
                       `• ஆதார்: ${aadhDisp}\n\n` +
-                      `'ஆட்டோமேஷன் தொடங்கு' பொத்தானை அழுத்தவும்:`,
+                      `சாளரத்தில் விவரங்கள் சரியாக உள்ளதா எனப் பார்த்துவிட்டு, அதில் உள்ள **'🚀 புதிய CAN பதிவு தொடங்க' (Start CAN Automation)** பொத்தானை அழுத்தவும்:`,
+                actionRequired: 'open_edit_modal',
                 options: [
                     { label: "🚀 புதிய CAN பதிவு ஆட்டோமேஷன் தொடங்கு", value: "LAUNCH_CAN_AUTOMATION" },
                     { label: "✏️ விவரங்களை மாற்று (Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
-            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, actionRequired: 'open_edit_modal' });
             return true;
         }
 

@@ -218,6 +218,43 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     }
 
     if (resolvedExistingPath) {
+        if (req.query.preview === '1' || req.query.preview === 'true') {
+            const previewCandidates = [
+                resolvedExistingPath.replace(/\.pdf$/i, '_preview.jpg'),
+                resolvedExistingPath.replace(/\.pdf$/i, '_preview.jpeg'),
+                resolvedExistingPath.replace(/\.pdf$/i, '.jpg'),
+                resolvedExistingPath.replace(/\.pdf$/i, '.jpeg')
+            ];
+            for (const cand of previewCandidates) {
+                if (fs.existsSync(cand)) {
+                    return res.sendFile(path.resolve(cand));
+                }
+            }
+            // Generate on-demand 2-in-1 composite if front & back sources exist on disk
+            if (fCand && bCand && fs.existsSync(fCand) && fs.existsSync(bCand) && !fCand.toLowerCase().endsWith('.pdf') && !bCand.toLowerCase().endsWith('.pdf')) {
+                try {
+                    const sharp = require('sharp');
+                    const targetPreview = resolvedExistingPath.replace(/\.pdf$/i, '_preview.jpg');
+                    const frontBuf = await sharp(fCand).resize({ width: 1000, height: 680, fit: 'inside' }).jpeg().toBuffer();
+                    const backBuf = await sharp(bCand).resize({ width: 1000, height: 680, fit: 'inside' }).jpeg().toBuffer();
+                    await sharp({
+                        create: { width: 1000, height: 1400, channels: 3, background: { r: 255, g: 255, b: 255 } }
+                    })
+                    .composite([
+                        { input: frontBuf, top: 20, left: 0 },
+                        { input: backBuf, top: 720, left: 0 }
+                    ])
+                    .jpeg({ quality: 80 })
+                    .toFile(targetPreview);
+                    if (fs.existsSync(targetPreview)) {
+                        return res.sendFile(path.resolve(targetPreview));
+                    }
+                } catch (_) {}
+            }
+            if (fCand && fs.existsSync(fCand) && !fCand.toLowerCase().endsWith('.pdf')) {
+                return res.sendFile(path.resolve(fCand));
+            }
+        }
         if (req.query.download === '1') {
             const isPdf = resolvedExistingPath.toLowerCase().endsWith('.pdf');
             const dlName = isPdf ? `${cleanMob}_${docType}_merged_2in1.pdf` : path.basename(resolvedExistingPath);
