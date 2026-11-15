@@ -153,9 +153,14 @@ function getServiceMetadata(serviceId) {
     return SERVICES_REGISTRY[sId] || null;
 }
 
+const catalog = require('../catalog');
+
 module.exports = {
     SERVICES_REGISTRY,
     evaluateServiceChecklist,
     getAllServices,
-    getServiceMetadata
+    getServiceMetadata,
+    catalog,
+    getService: catalog.getService,
+    evaluateDelta: catalog.evaluateDelta
 };

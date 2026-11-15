@@ -1323,6 +1323,26 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 }
             }
 
+            // Local Verified Documents Endpoint
+            if (urlPath === '/api/drafts/verified-documents' && req.method === 'GET') {
+                try {
+                    const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
+                    const mob = parsedUrl.searchParams.get('mobile') || parsedUrl.searchParams.get('mobileNumber') || '';
+                    const { getCitizenDraft } = require('../firestore_db');
+                    let draft = await getCitizenDraft(mob);
+                    let docs = [];
+                    try {
+                        const { extractDraftDocumentsList } = require('../src/services/draft_document_list');
+                        docs = extractDraftDocumentsList(mob, draft);
+                    } catch (_) {}
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: true, mobileNumber: mob, count: docs.length, documents: docs }));
+                } catch (e) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: true, count: 0, documents: [] }));
+                }
+            }
+
             // Local Drafts Listing (0ms Instant Latency - Prevents 30s cloud timeout freezes)
             if ((urlPath === '/api/drafts' || urlPath.startsWith('/api/drafts?')) && req.method === 'GET') {
                 try {

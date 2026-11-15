@@ -489,9 +489,55 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
     }
 }
 
+async function generatePreviewFromPdf(pdfPath) {
+    if (!pdfPath || !fs.existsSync(pdfPath)) return null;
+    const targetPreview = pdfPath.replace(/\.pdf$/i, '_preview.jpg');
+    if (fs.existsSync(targetPreview)) return targetPreview;
+
+    try {
+        const sharp = getSharp();
+        const buf = fs.readFileSync(pdfPath);
+        const jpegs = [];
+        let start = 0;
+        while ((start = buf.indexOf(Buffer.from([0xff, 0xd8, 0xff]), start)) !== -1) {
+            let end = buf.indexOf(Buffer.from([0xff, 0xd9]), start);
+            if (end !== -1) {
+                jpegs.push(buf.slice(start, end + 2));
+                start = end + 2;
+            } else {
+                break;
+            }
+        }
+        if (jpegs.length >= 2) {
+            const img1 = await sharp(jpegs[0]).resize({ width: 1000, height: 680, fit: 'inside' }).jpeg().toBuffer();
+            const img2 = await sharp(jpegs[1]).resize({ width: 1000, height: 680, fit: 'inside' }).jpeg().toBuffer();
+            await sharp({
+                create: { width: 1000, height: 1400, channels: 3, background: { r: 255, g: 255, b: 255 } }
+            })
+            .composite([
+                { input: img1, top: 20, left: 0 },
+                { input: img2, top: 720, left: 0 }
+            ])
+            .jpeg({ quality: 80 })
+            .toFile(targetPreview);
+            if (fs.existsSync(targetPreview)) return targetPreview;
+        } else if (jpegs.length === 1) {
+            await sharp(jpegs[0])
+                .resize({ width: 1000, height: 1400, fit: 'inside' })
+                .jpeg({ quality: 80 })
+                .toFile(targetPreview);
+            if (fs.existsSync(targetPreview)) return targetPreview;
+        }
+    } catch (e) {
+        console.warn('PDF preview extraction error:', e.message);
+    }
+    return null;
+}
+
 module.exports = {
     getSafeStudioDir,
     compressHeavyPdf,
     cropDocumentToExactBoundary,
-    produceDualSidedDocument
+    produceDualSidedDocument,
+    generatePreviewFromPdf
 };

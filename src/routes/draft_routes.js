@@ -66,6 +66,38 @@ router.get('/api/drafts', async (req, res) => {
     }
 });
 
+// 1.5. GET /api/drafts/verified-documents
+router.get('/api/drafts/verified-documents', async (req, res) => {
+    const rawKey = req.query.mobile || req.query.mobileNumber || req.headers['x-session-mobile'] || (typeof getActiveMobile === 'function' ? getActiveMobile() : '') || '';
+    const cleanMob = String(rawKey).trim();
+    if (!cleanMob) return res.status(400).json({ error: 'Missing mobile' });
+    const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
+
+    try {
+        const digitsOnly = cleanMob.replace(/\D/g, '').slice(-10);
+        let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob, opUid) : null;
+        if (!draft && digitsOnly) {
+            draft = await getCitizenDraft(digitsOnly, opUid);
+        }
+        const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
+        if (!draft && activeMob && activeMob !== cleanMob) {
+            draft = await getCitizenDraft(activeMob, opUid);
+        }
+        const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
+            ? sessions.get(cleanMob)
+            : ((digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || null));
+
+        if ((!draft || draft.isDeleted || draft.status === 'TRASHED') && !sess) {
+            return res.json({ success: true, mobileNumber: cleanMob, count: 0, documents: [] });
+        }
+        const filterSubService = req.query.subService || req.query.service || null;
+        const docs = extractDraftDocumentsList(sess, draft, cleanMob, filterSubService);
+        res.json({ success: true, mobileNumber: cleanMob, count: docs.length, documents: docs });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // 2. GET /api/drafts/:mobileNumber
 router.get('/api/drafts/:mobileNumber', async (req, res) => {
     const rawKey = req.params.mobileNumber || '';

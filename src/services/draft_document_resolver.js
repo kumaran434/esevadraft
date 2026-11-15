@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getCitizenDraft, saveCitizenDraft, downloadDocFromStorage } = require('../../firestore_db');
-const { produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
+const { produceDualSidedDocument, extractFacePassportFromDocument, generatePreviewFromPdf } = require('../../photo_studio');
 const storageService = require('./storage_service');
 
 const { resolveOrRestoreFile } = require('./draft_file_restorer');
@@ -230,7 +230,15 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
                     return res.sendFile(path.resolve(cand));
                 }
             }
-            // Generate on-demand 2-in-1 composite if front & back sources exist on disk
+            // Generate on-demand 2-in-1 composite from PDF embedded images or from front & back sources on disk
+            if (resolvedExistingPath.toLowerCase().endsWith('.pdf')) {
+                try {
+                    const generatedPrev = await generatePreviewFromPdf(resolvedExistingPath);
+                    if (generatedPrev && fs.existsSync(generatedPrev)) {
+                        return res.sendFile(path.resolve(generatedPrev));
+                    }
+                } catch (_) {}
+            }
             if (fCand && bCand && fs.existsSync(fCand) && fs.existsSync(bCand) && !fCand.toLowerCase().endsWith('.pdf') && !bCand.toLowerCase().endsWith('.pdf')) {
                 try {
                     const sharp = require('sharp');

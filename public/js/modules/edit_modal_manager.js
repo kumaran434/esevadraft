@@ -59,8 +59,13 @@
                 }
                 if (stEl) {
                     const pathStr = typeof docPath === 'object' ? (docPath?.path || docPath?.docPath || '') : String(docPath || '');
-                    const fname = pathStr.split('/').pop().split('\\').pop();
-                    stEl.innerText = `✅ ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
+                    const isDualMerged = pathStr.includes('merged') || pathStr.includes('dual') || pathStr.includes('2in1') || url.includes('headAadhaar') || url.includes('smartCard');
+                    if (isDualMerged && isPdf) {
+                        stEl.innerText = '✅ 2-in-1 A4 PDF இணைக்கப்பட்டது';
+                    } else {
+                        const fname = pathStr.split('/').pop().split('\\').pop() || 'ஆவணம் இணைக்கப்பட்டது';
+                        stEl.innerText = `✅ ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
+                    }
                     stEl.style.color = '#16a34a';
                 }
                 if (vbEl) { vbEl.href = url; vbEl.style.display = 'inline-flex'; }
@@ -1009,9 +1014,12 @@
             renderDocPreview(foundPhoto ? foundPhoto.previewUrl : '', 'editPhotoPreview', 'editPhotoPlaceholder', null, 'editPhotoStatus', 'editPhotoViewBtn', 'பாஸ்போர்ட் புகைப்படம் தேவை', 'editPhotoDeleteBtn', foundPhoto ? foundPhoto.isPdf : false);
 
             // 2. Aadhaar (Strict Physical Disk Verification)
-            const foundHeadAadh = getVerifiedDoc('headAadhaar');
-            renderDocPreview(foundHeadAadh ? foundHeadAadh.previewUrl : '', 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn', foundHeadAadh ? foundHeadAadh.isPdf : false);
             const dMap = Object.assign({}, currentCitizenData?.documents || {}, data?.documents || {});
+            const foundHeadAadh = getVerifiedDoc('headAadhaar');
+            const fallbackAadhUrl = (dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath) ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/headAadhaar` : '';
+            const headAadhUrl = foundHeadAadh ? foundHeadAadh.previewUrl : fallbackAadhUrl;
+            const headAadhIsPdf = foundHeadAadh ? foundHeadAadh.isPdf : Boolean(String(dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath || '').toLowerCase().endsWith('.pdf'));
+            renderDocPreview(headAadhUrl, 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn', headAadhIsPdf);
             const aadhStr = String(foundHeadAadh ? (foundHeadAadh.previewUrl || foundHeadAadh.path || '') : (dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath || ''));
             const hasAadhBack = Boolean(dMap.headAadhaarBack || aadhStr.includes('merged') || aadhStr.includes('dual') || aadhStr.includes('2in1') || aadhStr.endsWith('.pdf'));
             const hasAadhFront = Boolean(foundHeadAadh || dMap.headAadhaarFront || dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath);
@@ -1019,11 +1027,15 @@
 
             // 3. Residence Proof / Gas Book (Strict Physical Disk Verification)
             const foundResidence = getVerifiedDoc('residenceProof') || getVerifiedDoc('gasBook');
-            renderDocPreview(foundResidence ? foundResidence.previewUrl : '', 'editResidencePreview', 'editResidencePlaceholder', 'editResidencePdfBadge', 'editResidenceDocStatus', 'editResidenceViewBtn', 'கேஸ் புக் / இருப்பிடம் தேவை', 'editResidenceDeleteBtn', foundResidence ? foundResidence.isPdf : false);
+            const fallbackResUrl = (dMap.residenceProof || dMap.gasBook || currentCitizenData?.residenceProof?.docPath) ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/residenceProof` : '';
+            renderDocPreview(foundResidence ? foundResidence.previewUrl : fallbackResUrl, 'editResidencePreview', 'editResidencePlaceholder', 'editResidencePdfBadge', 'editResidenceDocStatus', 'editResidenceViewBtn', 'கேஸ் புக் / இருப்பிடம் தேவை', 'editResidenceDeleteBtn', foundResidence ? foundResidence.isPdf : false);
 
             // 4. Smart Ration Card (Strict Physical Disk Verification)
             const foundSmartCard = getVerifiedDoc('smartCard') || getVerifiedDoc('rationCard');
-            renderDocPreview(foundSmartCard ? foundSmartCard.previewUrl : '', 'editSmartCardPreview', 'editSmartCardPlaceholder', 'editSmartCardPdfBadge', 'editSmartCardStatus', 'editSmartCardViewBtn', 'ஸ்மார்ட் கார்டு தேவை', 'editSmartCardDeleteBtn', foundSmartCard ? foundSmartCard.isPdf : false);
+            const fallbackScUrl = (dMap.smartCard || dMap.rationCard || currentCitizenData?.smartCardDocPath) ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/smartCard` : '';
+            const scUrl = foundSmartCard ? foundSmartCard.previewUrl : fallbackScUrl;
+            const scIsPdf = foundSmartCard ? foundSmartCard.isPdf : Boolean(String(dMap.smartCard || currentCitizenData?.smartCardDocPath || '').toLowerCase().endsWith('.pdf'));
+            renderDocPreview(scUrl, 'editSmartCardPreview', 'editSmartCardPlaceholder', 'editSmartCardPdfBadge', 'editSmartCardStatus', 'editSmartCardViewBtn', 'ஸ்மார்ட் கார்டு தேவை', 'editSmartCardDeleteBtn', scIsPdf);
             const scStr = String(foundSmartCard ? (foundSmartCard.previewUrl || foundSmartCard.path || '') : (dMap.smartCard || currentCitizenData?.smartCardDocPath || ''));
             const hasScBack = Boolean(dMap.smartCardBack || scStr.includes('merged') || scStr.includes('dual') || scStr.includes('2in1') || scStr.endsWith('.pdf'));
             const hasScFront = Boolean(foundSmartCard || dMap.smartCardFront || dMap.smartCard || currentCitizenData?.smartCardDocPath);

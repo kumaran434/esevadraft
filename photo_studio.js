@@ -12,7 +12,8 @@ const {
     getSafeStudioDir, 
     compressHeavyPdf, 
     cropDocumentToExactBoundary,
-    produceDualSidedDocument: coreProduceDualSided 
+    produceDualSidedDocument: coreProduceDualSided,
+    generatePreviewFromPdf
 } = require('./src/services/document_pdf_generator');
 
 const studioDir = getSafeStudioDir();
@@ -186,5 +187,6 @@ module.exports = {
     produceDualSidedDocument,
     cropDocumentToExactBoundary,
     compressHeavyPdf,
-    extractFacePassportFromDocument
+    extractFacePassportFromDocument,
+    generatePreviewFromPdf
 };

@@ -197,6 +197,8 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             sess.citizenProfile.headAadhaarDocPath = mergedPdf;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.headAadhaar = mergedPdf;
+            sess.citizenProfile.documents.headAadhaarFront = sess.tempUploads.headAadhaarFront;
+            sess.citizenProfile.documents.headAadhaarBack = sess.tempUploads.headAadhaarBack;
 
             const extracted = extractedBack || await inspectAndExtractDocument(mergedPdf, { skipFaceExtraction: true }).catch(() => null);
             if (extracted) {
