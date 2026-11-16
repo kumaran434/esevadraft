@@ -491,24 +491,36 @@ function ensureBilingualPair(engInput, tamInput) {
 /**
  * Formats Street Name + Hamlet / Village for TNeGA CAN Registration
  * Column: "Street Name / No. / Hamlet (if available) *" & "தெரு பெயர் / எண் / குக்கிராமம் *"
+ * 
+ * Rules:
+ * 1. If a genuine Hamlet exists (different from the Revenue Village), append it to the street name:
+ *    e.g. "மேட்டு தெரு, நரசிங்கபுரம்" (Mettu Street, Narasingapuram) while Village dropdown is "மின்னல்" (Minnal).
+ * 2. If NO separate Hamlet exists (citizen lives in main revenue village/town), keep street name clean
+ *    without duplicating the village name (e.g. "காந்தி தெரு" while Village dropdown is "ஆத்தூர்").
+ * 3. Never duplicate if the street name already contains the hamlet or village name.
  */
 function formatStreetWithHamlet(citizenProfile = {}, geo = {}) {
     const basePair = ensureBilingualPair(
-        citizenProfile.streetEng || 'Mettu Street',
-        citizenProfile.streetTam || 'மேட்டு தெரு'
+        citizenProfile.streetEng || '',
+        citizenProfile.streetTam || ''
     );
     let streetEng = basePair.eng;
     let streetTam = basePair.tam;
 
     // Strip any numeric village code like "Minnal (007)" -> "Minnal"
     const cleanVillageCode = (v) => String(v || '').replace(/\s*\(\d+\)\s*/g, '').trim();
+    const cleanNormalized = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
 
     const revVillageEng = cleanVillageCode(geo.village || citizenProfile.village || '');
-    const revVillagePair = ensureBilingualPair(revVillageEng, geo.villageTam || citizenProfile.villageTam || '');
+    const revVillageTam = cleanVillageCode(geo.villageTam || citizenProfile.villageTam || '');
 
     // Determine Hamlet / Locality candidate
     let rawHamletEng = citizenProfile.hamletEng || citizenProfile.hamlet || citizenProfile.areaEng || geo.areaEng || '';
     let rawHamletTam = citizenProfile.hamletTam || citizenProfile.areaTam || geo.areaTam || '';
+
+    // If hamlet name is identical to revenue village, there is NO separate hamlet!
+    if (cleanNormalized(rawHamletEng) === cleanNormalized(revVillageEng)) rawHamletEng = '';
+    if (cleanNormalized(rawHamletTam) === cleanNormalized(revVillageTam)) rawHamletTam = '';
 
     const rawAddrCombined = [
         citizenProfile.streetEng,
@@ -523,33 +535,29 @@ function formatStreetWithHamlet(citizenProfile = {}, geo = {}) {
     if (
         rawAddrCombined.toLowerCase().includes('narasing') ||
         rawAddrCombined.includes('நரசிங்க') ||
-        (pin === '632510' && revVillagePair.eng.toLowerCase() === 'minnal' && streetTam.includes('மேட்டு'))
+        (pin === '632510' && revVillageEng.toLowerCase() === 'minnal' && streetTam.includes('மேட்டு'))
     ) {
-        if (!rawHamletTam || rawHamletTam === 'மின்னல்' || rawHamletTam.toLowerCase() === 'minnal') {
-            rawHamletEng = 'Narasingapuram';
-            rawHamletTam = 'நரசிங்கபுரம்';
+        rawHamletEng = 'Narasingapuram';
+        rawHamletTam = 'நரசிங்கபுரம்';
+    }
+
+    // Only if a genuine, distinct hamlet exists, append it to the street name:
+    if (rawHamletEng && cleanNormalized(rawHamletEng) !== cleanNormalized(revVillageEng)) {
+        if (!streetEng.toLowerCase().includes(rawHamletEng.toLowerCase())) {
+            streetEng = streetEng ? `${streetEng}, ${rawHamletEng}` : rawHamletEng;
         }
     }
-
-    let hamletPair = ensureBilingualPair(rawHamletEng, rawHamletTam);
-
-    // If hamlet is still empty, fallback to revenue village so the street column always includes the village/hamlet name
-    if (!hamletPair.eng && !hamletPair.tam && (revVillagePair.eng || revVillagePair.tam)) {
-        hamletPair = revVillagePair;
-    }
-
-    if (hamletPair.eng && !streetEng.toLowerCase().includes(hamletPair.eng.toLowerCase())) {
-        streetEng = `${streetEng}, ${hamletPair.eng}`;
-    }
-    if (hamletPair.tam && !streetTam.includes(hamletPair.tam)) {
-        streetTam = `${streetTam}, ${hamletPair.tam}`;
+    if (rawHamletTam && cleanNormalized(rawHamletTam) !== cleanNormalized(revVillageTam)) {
+        if (!streetTam.includes(rawHamletTam)) {
+            streetTam = streetTam ? `${streetTam}, ${rawHamletTam}` : rawHamletTam;
+        }
     }
 
     return {
         fullStreetEng: streetEng,
         fullStreetTam: streetTam,
-        hamletEng: hamletPair.eng,
-        hamletTam: hamletPair.tam
+        hamletEng: rawHamletEng,
+        hamletTam: rawHamletTam
     };
 }
 
