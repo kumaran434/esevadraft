@@ -63,7 +63,7 @@ router.post('/api/profile/update', async (req, res) => {
         }
 
         // Check if existing draft exists for currentTarget to inherit all details and documents
-        if (currentTarget && (!sess.citizenProfile.fullNameEng || (sess.citizenProfile.gasDetails && !sess.citizenProfile.gasDetails.consumerNumber))) {
+        if (currentTarget && !updated.fromEditModal && (!sess.citizenProfile.fullNameEng || (sess.citizenProfile.gasDetails && !sess.citizenProfile.gasDetails.consumerNumber))) {
             try {
                 const existingDraft = await getCitizenDraft(currentTarget);
                 if (existingDraft && existingDraft.citizenProfile) {
@@ -181,10 +181,55 @@ router.post('/api/profile/update', async (req, res) => {
                         sess.citizenProfile.residenceProof.typeTam = sess.citizenProfile.residenceProof.typeTam || 'எரிவாயு நுகர்வோர் அட்டை';
                     }
                 }
-                if (sess.citizenProfile?.headPhotoPath) docsToSave.profilePhoto = sess.citizenProfile.headPhotoPath;
+                if (sess.citizenProfile?.headPhotoPath) {
+                    docsToSave.profilePhoto = sess.citizenProfile.headPhotoPath;
+                } else {
+                    delete docsToSave.profilePhoto;
+                    delete docsToSave.headPhoto;
+                }
                 if (sess.citizenProfile?.headAadhaarDocPath) docsToSave.headAadhaar = sess.citizenProfile.headAadhaarDocPath;
 
+                // Golden Rule 15: If community proof was deleted/absent, do not resurrect from existing draft
+                const hasCommProof = !!(sess.citizenProfile?.communityCertificatePath || sess.citizenProfile?.familyCommunityProofPath || sess.citizenProfile?.communityProof || sess.tempUploads?.communityProof);
+                if (!hasCommProof) {
+                    delete docsToSave.communityProof;
+                    delete docsToSave.communityCertificate;
+                    delete docsToSave.familyCommunityProof;
+                }
+
                 const base64Docs = Object.assign({}, existingDraft?.base64Docs || {}, sess.base64Docs || {}, sess.citizenProfile?.base64Docs || {});
+
+                // Purge deleted documents from base64 package
+                if (!sess.citizenProfile?.headPhotoPath) {
+                    delete base64Docs.profilePhotoBase64;
+                    delete base64Docs.profilePhotoName;
+                    delete base64Docs.headPhotoBase64;
+                    delete base64Docs.headPhotoName;
+                    if (sess.tempUploads) {
+                        delete sess.tempUploads.profilePhoto;
+                        delete sess.tempUploads.headPhoto;
+                    }
+                    if (sess.documents) {
+                        delete sess.documents.profilePhoto;
+                        delete sess.documents.headPhoto;
+                    }
+                }
+                if (!hasCommProof) {
+                    delete base64Docs.communityProofBase64;
+                    delete base64Docs.communityProofName;
+                    delete base64Docs.communityCertificateBase64;
+                    delete base64Docs.familyCommunityProofBase64;
+                    if (sess.tempUploads) {
+                        delete sess.tempUploads.communityProof;
+                        delete sess.tempUploads.communityCertificate;
+                        delete sess.tempUploads.familyCommunityProof;
+                    }
+                    if (sess.documents) {
+                        delete sess.documents.communityProof;
+                        delete sess.documents.communityCertificate;
+                        delete sess.documents.familyCommunityProof;
+                    }
+                }
                 for (const [dk, dp] of Object.entries(docsToSave)) {
                     if (dp && typeof dp === 'string' && fs.existsSync(dp) && !base64Docs[`${dk}Base64`]) {
                         try {

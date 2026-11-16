@@ -618,19 +618,19 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                 }
             }
 
-            const { saveCitizenDraft } = require('../database');
             await saveCitizenDraft(cleanMob, {
                 operatorUid: sess.operatorUid || null,
                 operatorName: sess.operatorName || null,
                 operatorMobile: sess.operatorMobile || null,
                 citizenProfile: sess.citizenProfile || {},
                 documents: sess.tempUploads || sess.citizenProfile?.documents || {},
+                deletedDocTypes: [docType],
                 base64Docs: sess.base64Docs || {},
                 chatHistory: sess.chatHistory || [],
                 intakeState: sess.intakeState || 'DRAFT',
                 step: sess.step || 'draft',
                 status: sess.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
-            }).catch(() => {});
+            }).catch((err) => { console.warn('saveCitizenDraft on delete-document error:', err.message); });
         }
 
         res.json({ success: true, message: 'Document deleted successfully', docType, memberIndex, intakeState: sess?.intakeState });

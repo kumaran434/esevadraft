@@ -48,10 +48,14 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
     const incomingProfile = draftData.citizenProfile || {};
 
     // Intelligent Non-Destructive Merge:
-    // Never let an incoming empty string or null overwrite an existing non-empty extracted field!
+    // When a field is explicitly set to null, it is deliberately DELETED.
+    // When a non-empty string/value is passed, it updates.
+    // Empty strings do not overwrite existing valid fields.
     const mergedProfile = { ...existingProfile };
     for (const [k, v] of Object.entries(incomingProfile)) {
-        if (v !== '' && v !== null && v !== undefined) {
+        if (v === null) {
+            delete mergedProfile[k];
+        } else if (v !== '' && v !== undefined) {
             mergedProfile[k] = v;
         } else if (mergedProfile[k] === undefined) {
             mergedProfile[k] = v;
@@ -84,15 +88,54 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
 
     syncFatherOrHusband(mergedProfile);
 
-    // Merge documents package: never let an empty doc object overwrite existing uploaded docs!
+    // Merge documents package: explicit null or deletion must remove from package
     const incomingDocs = draftData.documents || {};
     const mergedDocs = {
         ...(existingDraft?.documents || {}),
         ...(existingProfile.documents || {})
     };
     for (const [dk, dv] of Object.entries(incomingDocs)) {
-        if (dv) mergedDocs[dk] = dv;
+        if (dv === null) {
+            delete mergedDocs[dk];
+        } else if (dv) {
+            mergedDocs[dk] = dv;
+        }
     }
+
+    // Process explicit deletedDocTypes list
+    if (Array.isArray(draftData.deletedDocTypes)) {
+        for (const dt of draftData.deletedDocTypes) {
+            delete mergedDocs[dt];
+            if (dt === 'headPhoto' || dt === 'profilePhoto') {
+                delete mergedProfile.headPhotoPath;
+                delete mergedProfile.profilePhoto;
+                delete mergedDocs.profilePhoto;
+                delete mergedDocs.headPhoto;
+            }
+            if (dt === 'communityProof' || dt === 'communityCertificate' || dt === 'familyCommunityProof') {
+                delete mergedProfile.communityCertificatePath;
+                delete mergedProfile.familyCommunityProofPath;
+                delete mergedProfile.communityProof;
+                delete mergedDocs.communityProof;
+                delete mergedDocs.communityCertificate;
+                delete mergedDocs.familyCommunityProof;
+            }
+        }
+    }
+
+    // Golden Rule 15: If head photo is not present on profile, purge photo from all doc packages
+    if (!mergedProfile.headPhotoPath) {
+        delete mergedDocs.profilePhoto;
+        delete mergedDocs.headPhoto;
+    }
+
+    // If community certificate is not present on profile, purge from docs package
+    if (!mergedProfile.communityCertificatePath && !mergedProfile.familyCommunityProofPath && !mergedProfile.communityProof && !draftData.communityProof) {
+        delete mergedDocs.communityProof;
+        delete mergedDocs.communityCertificate;
+        delete mergedDocs.familyCommunityProof;
+    }
+
     mergedProfile.documents = mergedDocs;
     const docPackage = mergedDocs;
 
@@ -125,6 +168,32 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
 
     const mergedStorageUrls = { ...(existingDraft?.storageUrls || {}), ...(storageUrls || {}) };
     const mergedBase64Docs = { ...(existingDraft?.base64Docs || {}), ...(base64Docs || {}) };
+
+    // Golden Rule 15: If headPhotoPath was deleted or absent, NEVER resurrect photo base64 or storage url from existing draft!
+    if (!mergedProfile.headPhotoPath) {
+        delete docPackage.profilePhoto;
+        delete docPackage.headPhoto;
+        delete mergedStorageUrls.profilePhoto;
+        delete mergedStorageUrls.headPhoto;
+        delete mergedBase64Docs.profilePhotoBase64;
+        delete mergedBase64Docs.profilePhotoName;
+        delete mergedBase64Docs.headPhotoBase64;
+        delete mergedBase64Docs.headPhotoName;
+    }
+
+    // If community certificate was deleted or absent, NEVER resurrect community base64 or storage url from existing draft!
+    if (!mergedProfile.communityCertificatePath && !mergedProfile.familyCommunityProofPath && !mergedProfile.communityProof && !draftData.communityProof) {
+        delete docPackage.communityProof;
+        delete docPackage.communityCertificate;
+        delete docPackage.familyCommunityProof;
+        delete mergedStorageUrls.communityProof;
+        delete mergedStorageUrls.communityCertificate;
+        delete mergedStorageUrls.familyCommunityProof;
+        delete mergedBase64Docs.communityProofBase64;
+        delete mergedBase64Docs.communityProofName;
+        delete mergedBase64Docs.communityCertificateBase64;
+        delete mergedBase64Docs.familyCommunityProofBase64;
+    }
 
     const isAddMemDraft = mergedProfile.subService === 'ADD_MEMBER' ||
         draftData.subService === 'ADD_MEMBER' ||

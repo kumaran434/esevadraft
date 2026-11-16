@@ -117,6 +117,35 @@ async function getCitizenDraft(mobileNumber, operatorUid = null) {
         (data.citizenProfile?.intakeState && String(data.citizenProfile.intakeState).startsWith('RATION_ADD_MEMBER'));
 
     async function restoreDoc(docType, fallbackB64Key, fallbackNameKey) {
+        // Golden Rule 15: If the field was explicitly deleted (set to null or missing from documents & profile), NEVER resurrect from storage URLs or old cache!
+        if (docType === 'profilePhoto') {
+            const isExplicitlyNull = data.headPhotoPath === null || data.citizenProfile?.headPhotoPath === null || (data.documents && data.documents.profilePhoto === null);
+            const isMissingFromProfile = !data.headPhotoPath && !data.citizenProfile?.headPhotoPath && (!data.documents || !data.documents.profilePhoto);
+            if (isExplicitlyNull || isMissingFromProfile) {
+                delete urls.profilePhoto;
+                delete urls.headPhoto;
+                delete b64.profilePhotoBase64;
+                delete b64.profilePhotoName;
+                delete b64.headPhotoBase64;
+                delete b64.headPhotoName;
+                return null;
+            }
+        }
+        if (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof') {
+            const isExplicitlyNull = data.citizenProfile?.communityCertificatePath === null || data.citizenProfile?.familyCommunityProofPath === null || (data.documents && data.documents.communityProof === null);
+            const isMissingFromProfile = !data.citizenProfile?.communityCertificatePath && !data.citizenProfile?.familyCommunityProofPath && !data.citizenProfile?.communityProof && (!data.documents || !data.documents.communityProof);
+            if (isExplicitlyNull || isMissingFromProfile) {
+                delete urls.communityProof;
+                delete urls.communityCertificate;
+                delete urls.familyCommunityProof;
+                delete b64.communityProofBase64;
+                delete b64.communityProofName;
+                delete b64.communityCertificateBase64;
+                delete b64.familyCommunityProofBase64;
+                return null;
+            }
+        }
+
         const existingLocal = (data.documents && data.documents[docType]) || 
                               (data.citizenProfile && data.citizenProfile.documents && data.citizenProfile.documents[docType]) ||
                               ((docType === 'gasBook' || docType === 'residenceProof') && (data.citizenProfile?.gasDetails?.gasBookPath || data.documents?.gasBook || data.documents?.residenceProof || data.citizenProfile?.residenceProof?.docPath)) ||

@@ -497,7 +497,26 @@
                 if (fin) fin.value = '';
                 if (currentCitizenData) {
                     delete currentCitizenData.headPhotoPath;
-                    if (currentCitizenData.documents) delete currentCitizenData.documents.profilePhoto;
+                    delete currentCitizenData.profilePhoto;
+                    delete currentCitizenData.headPhoto;
+                    if (currentCitizenData.documents) {
+                        delete currentCitizenData.documents.profilePhoto;
+                        delete currentCitizenData.documents.headPhoto;
+                    }
+                    if (currentCitizenData.base64Docs) {
+                        delete currentCitizenData.base64Docs.profilePhotoBase64;
+                        delete currentCitizenData.base64Docs.profilePhotoName;
+                        delete currentCitizenData.base64Docs.headPhotoBase64;
+                        delete currentCitizenData.base64Docs.headPhotoName;
+                    }
+                    if (currentCitizenData.storageUrls) {
+                        delete currentCitizenData.storageUrls.profilePhoto;
+                        delete currentCitizenData.storageUrls.headPhoto;
+                    }
+                }
+                if (pendingDocUploads) {
+                    delete pendingDocUploads.profilePhoto;
+                    delete pendingDocUploads.headPhoto;
                 }
             } else if (docType === 'headAadhaar') {
                 renderDocPreview('', 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn');
@@ -600,9 +619,33 @@
                 if (currentCitizenData) {
                     if (currentCitizenData.documents) delete currentCitizenData.documents[docType];
                     if (currentCitizenData[docType]) delete currentCitizenData[docType];
-                    if (docType === 'communityProof') {
+                    if (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof') {
+                        delete currentCitizenData.communityProof;
                         delete currentCitizenData.communityCertificatePath;
                         delete currentCitizenData.familyCommunityProofPath;
+                        if (currentCitizenData.documents) {
+                            delete currentCitizenData.documents.communityProof;
+                            delete currentCitizenData.documents.communityCertificate;
+                            delete currentCitizenData.documents.familyCommunityProof;
+                        }
+                        if (currentCitizenData.base64Docs) {
+                            delete currentCitizenData.base64Docs.communityProofBase64;
+                            delete currentCitizenData.base64Docs.communityProofName;
+                            delete currentCitizenData.base64Docs.familyCommunityProofBase64;
+                            delete currentCitizenData.base64Docs.familyCommunityProofName;
+                            delete currentCitizenData.base64Docs.communityCertificateBase64;
+                            delete currentCitizenData.base64Docs.communityCertificateName;
+                        }
+                        if (currentCitizenData.storageUrls) {
+                            delete currentCitizenData.storageUrls.communityProof;
+                            delete currentCitizenData.storageUrls.communityCertificate;
+                            delete currentCitizenData.storageUrls.familyCommunityProof;
+                        }
+                        if (pendingDocUploads) {
+                            delete pendingDocUploads.communityProof;
+                            delete pendingDocUploads.communityCertificate;
+                            delete pendingDocUploads.familyCommunityProof;
+                        }
                     }
                 }
             }
@@ -620,9 +663,11 @@
                         if (typeof showEsevaToast === 'function') {
                             showEsevaToast('🗑️ ஆவணம் வெற்றிகரமாக நீக்கப்பட்டது!', 'success');
                         }
-                        if (typeof fetchOperatorDrafts === 'function') fetchOperatorDrafts();
+                        if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(activeCustMob);
                         if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
-                        if (typeof updateSidebarDocumentsList === 'function') updateSidebarDocumentsList(activeCustMob, true);
+                        if (typeof fetchSidebarDocuments === 'function') await fetchSidebarDocuments(activeCustMob);
+                        if (typeof updateSidebar === 'function') updateSidebar({ citizenProfile: currentCitizenData });
+                        if (typeof fetchOperatorDrafts === 'function') fetchOperatorDrafts();
                         try {
                             const chatRes = await fetch(`/api/chat-history?mobile=${encodeURIComponent(activeCustMob)}`);
                             const chatData = await chatRes.json();
@@ -1740,6 +1785,11 @@
                     },
                     body: JSON.stringify({ 
                         ...updated, 
+                        headPhotoPath: currentCitizenData?.headPhotoPath || null,
+                        profilePhoto: currentCitizenData?.headPhotoPath || null,
+                        communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof) || null,
+                        communityCertificatePath: currentCitizenData?.communityCertificatePath || null,
+                        familyCommunityProofPath: currentCitizenData?.familyCommunityProofPath || null,
                         mobileNumber: targetMob, 
                         oldMobileNumber: isMobileChanged ? originalEditingMobile : undefined,
                         fromEditModal: true, 

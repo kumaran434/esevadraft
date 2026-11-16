@@ -175,7 +175,7 @@
                                 headDob: prof.headDob || draftData.headDob,
                                 headGender: prof.headGender || draftData.headGender,
                                 gasDetails: Object.assign({}, draftData.gasDetails || {}, prof.gasDetails || {}),
-                                headPhotoPath: prof.headPhotoPath || dJson.draft.documents?.profilePhoto || draftData.headPhotoPath,
+                                headPhotoPath: prof.headPhotoPath || dJson.draft.documents?.profilePhoto || null,
                                 members: (prof.members && prof.members.length > 0) ? prof.members : draftData.members,
                                 documents: dJson.draft.documents || draftData.documents,
                                 base64Docs: dJson.draft.base64Docs || draftData.base64Docs || {}

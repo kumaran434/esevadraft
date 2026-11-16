@@ -316,6 +316,34 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     const isSmartCard = docType === 'smartCard' || docType === 'rationCard';
     const isCommunity = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
 
+    function purgeStorageUrlKeys(target) {
+        if (!target || typeof target !== 'object') return;
+        delete target[docType];
+        if (isPhoto) {
+            delete target.profilePhoto;
+            delete target.headPhoto;
+        }
+        if (isHeadAadhaar) {
+            delete target.headAadhaar;
+            delete target.headAadhaarFront;
+            delete target.headAadhaarBack;
+        }
+        if (isResidence) {
+            delete target.residenceProof;
+            delete target.gasBook;
+            delete target.newAddressProof;
+        }
+        if (isSmartCard) {
+            delete target.smartCard;
+            delete target.rationCard;
+        }
+        if (isCommunity) {
+            delete target.communityProof;
+            delete target.communityCertificate;
+            delete target.familyCommunityProof;
+        }
+    }
+
     function purgeBase64Keys(target) {
         if (!target || typeof target !== 'object') return;
         delete target[docType];
@@ -523,6 +551,28 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     if (isPhoto) {
         unlinkSafe(draft?.documents?.profilePhoto);
         unlinkSafe(draft?.citizenProfile?.headPhotoPath);
+        unlinkSafe(sess?.tempUploads?.profilePhoto);
+        unlinkSafe(sess?.citizenProfile?.headPhotoPath);
+
+        // Delete all photo files related to this mobile from upload directories
+        const checkDirs = [
+            path.resolve(__dirname, '..', '..', 'uploads'),
+            path.resolve(__dirname, '..', '..', 'compressed'),
+            path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'uploads'),
+            path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'uploads')
+        ];
+        for (const cd of checkDirs) {
+            if (fs.existsSync(cd)) {
+                try {
+                    const files = fs.readdirSync(cd);
+                    for (const fn of files) {
+                        if (fn.includes(cleanMob) && (fn.includes('profilePhoto') || fn.includes('headPhoto') || fn.includes('passport'))) {
+                            unlinkSafe(path.join(cd, fn));
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
     } else if (isHeadAadhaar) {
         unlinkSafe(draft?.documents?.headAadhaar);
         unlinkSafe(draft?.documents?.headAadhaarFront);
@@ -543,6 +593,9 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             unlinkSafe(draft?.citizenProfile?.communityCertificatePath);
             unlinkSafe(draft?.citizenProfile?.familyCommunityProofPath);
             unlinkSafe(draft?.citizenProfile?.communityProof);
+            unlinkSafe(sess?.tempUploads?.communityProof);
+            unlinkSafe(sess?.citizenProfile?.communityCertificatePath);
+            unlinkSafe(sess?.citizenProfile?.familyCommunityProofPath);
         }
     }
 
@@ -551,6 +604,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         if (sess.tempUploads) purgeDocMapKeys(sess.tempUploads);
         if (sess.documents) purgeDocMapKeys(sess.documents);
         if (sess.base64Docs) purgeBase64Keys(sess.base64Docs);
+        if (sess.storageUrls) purgeStorageUrlKeys(sess.storageUrls);
         if (sess.citizenProfile) purgeProfileObject(sess.citizenProfile);
         if (sess.subServiceData) {
             if (isHeadAadhaar || docType === 'memberAadhaar') {
@@ -573,6 +627,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     if (draft) {
         if (draft.documents) purgeDocMapKeys(draft.documents);
         if (draft.base64Docs) purgeBase64Keys(draft.base64Docs);
+        if (draft.storageUrls) purgeStorageUrlKeys(draft.storageUrls);
         if (draft.citizenProfile) purgeProfileObject(draft.citizenProfile);
         if (draft.subServiceData) {
             if (isHeadAadhaar || docType === 'memberAadhaar') {
