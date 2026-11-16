@@ -41,25 +41,13 @@ function evaluateServiceDelta(serviceManifest, citizenProfile = {}, documents = 
     const prof = citizenProfile || {};
     const docs = documents || prof.documents || {};
 
-    // 1. Check Prerequisites (e.g., CAN number for Revenue certificates)
-    if (Array.isArray(serviceManifest.prerequisites)) {
-        for (const pre of serviceManifest.prerequisites) {
-            const preVal = resolveFieldValue(prof, pre);
-            if (!preVal) {
-                return {
-                    isReady: false,
-                    status: 'NEEDS_PREREQUISITE',
-                    prerequisite: pre,
-                    serviceId: serviceManifest.id,
-                    promptTam: pre.promptTam || `இந்த சேவைக்கு ${pre.labelTam} கட்டாயமாகும்.`,
-                    fallbackServiceId: pre.fallbackServiceId || null
-                };
-            }
-        }
-    }
+    // -------------------------------------------------------------------------
+    // STAGE 1 (Golden Rule 20): MANDATORY DOCUMENTS FIRST (ஆவணங்கள் முதலில்)
+    // Always collect all mandatory documents upfront so AI extracts all demographic
+    // and address details before asking any manual user questions.
+    // -------------------------------------------------------------------------
 
-    // 2. Check Bucket A (Aadhaar / Identity document extraction)
-    // If Bucket A fields are required, check if Aadhaar has been provided and extracted
+    // 1a. Check Bucket A (Aadhaar / Identity document)
     if (Array.isArray(serviceManifest.bucketA) && serviceManifest.bucketA.length > 0) {
         const hasAadhaarDoc = Boolean(
             docs.headAadhaar || 
@@ -81,7 +69,60 @@ function evaluateServiceDelta(serviceManifest, citizenProfile = {}, documents = 
         }
     }
 
-    // 3. Check Bucket B (Service-Specific User Fields)
+    // 1b. Check Service-Specific Mandatory Documents (Photo, Proof of Community/Income/Residence/Gas)
+    if (Array.isArray(serviceManifest.requiredDocuments)) {
+        for (const reqDoc of serviceManifest.requiredDocuments) {
+            if (!reqDoc.mandatory) continue;
+            let docFound = Boolean(docs[reqDoc.key]);
+            if (!docFound && Array.isArray(reqDoc.altKeys)) {
+                for (const alt of reqDoc.altKeys) {
+                    if (docs[alt] || prof[alt]) {
+                        docFound = true;
+                        break;
+                    }
+                }
+            }
+            if (!docFound && prof[reqDoc.key]) {
+                docFound = true;
+            }
+            if (!docFound) {
+                return {
+                    isReady: false,
+                    status: 'NEEDS_DOCUMENT',
+                    serviceId: serviceManifest.id,
+                    document: reqDoc,
+                    promptTam: reqDoc.promptTam || `விண்ணப்பத்திற்கு ${reqDoc.labelTam} பதிவேற்றவும்:`,
+                    actionRequired: 'upload',
+                    uploadType: reqDoc.key
+                };
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // STAGE 2: Prerequisites (e.g., CAN number for Revenue certificates)
+    // Only audited AFTER documents have been provided and auto-extracted.
+    // -------------------------------------------------------------------------
+    if (Array.isArray(serviceManifest.prerequisites)) {
+        for (const pre of serviceManifest.prerequisites) {
+            const preVal = resolveFieldValue(prof, pre);
+            if (!preVal) {
+                return {
+                    isReady: false,
+                    status: 'NEEDS_PREREQUISITE',
+                    prerequisite: pre,
+                    serviceId: serviceManifest.id,
+                    promptTam: pre.promptTam || `இந்த சேவைக்கு ${pre.labelTam} கட்டாயமாகும்.`,
+                    fallbackServiceId: pre.fallbackServiceId || null
+                };
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // STAGE 3: Bucket B (Service-Specific User Fields NOT on Documents)
+    // Ask remaining missing questions one-by-one.
+    // -------------------------------------------------------------------------
     const missingBucketB = [];
     if (Array.isArray(serviceManifest.bucketB)) {
         for (const field of serviceManifest.bucketB) {
@@ -92,7 +133,6 @@ function evaluateServiceDelta(serviceManifest, citizenProfile = {}, documents = 
         }
     }
 
-    // If there is any missing Bucket B field, prompt for the first missing one sequentially
     if (missingBucketB.length > 0) {
         const nextField = missingBucketB[0];
         return {
@@ -105,33 +145,6 @@ function evaluateServiceDelta(serviceManifest, citizenProfile = {}, documents = 
             options: nextField.options || null,
             inputType: nextField.type || 'text'
         };
-    }
-
-    // 4. Check Mandatory Documents
-    if (Array.isArray(serviceManifest.requiredDocuments)) {
-        for (const reqDoc of serviceManifest.requiredDocuments) {
-            if (!reqDoc.mandatory) continue;
-            let docFound = Boolean(docs[reqDoc.key]);
-            if (!docFound && Array.isArray(reqDoc.altKeys)) {
-                for (const alt of reqDoc.altKeys) {
-                    if (docs[alt]) {
-                        docFound = true;
-                        break;
-                    }
-                }
-            }
-            if (!docFound) {
-                return {
-                    isReady: false,
-                    status: 'NEEDS_DOCUMENT',
-                    serviceId: serviceManifest.id,
-                    document: reqDoc,
-                    promptTam: `விண்ணப்பத்திற்கு ${reqDoc.labelTam} பதிவேற்றவும்:`,
-                    actionRequired: 'upload',
-                    uploadType: reqDoc.key
-                };
-            }
-        }
     }
 
     // 5. All Bucket A, Bucket B, and Documents satisfied! Ready for Pre-Submit Gate.
