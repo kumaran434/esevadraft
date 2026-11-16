@@ -598,12 +598,12 @@
                     }
                 }
                 if (typeof openEditModal === 'function') {
-                    await openEditModal(mobileClean, true);
+                    await openEditModal(mobileClean, false);
                 }
             } catch (e) {
                 console.warn('Error opening edit modal for draft customer:', e);
                 if (typeof openEditModal === 'function') {
-                    await openEditModal(mobileClean, true);
+                    await openEditModal(mobileClean, false);
                 }
             } finally {
                 hideCustomerLoading();

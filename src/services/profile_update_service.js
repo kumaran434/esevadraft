@@ -78,6 +78,82 @@ function applyProfileUpdates(sess, updated) {
     }
     if (updated.headAadhaar !== undefined) sess.citizenProfile.headAadhaar = updated.headAadhaar;
     if (updated.rationCardNo !== undefined) sess.citizenProfile.rationCardNo = updated.rationCardNo;
+
+    // Explicit Document Path & Deletion Handlers
+    if (updated.headPhotoPath === null || updated.headPhotoPath === '') {
+        delete sess.citizenProfile.headPhotoPath;
+        delete sess.citizenProfile.profilePhoto;
+        delete sess.citizenProfile.headPhoto;
+        if (sess.citizenProfile.documents) {
+            delete sess.citizenProfile.documents.profilePhoto;
+            delete sess.citizenProfile.documents.headPhoto;
+        }
+        if (sess.tempUploads) {
+            delete sess.tempUploads.profilePhoto;
+            delete sess.tempUploads.headPhoto;
+        }
+        if (sess.base64Docs) {
+            delete sess.base64Docs.profilePhotoBase64;
+            delete sess.base64Docs.profilePhotoName;
+            delete sess.base64Docs.headPhotoBase64;
+            delete sess.base64Docs.headPhotoName;
+        }
+    } else if (updated.headPhotoPath !== undefined) {
+        sess.citizenProfile.headPhotoPath = updated.headPhotoPath;
+        sess.citizenProfile.profilePhoto = updated.headPhotoPath;
+        if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+        sess.citizenProfile.documents.profilePhoto = updated.headPhotoPath;
+        if (!sess.tempUploads) sess.tempUploads = {};
+        sess.tempUploads.profilePhoto = updated.headPhotoPath;
+    }
+
+    if (updated.communityProof === null || updated.communityProof === '' || updated.communityCertificatePath === null || updated.familyCommunityProofPath === null) {
+        delete sess.citizenProfile.communityProof;
+        delete sess.citizenProfile.communityCertificatePath;
+        delete sess.citizenProfile.familyCommunityProofPath;
+        if (sess.citizenProfile.documents) {
+            delete sess.citizenProfile.documents.communityProof;
+            delete sess.citizenProfile.documents.communityCertificate;
+            delete sess.citizenProfile.documents.familyCommunityProof;
+        }
+        if (sess.tempUploads) {
+            delete sess.tempUploads.communityProof;
+            delete sess.tempUploads.communityCertificate;
+            delete sess.tempUploads.familyCommunityProof;
+        }
+        if (sess.base64Docs) {
+            delete sess.base64Docs.communityProofBase64;
+            delete sess.base64Docs.communityProofName;
+            delete sess.base64Docs.communityCertificateBase64;
+            delete sess.base64Docs.communityCertificateName;
+        }
+    } else if (updated.communityProof !== undefined || updated.communityCertificatePath !== undefined || updated.familyCommunityProofPath !== undefined) {
+        const commPath = updated.communityProof || updated.communityCertificatePath || updated.familyCommunityProofPath;
+        sess.citizenProfile.communityProof = commPath;
+        sess.citizenProfile.communityCertificatePath = commPath;
+        sess.citizenProfile.familyCommunityProofPath = commPath;
+        if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+        sess.citizenProfile.documents.communityProof = commPath;
+        if (!sess.tempUploads) sess.tempUploads = {};
+        sess.tempUploads.communityProof = commPath;
+    }
+
+    if (updated.smartCardDocPath === null || updated.smartCardDocPath === '') {
+        delete sess.citizenProfile.smartCardDocPath;
+        delete sess.citizenProfile.smartCardFront;
+        delete sess.citizenProfile.smartCardBack;
+        if (sess.citizenProfile.documents) {
+            delete sess.citizenProfile.documents.smartCard;
+            delete sess.citizenProfile.documents.smartCardFront;
+            delete sess.citizenProfile.documents.smartCardBack;
+        }
+        if (sess.tempUploads) {
+            delete sess.tempUploads.smartCard;
+            delete sess.tempUploads.smartCardFront;
+            delete sess.tempUploads.smartCardBack;
+        }
+    }
+
     if (updated.subService !== undefined) {
         sess.citizenProfile.subService = updated.subService;
         sess.subService = updated.subService;
@@ -164,6 +240,7 @@ function applyProfileUpdates(sess, updated) {
         'headDob', 'dob', 'headGender', 'headGenderTam', 'doorNo', 'streetTam', 'streetEng',
         'areaTam', 'areaEng', 'pincode', 'district', 'taluk', 'village', 'headAadhaar',
         'rationCardNo', 'subService', 'subServiceData', 'gasDetails', 'residenceProof', 'documents', 'members',
+        'headPhotoPath', 'profilePhoto', 'headPhoto', 'communityProof', 'communityCertificatePath', 'familyCommunityProofPath', 'smartCardDocPath',
         'step', 'mobileNumber', 'chatHistory', 'status', 'intakeState', 'isDeleted', 'isTrashed',
         'tempUploads', 'base64Docs', 'storageUrls', 'createdAt', 'updatedAt'
     ]);

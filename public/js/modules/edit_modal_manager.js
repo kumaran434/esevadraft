@@ -702,18 +702,19 @@
                 const activeCustMob = (targetMobile ? String(targetMobile).replace(/\D/g, '') : '') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '';
                 originalEditingMobile = activeCustMob;
 
-            // If data is empty, missing name/fields, or targetMobile explicitly supplied, pull directly from draft API
-            if (activeCustMob && (!data.fullNameEng && !data.fullNameTam || targetMobile)) {
+            // ALWAYS pull fresh draft state directly from server API whenever opening edit modal
+            if (activeCustMob) {
                 try {
-                    const dRes = await fetch(`/api/drafts/${activeCustMob}`);
+                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}`);
                     const dJson = await dRes.json();
                     if (dJson && dJson.draft && dJson.draft.citizenProfile) {
                         data = Object.assign({}, dJson.draft, dJson.draft.citizenProfile, {
                             service: dJson.draft.service || data.service,
                             serviceId: dJson.draft.serviceId || data.serviceId,
-                            subService: dJson.draft.subService || data.subService,
-                            targetService: dJson.draft.targetService || data.targetService,
-                            intakeState: dJson.draft.intakeState || data.intakeState,
+                            subService: dJson.draft.subService || dJson.draft.citizenProfile?.subService || data.subService,
+                            targetService: dJson.draft.targetService || dJson.draft.citizenProfile?.targetService || data.targetService,
+                            intakeState: dJson.draft.intakeState || dJson.draft.citizenProfile?.intakeState || data.intakeState,
+                            subServiceData: dJson.draft.subServiceData || dJson.draft.citizenProfile?.subServiceData || data.subServiceData,
                             canNumber: dJson.draft.canNumber || dJson.draft.citizenProfile?.canNumber || data.canNumber,
                             caste: dJson.draft.citizenProfile?.caste || dJson.draft.caste || data.caste,
                             community: dJson.draft.citizenProfile?.community || dJson.draft.community || data.community,
@@ -738,8 +739,9 @@
             pendingDocUploads = {};
 
             // Subservice mode determination: strictly based on active citizen subService state, NEVER scraping chat text DOM!
-            const serviceStr = String(data.service || data.serviceId || window.lastSubService || '').toUpperCase();
-            const curSub = String(data.subService || window.lastSubService || '').toUpperCase();
+            const localActiveSvc = String(localStorage.getItem('eseva_active_service') || window.pendingSelectedService || window.lastSubService || '').toUpperCase();
+            const serviceStr = String(data.service || data.serviceId || localActiveSvc || '').toUpperCase();
+            const curSub = String(data.subService || data.targetService || localActiveSvc || '').toUpperCase();
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
@@ -1155,10 +1157,12 @@
             if (forceMasterProfile) {
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'flex';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
+                const hasResidenceOnRecord = Boolean(getVerifiedDoc('residenceProof') || getVerifiedDoc('gasBook') || data.documents?.residenceProof || data.documents?.gasBook || data.gasDetails?.consumerNumber);
+                if (residenceDocBox) residenceDocBox.style.display = hasResidenceOnRecord ? 'flex' : 'none';
+                const hasSmartCardOnRecord = Boolean(getVerifiedDoc('smartCard') || getVerifiedDoc('rationCard') || data.documents?.smartCard || data.smartCardNumber || data.rationCardNo);
+                if (smartCardDocBox) smartCardDocBox.style.display = hasSmartCardOnRecord ? 'flex' : 'none';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'flex';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = (data.members && data.members.length > 1) ? 'flex' : 'none';
             } else if (isCommunityMode) {
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
@@ -1288,7 +1292,7 @@
                 universalContainer.innerHTML = '';
                 const dynamicDocTypesToShow = [];
 
-                if (curSub === 'COMMUNITY' || curIntake.includes('COMMUNITY') || sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY') {
+                if (isCommunityMode) {
                     dynamicDocTypesToShow.push({
                         type: 'communityProof',
                         title: '📜 குடும்ப சாதிச் சான்றிதழ் (தந்தை/தாய்/TC)',
@@ -1297,7 +1301,7 @@
                         defaultPrompt: 'சாதிச் சான்றிதழ் அல்லது பள்ளி TC தேவை'
                     });
                 }
-                if (curSub === 'INCOME' || curIntake.includes('INCOME') || sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME') {
+                if (isIncomeMode) {
                     dynamicDocTypesToShow.push({
                         type: 'incomeProof',
                         title: '💰 வருமானச் சான்று / சம்பள ரசீது (Income Proof)',
@@ -2167,7 +2171,7 @@
                         e.preventDefault();
                         e.stopPropagation();
                         if (typeof window.openEditModal === 'function') {
-                            window.openEditModal(null, true);
+                            window.openEditModal(null, false);
                         }
                     });
                 }

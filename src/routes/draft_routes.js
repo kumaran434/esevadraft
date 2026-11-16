@@ -107,6 +107,28 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
     try {
         const draft = await getCitizenDraft(cleanMob, opUid);
         if (draft) {
+            // Overlay live active in-memory session state if active so subService and intakeState are 100% in sync
+            try {
+                const storageService = require('../services/storage_service');
+                const sess = storageService.sessions?.get(cleanMob) || (storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : null);
+                if (sess && sess.subService) {
+                    draft.subService = sess.subService;
+                    draft.intakeState = sess.intakeState || draft.intakeState;
+                    draft.subServiceData = sess.subServiceData || draft.subServiceData;
+                    if (draft.citizenProfile) {
+                        draft.citizenProfile.subService = sess.subService;
+                        draft.citizenProfile.subServiceData = sess.subServiceData || draft.citizenProfile.subServiceData;
+                        if (sess.citizenProfile) {
+                            if (sess.citizenProfile.caste) draft.citizenProfile.caste = sess.citizenProfile.caste;
+                            if (sess.citizenProfile.community) draft.citizenProfile.community = sess.citizenProfile.community;
+                            if (sess.citizenProfile.religion) draft.citizenProfile.religion = sess.citizenProfile.religion;
+                            if (sess.citizenProfile.fatherCaste) draft.citizenProfile.fatherCaste = sess.citizenProfile.fatherCaste;
+                            if (sess.citizenProfile.motherCaste) draft.citizenProfile.motherCaste = sess.citizenProfile.motherCaste;
+                        }
+                    }
+                }
+            } catch (_) {}
+
             draft.base64Docs = draft.base64Docs || {};
             const memDocPath = draft.documents?.memberAadhaar || draft.citizenProfile?.subServiceData?.docPath || draft.citizenProfile?.tempMember?.docPath || draft.citizenProfile?.members?.[0]?.docPath;
             if (memDocPath && (!draft.base64Docs.memberAadhaarBase64 || !draft.base64Docs.memberAadhaarsBase64 || draft.base64Docs.memberAadhaarsBase64.length === 0)) {

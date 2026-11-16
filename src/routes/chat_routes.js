@@ -251,6 +251,19 @@ router.get('/api/chat/history', async (req, res) => {
     });
     sess.chatHistory = cleanChatHistory;
 
+    // Sync active session state to draft storage so API & edit modal are always 100% in sync
+    if (mobile && sess.citizenProfile && (sess.citizenProfile.fullNameEng || sess.citizenProfile.fullNameTam || sess.citizenProfile.headAadhaar)) {
+        saveCitizenDraft(mobile, {
+            subService: sess.subService || sess.citizenProfile?.subService || null,
+            subServiceData: sess.subServiceData || sess.citizenProfile?.subServiceData || null,
+            intakeState: sess.intakeState,
+            step: sess.intakeState || sess.step,
+            citizenProfile: sess.citizenProfile,
+            documents: sess.tempUploads || sess.citizenProfile?.documents || {},
+            chatHistory: cleanChatHistory
+        }).catch(err => console.warn('Background draft sync from chat error:', err.message));
+    }
+
     res.json({
         chatHistory: cleanChatHistory,
         citizenProfile: sess.citizenProfile,
