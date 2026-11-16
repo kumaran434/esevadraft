@@ -666,15 +666,19 @@
                         if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(activeCustMob);
                         if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
                         if (typeof fetchSidebarDocuments === 'function') await fetchSidebarDocuments(activeCustMob);
-                        if (typeof updateSidebar === 'function') updateSidebar({ citizenProfile: currentCitizenData });
+                        if (typeof updateSidebar === 'function') updateSidebar({ citizenProfile: d.citizenProfile || currentCitizenData });
                         if (typeof fetchOperatorDrafts === 'function') fetchOperatorDrafts();
-                        try {
-                            const chatRes = await fetch(`/api/chat-history?mobile=${encodeURIComponent(activeCustMob)}`);
-                            const chatData = await chatRes.json();
-                            if (chatData && chatData.chatHistory && typeof renderMessages === 'function') {
-                                renderMessages(chatData.chatHistory, true);
-                            }
-                        } catch (_) {}
+                        if (d.chatHistory && typeof renderMessages === 'function') {
+                            renderMessages(d.chatHistory, true);
+                        } else {
+                            try {
+                                const chatRes = await fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}`);
+                                const chatData = await chatRes.json();
+                                if (chatData && chatData.chatHistory && typeof renderMessages === 'function') {
+                                    renderMessages(chatData.chatHistory, true);
+                                }
+                            } catch (_) {}
+                        }
                     }
                 } catch (e) {
                     console.warn('Failed to delete doc on server:', e);
@@ -1628,6 +1632,17 @@
             if (modalEl) modalEl.style.display = 'none';
             currentEditModalIsMasterProfile = false;
             window.forceMasterProfile = false;
+            const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || '';
+            if (activeCustMob) {
+                fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}`)
+                    .then(r => r.json())
+                    .then(cd => {
+                        if (cd && cd.chatHistory && typeof renderMessages === 'function') {
+                            renderMessages(cd.chatHistory, true);
+                        }
+                    })
+                    .catch(() => {});
+            }
         }
         window.closeEditModal = closeEditModal;
 
@@ -2034,6 +2049,9 @@
                 if (data.citizenProfile) {
                     currentCitizenData = data.citizenProfile;
                     updateSidebar(data);
+                }
+                if (data.chatHistory && typeof renderMessages === 'function') {
+                    renderMessages(data.chatHistory, true);
                 }
                 fetchOperatorDrafts();
                 if (!silent) {

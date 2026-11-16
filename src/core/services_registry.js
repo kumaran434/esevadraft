@@ -3,6 +3,7 @@
 // Official Tamil Nadu e-Sevai, TNeGA & Government Portal Specifications
 // ============================================================================
 
+const fs = require('fs');
 const { SERVICES_REGISTRY } = require('./services_data');
 
 
@@ -93,9 +94,35 @@ function evaluateServiceChecklist(serviceId, profile = {}, base64Docs = {}) {
             const b64Count = (base64Docs.memberAadhaarsBase64 && Array.isArray(base64Docs.memberAadhaarsBase64)) ? base64Docs.memberAadhaarsBase64.length : 0;
             isPresent = memCount === 0 || b64Count >= memCount;
         } else {
-            const b64 = base64Docs[`${doc.key}Base64`] || base64Docs[doc.key];
-            const directPath = profile[doc.key] || profile.documents?.[doc.key];
-            isPresent = Boolean((b64 && b64.length > 50) || directPath || doc.optional);
+            let candidatePaths = [
+                profile[doc.key],
+                profile.documents?.[doc.key]
+            ];
+            let candidateB64 = [
+                base64Docs[`${doc.key}Base64`],
+                base64Docs[doc.key]
+            ];
+
+            if (doc.key === 'profilePhoto' || doc.key === 'headPhoto') {
+                candidatePaths.push(profile.headPhotoPath, profile.headPhoto, profile.profilePhoto, profile.photoPath, profile.documents?.profilePhoto, profile.documents?.headPhoto);
+                candidateB64.push(base64Docs.profilePhotoBase64, base64Docs.headPhotoBase64, base64Docs.profilePhoto, base64Docs.headPhoto);
+            } else if (doc.key === 'headAadhaar') {
+                candidatePaths.push(profile.headAadhaarDocPath, profile.aadhaarDocPath, profile.documents?.headAadhaar);
+                candidateB64.push(base64Docs.headAadhaarBase64, base64Docs.aadhaarBase64);
+            } else if (doc.key === 'communityProof') {
+                candidatePaths.push(profile.communityProof, profile.communityCertificatePath, profile.familyCommunityProofPath, profile.documents?.communityProof, profile.documents?.communityCertificate, profile.documents?.familyCommunityProof);
+                candidateB64.push(base64Docs.communityProofBase64, base64Docs.familyCommunityProofBase64, base64Docs.communityCertificateBase64);
+            } else if (doc.key === 'incomeProof') {
+                candidatePaths.push(profile.incomeProof, profile.salaryCertificate, profile.salaryCertificatePath, profile.documents?.incomeProof, profile.documents?.salaryCertificate);
+                candidateB64.push(base64Docs.incomeProofBase64, base64Docs.salaryCertificateBase64);
+            } else if (doc.key === 'residenceProof') {
+                candidatePaths.push(profile.residenceProof?.docPath, profile.residenceProof, profile.gasDetails?.gasBookPath, profile.gasBook, profile.documents?.residenceProof, profile.documents?.gasBook);
+                candidateB64.push(base64Docs.residenceProofBase64, base64Docs.gasBookBase64);
+            }
+
+            const hasValidPath = candidatePaths.some(p => Boolean(p && typeof p === 'string' && fs.existsSync(p)));
+            const hasValidB64 = candidateB64.some(b => Boolean(b && typeof b === 'string' && b.length > 50));
+            isPresent = Boolean(hasValidB64 || hasValidPath || doc.optional);
         }
 
         if (isPresent) {

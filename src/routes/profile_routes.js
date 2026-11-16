@@ -181,26 +181,57 @@ router.post('/api/profile/update', async (req, res) => {
                         sess.citizenProfile.residenceProof.typeTam = sess.citizenProfile.residenceProof.typeTam || 'எரிவாயு நுகர்வோர் அட்டை';
                     }
                 }
-                if (sess.citizenProfile?.headPhotoPath) {
+                if (sess.citizenProfile?.headPhotoPath && fs.existsSync(sess.citizenProfile.headPhotoPath)) {
                     docsToSave.profilePhoto = sess.citizenProfile.headPhotoPath;
                 } else {
                     delete docsToSave.profilePhoto;
                     delete docsToSave.headPhoto;
                 }
-                if (sess.citizenProfile?.headAadhaarDocPath) docsToSave.headAadhaar = sess.citizenProfile.headAadhaarDocPath;
+                if (sess.citizenProfile?.headAadhaarDocPath && fs.existsSync(sess.citizenProfile.headAadhaarDocPath)) {
+                    docsToSave.headAadhaar = sess.citizenProfile.headAadhaarDocPath;
+                } else {
+                    delete docsToSave.headAadhaar;
+                }
 
-                // Golden Rule 15: If community proof was deleted/absent, do not resurrect from existing draft
-                const hasCommProof = !!(sess.citizenProfile?.communityCertificatePath || sess.citizenProfile?.familyCommunityProofPath || sess.citizenProfile?.communityProof || sess.tempUploads?.communityProof);
+                // Golden Rule 15 & 19: Strict Physical File Verification for All Service Documents
+                const commPath = sess.citizenProfile?.communityCertificatePath || sess.citizenProfile?.familyCommunityProofPath || sess.citizenProfile?.communityProof || sess.tempUploads?.communityProof;
+                const hasCommProof = Boolean(commPath && typeof commPath === 'string' && fs.existsSync(commPath));
                 if (!hasCommProof) {
                     delete docsToSave.communityProof;
                     delete docsToSave.communityCertificate;
                     delete docsToSave.familyCommunityProof;
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.communityProof;
+                        delete sess.citizenProfile.communityCertificatePath;
+                        delete sess.citizenProfile.familyCommunityProofPath;
+                    }
+                }
+
+                const incPath = sess.citizenProfile?.incomeProof || sess.citizenProfile?.salaryCertificatePath || sess.citizenProfile?.salaryCertificate || sess.tempUploads?.incomeProof;
+                const hasIncProof = Boolean(incPath && typeof incPath === 'string' && fs.existsSync(incPath));
+                if (!hasIncProof) {
+                    delete docsToSave.incomeProof;
+                    delete docsToSave.salaryCertificate;
+                    delete docsToSave.salaryCertificatePath;
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.incomeProof;
+                        delete sess.citizenProfile.salaryCertificate;
+                        delete sess.citizenProfile.salaryCertificatePath;
+                    }
+                }
+
+                const resPath = sess.citizenProfile?.residenceProof?.docPath || sess.citizenProfile?.gasDetails?.gasBookPath || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook;
+                const hasResProof = Boolean(resPath && typeof resPath === 'string' && fs.existsSync(resPath));
+                if (!hasResProof && !docsToSave.gasBook && !docsToSave.residenceProof) {
+                    delete docsToSave.residenceProof;
+                    delete docsToSave.gasBook;
                 }
 
                 const base64Docs = Object.assign({}, existingDraft?.base64Docs || {}, sess.base64Docs || {}, sess.citizenProfile?.base64Docs || {});
 
                 // Purge deleted documents from base64 package
-                if (!sess.citizenProfile?.headPhotoPath) {
+                const photoDocPath = sess.citizenProfile?.headPhotoPath || sess.tempUploads?.profilePhoto;
+                if (!photoDocPath || !fs.existsSync(photoDocPath)) {
                     delete base64Docs.profilePhotoBase64;
                     delete base64Docs.profilePhotoName;
                     delete base64Docs.headPhotoBase64;
@@ -212,6 +243,10 @@ router.post('/api/profile/update', async (req, res) => {
                     if (sess.documents) {
                         delete sess.documents.profilePhoto;
                         delete sess.documents.headPhoto;
+                    }
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headPhotoPath;
+                        delete sess.citizenProfile.profilePhoto;
                     }
                 }
                 if (!hasCommProof) {
@@ -228,6 +263,62 @@ router.post('/api/profile/update', async (req, res) => {
                         delete sess.documents.communityProof;
                         delete sess.documents.communityCertificate;
                         delete sess.documents.familyCommunityProof;
+                    }
+                }
+                if (!hasIncProof) {
+                    delete base64Docs.incomeProofBase64;
+                    delete base64Docs.incomeProofName;
+                    delete base64Docs.salaryCertificateBase64;
+                    delete base64Docs.salaryCertificateName;
+                    if (sess.tempUploads) {
+                        delete sess.tempUploads.incomeProof;
+                        delete sess.tempUploads.salaryCertificate;
+                    }
+                    if (sess.documents) {
+                        delete sess.documents.incomeProof;
+                        delete sess.documents.salaryCertificate;
+                    }
+                }
+                if (!hasResProof) {
+                    delete base64Docs.residenceProofBase64;
+                    delete base64Docs.residenceProofName;
+                    delete base64Docs.gasBookBase64;
+                    delete base64Docs.gasBookName;
+                    if (sess.tempUploads) {
+                        delete sess.tempUploads.residenceProof;
+                        delete sess.tempUploads.gasBook;
+                    }
+                    if (sess.documents) {
+                        delete sess.documents.residenceProof;
+                        delete sess.documents.gasBook;
+                    }
+                }
+
+                // Re-evaluate State Gate for TNeGA Services
+                const isPhotoPresent = Boolean(photoDocPath && fs.existsSync(photoDocPath));
+                const isCommService = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
+                const isIncService = sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME'));
+                const isResService = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE'));
+
+                if (isCommService && (!isPhotoPresent || !hasCommProof)) {
+                    sess.subService = 'COMMUNITY';
+                    sess.intakeState = !isPhotoPresent ? 'COMMUNITY_PHOTO_WAIT' : 'COMMUNITY_PROOF_WAIT';
+                } else if (isIncService && (!isPhotoPresent || !hasIncProof)) {
+                    sess.subService = 'INCOME';
+                    sess.intakeState = !isPhotoPresent ? 'INCOME_PHOTO_WAIT' : 'INCOME_PROOF_WAIT';
+                } else if (isResService && (!isPhotoPresent || !hasResProof)) {
+                    sess.subService = 'RESIDENCE';
+                    sess.intakeState = !isPhotoPresent ? 'RESIDENCE_PHOTO_WAIT' : 'RESIDENCE_PROOF_WAIT';
+                }
+
+                if (sess.intakeState && sess.intakeState.endsWith('_WAIT')) {
+                    if (Array.isArray(sess.chatHistory)) {
+                        sess.chatHistory = sess.chatHistory.filter(m => {
+                            if (!m || !m.text) return true;
+                            if (m.text.includes('100% தயாராக உள்ளன') || m.text.includes('விண்ணப்பம் சமர்ப்பிக்கப்படலாம்') || m.text.includes('இ-சேவை போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கலாம்')) return false;
+                            if (Array.isArray(m.options) && m.options.some(opt => typeof opt.value === 'string' && (opt.value.startsWith('START_') || opt.value === 'APPLY_COMMUNITY_NOW' || opt.value === 'APPLY_RESIDENCE_NOW'))) return false;
+                            return true;
+                        });
                     }
                 }
                 for (const [dk, dp] of Object.entries(docsToSave)) {

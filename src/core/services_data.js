@@ -149,7 +149,7 @@ const SERVICES_REGISTRY = {
         requiredDocuments: [
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை', format: 'pdf' },
-            { key: 'incomeProof', label: 'சம்பளச் சான்று அல்லது சுய அறிவிப்புப் படிவம் (Self-declaration)', format: 'pdf', optional: true },
+            { key: 'incomeProof', label: 'சம்பளச் சான்று அல்லது சுய அறிவிப்புப் படிவம் (Self-declaration)', format: 'pdf', optional: false },
             { key: 'rationCard', label: 'குடும்ப ரேஷன் கார்டு', format: 'pdf', optional: true }
         ]
     },

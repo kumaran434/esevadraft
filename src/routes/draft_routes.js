@@ -579,17 +579,45 @@ router.post('/api/drafts/delete-document', async (req, res) => {
         const storageService = require('../services/storage_service');
         const sess = storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : (storageService.sessions?.get(cleanMob) || null);
         if (sess) {
-            const isCommunityService = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
-            const isResidenceService = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE'));
+            const isCommunityDoc = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
+            const isIncomeDoc = docType === 'incomeProof' || docType === 'salaryCertificate';
+            const isResidenceDoc = docType === 'residenceProof' || docType === 'gasBook';
+            const isPhotoDoc = docType === 'headPhoto' || docType === 'profilePhoto';
+            const isAadhaarDoc = docType === 'headAadhaar';
+
+            const isCommunityService = isCommunityDoc || sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
+            const isIncomeService = !isCommunityDoc && (isIncomeDoc || sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
+            const isResidenceService = !isCommunityDoc && !isIncomeDoc && (isResidenceDoc || sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE')));
+
+            // 🛡️ SANITIZE CHAT HISTORY: Purge any stale "100% Ready" or "Start Application" messages
+            if (Array.isArray(sess.chatHistory)) {
+                sess.chatHistory = sess.chatHistory.filter(m => {
+                    if (!m || !m.text) return true;
+                    if (m.text.includes('100% தயாராக உள்ளன') || m.text.includes('அனைத்து 17 விவரங்களும் தயாராக உள்ளன') || m.text.includes('விண்ணப்பம் சமர்ப்பிக்கப்படலாம்') || m.text.includes('இ-சேவை போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கலாம்')) return false;
+                    if (Array.isArray(m.options) && m.options.some(opt => typeof opt.value === 'string' && (opt.value.startsWith('START_') || opt.value === 'APPLY_COMMUNITY_NOW' || opt.value === 'APPLY_RESIDENCE_NOW'))) return false;
+                    return true;
+                });
+            }
 
             if (isCommunityService) {
-                if (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof') {
+                sess.subService = 'COMMUNITY';
+                if (sess.citizenProfile) sess.citizenProfile.subService = 'COMMUNITY';
+
+                if (isCommunityDoc) {
                     sess.intakeState = 'COMMUNITY_PROOF_WAIT';
-                    if (sess.citizenProfile) sess.citizenProfile.communityProofSkipped = false;
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.communityProofSkipped;
+                        sess.citizenProfile.communityProofSkipped = false;
+                        delete sess.citizenProfile.communityProof;
+                        delete sess.citizenProfile.communityCertificatePath;
+                        delete sess.citizenProfile.familyCommunityProofPath;
+                    }
                     sess.chatHistory.push({
                         sender: 'bot',
                         text: `🗑️ **குடும்ப சாதிச் சான்றிதழ் ஆவணம் நீக்கப்பட்டது!**\n\n` +
-                              `⚠️ அரசு போர்ட்டலில் சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க **தந்தை / தாய் / உடன்பிறந்தோரின் சாதிச் சான்றிதழ்** அல்லது விண்ணப்பதாரரின் **பள்ளி மாற்றுச் சான்றிதழ் (School TC)** கட்டாயம் தேவை.\n\n` +
+                              `⚠️ **முக்கிய அரசு விதி (TNeGA Mandatory Rule):**\n` +
+                              `சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க **தந்தை / தாய் / உடன்பிறந்தோரின் சாதிச் சான்றிதழ்** அல்லது விண்ணப்பதாரரின் **பள்ளி மாற்றுச் சான்றிதழ் (School TC)** கட்டாயம் தேவை.\n\n` +
+                              `📋 **16/17 விவரங்கள் பூர்த்தியாகியுள்ளன (1 ஆவணம் விடுபட்டுள்ளது).**\n\n` +
                               `தயவுசெய்து சான்றிதழைப் பதிவேற்றவும்:`,
                         options: [
                             { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
@@ -597,25 +625,164 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                         ]
                     });
                     storageService.persistSessions();
-                } else if (docType === 'headPhoto' || docType === 'profilePhoto') {
-                    sess.intakeState = 'HEAD_PHOTO';
+                } else if (isPhotoDoc) {
+                    sess.intakeState = 'COMMUNITY_PHOTO_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headPhotoPath;
+                        delete sess.citizenProfile.profilePhoto;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **விண்ணப்பதாரர் புகைப்படம் நீக்கப்பட்டது!**\n\n` +
+                              `⚠️ **முக்கிய அரசு விதி:** சாதிச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\n` +
+                              `📋 **16/17 விவரங்கள் பூர்த்தியாகியுள்ளன (1 ஆவணம் விடுபட்டுள்ளது).**\n\n` +
+                              `தயவுசெய்து புதிய பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (isAadhaarDoc) {
+                    sess.intakeState = 'COMMUNITY_AADHAAR_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headAadhaarDocPath;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **ஆதார் அட்டை ஆவணம் நீக்கப்பட்டது!**\n\n` +
+                              `⚠️ **முக்கிய அரசு விதி:** சாதிச் சான்றிதழ் முகவரி மற்றும் அடையாளச் சான்றாக ஆதார் அட்டை கட்டாயம் தேவை.\n\n` +
+                              `தயவுசெய்து விண்ணப்பதாரரின் ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                }
+            } else if (isIncomeService) {
+                sess.subService = 'INCOME';
+                if (sess.citizenProfile) sess.citizenProfile.subService = 'INCOME';
+
+                if (isIncomeDoc) {
+                    sess.intakeState = 'INCOME_PROOF_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.incomeProof;
+                        delete sess.citizenProfile.salaryCertificate;
+                        delete sess.citizenProfile.salaryCertificatePath;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **வருமான ஆதாரம் / சம்பளச் சான்று நீக்கப்பட்டது!**\n\n` +
+                              `⚠️ **முக்கிய அரசு விதி (TNeGA Mandatory Rule):**\n` +
+                              `வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் கட்டாயம் தேவை.\n\n` +
+                              `தயவுசெய்து வருமான ஆதாரத்தைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (isPhotoDoc) {
+                    sess.intakeState = 'INCOME_PHOTO_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headPhotoPath;
+                        delete sess.citizenProfile.profilePhoto;
+                    }
                     sess.chatHistory.push({
                         sender: 'bot',
                         text: `🗑️ **விண்ணப்பதாரர் புகைப்படம் நீக்கப்பட்டது!**\n\nதயவுசெய்து புதிய பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
-                        options: [{ label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+                        options: [
+                            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (isAadhaarDoc) {
+                    sess.intakeState = 'INCOME_AADHAAR_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headAadhaarDocPath;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **ஆதார் அட்டை ஆவணம் நீக்கப்பட்டது!**\n\nதயவுசெய்து விண்ணப்பதாரரின் ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
                     });
                     storageService.persistSessions();
                 }
             } else if (isResidenceService) {
-                if (docType === 'residenceProof' || docType === 'gasBook') {
-                    sess.intakeState = 'RESIDENCE_PROOF_DOC';
+                sess.subService = 'RESIDENCE';
+                if (sess.citizenProfile) sess.citizenProfile.subService = 'RESIDENCE';
+
+                if (isResidenceDoc) {
+                    sess.intakeState = 'RESIDENCE_PROOF_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.residenceProof;
+                        if (sess.citizenProfile.gasDetails) {
+                            delete sess.citizenProfile.gasDetails.gasBookPath;
+                            sess.citizenProfile.gasDetails.hasGas = false;
+                        }
+                    }
                     sess.chatHistory.push({
                         sender: 'bot',
-                        text: `🗑️ **குடியிருப்புச் சான்று நீக்கப்பட்டது!**\n\nதயவுசெய்து எரிவாயு அட்டை (Gas Book), மின்கட்டண ரசீது (EB Bill), அல்லது வீட்டு வரி ரசீதைப் பதிவேற்றவும்:`,
-                        options: [{ label: "📷 குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+                        text: `🗑️ **குடியிருப்புச் சான்று நீக்கப்பட்டது!**\n\n` +
+                              `⚠️ **முக்கிய அரசு விதி (TNeGA Mandatory Rule):**\n` +
+                              `இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க மின் கட்டண ரசீது (EB Bill), எரிவாயு அட்டை (Gas Book), அல்லது வீட்டு வரி ரசீது கட்டாயம் தேவை.\n\n` +
+                              `தயவுசெய்து இருப்பிட ஆதாரத்தைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 இருப்பிட ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (isPhotoDoc) {
+                    sess.intakeState = 'RESIDENCE_PHOTO_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headPhotoPath;
+                        delete sess.citizenProfile.profilePhoto;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **விண்ணப்பதாரர் புகைப்படம் நீக்கப்பட்டது!**\n\nதயவுசெய்து புதிய பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (isAadhaarDoc) {
+                    sess.intakeState = 'RESIDENCE_AADHAAR_WAIT';
+                    if (sess.citizenProfile) {
+                        delete sess.citizenProfile.headAadhaarDocPath;
+                    }
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **ஆதார் அட்டை ஆவணம் நீக்கப்பட்டது!**\n\nதயவுசெய்து விண்ணப்பதாரரின் ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
                     });
                     storageService.persistSessions();
                 }
+            } else if (isPhotoDoc) {
+                sess.intakeState = 'HEAD_PHOTO';
+                if (sess.citizenProfile) {
+                    delete sess.citizenProfile.headPhotoPath;
+                    delete sess.citizenProfile.profilePhoto;
+                }
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `🗑️ **விண்ணப்பதாரர் புகைப்படம் நீக்கப்பட்டது!**\n\nதயவுசெய்து புதிய பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                    options: [
+                        { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                storageService.persistSessions();
             }
 
             await saveCitizenDraft(cleanMob, {
@@ -633,7 +800,15 @@ router.post('/api/drafts/delete-document', async (req, res) => {
             }).catch((err) => { console.warn('saveCitizenDraft on delete-document error:', err.message); });
         }
 
-        res.json({ success: true, message: 'Document deleted successfully', docType, memberIndex, intakeState: sess?.intakeState });
+        res.json({
+            success: true,
+            message: 'Document deleted successfully',
+            docType,
+            memberIndex,
+            intakeState: sess?.intakeState,
+            chatHistory: sess?.chatHistory || [],
+            citizenProfile: sess?.citizenProfile || {}
+        });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

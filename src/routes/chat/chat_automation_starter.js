@@ -119,7 +119,7 @@ async function handleAutomationStarter(ctx, req, res) {
         if (sess.citizenProfile) sess.citizenProfile.subService = 'COMMUNITY';
         const p = sess.citizenProfile || {};
 
-        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6 & 14)
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6, 14 & 19)
         const fs = require('fs');
         const commDocPath = p.communityProof || p.communityCertificatePath || p.familyCommunityProofPath || p.documents?.communityProof || sess.tempUploads?.communityProof;
         const hasCommDoc = Boolean(commDocPath && fs.existsSync(commDocPath));
@@ -147,7 +147,7 @@ async function handleAutomationStarter(ctx, req, res) {
         }
 
         if (!hasPhotoDoc) {
-            sess.intakeState = 'HEAD_PHOTO';
+            sess.intakeState = 'COMMUNITY_PHOTO_WAIT';
             persistSessions();
             sess.chatHistory.push({
                 sender: 'bot',
@@ -223,12 +223,17 @@ async function handleAutomationStarter(ctx, req, res) {
         if (sess.citizenProfile) sess.citizenProfile.subService = 'RESIDENCE';
         const p = sess.citizenProfile || {};
 
-        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6 & 14)
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6, 14 & 19)
         const fs = require('fs');
-        const resDocPath = p.residenceProof?.docPath || p.documents?.residenceProof || p.documents?.gasBook || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook;
+        const resDocPath = p.residenceProof?.docPath || p.residenceProof || p.documents?.residenceProof || p.documents?.gasBook || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook;
         const hasResDoc = Boolean(resDocPath && fs.existsSync(resDocPath));
+        const photoDocPath = p.headPhotoPath || p.documents?.profilePhoto || sess.tempUploads?.profilePhoto;
+        const hasPhotoDoc = Boolean(photoDocPath && fs.existsSync(photoDocPath));
+        const aadhaarDocPath = p.headAadhaarDocPath || p.documents?.headAadhaar || sess.tempUploads?.headAadhaar;
+        const hasAadhaarDoc = Boolean(aadhaarDocPath && fs.existsSync(aadhaarDocPath));
+
         if (!hasResDoc) {
-            sess.intakeState = 'RESIDENCE_PROOF_DOC';
+            sess.intakeState = 'RESIDENCE_PROOF_WAIT';
             persistSessions();
             sess.chatHistory.push({
                 sender: 'bot',
@@ -237,6 +242,40 @@ async function handleAutomationStarter(ctx, req, res) {
                       `தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும்:`,
                 options: [
                     { label: "📷 குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasPhotoDoc) {
+            sess.intakeState = 'RESIDENCE_PHOTO_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (விண்ணப்பதாரர் புகைப்படம் விடுபட்டுள்ளது)**\n\n` +
+                      `இருப்பிடச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் **பாஸ்போர்ட் புகைப்படம்** கட்டாயம் தேவை (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது).\n\n` +
+                      `தயவுசெய்து நேரடிப் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasAadhaarDoc && !p.headAadhaar) {
+            sess.intakeState = 'RESIDENCE_AADHAAR_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (ஆதார் அட்டை விடுபட்டுள்ளது)**\n\n` +
+                      `இருப்பிடச் சான்றிதழ் முகவரிச் சான்றாக விண்ணப்பதாரரின் **ஆதார் அட்டை** கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
                     { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
@@ -284,6 +323,67 @@ async function handleAutomationStarter(ctx, req, res) {
         sess.subService = 'INCOME';
         if (sess.citizenProfile) sess.citizenProfile.subService = 'INCOME';
         const p = sess.citizenProfile || {};
+
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6, 14 & 19)
+        const fs = require('fs');
+        const incomeDocPath = p.incomeProof || p.salaryCertificatePath || p.salaryCertificate || p.documents?.incomeProof || p.documents?.salaryCertificate || sess.tempUploads?.incomeProof;
+        const hasIncomeDoc = Boolean(incomeDocPath && fs.existsSync(incomeDocPath));
+        const photoDocPath = p.headPhotoPath || p.documents?.profilePhoto || sess.tempUploads?.profilePhoto;
+        const hasPhotoDoc = Boolean(photoDocPath && fs.existsSync(photoDocPath));
+        const aadhaarDocPath = p.headAadhaarDocPath || p.documents?.headAadhaar || sess.tempUploads?.headAadhaar;
+        const hasAadhaarDoc = Boolean(aadhaarDocPath && fs.existsSync(aadhaarDocPath));
+
+        if (!hasIncomeDoc) {
+            sess.intakeState = 'INCOME_PROOF_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (வருமான ஆதாரம் விடுபட்டுள்ளது)**\n\n` +
+                      `அரசு விதிகளின்படி வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க **சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் (Self-Declaration)** கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasPhotoDoc) {
+            sess.intakeState = 'INCOME_PHOTO_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (விண்ணப்பதாரர் புகைப்படம் விடுபட்டுள்ளது)**\n\n` +
+                      `வருமானச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் **பாஸ்போர்ட் புகைப்படம்** கட்டாயம் தேவை (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது).\n\n` +
+                      `தயவுசெய்து நேரடிப் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasAadhaarDoc && !p.headAadhaar) {
+            sess.intakeState = 'INCOME_AADHAAR_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (ஆதார் அட்டை விடுபட்டுள்ளது)**\n\n` +
+                      `வருமானச் சான்றிதழ் முகவரிச் சான்றாக விண்ணப்பதாரரின் **ஆதார் அட்டை** கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
         const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
         sess.chatHistory.push({
             sender: 'bot',

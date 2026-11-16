@@ -130,8 +130,8 @@ function validateUploadedDocument(slotName, extracted) {
         return { valid: true, detectedType: docType, detectedNameTamil };
     }
 
-    // 5. RESIDENCE PROOF (TNPDS New Card)
-    if (slotName === 'residenceProof' || slotName === 'gasBook' || slotName === 'RESIDENCE_PROOF_DOC') {
+    // 5. RESIDENCE PROOF (TNPDS New Card / TNeGA REV-102)
+    if (slotName === 'residenceProof' || slotName === 'gasBook' || slotName === 'RESIDENCE_PROOF_DOC' || slotName === 'RESIDENCE_PROOF_WAIT') {
         const isDisallowed = docType.startsWith('AADHAAR_') || docType === 'PASSPORT_PHOTO' || docType === 'COMMUNITY_CERTIFICATE';
         if (isDisallowed) {
             return {
@@ -139,7 +139,24 @@ function validateUploadedDocument(slotName, extracted) {
                 detectedType: docType,
                 detectedNameTamil,
                 errorTamil: `❌ **தவறான ஆவணம்!** நீங்கள் பதிவேற்றியது **${detectedNameTamil}**.\n\n` +
-                            `இங்கு எரிவாயு அட்டை (Gas Book), மின்கட்டண ரசீது (EB Bill), அல்லது வீட்டு வரி ரசீது (Property Tax) மட்டுமே பதிவேற்றப்பட வேண்டும்.`
+                            `இங்கு எரிவாயு அட்டை (Gas Book), மின்கட்டண ரசீது (EB Bill), வீட்டு வரி ரசீது (Property Tax), அல்லது வாடகை ஒப்பந்தம் மட்டுமே பதிவேற்றப்பட வேண்டும்.`
+            };
+        }
+        return { valid: true, detectedType: docType, detectedNameTamil };
+    }
+
+    // 6. INCOME PROOF (TNeGA REV-103)
+    if (slotName === 'incomeProof' || slotName === 'salaryCertificate' || slotName === 'INCOME_PROOF_WAIT') {
+        const isDisallowed = docType.startsWith('AADHAAR_') || docType === 'PASSPORT_PHOTO' || docType === 'COMMUNITY_CERTIFICATE';
+        if (isDisallowed) {
+            return {
+                valid: false,
+                detectedType: docType,
+                detectedNameTamil,
+                errorTamil: `❌ **தவறான ஆவணம்! (${detectedNameTamil} நிராகரிக்கப்பட்டது)**\n\n` +
+                            `நீங்கள் பதிவேற்றியது **${detectedNameTamil}** ஆகும்.\n\n` +
+                            `⚠️ இங்கு **சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் (Self-Declaration)** மட்டுமே பதிவேற்றப்பட வேண்டும்.\n\n` +
+                            `தயவுசெய்து சரியான வருமான ஆதார ஆவணத்தைப் பதிவேற்றவும்.`
             };
         }
         return { valid: true, detectedType: docType, detectedNameTamil };

@@ -10,6 +10,7 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const storageService = require('../src/services/storage_service');
 const { getOrCreateSession, createFreshProfile, sessions } = storageService;
@@ -245,10 +246,21 @@ async function runOperatorJourneySimulator() {
     console.log('[JOURNEY 11] TNeGA Income Certificate Strict Sequential Gating & Simulation');
     const incomeSimMob = '9998881122';
     const incSess = getOrCreateSession(incomeSimMob);
+
+    const dummyTestPhoto = path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg');
+    const dummyTestAadh = path.join(__dirname, '..', 'compressed', 'sample_test_aadh.pdf');
+    const dummyTestInc = path.join(__dirname, '..', 'compressed', 'sample_test_inc.pdf');
+    if (!fs.existsSync(dummyTestPhoto)) fs.writeFileSync(dummyTestPhoto, Buffer.alloc(1024, 'a'));
+    if (!fs.existsSync(dummyTestAadh)) fs.writeFileSync(dummyTestAadh, Buffer.alloc(1024, 'b'));
+    if (!fs.existsSync(dummyTestInc)) fs.writeFileSync(dummyTestInc, Buffer.alloc(1024, 'c'));
+
     incSess.citizenProfile = {
         fullNameTam: 'குமரன் கி',
         fullNameEng: 'Kumaran K',
         headAadhaar: '123456789012',
+        headAadhaarDocPath: dummyTestAadh,
+        headPhotoPath: dummyTestPhoto,
+        incomeProof: dummyTestInc,
         fatherNameTam: 'கிருபாகரன்',
         fatherNameEng: 'Kirubakaran',
         doorNo: '12/4',

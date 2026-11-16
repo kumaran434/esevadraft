@@ -975,7 +975,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
                     text: validation.errorTamil,
                     options: [
                         { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
-                        { label: "⏩ ஏற்கெனவே உள்ளது / பிறகு பதிவேற்றுக", value: "SKIP_COMMUNITY_PROOF" }
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
                     ]
                 });
                 res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
@@ -990,6 +990,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             sess.tempUploads.communityProof = compliantProof;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.communityProof = compliantProof;
+            delete sess.citizenProfile.communityProofSkipped;
 
             let extraInfo = '';
             if (extracted && (extracted.caste || extracted.subCaste)) {
@@ -1018,10 +1019,120 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         }
 
         if (text === 'SKIP_COMMUNITY_PROOF' || text.includes('ஏற்கெனவே உள்ளது') || text.includes('பிறகு பதிவேற்றுக') || text === 'CONTINUE_WITHOUT_COMM_PROOF') {
-            sess.citizenProfile.communityProofSkipped = true;
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **கட்டாய ஆவணம் தேவை (Mandatory Document Gate):**\n\n` +
+                      `அரசு விதிகளின்படி சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க **தந்தை / தாய் / உடன்பிறந்தோரின் சாதிச் சான்றிதழ்** அல்லது விண்ணப்பதாரரின் **பள்ளி மாற்றுச் சான்றிதழ் (School TC)** போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+                      `⚠️ *இந்த ஆவணம் இல்லாமல் விண்ணப்பத்தைத் தொடர முடியாது.*\n\n` +
+                      `தயவுசெய்து சான்றிதழைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // INCOME PROOF DOCUMENT UPLOAD GATE (TNeGA REV-103)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_PROOF_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('incomeProof', extracted);
+            if (!validation.valid) {
+                try {
+                    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+                } catch (_) {}
+
+                delete sess.citizenProfile.incomeProof;
+                delete sess.citizenProfile.salaryCertificatePath;
+                if (sess.tempUploads) delete sess.tempUploads.incomeProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.incomeProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.incomeProof = compliantProof;
+            sess.citizenProfile.salaryCertificatePath = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.incomeProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.incomeProof = compliantProof;
+
             persistSessions();
 
-            const flowStep = advanceTnegaCommunityFlow(sess);
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **வருமான ஆதாரம் / சம்பளச் சான்று வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // RESIDENCE PROOF DOCUMENT UPLOAD GATE (TNeGA REV-102)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'RESIDENCE_PROOF_WAIT' || sess.intakeState === 'RESIDENCE_PROOF_DOC') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('residenceProof', extracted);
+            if (!validation.valid) {
+                try {
+                    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+                } catch (_) {}
+
+                delete sess.citizenProfile.residenceProof;
+                if (sess.tempUploads) delete sess.tempUploads.residenceProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.residenceProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 இருப்பிட ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.residenceProof = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.residenceProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.residenceProof = compliantProof;
+
+            persistSessions();
+
+            const flowStep = advanceTnegaResidenceFlow(sess, `✅ **இருப்பிட ஆதாரம் வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,

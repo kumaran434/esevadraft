@@ -265,8 +265,8 @@ async function runTests() {
             mobile: sessionKey3
         });
         assert(res3_chat.status === 200, 'Chat returned 200 OK for Income Cert');
-        assert(res3_chat.body.intakeState === 'INCOME_CAN_GATE' || res3_chat.body.intakeState === 'INCOME_INTAKE', 'State transitioned cleanly to CAN Gate for Income Cert');
-        assert(res3_chat.body.botResponse && res3_chat.body.botResponse.includes('வருமானச் சான்றிதழ்'), 'Chat response introduces Income Certificate and CAN requirement');
+        assert(res3_chat.body.intakeState === 'INCOME_AADHAAR_WAIT' || res3_chat.body.intakeState === 'INCOME_CAN_GATE' || res3_chat.body.intakeState === 'INCOME_INTAKE', 'State transitioned cleanly to Document Gate or CAN Gate for Income Cert');
+        assert(res3_chat.body.botResponse && res3_chat.body.botResponse.includes('வருமானச் சான்றிதழ்'), 'Chat response introduces Income Certificate');
 
         // ----------------------------------------------------------------
         // TEST 4: Service Transition -> Residence Certificate
@@ -279,7 +279,7 @@ async function runTests() {
             mobile: sessionKey4
         });
         assert(res4_chat.status === 200, 'Chat returned 200 OK for Residence Cert');
-        assert(res4_chat.body.intakeState === 'RESIDENCE_INTAKE' || res4_chat.body.intakeState === 'RESIDENCE_CAN_GATE', 'State transitioned cleanly to RESIDENCE_INTAKE or RESIDENCE_CAN_GATE');
+        assert(res4_chat.body.intakeState === 'RESIDENCE_AADHAAR_WAIT' || res4_chat.body.intakeState === 'RESIDENCE_INTAKE' || res4_chat.body.intakeState === 'RESIDENCE_CAN_GATE', 'State transitioned cleanly to Document Gate or CAN Gate for Residence Cert');
 
         // ----------------------------------------------------------------
         // TEST 5: Operator Desk 1-Click Shortcut: Ration Card
@@ -666,7 +666,7 @@ async function runTests() {
         const deltaChat4 = await request('POST', '/api/chat', { text: 'தனியார் வேலை' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChat4.status === 200, 'Occupation answer returned 200 OK');
         assert(deltaChat4.body.citizenProfile.profession === 'தனியார் வேலை', 'Profession captured');
-        assert(deltaChat4.body.step === 'INCOME_PHOTO_WAIT' || deltaChat4.body.step === 'READY_TO_APPLY_INCOME', 'State transitioned to INCOME_PHOTO_WAIT or READY_TO_APPLY_INCOME');
+        assert(deltaChat4.body.step === 'INCOME_AADHAAR_WAIT' || deltaChat4.body.step === 'INCOME_PHOTO_WAIT' || deltaChat4.body.step === 'INCOME_PROOF_WAIT' || deltaChat4.body.step === 'READY_TO_APPLY_INCOME', 'State transitioned to document gate or readiness');
 
         // Cleanup delta draft
         try {
@@ -2211,10 +2211,10 @@ async function runTests() {
             serviceName: 'வருமானச் சான்றிதழ்'
         });
         assert(incomeIntakeRes.status === 200, 'New customer with income service returns 200 OK');
-        assert(incomeIntakeRes.body.intakeState === 'INCOME_CAN_GATE', 'Enters INCOME_CAN_GATE state when CAN is not yet linked');
+        assert(incomeIntakeRes.body.intakeState === 'INCOME_AADHAAR_WAIT' || incomeIntakeRes.body.intakeState === 'INCOME_PHOTO_WAIT' || incomeIntakeRes.body.intakeState === 'INCOME_CAN_GATE', 'Enters document or CAN gate when CAN is not yet linked');
         const lastIncomeMsg = incomeIntakeRes.body.chatHistory && incomeIntakeRes.body.chatHistory[incomeIntakeRes.body.chatHistory.length - 1];
         assert(lastIncomeMsg && lastIncomeMsg.text.includes('குமரன் கி'), 'Intake acknowledges pre-filled Aadhaar details');
-        assert(lastIncomeMsg && lastIncomeMsg.options && lastIncomeMsg.options.some(o => o.value === 'CAN_SEARCH_PROMPT'), 'Presents 1-click CAN verification options before income');
+        assert(lastIncomeMsg && lastIncomeMsg.options && (lastIncomeMsg.options.some(o => o.value === 'CAN_SEARCH_PROMPT') || lastIncomeMsg.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD')), 'Presents document upload or CAN verification options');
 
         // 7. Context-Adaptive Sidebar UI Verification
         const curHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
@@ -2440,8 +2440,8 @@ async function runTests() {
         }, test39Headers);
         assert(res39Res.status === 200, 'Residence Certificate request returns 200 OK');
         const lastResMsg = res39Res.body.chatHistory[res39Res.body.chatHistory.length - 1];
-        assert(lastResMsg.text.includes('ஏற்கெனவே பெறப்பட்டுள்ளன') || lastResMsg.text.includes('CAN எண்') || lastResMsg.text.includes('இருப்பிடச் சான்றிதழ்'), 'Recognizes that Aadhaar and address are already in Master Profile');
-        assert(lastResMsg.options.some(o => o.value === 'APPLY_RESIDENCE_NOW' || o.value === 'START_RESIDENCE_APPLY' || o.value === 'CAN_DIRECT_INPUT' || o.value === 'பிறப்பிலிருந்து'), 'Presents direct button for Residence Certificate');
+        assert(lastResMsg.text.includes('ஏற்கெனவே பெறப்பட்டுள்ளன') || lastResMsg.text.includes('CAN எண்') || lastResMsg.text.includes('இருப்பிடச் சான்றிதழ்') || lastResMsg.text.includes('புகைப்படம்'), 'Recognizes that Aadhaar and address are already in Master Profile');
+        assert(lastResMsg.options.some(o => o.value === 'APPLY_RESIDENCE_NOW' || o.value === 'START_RESIDENCE_APPLY' || o.value === 'CAN_DIRECT_INPUT' || o.value === 'பிறப்பிலிருந்து' || o.value === 'TRIGGER_FILE_UPLOAD'), 'Presents direct button or upload button for Residence Certificate');
 
         // 5. Multi-Service Aadhaar Re-Use: Applying for Voter ID re-uses existing Aadhaar without duplicate upload prompts
         const res39Voter = await request('POST', '/api/chat', {
@@ -2949,6 +2949,24 @@ async function runTests() {
 
             await request('POST', '/api/operator/new-customer', { customerMobile: canTestCust });
 
+            const dummyAadh48 = path.join(__dirname, '..', 'compressed', 'sample_test_aadh.pdf');
+            const dummyPhoto48 = path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg');
+            const dummyInc48 = path.join(__dirname, '..', 'compressed', 'sample_test_inc.pdf');
+            if (!fs.existsSync(dummyAadh48)) fs.writeFileSync(dummyAadh48, Buffer.alloc(1024, 'a'));
+            if (!fs.existsSync(dummyPhoto48)) fs.writeFileSync(dummyPhoto48, Buffer.alloc(1024, 'b'));
+            if (!fs.existsSync(dummyInc48)) fs.writeFileSync(dummyInc48, Buffer.alloc(1024, 'c'));
+
+            await request('POST', '/api/profile/update', {
+                mobileNumber: canTestCust,
+                headAadhaar: '987654321012',
+                headAadhaarDocPath: dummyAadh48,
+                headPhotoPath: dummyPhoto48,
+                profilePhoto: dummyPhoto48,
+                incomeProof: dummyInc48,
+                fullNameEng: 'Kumaran K',
+                fullNameTam: 'குமரன் கி'
+            }, canHeaders);
+
             // 1. Selecting Income Certificate presents CAN options when no CAN linked
             const chatRes1 = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, canHeaders);
             assert(chatRes1.status === 200, 'Income selection returns 200 OK');
@@ -3278,46 +3296,15 @@ async function runTests() {
             const sessFresh = { intakeState: 'SERVICE_SELECTION', chatHistory: [], citizenProfile: {} };
             const hFresh = handleNonRationServiceSelection('சாதிச் சான்றிதழ்', sessFresh);
             assert(hFresh === true, "handleNonRationServiceSelection handles சாதிச் சான்றிதழ்");
-            assert(sessFresh.intakeState === 'COMMUNITY_CAN_GATE', "Fresh customer greeted with COMMUNITY_CAN_GATE");
+            assert(sessFresh.intakeState === 'COMMUNITY_AADHAAR_WAIT', "Fresh customer greeted with COMMUNITY_AADHAAR_WAIT");
             assert(sessFresh.subService === 'COMMUNITY', "subService set to COMMUNITY");
 
-            // Fresh step 1: CAN
-            sessFresh.citizenProfile.canNumber = '133370337878397';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_MOTHER_NAME_WAIT', "CAN entered -> prompts Mother Name");
-
-            // Fresh step 2: Mother Name
-            sessFresh.citizenProfile.motherNameTam = 'தேவகி';
-            sessFresh.citizenProfile.motherNameEng = 'Devaki';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_RELIGION_WAIT', "Mother Name entered -> prompts Religion");
-
-            // Fresh step 3: Religion
-            sessFresh.citizenProfile.religion = 'Hindu';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_COMM_WAIT', "Religion entered -> prompts Community");
-
-            // Fresh step 4: Community
-            sessFresh.citizenProfile.community = 'MBC';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_CASTE_WAIT', "Community entered -> prompts Caste");
-
-            // Fresh step 5: Caste
-            sessFresh.citizenProfile.caste = 'வன்னியகுல சத்ரியர்';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Caste entered -> prompts Parents Caste Gate");
-
-            // Fresh step 5.5: Confirm Parent Caste
-            sessFresh.citizenProfile.parentCasteConfirmed = true;
-            sessFresh.citizenProfile.fatherCaste = 'வன்னியகுல சத்ரியர்';
-            sessFresh.citizenProfile.motherCaste = 'வன்னியகுல சத்ரியர்';
-            advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_AADHAAR_WAIT', "Caste entered -> prompts Demographics / Aadhaar");
-
-            // Fresh step 6: Demographics
+            // Fresh step 1: Aadhaar Document & Demographics
+            sessFresh.citizenProfile.headAadhaarDocPath = path.join(__dirname, '..', 'compressed', 'sample_test_aadh.pdf');
+            if (!fs.existsSync(sessFresh.citizenProfile.headAadhaarDocPath)) fs.writeFileSync(sessFresh.citizenProfile.headAadhaarDocPath, Buffer.alloc(1024, 'a'));
+            sessFresh.citizenProfile.headAadhaar = '998877665544';
             sessFresh.citizenProfile.fullNameTam = 'விஜய் குமார்';
             sessFresh.citizenProfile.fullNameEng = 'Vijay Kumar';
-            sessFresh.citizenProfile.headAadhaar = '998877665544';
             sessFresh.citizenProfile.doorNo = '12';
             sessFresh.citizenProfile.streetTam = 'மேட்டு தெரு';
             sessFresh.citizenProfile.streetEng = 'Mettu Street';
@@ -3325,19 +3312,53 @@ async function runTests() {
             sessFresh.citizenProfile.taluk = 'அரக்கோணம்';
             sessFresh.citizenProfile.district = 'இராணிப்பேட்டை';
             sessFresh.citizenProfile.pincode = '631001';
-
             advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_PROOF_WAIT', "Demographics entered -> prompts Family Community Proof / School TC");
+            assert(sessFresh.intakeState === 'COMMUNITY_PHOTO_WAIT', "Aadhaar entered -> prompts Mandatory Photo Gate");
 
-            // Fresh step 7: Family Community Proof -> Prompts Mandatory Photo Gate
-            sessFresh.citizenProfile.communityProof = 'compressed/sample_comm_proof.pdf';
-            const freshPhotoStep = advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_PHOTO_WAIT', "Community proof entered -> prompts Mandatory Photo Gate");
+            // Fresh step 2: Photo Upload
+            sessFresh.citizenProfile.headPhotoPath = path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg');
+            if (!fs.existsSync(sessFresh.citizenProfile.headPhotoPath)) fs.writeFileSync(sessFresh.citizenProfile.headPhotoPath, Buffer.alloc(1024, 'b'));
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_PROOF_WAIT', "Photo entered -> prompts Family Community Proof / School TC");
 
-            // Fresh step 8: Photo Upload -> Reaches READY_TO_APPLY_COMMUNITY
-            sessFresh.citizenProfile.headPhotoPath = 'compressed/sample_photo.jpg';
+            // Fresh step 3: Family Community Proof
+            sessFresh.citizenProfile.communityProof = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
+            if (!fs.existsSync(sessFresh.citizenProfile.communityProof)) fs.writeFileSync(sessFresh.citizenProfile.communityProof, Buffer.alloc(1024, 'c'));
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_CAN_GATE', "All 3 documents entered -> prompts CAN Gate");
+
+            // Fresh step 4: CAN
+            sessFresh.citizenProfile.canNumber = '133370337878397';
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_MOTHER_NAME_WAIT', "CAN entered -> prompts Mother Name");
+
+            // Fresh step 5: Mother Name
+            sessFresh.citizenProfile.motherNameTam = 'தேவகி';
+            sessFresh.citizenProfile.motherNameEng = 'Devaki';
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_RELIGION_WAIT', "Mother Name entered -> prompts Religion");
+
+            // Fresh step 6: Religion
+            sessFresh.citizenProfile.religion = 'Hindu';
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_COMM_WAIT', "Religion entered -> prompts Community");
+
+            // Fresh step 7: Community
+            sessFresh.citizenProfile.community = 'MBC';
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_CASTE_WAIT', "Community entered -> prompts Caste");
+
+            // Fresh step 8: Caste
+            sessFresh.citizenProfile.caste = 'வன்னியகுல சத்ரியர்';
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Caste entered -> prompts Parents Caste Gate");
+
+            // Fresh step 9: Confirm Parent Caste -> Reaches READY_TO_APPLY_COMMUNITY
+            sessFresh.citizenProfile.parentCasteConfirmed = true;
+            sessFresh.citizenProfile.fatherCaste = 'வன்னியகுல சத்ரியர்';
+            sessFresh.citizenProfile.motherCaste = 'வன்னியகுல சத்ரியர்';
             const freshReadyStep = advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'READY_TO_APPLY_COMMUNITY', "Community proof entered -> reaches READY_TO_APPLY_COMMUNITY");
+            assert(sessFresh.intakeState === 'READY_TO_APPLY_COMMUNITY', "Parent Caste confirmed -> reaches READY_TO_APPLY_COMMUNITY");
             assert(freshReadyStep.options.some(o => o.value === 'START_COMMUNITY_APPLY'), "Ready step offers START_COMMUNITY_APPLY");
 
             // 4. Verify Existing Customer Universal Delta Journey (Kumaran K)
@@ -3352,6 +3373,7 @@ async function runTests() {
                     motherNameTam: 'தேவகி',
                     motherNameEng: 'Devaki',
                     headAadhaar: '575567662931',
+                    headAadhaarDocPath: path.join(__dirname, '..', 'compressed', 'sample_test_aadh.pdf'),
                     mobileNumber: '9842367866',
                     canNumber: '133370337878397',
                     religion: 'Hindu',
@@ -3363,29 +3385,29 @@ async function runTests() {
                     taluk: 'அரக்கோணம்',
                     district: 'இராணிப்பேட்டை',
                     pincode: '631001',
-                    headPhotoPath: 'compressed/kumaran_photo.jpg'
+                    headPhotoPath: path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg')
                 }
             };
 
             const hExist = handleNonRationServiceSelection('சாதிச் சான்றிதழ்', sessExist);
             assert(hExist === true, "Existing customer handles சாதிச் சான்றிதழ்");
-            // Auto-skips CAN, Mother Name, Religion, Community, Demographics -> asks ONLY missing Caste!
-            assert(sessExist.intakeState === 'COMMUNITY_CASTE_WAIT', "Existing customer auto-skips known details and asks ONLY missing Caste");
+            // Under Golden Rule 19: Kumaran K has Aadhaar & Photo, but NO Community Proof -> prompts COMMUNITY_PROOF_WAIT first!
+            assert(sessExist.intakeState === 'COMMUNITY_PROOF_WAIT', "Existing customer with missing Community Proof prompts COMMUNITY_PROOF_WAIT first");
+
+            // Kumaran K uploads Community Proof -> now moves to missing Caste!
+            sessExist.citizenProfile.communityProof = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
+            advanceTnegaCommunityFlow(sessExist);
+            assert(sessExist.intakeState === 'COMMUNITY_CASTE_WAIT', "Community Proof uploaded -> asks missing Caste");
 
             // Kumaran K provides missing Caste -> Prompts Parents Caste Gate
             sessExist.citizenProfile.caste = 'Agamudayar';
             advanceTnegaCommunityFlow(sessExist);
             assert(sessExist.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Missing Caste entered -> prompts Parents Caste Gate");
 
-            // Confirms Parents Caste -> Prompts Family Community Proof
+            // Confirms Parents Caste -> Jumps directly to 100% Ready Station!
             sessExist.citizenProfile.parentCasteConfirmed = true;
             sessExist.citizenProfile.fatherCaste = 'Agamudayar';
             sessExist.citizenProfile.motherCaste = 'Agamudayar';
-            advanceTnegaCommunityFlow(sessExist);
-            assert(sessExist.intakeState === 'COMMUNITY_PROOF_WAIT', "Parents Caste confirmed -> prompts Family Community Proof");
-
-            // Kumaran K provides / skips Community Proof -> Jumps directly to 100% Ready Station!
-            sessExist.citizenProfile.communityProof = 'compressed/sample_comm_proof.pdf';
             const existReadyStep = advanceTnegaCommunityFlow(sessExist);
             assert(sessExist.intakeState === 'READY_TO_APPLY_COMMUNITY', "Existing customer jumps directly to READY_TO_APPLY_COMMUNITY");
             assert(existReadyStep.options.some(o => o.value === 'START_COMMUNITY_APPLY'), "Existing customer has 1-click START_COMMUNITY_APPLY button");

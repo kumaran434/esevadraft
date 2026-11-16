@@ -38,6 +38,36 @@
                 return;
             }
 
+            // Golden Rule 19: Strict Pre-Flight Client Guard for TNeGA Services
+            if (isTnegaActive && currentCitizenData) {
+                const curSub = String(currentCitizenData.subService || currentCitizenData.intakeState || '').toUpperCase();
+                const docs = currentCitizenData.documents || {};
+                const hasPhoto = Boolean(currentCitizenData.headPhotoPath || docs.profilePhoto || docs.headPhoto);
+
+                if (curSub.includes('COMMUNITY')) {
+                    const hasComm = Boolean(currentCitizenData.communityProof || currentCitizenData.communityCertificatePath || currentCitizenData.familyCommunityProofPath || docs.communityProof);
+                    if (!hasPhoto || !hasComm) {
+                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                } else if (curSub.includes('INCOME')) {
+                    const hasIncome = Boolean(currentCitizenData.incomeProof || currentCitizenData.salaryCertificatePath || docs.incomeProof);
+                    if (!hasPhoto || !hasIncome) {
+                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் வருமான ஆதாரம் / சம்பளச் சான்று கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                } else if (curSub.includes('RESIDENCE') || curSub.includes('NATIVITY')) {
+                    const hasRes = Boolean(currentCitizenData.residenceProof?.docPath || currentCitizenData.residenceProof || docs.residenceProof || docs.gasBook);
+                    if (!hasPhoto || !hasRes) {
+                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் இருப்பிட ஆதாரம் (மின் கட்டணம்/கேஸ்/வரி ரசீது) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                }
+            }
+
             if (isAddMember && currentCitizenData) {
                 currentCitizenData.subService = 'ADD_MEMBER';
             }

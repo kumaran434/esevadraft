@@ -315,6 +315,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     const isResidence = docType === 'residenceProof' || docType === 'gasBook' || docType === 'newAddressProof';
     const isSmartCard = docType === 'smartCard' || docType === 'rationCard';
     const isCommunity = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
+    const isIncome = docType === 'incomeProof' || docType === 'salaryCertificate' || docType === 'salarySlip';
 
     function purgeStorageUrlKeys(target) {
         if (!target || typeof target !== 'object') return;
@@ -341,6 +342,11 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete target.communityProof;
             delete target.communityCertificate;
             delete target.familyCommunityProof;
+        }
+        if (isIncome) {
+            delete target.incomeProof;
+            delete target.salaryCertificate;
+            delete target.salarySlip;
         }
     }
 
@@ -419,6 +425,14 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete target.communityCertificateName;
             delete target.communityCertificate;
         }
+        if (isIncome) {
+            delete target.incomeProofBase64;
+            delete target.incomeProofName;
+            delete target.incomeProof;
+            delete target.salaryCertificateBase64;
+            delete target.salaryCertificateName;
+            delete target.salaryCertificate;
+        }
     }
 
     function purgeDocMapKeys(docMap) {
@@ -464,6 +478,11 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete docMap.familyCommunityProof;
             delete docMap.familyCommunityProofPath;
             delete docMap.communityCertificatePath;
+        }
+        if (isIncome) {
+            delete docMap.incomeProof;
+            delete docMap.salaryCertificate;
+            delete docMap.salaryCertificatePath;
         }
     }
 
@@ -532,7 +551,13 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete prof.communityProof;
             delete prof.communityCertificatePath;
             delete prof.familyCommunityProofPath;
-            prof.communityProofSkipped = true;
+            delete prof.communityProofSkipped;
+            prof.communityProofSkipped = false;
+        }
+        if (isIncome) {
+            delete prof.incomeProof;
+            delete prof.salaryCertificate;
+            delete prof.salaryCertificatePath;
         }
     }
 
@@ -589,13 +614,20 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         unlinkSafe(draft?.documents?.[docType]);
         unlinkSafe(draft?.citizenProfile?.documents?.[docType]);
         unlinkSafe(draft?.citizenProfile?.[docType]);
-        if (docType === 'communityProof') {
+        if (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof') {
             unlinkSafe(draft?.citizenProfile?.communityCertificatePath);
             unlinkSafe(draft?.citizenProfile?.familyCommunityProofPath);
             unlinkSafe(draft?.citizenProfile?.communityProof);
             unlinkSafe(sess?.tempUploads?.communityProof);
             unlinkSafe(sess?.citizenProfile?.communityCertificatePath);
             unlinkSafe(sess?.citizenProfile?.familyCommunityProofPath);
+        }
+        if (docType === 'incomeProof' || docType === 'salaryCertificate') {
+            unlinkSafe(draft?.citizenProfile?.incomeProof);
+            unlinkSafe(draft?.citizenProfile?.salaryCertificatePath);
+            unlinkSafe(sess?.tempUploads?.incomeProof);
+            unlinkSafe(sess?.citizenProfile?.incomeProof);
+            unlinkSafe(sess?.citizenProfile?.salaryCertificatePath);
         }
     }
 
@@ -617,9 +649,17 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
                 if (sess.subService === 'CHANGE_ADDRESS') delete sess.subServiceData.docPath;
             }
         }
-        if ((isPhoto || isHeadAadhaar || isResidence) && sess.intakeState === 'READY_TO_APPLY') {
-            sess.intakeState = 'SERVICE_SELECTION';
-            sess.step = 'SERVICE_SELECTION';
+        if ((isPhoto || isHeadAadhaar || isResidence || isCommunity || isIncome) && (sess.intakeState === 'READY_TO_APPLY' || sess.intakeState?.startsWith('READY_TO_APPLY'))) {
+            if (sess.subService === 'COMMUNITY') {
+                sess.intakeState = isPhoto ? 'COMMUNITY_PHOTO_WAIT' : (isCommunity ? 'COMMUNITY_PROOF_WAIT' : 'COMMUNITY_AADHAAR_WAIT');
+            } else if (sess.subService === 'INCOME') {
+                sess.intakeState = isPhoto ? 'INCOME_PHOTO_WAIT' : (isIncome ? 'INCOME_PROOF_WAIT' : 'INCOME_AADHAAR_WAIT');
+            } else if (sess.subService === 'RESIDENCE') {
+                sess.intakeState = isPhoto ? 'RESIDENCE_PHOTO_WAIT' : (isResidence ? 'RESIDENCE_PROOF_WAIT' : 'RESIDENCE_AADHAAR_WAIT');
+            } else {
+                sess.intakeState = 'SERVICE_SELECTION';
+                sess.step = 'SERVICE_SELECTION';
+            }
         }
     }
 
