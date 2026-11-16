@@ -81,7 +81,12 @@ function decryptText(cipherText) {
 
 function readRawVault() {
     const targetPath = getVaultFilePath();
-    const pathsToRead = [WORKSPACE_VAULT_PATH, targetPath];
+    const pathsToRead = [
+        WORKSPACE_VAULT_PATH,
+        targetPath,
+        process.env.APPDATA ? path.join(process.env.APPDATA, 'esevadraft-desktop', 'data', VAULT_FILE_NAME) : null,
+        process.env.APPDATA ? path.join(process.env.APPDATA, 'esevadraft-suite', 'data', VAULT_FILE_NAME) : null
+    ].filter(Boolean);
     const merged = {};
     for (const p of pathsToRead) {
         if (p && fs.existsSync(p)) {

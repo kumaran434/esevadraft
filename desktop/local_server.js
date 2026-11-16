@@ -1165,14 +1165,34 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                             return path.join(dir, 'operator_vault.json');
                         };
                         const readFb = () => {
-                            const p = getFallbackVaultPath();
-                            try { if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch (_) {}
-                            return {};
+                            const candidates = [
+                                getFallbackVaultPath(),
+                                path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'data', 'operator_vault.json'),
+                                path.join(process.env.APPDATA || '', 'esevadraft-suite', 'data', 'operator_vault.json')
+                            ];
+                            const merged = {};
+                            for (const p of candidates) {
+                                try {
+                                    if (p && fs.existsSync(p)) {
+                                        const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
+                                        Object.assign(merged, parsed);
+                                    }
+                                } catch (_) {}
+                            }
+                            return merged;
                         };
                         const writeFb = (v) => {
-                            const p = getFallbackVaultPath();
-                            fs.mkdirSync(path.dirname(p), { recursive: true });
-                            fs.writeFileSync(p, JSON.stringify(v, null, 2), 'utf8');
+                            const targets = [
+                                getFallbackVaultPath(),
+                                path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'data', 'operator_vault.json'),
+                                path.join(process.env.APPDATA || '', 'esevadraft-suite', 'data', 'operator_vault.json')
+                            ];
+                            for (const p of targets) {
+                                try {
+                                    fs.mkdirSync(path.dirname(p), { recursive: true });
+                                    fs.writeFileSync(p, JSON.stringify(v, null, 2), 'utf8');
+                                } catch (_) {}
+                            }
                         };
                         const normOp = (u) => String(u || 'admin').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'admin';
                         const encTxt = (t) => {
