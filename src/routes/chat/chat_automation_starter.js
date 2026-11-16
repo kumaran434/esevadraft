@@ -118,6 +118,68 @@ async function handleAutomationStarter(ctx, req, res) {
         sess.subService = 'COMMUNITY';
         if (sess.citizenProfile) sess.citizenProfile.subService = 'COMMUNITY';
         const p = sess.citizenProfile || {};
+
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6 & 14)
+        const fs = require('fs');
+        const commDocPath = p.communityProof || p.communityCertificatePath || p.familyCommunityProofPath || p.documents?.communityProof || sess.tempUploads?.communityProof;
+        const hasCommDoc = Boolean(commDocPath && fs.existsSync(commDocPath));
+        const photoDocPath = p.headPhotoPath || p.documents?.profilePhoto || sess.tempUploads?.profilePhoto;
+        const hasPhotoDoc = Boolean(photoDocPath && fs.existsSync(photoDocPath));
+        const aadhaarDocPath = p.headAadhaarDocPath || p.documents?.headAadhaar || sess.tempUploads?.headAadhaar;
+        const hasAadhaarDoc = Boolean(aadhaarDocPath && fs.existsSync(aadhaarDocPath));
+
+        if (!hasCommDoc) {
+            sess.intakeState = 'COMMUNITY_PROOF_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (கட்டாய ஆவணம் விடுபட்டுள்ளது)**\n\n` +
+                      `அரசு விதிகளின்படி சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க **தந்தை / தாய் / உடன்பிறந்தோரின் சாதிச் சான்றிதழ்** அல்லது விண்ணப்பதாரரின் **பள்ளி மாற்றுச் சான்றிதழ் (School TC)** கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+                      `⚠️ *இந்த ஆவணம் இல்லாமல் போர்ட்டலில் விண்ணப்பம் சமர்ப்பிக்கப்பட முடியாது.*\n\n` +
+                      `தயவுசெய்து சான்றிதழைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasPhotoDoc) {
+            sess.intakeState = 'HEAD_PHOTO';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (விண்ணப்பதாரர் புகைப்படம் விடுபட்டுள்ளது)**\n\n` +
+                      `சாதிச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் **பாஸ்போர்ட் புகைப்படம்** கட்டாயம் தேவை (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது).\n\n` +
+                      `தயவுசெய்து நேரடிப் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
+        if (!hasAadhaarDoc && !p.headAadhaar) {
+            sess.intakeState = 'COMMUNITY_AADHAAR_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (ஆதார் அட்டை விடுபட்டுள்ளது)**\n\n` +
+                      `சாதிச் சான்றிதழ் முகவரிச் சான்றாக விண்ணப்பதாரரின் **ஆதார் அட்டை** கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
         const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
         sess.chatHistory.push({
             sender: 'bot',
@@ -160,6 +222,28 @@ async function handleAutomationStarter(ctx, req, res) {
         sess.subService = 'RESIDENCE';
         if (sess.citizenProfile) sess.citizenProfile.subService = 'RESIDENCE';
         const p = sess.citizenProfile || {};
+
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6 & 14)
+        const fs = require('fs');
+        const resDocPath = p.residenceProof?.docPath || p.documents?.residenceProof || p.documents?.gasBook || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook;
+        const hasResDoc = Boolean(resDocPath && fs.existsSync(resDocPath));
+        if (!hasResDoc) {
+            sess.intakeState = 'RESIDENCE_PROOF_DOC';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (குடியிருப்புச் சான்று விடுபட்டுள்ளது)**\n\n` +
+                      `அரசு விதிகளின்படி இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க **எரிவாயு அட்டை (Gas Book), மின் கட்டண ரசீது (EB Bill), அல்லது வீட்டு வரி ரசீது** கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState, blocked: true });
+            return true;
+        }
+
         const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
         sess.chatHistory.push({
             sender: 'bot',

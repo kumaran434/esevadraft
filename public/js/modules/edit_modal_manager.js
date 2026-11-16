@@ -623,6 +623,13 @@
                         if (typeof fetchOperatorDrafts === 'function') fetchOperatorDrafts();
                         if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
                         if (typeof updateSidebarDocumentsList === 'function') updateSidebarDocumentsList(activeCustMob, true);
+                        try {
+                            const chatRes = await fetch(`/api/chat-history?mobile=${encodeURIComponent(activeCustMob)}`);
+                            const chatData = await chatRes.json();
+                            if (chatData && chatData.chatHistory && typeof renderMessages === 'function') {
+                                renderMessages(chatData.chatHistory, true);
+                            }
+                        } catch (_) {}
                     }
                 } catch (e) {
                     console.warn('Failed to delete doc on server:', e);

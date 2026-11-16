@@ -708,8 +708,10 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
                     // 6C. Prepare compliant normalized documents
                     // Government portal requirement: Passport photo MUST be <250px width/height and <50KB
-                    let photoPath = citizenProfile.headPhotoPath || 
-                                    path.join(process.cwd(), 'compressed', 'studio_passport_1794044816202.jpeg');
+                    let photoPath = citizenProfile.headPhotoPath || citizenProfile.documents?.profilePhoto;
+                    if (!photoPath || !fs.existsSync(photoPath)) {
+                        throw new Error('❌ விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் இல்லை! புகைப்படத்தைப் பதிவேற்றிய பின் தொடரவும்.');
+                    }
                     const compliantPhotoPath = path.join(process.cwd(), 'compressed', 'studio_passport_compliant.jpeg');
 
                     try {
@@ -734,17 +736,24 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                         if (fs.existsSync(compliantPhotoPath)) photoPath = compliantPhotoPath;
                     }
                     
-                    let aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_under200kb.pdf');
-                    if (!fs.existsSync(aadhaarDocPath)) {
-                        aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_2in1_under200kb.jpeg');
+                    let aadhaarDocPath = citizenProfile.headAadhaarDocPath || citizenProfile.documents?.headAadhaar;
+                    if (!aadhaarDocPath || !fs.existsSync(aadhaarDocPath)) {
+                        aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_under200kb.pdf');
+                        if (!fs.existsSync(aadhaarDocPath)) {
+                            aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_2in1_under200kb.jpeg');
+                        }
+                    }
+                    if (!aadhaarDocPath || !fs.existsSync(aadhaarDocPath)) {
+                        throw new Error('❌ விண்ணப்பதாரரின் ஆதார் அட்டை ஆவணம் இல்லை! ஆதாரைப் பதிவேற்றிய பின் தொடரவும்.');
                     }
 
-                    let communityProofPath = citizenProfile.communityCertificatePath || citizenProfile.familyCommunityProofPath;
+                    // Zero-Fallback Law: NEVER substitute Aadhaar for Community Proof!
+                    let communityProofPath = citizenProfile.communityCertificatePath || 
+                                             citizenProfile.familyCommunityProofPath || 
+                                             citizenProfile.communityProof || 
+                                             citizenProfile.documents?.communityProof;
                     if (!communityProofPath || !fs.existsSync(communityProofPath)) {
-                        communityProofPath = path.join(process.cwd(), 'compressed', 'aadhaar_2in1_under200kb.jpeg');
-                        if (!fs.existsSync(communityProofPath)) {
-                            communityProofPath = aadhaarDocPath;
-                        }
+                        throw new Error('❌ குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC ஆவணம் இல்லை! ஆவணம் இல்லாமல் போர்ட்டலில் பதிவேற்ற முடியாது.');
                     }
 
                     // Strict Dropdown Option values discovered live on REV-101:

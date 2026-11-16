@@ -229,6 +229,39 @@
                     });
                 }
 
+                // 🛡️ CLIENT PRE-FLIGHT MANDATORY AUDIT (Golden Rule 6 & 14)
+                const isCommService = draftData.subService === 'COMMUNITY' || (draftData.intakeState && draftData.intakeState.includes('COMMUNITY'));
+                if (isCommService) {
+                    const hasCommDoc = Boolean(draftData.communityProof || draftData.communityCertificatePath || draftData.familyCommunityProofPath || draftData.documents?.communityProof || draftData.base64Docs?.communityProofBase64);
+                    if (!hasCommDoc) {
+                        const errMsg = '⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க "குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC" ஆவணம் கட்டாயம் தேவை!\n\nஇந்த ஆவணம் இல்லாமல் போர்ட்டலில் விண்ணப்பம் சமர்ப்பிக்க முடியாது. தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும்.';
+                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
+                        alert(errMsg);
+                        if (typeof openEditModal === 'function') openEditModal();
+                        return;
+                    }
+                    const hasPhotoDoc = Boolean(draftData.headPhotoPath || draftData.documents?.profilePhoto || draftData.base64Docs?.profilePhotoBase64);
+                    if (!hasPhotoDoc) {
+                        const errMsg = '⚠️ விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் விடுபட்டுள்ளது!\n\nபுகைப்படத்தைப் பதிவேற்றிய பின்பே விண்ணப்பிக்க முடியும்.';
+                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
+                        alert(errMsg);
+                        if (typeof openEditModal === 'function') openEditModal();
+                        return;
+                    }
+                }
+
+                const isResService = draftData.subService === 'RESIDENCE' || (draftData.intakeState && draftData.intakeState.includes('RESIDENCE'));
+                if (isResService) {
+                    const hasResDoc = Boolean(draftData.residenceProof?.docPath || draftData.documents?.residenceProof || draftData.documents?.gasBook || draftData.base64Docs?.residenceProofBase64 || draftData.base64Docs?.gasBookBase64);
+                    if (!hasResDoc) {
+                        const errMsg = '⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க "குடியிருப்புச் சான்று" (Gas Book / EB Bill / Property Tax) கட்டாயம் தேவை!';
+                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
+                        alert(errMsg);
+                        if (typeof openEditModal === 'function') openEditModal();
+                        return;
+                    }
+                }
+
                 // Immediately show Stop Automation and Delete buttons, and activate progress bar
                 const headerStop = document.getElementById('btnStopAutomationHeader');
                 if (headerStop) headerStop.style.display = 'inline-flex';

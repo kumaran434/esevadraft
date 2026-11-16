@@ -575,7 +575,65 @@ router.post('/api/drafts/delete-document', async (req, res) => {
 
     try {
         await removeDraftDocument(cleanMob, docType, memberIndex);
-        res.json({ success: true, message: 'Document deleted successfully', docType, memberIndex });
+
+        const storageService = require('../services/storage_service');
+        const sess = storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : (storageService.sessions?.get(cleanMob) || null);
+        if (sess) {
+            const isCommunityService = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
+            const isResidenceService = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE'));
+
+            if (isCommunityService) {
+                if (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof') {
+                    sess.intakeState = 'COMMUNITY_PROOF_WAIT';
+                    if (sess.citizenProfile) sess.citizenProfile.communityProofSkipped = false;
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **குடும்ப சாதிச் சான்றிதழ் ஆவணம் நீக்கப்பட்டது!**\n\n` +
+                              `⚠️ அரசு போர்ட்டலில் சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க **தந்தை / தாய் / உடன்பிறந்தோரின் சாதிச் சான்றிதழ்** அல்லது விண்ணப்பதாரரின் **பள்ளி மாற்றுச் சான்றிதழ் (School TC)** கட்டாயம் தேவை.\n\n` +
+                              `தயவுசெய்து சான்றிதழைப் பதிவேற்றவும்:`,
+                        options: [
+                            { label: "📷 சாதிச் சான்றிதழ் / பள்ளி TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                            { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                        ]
+                    });
+                    storageService.persistSessions();
+                } else if (docType === 'headPhoto' || docType === 'profilePhoto') {
+                    sess.intakeState = 'HEAD_PHOTO';
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **விண்ணப்பதாரர் புகைப்படம் நீக்கப்பட்டது!**\n\nதயவுசெய்து புதிய பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                        options: [{ label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+                    });
+                    storageService.persistSessions();
+                }
+            } else if (isResidenceService) {
+                if (docType === 'residenceProof' || docType === 'gasBook') {
+                    sess.intakeState = 'RESIDENCE_PROOF_DOC';
+                    sess.chatHistory.push({
+                        sender: 'bot',
+                        text: `🗑️ **குடியிருப்புச் சான்று நீக்கப்பட்டது!**\n\nதயவுசெய்து எரிவாயு அட்டை (Gas Book), மின்கட்டண ரசீது (EB Bill), அல்லது வீட்டு வரி ரசீதைப் பதிவேற்றவும்:`,
+                        options: [{ label: "📷 குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+                    });
+                    storageService.persistSessions();
+                }
+            }
+
+            const { saveCitizenDraft } = require('../database');
+            await saveCitizenDraft(cleanMob, {
+                operatorUid: sess.operatorUid || null,
+                operatorName: sess.operatorName || null,
+                operatorMobile: sess.operatorMobile || null,
+                citizenProfile: sess.citizenProfile || {},
+                documents: sess.tempUploads || sess.citizenProfile?.documents || {},
+                base64Docs: sess.base64Docs || {},
+                chatHistory: sess.chatHistory || [],
+                intakeState: sess.intakeState || 'DRAFT',
+                step: sess.step || 'draft',
+                status: sess.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
+            }).catch(() => {});
+        }
+
+        res.json({ success: true, message: 'Document deleted successfully', docType, memberIndex, intakeState: sess?.intakeState });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
