@@ -3126,13 +3126,34 @@ async function runTests() {
             const finalRes = await request('GET', '/api/operator/vault', null, { 'x-operator-uid': op1 });
             assert(finalRes.body.configured === false, 'All portal credentials purged after final delete');
 
+            // 9. GOLDEN RULE 18: Strict Multi-Tenant Operator Isolation & Zero-Cross-Operator Leakage
+            const adminLookup = getOperatorPortalCredentials('admin', 'tnega');
+            assert(adminLookup === null, 'Generic admin lookup strictly returns null (no credential leakage)');
+
+            const nullLookup = getOperatorPortalCredentials(null, 'tnega');
+            assert(nullLookup === null, 'Null operator lookup strictly returns null');
+
+            const unconfiguredLookup = getOperatorPortalCredentials('op_unconfigured_stranger_99', 'tnega');
+            assert(unconfiguredLookup === null, 'Unconfigured operator lookup strictly returns null');
+
+            const { resolveTnegaVaultCredentials } = require('../src/portal/tnega/tnega_can_register');
+            const resolvedUnconfigured = resolveTnegaVaultCredentials({ operatorUid: 'op_unconfigured_stranger_99' });
+            assert(resolvedUnconfigured === null, 'resolveTnegaVaultCredentials returns null for unconfigured operator and NEVER borrows another operator creds');
+
+            const resolvedGenericAdmin = resolveTnegaVaultCredentials({ operatorUid: 'admin' });
+            assert(resolvedGenericAdmin === null, 'resolveTnegaVaultCredentials returns null for admin operator without credentials');
+
+            const unauthGetRes = await request('GET', '/api/operator/vault', null, {});
+            assert(unauthGetRes.body.configured === false, 'GET /api/operator/vault without headers returns unconfigured');
+            assert(unauthGetRes.body.tnega?.hasCredentials === false, 'No credentials leaked when operator header missing');
+
             // Clean up any test operator state
             deleteOperatorPortalCredentials(op1, 'tnega');
             deleteOperatorPortalCredentials(op1, 'tnpds');
             deleteOperatorPortalCredentials(op2, 'tnega');
             deleteOperatorPortalCredentials(op2, 'tnpds');
 
-            passedCount += 19;
+            passedCount += 25;
         }
 
         // ==============================================================

@@ -249,99 +249,53 @@ function saveOperatorPortalCredentials(operatorUid, portalKey = 'tnega', credent
 
 /**
  * Retrieve decrypted credentials for automation engine (Internal use only)
+ * GOLDEN RULE 18: Strict Multi-Tenant Operator Isolation & Zero-Cross-Operator Leakage Law
+ * Under NO circumstances may credentials belonging to one operator be returned to another operator.
  */
 function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
     const pKey = (portalKey || 'tnega').toLowerCase().trim();
     const vault = readRawVault();
 
-    const opId = normalizeOpId(operatorUid);
+    // If caller provided no identity or generic identity ('admin'), try active desktop session
+    let opId = operatorUid ? normalizeOpId(operatorUid) : null;
     let opData = null;
     let resolvedOpId = null;
 
     const hasValidPortalCreds = (entry) => Boolean(entry && entry[pKey] && entry[pKey].username && entry[pKey].passwordEnc);
 
     // 1. Direct exact UID match
-    if (hasValidPortalCreds(vault[opId])) {
+    if (opId && !isGenericOperatorIdentity(opId) && hasValidPortalCreds(vault[opId])) {
         opData = vault[opId];
         resolvedOpId = opId;
     }
 
-    // 2. If not found and NOT an isolated test operator, check active desktop session or operatorName match
-    if (!opData && !opId.startsWith('op_test_')) {
+    // 2. Active desktop session resolution (for local single-session operators)
+    if (!opData && (!opId || isGenericOperatorIdentity(opId))) {
         const activeUid = getActiveLocalDesktopOperatorUid();
-        if (activeUid && hasValidPortalCreds(vault[activeUid]) && (isGenericOperatorIdentity(opId) || activeUid === opId)) {
+        if (activeUid && !isGenericOperatorIdentity(activeUid) && hasValidPortalCreds(vault[activeUid])) {
             opData = vault[activeUid];
             resolvedOpId = activeUid;
         }
+    }
 
-        // Check if caller passed operatorName (e.g. 'kumaran') instead of Firebase UID
-        if (!opData && operatorUid) {
-            const rawLower = String(operatorUid).trim().toLowerCase();
-            for (const [k, entry] of Object.entries(vault)) {
-                if (k.startsWith('op_test_')) continue;
-                const entryNameNorm = normalizeOpId(entry?.operatorName || '');
-                const entryNameLower = String(entry?.operatorName || '').trim().toLowerCase();
-                if ((entryNameNorm === opId || entryNameLower === rawLower) && hasValidPortalCreds(entry)) {
-                    opData = entry;
-                    resolvedOpId = k;
-                    break;
-                }
-            }
-        }
-
-        // 3. If caller passed generic desktop fallback ('admin' / 'default_operator' / empty), use most recently saved local operator on this machine
-        if (!opData && isGenericOperatorIdentity(opId)) {
-            let bestKey = null;
-            let bestTime = 0;
-            for (const [k, entry] of Object.entries(vault)) {
-                if (k.startsWith('op_test_')) continue;
-                if (hasValidPortalCreds(entry)) {
-                    const t = new Date(entry[pKey]?.savedAt || entry?.updatedAt || 0).getTime() || 1;
-                    if (t >= bestTime) {
-                        bestTime = t;
-                        bestKey = k;
-                    }
-                }
-            }
-            if (bestKey) {
-                opData = vault[bestKey];
-                resolvedOpId = bestKey;
-            }
-        }
-
-        // 4. Physical Desktop App Single-PC Recovery:
-        // If running on a real operator's Desktop PC (not test mode) and the operator saved credentials in their local AppData vault
-        // under an alias (e.g. 'admin' or mobile or name) while running automation under their Firebase UID, use their local AppData entry
-        // (strictly excluding Kumaran's UID 'z9tsoaph0hh69du0xpk2gdxk2kr2' unless the active operator IS Kumaran).
-        if (!opData && process.env.NODE_ENV !== 'test' && process.env.REGRESSION_TEST !== 'true') {
-            const targetPath = getVaultFilePath();
-            if (targetPath && targetPath !== WORKSPACE_VAULT_PATH && fs.existsSync(targetPath)) {
-                try {
-                    const localAppDataVault = JSON.parse(fs.readFileSync(targetPath, 'utf8')) || {};
-                    let bestKey = null;
-                    let bestTime = 0;
-                    for (const [k, entry] of Object.entries(localAppDataVault)) {
-                        if (k.startsWith('op_test_')) continue;
-                        if (k === 'z9tsoaph0hh69du0xpk2gdxk2kr2' && opId !== 'z9tsoaph0hh69du0xpk2gdxk2kr2') continue;
-                        if (hasValidPortalCreds(entry)) {
-                            const t = new Date(entry[pKey]?.savedAt || entry?.updatedAt || 0).getTime() || 1;
-                            if (t >= bestTime) {
-                                bestTime = t;
-                                bestKey = k;
-                            }
-                        }
-                    }
-                    if (bestKey) {
-                        opData = localAppDataVault[bestKey];
-                        resolvedOpId = bestKey;
-                    }
-                } catch (_) {}
+    // 3. Exact operatorName match ONLY if explicitly provided and not generic
+    if (!opData && operatorUid && !isGenericOperatorIdentity(opId)) {
+        const rawLower = String(operatorUid).trim().toLowerCase();
+        for (const [k, entry] of Object.entries(vault)) {
+            if (k.startsWith('op_test_')) continue;
+            const entryNameNorm = normalizeOpId(entry?.operatorName || '');
+            const entryNameLower = String(entry?.operatorName || '').trim().toLowerCase();
+            if ((entryNameNorm === opId || entryNameLower === rawLower) && hasValidPortalCreds(entry)) {
+                opData = entry;
+                resolvedOpId = k;
+                break;
             }
         }
     }
 
-    // STRICT MULTI-TENANT ISOLATION:
-    // If an explicit operator has not saved their own credentials, NEVER fall back to another operator!
+    // STRICT GOLDEN RULE 18:
+    // If this operator has not configured credentials in their vault, return null.
+    // NEVER scan or fall back to other operators in the vault!
     if (!opData || !opData[pKey]) {
         return null;
     }
@@ -361,23 +315,26 @@ function getOperatorPortalCredentials(operatorUid, portalKey = 'tnega') {
 
 /**
  * Retrieve safe UI summary for the frontend (Masked Password)
+ * GOLDEN RULE 18: Strict Isolation - unauthenticated or generic requests get empty summary
  */
 function getOperatorVaultSummary(operatorUid) {
-    const opId = normalizeOpId(operatorUid);
+    const opId = operatorUid ? normalizeOpId(operatorUid) : null;
     const vault = readRawVault();
-    let opData = vault[opId] || null;
-    let effectiveOpId = opId;
+    let opData = (opId && !isGenericOperatorIdentity(opId)) ? (vault[opId] || null) : null;
+    let effectiveOpId = opId || 'unconfigured';
 
-    if (!opData && isGenericOperatorIdentity(opId)) {
+    if (!opData && (!opId || isGenericOperatorIdentity(opId))) {
         const activeUid = getActiveLocalDesktopOperatorUid();
-        if (activeUid && vault[activeUid]) {
+        if (activeUid && !isGenericOperatorIdentity(activeUid) && vault[activeUid]) {
             opData = vault[activeUid];
             effectiveOpId = activeUid;
         }
     }
 
     if (!opData) {
-        hydrateVaultEntryFromFirestoreInBackground(opId);
+        if (opId && !isGenericOperatorIdentity(opId)) {
+            hydrateVaultEntryFromFirestoreInBackground(opId);
+        }
         return {
             operatorUid: effectiveOpId,
             configured: false,
@@ -450,6 +407,8 @@ module.exports = {
     getOperatorPortalCredentials,
     getOperatorVaultSummary,
     deleteOperatorPortalCredentials,
+    getActiveLocalDesktopOperatorUid,
+    isGenericOperatorIdentity,
     encryptText,
     decryptText,
     normalizeOpId

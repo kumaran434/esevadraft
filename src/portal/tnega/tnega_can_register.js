@@ -281,12 +281,6 @@ function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
                             options?.draftData?.tnegaVaultCredentials ||
                             options?.draftData?.citizenProfile?.tnegaVaultCredentials;
         if (inlineCreds && inlineCreds.username && inlineCreds.password) {
-            if (vaultSvc && typeof vaultSvc.saveOperatorPortalCredentials === 'function') {
-                try {
-                    const targetUid = options?.operatorUid || citizenProfile?.operatorUid || inlineCreds.operatorUid || 'admin';
-                    vaultSvc.saveOperatorPortalCredentials(targetUid, 'tnega', inlineCreds);
-                } catch (_) {}
-            }
             return {
                 username: String(inlineCreds.username).trim(),
                 password: String(inlineCreds.password).trim(),
@@ -295,20 +289,25 @@ function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
         }
 
         if (vaultSvc && typeof vaultSvc.getOperatorPortalCredentials === 'function') {
-            const { getOperatorPortalCredentials } = vaultSvc;
+            const { getOperatorPortalCredentials, getActiveLocalDesktopOperatorUid, isGenericOperatorIdentity } = vaultSvc;
+            // GOLDEN RULE 18: Strict Multi-Tenant Operator Isolation
+            // NEVER include 'admin' or citizen mobile as operator candidates!
+            const isGeneric = (id) => isGenericOperatorIdentity ? isGenericOperatorIdentity(id) : (!id || ['admin', 'default_operator', 'local_op_dev', 'operator'].includes(id));
+
             const candidates = [
                 options?.operatorUid,
-                citizenProfile?.operatorUid,
                 options?.draftData?.operatorUid,
-                options?.draftData?.citizenProfile?.operatorUid,
-                options?.operatorMobile,
-                citizenProfile?.operatorMobile,
-                options?.draftData?.operatorMobile,
-                options?.operatorName,
-                citizenProfile?.operatorName,
-                options?.draftData?.operatorName,
-                'admin'
-            ].filter(Boolean);
+                citizenProfile?.operatorUid,
+                options?.draftData?.citizenProfile?.operatorUid
+            ].filter(cand => cand && !isGeneric(cand));
+
+            // If no explicit operatorUid provided in options, check active local desktop session
+            if (candidates.length === 0 && typeof getActiveLocalDesktopOperatorUid === 'function') {
+                const activeSessUid = getActiveLocalDesktopOperatorUid();
+                if (activeSessUid && !isGeneric(activeSessUid)) {
+                    candidates.push(activeSessUid);
+                }
+            }
 
             const seen = new Set();
             for (const cand of candidates) {
@@ -329,6 +328,18 @@ function resolveTnegaVaultCredentials(options = {}, citizenProfile = {}) {
  * Automated Operator Login & Captcha Solver with Immortal Live HUD & Operator Co-Pilot
  */
 async function performAutomatedTnegaLogin(page, vaultCreds, onProgress, options = {}) {
+    if (!vaultCreds || !vaultCreds.username || !vaultCreds.password) {
+        onProgress('⚠️ [அரசு பெட்டகம்] சேமிக்கப்பட்ட லாகின் விவரங்கள் இல்லை. நீங்களே உள்நுழையவும்.');
+        await initTnegaHud(page).catch(() => {});
+        await updateTnegaHud(page, {
+            title: '🔐 TNeGA ஆப்ரேட்டர் உள்நுழைவு',
+            desc: '⚠️ உங்கள் லாகின் பெட்டகத்தில் விவரங்கள் இல்லை. நீங்களே பயனர் பெயர் & கடவுச்சொல்லை உள்ளிட்டு நுழையவும் ⌨️',
+            badge: 'Manual Login',
+            type: 'attention'
+        });
+        return false;
+    }
+
     onProgress(`🔐 [அரசு பெட்டகம்] சேமிக்கப்பட்ட TNeGA ஆப்ரேட்டர் லாகின் (${vaultCreds.username}) தொடங்குகிறது...`);
     await initTnegaHud(page).catch(() => {});
     await updateTnegaHud(page, {
@@ -1034,12 +1045,12 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                     await performAutomatedTnegaLogin(tnegaPage, vaultCreds, onProgress, options);
                 } else {
                     onProgress('🔐 TNeGA உள்நுழைவு திரை திரையில் உள்ளது. உங்கள் கணக்கில் உள்நுழையவும்.');
-                    onProgress('💡 உதவி: "TNeGA லாகின் பெட்டகத்தில்" உங்கள் விவரங்களை சேமித்து வைத்தால் அடுத்த முறை தானாகவே Login ஆகிவிடும்!');
+                    await initTnegaHud(tnegaPage).catch(() => {});
                     await updateTnegaHud(tnegaPage, {
-                        title: '🔐 TNeGA உள்நுழைவு தேவை',
-                        desc: 'தயவுசெய்து உங்கள் ஆப்ரேட்டர் கணக்கில் உள்நுழையவும்.',
-                        badge: 'Login Needed',
-                        type: 'waiting'
+                        title: '🔐 TNeGA ஆப்ரேட்டர் உள்நுழைவு',
+                        desc: '⚠️ உங்கள் லாகின் பெட்டகத்தில் விவரங்கள் இல்லை. நீங்களே பயனர் பெயர் & கடவுச்சொல்லை உள்ளிட்டு நுழையவும் ⌨️',
+                        badge: 'Manual Login',
+                        type: 'attention'
                     });
                 }
                 onProgress('👁️ [விதி 5 நேரலை பின்னணி இயக்கம்] உள்நுழைவு அல்லது பக்க மாற்றங்களை தானியங்கி தொடர்ந்து கவனித்து வருகிறது...');

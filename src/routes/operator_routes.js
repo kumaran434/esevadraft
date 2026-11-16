@@ -795,7 +795,7 @@ function safeDecodeHeader(val) {
 // GET /api/operator/vault
 router.get('/api/operator/vault', (req, res) => {
     try {
-        const opUid = safeDecodeHeader(req.headers['x-operator-uid']) || req.query.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
+        const opUid = safeDecodeHeader(req.headers['x-operator-uid']) || req.query.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || null;
         const summary = getOperatorVaultSummary(opUid);
         res.json({ success: true, ...summary });
     } catch (e) {
@@ -807,7 +807,10 @@ router.get('/api/operator/vault', (req, res) => {
 router.post('/api/operator/vault', (req, res) => {
     try {
         const body = req.body || {};
-        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
+        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || safeDecodeHeader(req.headers['x-operator-name']) || null;
+        if (!opUid) {
+            return res.status(400).json({ success: false, error: 'ஆப்ரேட்டர் அடையாளம் (Operator UID) தேவை.' });
+        }
         const portal = body.portal || 'tnega';
         const username = body.username || body.userId || '';
         const password = body.password || '';
@@ -850,7 +853,10 @@ router.post('/api/operator/vault', (req, res) => {
 router.delete('/api/operator/vault', (req, res) => {
     try {
         const body = req.body || {};
-        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || req.query?.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || 'admin';
+        const opUid = body.operatorUid || safeDecodeHeader(req.headers['x-operator-uid']) || req.query?.operatorUid || safeDecodeHeader(req.headers['x-operator-name']) || null;
+        if (!opUid) {
+            return res.status(400).json({ success: false, error: 'ஆப்ரேட்டர் அடையாளம் (Operator UID) தேவை.' });
+        }
         const portal = body.portal || req.query?.portal || 'tnega';
         const result = deleteOperatorPortalCredentials(opUid, portal);
         res.json({

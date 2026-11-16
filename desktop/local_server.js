@@ -1183,7 +1183,10 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                         };
                         vaultSvc = {
                             getOperatorVaultSummary: (operatorUid) => {
-                                const opId = normOp(operatorUid);
+                                const opId = operatorUid ? normOp(operatorUid) : null;
+                                if (!opId || ['admin', 'default_operator', 'local_op_dev', 'operator'].includes(opId)) {
+                                    return { operatorUid: 'unconfigured', configured: false, portals: {}, tnega: { portal: 'tnega', portalName: 'TNeGA இ-சேவை', hasCredentials: false, username: '', passwordMasked: '', operatorCode: 'OM', savedAt: null } };
+                                }
                                 const v = readFb();
                                 const opData = v[opId] || {};
                                 const portalsSummary = {};
@@ -1245,7 +1248,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
 
                     if (req.method === 'GET') {
                         const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
-                        const opUid = parsedUrl.searchParams.get('operatorUid') || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || 'admin';
+                        const opUid = parsedUrl.searchParams.get('operatorUid') || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || null;
                         const summary = getOperatorVaultSummary(opUid);
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         return res.end(JSON.stringify({ success: true, ...summary }));
@@ -1257,7 +1260,11 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                         req.on('end', () => {
                             try {
                                 const body = JSON.parse(bodyStr || '{}');
-                                const opUid = body.operatorUid || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || 'admin';
+                                const opUid = body.operatorUid || decodeHdr(req.headers['x-operator-uid']) || decodeHdr(req.headers['x-operator-name']) || null;
+                                if (!opUid) {
+                                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                                    return res.end(JSON.stringify({ success: false, error: 'ஆப்ரேட்டர் அடையாளம் (Operator UID) தேவை.' }));
+                                }
                                 const portal = body.portal || 'tnega';
                                 if (req.method === 'DELETE') {
                                     const result = deleteOperatorPortalCredentials(opUid, portal);

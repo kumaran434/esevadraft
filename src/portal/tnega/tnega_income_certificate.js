@@ -168,6 +168,13 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                     await performAutomatedTnegaLogin(tnegaPage, vaultCreds, onProgress, options);
                 } else {
                     onProgress('🔐 TNeGA உள்நுழைவு திரை திரையில் உள்ளது. உங்கள் கணக்கில் உள்நுழையவும்.');
+                    await initTnegaHud(tnegaPage).catch(() => {});
+                    await updateTnegaHud(tnegaPage, {
+                        title: '🔐 TNeGA ஆப்ரேட்டர் உள்நுழைவு',
+                        desc: '⚠️ உங்கள் லாகின் பெட்டகத்தில் விவரங்கள் இல்லை. நீங்களே பயனர் பெயர் & கடவுச்சொல்லை உள்ளிட்டு நுழையவும் ⌨️',
+                        badge: 'Manual Login',
+                        type: 'attention'
+                    });
                 }
             }
         }
@@ -216,10 +223,18 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                     const userInp = tnegaPage.locator('#txtuserName, input[name*="txtuserName"]').first();
                     if (await userInp.count() > 0 && await userInp.isVisible()) {
                         const vaultCreds = resolveTnegaVaultCredentials(options, citizenProfile);
-                        if (vaultCreds) {
+                        if (vaultCreds && vaultCreds.username && vaultCreds.password) {
                             onProgress('🔄 [அமர்வு காலாவதியானது] தானியங்கி மீண்டும் Login செய்கிறது...');
                             await performAutomatedTnegaLogin(tnegaPage, vaultCreds, onProgress, options);
                             continue;
+                        } else {
+                            await initTnegaHud(tnegaPage).catch(() => {});
+                            await updateTnegaHud(tnegaPage, {
+                                title: '🔐 TNeGA ஆப்ரேட்டர் உள்நுழைவு',
+                                desc: '⚠️ உங்கள் லாகின் பெட்டகத்தில் விவரங்கள் இல்லை. நீங்களே பயனர் பெயர் & கடவுச்சொல்லை உள்ளிட்டு நுழையவும் ⌨️',
+                                badge: 'Manual Login',
+                                type: 'attention'
+                            });
                         }
                     }
                 }
