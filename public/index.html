@@ -1025,8 +1025,8 @@
                     <div id="sidebarCustomerDetailsBox" style="display: none; flex-direction: column; gap: 10px;">
                         <!-- Top Quick Action Bar for Customer Profile -->
                         <div id="sidebarTopActionBar" style="display: flex; gap: 8px; width: 100%; margin-bottom: 2px;">
-                            <button type="button" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 34px; padding: 0 8px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 2px rgba(37,99,235,0.12); transition: all 0.2s;" onmouseover="this.style.background='#dbeafe';" onmouseout="this.style.background='#eff6ff';">
-                                <i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)
+                            <button type="button" onclick="openEditModal(null, true)" title="மாஸ்டர் விவரங்களைத் திருத்த (Edit Master Profile)" style="flex: 1; height: 34px; padding: 0 8px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 2px rgba(37,99,235,0.12); transition: all 0.2s;" onmouseover="this.style.background='#dbeafe';" onmouseout="this.style.background='#eff6ff';">
+                                <i class="fa-solid fa-pen-to-square"></i> மாஸ்டர் சுயவிவரம் (Master)
                             </button>
                             <button type="button" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 34px; padding: 0 8px; background: #ecfdf5; color: #047857; border: 1.5px solid #a7f3d0; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 2px rgba(16,185,129,0.12); transition: all 0.2s;" onmouseover="this.style.background='#d1fae5';" onmouseout="this.style.background='#ecfdf5';">
                                 <i class="fa-solid fa-floppy-disk"></i> சேமி (Save)
@@ -1147,7 +1147,7 @@
                                     <i class="fa-solid fa-folder-open" style="color: var(--accent);"></i> 📁 சேமிக்கப்பட்ட ஆவணங்கள்
                                 </span>
                                 <div style="display: flex; align-items: center; gap: 6px;">
-                                    <button type="button" onclick="openEditModal()" title="ஆவணங்களைத் திருத்து / மாற்று (Edit Documents)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: var(--accent); cursor: pointer !important; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; transition: all 0.15s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+                                    <button type="button" onclick="openEditModal(null, true)" title="அனைத்து ஆவணங்களைத் திருத்து / மாற்று (Edit Master Documents)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: var(--accent); cursor: pointer !important; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; transition: all 0.15s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
                                         <i class="fa-solid fa-pen-to-square"></i> திருத்து
                                     </button>
                                     <span id="sidebarDocsCount" style="font-size: 10px; background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 10px; font-weight: 700;">0</span>
@@ -1160,7 +1160,7 @@
 
                         <!-- Bottom Sticky Action Bar (Elevated above any OS watermark) -->
                         <div id="sidebarStickyFooterBar" style="position: sticky; bottom: 0; left: 0; right: 0; z-index: 999; background: #ffffff; padding: 10px 12px; margin-top: auto; margin-bottom: 6px; border-top: 1.5px solid #e2e8f0; border-radius: 10px; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08); display: flex; gap: 8px; width: 100%; box-sizing: border-box;">
-                            <button id="btnSidebarEdit" type="button" onclick="openEditModal()" title="விவரங்களைத் திருத்த (Edit Details)" style="flex: 1; height: 38px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(2,132,199,0.3); white-space: nowrap; transition: all 0.2s; z-index: 1000;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
+                            <button id="btnSidebarEdit" type="button" onclick="openEditModal(null, true)" title="மாஸ்டர் விவரங்களைத் திருத்த (Edit Master Profile)" style="flex: 1; height: 38px; padding: 0 8px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(2,132,199,0.3); white-space: nowrap; transition: all 0.2s; z-index: 1000;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-pen-to-square"></i> திருத்து (Edit)</button>
                             <button id="btnSidebarSave" type="button" onclick="saveCurrentDraftManually()" title="வரைவாகச் சேமிக்க (Save Draft)" style="flex: 1; height: 38px; padding: 0 8px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(5,150,105,0.3); white-space: nowrap; transition: all 0.2s; z-index: 1000;" onmouseover="this.style.filter='brightness(1.1)';" onmouseout="this.style.filter='none';"><i class="fa-solid fa-floppy-disk"></i> சேமி (Save)</button>
                         </div>
                     </div>
@@ -1968,7 +1968,7 @@
 
                     <div id="editNewCardDocBoxesWrap" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px;">
                         <!-- 1. Head Passport Photo -->
-                        <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                        <div id="editPhotoDocBox" style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                             <div style="width: 72px; height: 88px; border-radius: 8px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; border: 1.5px solid #cbd5e1; flex-shrink: 0; position: relative;">
                                 <img id="editPhotoPreview" src="" style="width: 100%; height: 100%; object-fit: cover; display: none;">
                                 <i id="editPhotoPlaceholder" class="fa-solid fa-user" style="font-size: 26px; color: #94a3b8;"></i>
@@ -1992,7 +1992,7 @@
                         </div>
 
                         <!-- 2. Head Aadhaar Card -->
-                        <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                        <div id="editHeadAadhaarDocBox" style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                             <div style="width: 72px; height: 88px; border-radius: 8px; overflow: hidden; background: #eff6ff; display: flex; align-items: center; justify-content: center; border: 1.5px solid #bfdbfe; flex-shrink: 0; position: relative;">
                                 <img id="editHeadAadhaarPreview" src="" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; display: none;">
                                 <i id="editHeadAadhaarPlaceholder" class="fa-solid fa-id-card" style="font-size: 26px; color: #2563eb;"></i>
@@ -2024,7 +2024,7 @@
                         </div>
 
                         <!-- 3. Residence Proof / Gas Book -->
-                        <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                        <div id="editResidenceDocBox" style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                             <div style="width: 72px; height: 88px; border-radius: 8px; overflow: hidden; background: #fffbeb; display: flex; align-items: center; justify-content: center; border: 1.5px solid #fde68a; flex-shrink: 0; position: relative;">
                                 <img id="editResidencePreview" src="" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; display: none;">
                                 <i id="editResidencePlaceholder" class="fa-solid fa-fire-flame-curved" style="font-size: 26px; color: #d97706;"></i>
@@ -2362,32 +2362,109 @@
                 <div><label>வட்டம் / தாலுகா (Taluk):</label><input type="text" id="editTaluk" placeholder="Arakkonam / அரக்கோணம்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
                 <div><label>வருவாய் கிராமம் (Revenue Village - போர்ட்டல் Dropdown):</label><input type="text" id="editVillage" placeholder="எ.கா: Minnal / மின்னல்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
                 <div><label>12-இலக்க ஆதார் எண் (Aadhaar Number):</label><input type="text" id="editAadhaar" placeholder="123456789012" maxlength="14" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
-                <div><label id="editSmartCardNoLabel">ஸ்மார்ட் ரேஷன் கார்டு எண் (Ration Card No):</label><input type="text" id="editSmartCardNo" placeholder="33..." maxlength="14" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
-                <div><label id="editCanNumberLabel">🏛️ TNeGA CAN எண் (CAN Number):</label><input type="text" id="editCanNumber" placeholder="எ.கா: 133370337878397" maxlength="18" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #0e7490;"></div>
+                <div id="editSmartCardNoWrap"><label id="editSmartCardNoLabel">ஸ்மார்ட் ரேஷன் கார்டு எண் (Ration Card No):</label><input type="text" id="editSmartCardNo" placeholder="33..." maxlength="14" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+                <div id="editCanNumberWrap"><label id="editCanNumberLabel">🏛️ TNeGA CAN எண் (CAN Number):</label><input type="text" id="editCanNumber" placeholder="எ.கா: 133370337878397" maxlength="18" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #0e7490;"></div>
+                
+                <!-- COMMUNITY / CASTE Form Fields (Service-Scoped) -->
+                <div id="editCommunityFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #fdf4ff; border: 1.5px solid #f0abfc; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #86198f; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                        📜 சாதி & வகுப்பு விவரங்கள் (Community & Caste Details)
+                    </div>
+                    <div>
+                        <label>மதம் (Religion):</label>
+                        <select id="editReligion" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                            <option value="Hindu">இந்து (Hindu)</option>
+                            <option value="Christian">கிறிஸ்தவர் (Christian)</option>
+                            <option value="Muslim">இஸ்லாமியர் (Muslim)</option>
+                            <option value="Sikh">சீக்கியர் (Sikh)</option>
+                            <option value="Jain">சைனர் (Jain)</option>
+                            <option value="Buddhist">பௌத்தர் (Buddhist)</option>
+                            <option value="Other">மற்றவை (Other)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>வகுப்பு / பிரிவு (Community):</label>
+                        <select id="editCommunity" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                            <option value="MBC">MBC (மிகவும் பிற்படுத்தப்பட்டோர்)</option>
+                            <option value="BC">BC (பிற்படுத்தப்பட்டோர்)</option>
+                            <option value="BCM">BCM (பிற்படுத்தப்பட்ட முஸ்லிம்)</option>
+                            <option value="SC">SC (ஆதி திராவிடர்)</option>
+                            <option value="SCA">SCA (அருந்ததியர்)</option>
+                            <option value="ST">ST (பழங்குடியினர்)</option>
+                            <option value="OC">OC (பொதுப் பிரிவு)</option>
+                        </select>
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <label>விண்ணப்பதாரர் சாதி / உட்பிரிவு (Applicant Caste):</label>
+                        <input type="text" id="editCaste" placeholder="எ.கா: வன்னியகுல சத்ரியர் / முதலியார் / ஆதிதிராவிடர்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                    <div>
+                        <label>தந்தை சாதி (Father's Caste):</label>
+                        <input type="text" id="editFatherCaste" placeholder="எ.கா: வன்னியகுல சத்ரியர்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <div>
+                        <label>தாய் சாதி (Mother's Caste):</label>
+                        <input type="text" id="editMotherCaste" placeholder="எ.கா: வன்னியகுல சத்ரியர்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <!-- INCOME Certificate Form Fields (Service-Scoped) -->
+                <div id="editIncomeFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #ecfdf5; border: 1.5px solid #a7f3d0; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #065f46; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                        💰 வருமானம் & தொழில் விவரங்கள் (Income & Occupation Details)
+                    </div>
+                    <div>
+                        <label>குடும்ப ஆண்டு வருமானம் (Annual Income - ரூ.):</label>
+                        <input type="number" id="editAnnualIncome" placeholder="எ.கா: 72000" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #047857;">
+                    </div>
+                    <div>
+                        <label>தொழில் / வேலை (Occupation / Profession):</label>
+                        <input type="text" id="editOccupation" placeholder="எ.கா: கூலி / விவசாயம் / தனியார் பணி" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <!-- RESIDENCE Certificate Form Fields (Service-Scoped) -->
+                <div id="editResidenceFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #f0fdf4; border: 1.5px solid #bbf7d0; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #166534; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                        🏠 இருப்பிடச் சான்றிதழ் விவரங்கள் (Residence Certificate Details)
+                    </div>
+                    <div>
+                        <label>தொடர்ந்து வசிக்கும் ஆண்டுகள் (Years of Residence):</label>
+                        <input type="number" id="editResidenceYears" placeholder="எ.கா: 10" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                    <div>
+                        <label>சான்றிதழ் தேவைப்படும் நோக்கம் (Purpose of Certificate):</label>
+                        <input type="text" id="editResidencePurpose" placeholder="எ.கா: பள்ளி / கல்லூரி சேர்க்கை / வேலைவாய்ப்பு" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+
                 <div style="grid-column: span 2; background: #eff6ff; border: 1px solid #bfdbfe; padding: 7px 10px; border-radius: 6px; font-size: 11px; color: #1e40af; line-height: 1.4;">
                     💡 <b>Hamlet Village (துணைக் கிராமம்) குறிப்பு:</b> ஆதார் அட்டையில் உள்ள ஊர் (எ.கா: நரசிங்கபுரம்) அரசு போர்ட்டல் Dropdown-ல் இல்லை என்றால், சொந்த ஊரை <b>பகுதி (Area)</b>-விலும், போர்ட்டல் Dropdown-ல் உள்ள தாய் கிராமத்தை (எ.கா: Minnal) <b>வருவாய் கிராமம் (Village)</b>-விலும் குறிப்பிடவும்.
                 </div>
                 
-                <!-- Gas Connection Toggle -->
-                <div id="editGasToggleWrap" style="grid-column: span 2; padding: 8px 12px; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; margin-top: 4px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; color: var(--primary);">
-                        <input type="checkbox" id="editHasGas" onchange="toggleGasFields(this.checked)" checked>
-                        <span>🔥 குடும்பத்திற்கு எரிவாயு (LPG Gas) இணைப்பு உள்ளது</span>
-                    </label>
-                </div>
-
-                <div id="gasFieldsWrap" style="grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <div>
-                        <label>எண்ணெய் நிறுவனம் (Oil Company):</label>
-                        <select id="editGasCompany" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                            <option value="IOC">Indane Gas (IOCL)</option>
-                            <option value="HPC">HP Gas (HPC)</option>
-                            <option value="BPC">Bharat Gas (BPCL)</option>
-                        </select>
+                <!-- RATION CARD SPECIFIC SECTION: Gas Connection -->
+                <div id="editRationFieldsWrap" style="grid-column: span 2; display: contents;">
+                    <!-- Gas Connection Toggle -->
+                    <div id="editGasToggleWrap" style="grid-column: span 2; padding: 8px 12px; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; color: var(--primary);">
+                            <input type="checkbox" id="editHasGas" onchange="toggleGasFields(this.checked)" checked>
+                            <span>🔥 குடும்பத்திற்கு எரிவாயு (LPG Gas) இணைப்பு உள்ளது</span>
+                        </label>
                     </div>
-                    <div><label>கேஸ் நுகர்வோர் எண்:</label><input type="text" id="editGasNo" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
-                    <div><label>கேஸ் ஏஜென்சி:</label><input type="text" id="editGasAgency" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
-                    <div><label>சிலிண்டர் எண்ணிக்கை:</label><input type="text" id="editGasCyl" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+
+                    <div id="gasFieldsWrap" style="grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label>எண்ணெய் நிறுவனம் (Oil Company):</label>
+                            <select id="editGasCompany" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                                <option value="IOC">Indane Gas (IOCL)</option>
+                                <option value="HPC">HP Gas (HPC)</option>
+                                <option value="BPC">Bharat Gas (BPCL)</option>
+                            </select>
+                        </div>
+                        <div><label>கேஸ் நுகர்வோர் எண்:</label><input type="text" id="editGasNo" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+                        <div><label>கேஸ் ஏஜென்சி:</label><input type="text" id="editGasAgency" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+                        <div><label>சிலிண்டர் எண்ணிக்கை:</label><input type="text" id="editGasCyl" style="width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+                    </div>
                 </div>
                 </div>
             </div>

@@ -22,6 +22,13 @@ function applyProfileUpdates(sess, updated) {
     }
     if (updated.community !== undefined) sess.citizenProfile.community = updated.community;
     if (updated.caste !== undefined) sess.citizenProfile.caste = updated.caste;
+    if (updated.religion !== undefined) sess.citizenProfile.religion = updated.religion;
+    if (updated.fatherCaste !== undefined) sess.citizenProfile.fatherCaste = updated.fatherCaste;
+    if (updated.motherCaste !== undefined) sess.citizenProfile.motherCaste = updated.motherCaste;
+    if (updated.fatherCommunity !== undefined) sess.citizenProfile.fatherCommunity = updated.fatherCommunity;
+    if (updated.motherCommunity !== undefined) sess.citizenProfile.motherCommunity = updated.motherCommunity;
+    if (updated.residenceYears !== undefined) sess.citizenProfile.residenceYears = updated.residenceYears;
+    if (updated.residencePurpose !== undefined) sess.citizenProfile.residencePurpose = updated.residencePurpose;
     if (updated.canNumber !== undefined) sess.citizenProfile.canNumber = updated.canNumber;
     if (updated.annualIncome !== undefined) sess.citizenProfile.annualIncome = updated.annualIncome;
     if (updated.profession !== undefined) sess.citizenProfile.profession = updated.profession;

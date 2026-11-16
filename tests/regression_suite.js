@@ -662,11 +662,11 @@ async function runTests() {
         assert(deltaChat3.status === 200, 'Income answer returned 200 OK');
         assert(deltaChat3.body.citizenProfile.annualIncome === '72000', 'Annual income captured');
 
-        // D: Answering occupation delta question finishes readiness
+        // D: Answering occupation delta question transitions to mandatory Photo Gate or readiness
         const deltaChat4 = await request('POST', '/api/chat', { text: 'தனியார் வேலை' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChat4.status === 200, 'Occupation answer returned 200 OK');
         assert(deltaChat4.body.citizenProfile.profession === 'தனியார் வேலை', 'Profession captured');
-        assert(deltaChat4.body.step === 'READY_TO_APPLY_INCOME', 'State transitioned to READY_TO_APPLY_INCOME');
+        assert(deltaChat4.body.step === 'INCOME_PHOTO_WAIT' || deltaChat4.body.step === 'READY_TO_APPLY_INCOME', 'State transitioned to INCOME_PHOTO_WAIT or READY_TO_APPLY_INCOME');
 
         // Cleanup delta draft
         try {
@@ -3308,8 +3308,13 @@ async function runTests() {
             advanceTnegaCommunityFlow(sessFresh);
             assert(sessFresh.intakeState === 'COMMUNITY_PROOF_WAIT', "Demographics entered -> prompts Family Community Proof / School TC");
 
-            // Fresh step 7: Family Community Proof
+            // Fresh step 7: Family Community Proof -> Prompts Mandatory Photo Gate
             sessFresh.citizenProfile.communityProof = 'compressed/sample_comm_proof.pdf';
+            const freshPhotoStep = advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_PHOTO_WAIT', "Community proof entered -> prompts Mandatory Photo Gate");
+
+            // Fresh step 8: Photo Upload -> Reaches READY_TO_APPLY_COMMUNITY
+            sessFresh.citizenProfile.headPhotoPath = 'compressed/sample_photo.jpg';
             const freshReadyStep = advanceTnegaCommunityFlow(sessFresh);
             assert(sessFresh.intakeState === 'READY_TO_APPLY_COMMUNITY', "Community proof entered -> reaches READY_TO_APPLY_COMMUNITY");
             assert(freshReadyStep.options.some(o => o.value === 'START_COMMUNITY_APPLY'), "Ready step offers START_COMMUNITY_APPLY");
@@ -3336,7 +3341,8 @@ async function runTests() {
                     village: 'அரக்கோணம்',
                     taluk: 'அரக்கோணம்',
                     district: 'இராணிப்பேட்டை',
-                    pincode: '631001'
+                    pincode: '631001',
+                    headPhotoPath: 'compressed/kumaran_photo.jpg'
                 }
             };
 

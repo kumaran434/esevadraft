@@ -739,18 +739,27 @@
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isCommunityMode = curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curIntake.includes('COMMUNITY') || 
-                                    serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || 
-                                    sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY' ||
-                                    Boolean(data.caste || data.community);
-            const isResidenceMode = !isCommunityMode && (curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || 
-                                     curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || 
-                                     serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || 
-                                     sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE');
-            const isIncomeMode = !isCommunityMode && !isResidenceMode && (curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curIntake.includes('INCOME') || 
-                                  serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || 
-                                  sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME');
-            const isCanMode = !isCommunityMode && !isIncomeMode && !isResidenceMode && (curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN'));
+            const isCommunityMode = !forceMasterProfile && (
+                curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
+                curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
+                serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
+                sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
+            );
+            const isResidenceMode = !forceMasterProfile && !isCommunityMode && (
+                curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
+                curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
+                serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
+                sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
+            );
+            const isIncomeMode = !forceMasterProfile && !isCommunityMode && !isResidenceMode && (
+                curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
+                curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
+                serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
+                sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
+            );
+            const isCanMode = !forceMasterProfile && !isCommunityMode && !isIncomeMode && !isResidenceMode && (
+                curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
+            );
 
             const isAddMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
             const isRemoveMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
@@ -1057,7 +1066,9 @@
             const isRationHead = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && !isRemoveMember && !isChangeAddress && (
                 String(data.service || '').toLowerCase().includes('ration') || 
                 String(data.service || '').includes('ரேஷன்') || 
-                String(data.service || '').includes('smart_card')
+                String(data.service || '').includes('smart_card') ||
+                curSub === 'NEW_CARD' || curSub === 'NEW_RATION_CARD' || curIntake.startsWith('RATION_') ||
+                !hasActiveSub
             );
 
             if (forceMasterProfile) {
@@ -1128,8 +1139,112 @@
             if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'none';
             if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'none';
             if (document.getElementById('editChangeAddressFieldsWrap')) document.getElementById('editChangeAddressFieldsWrap').style.display = 'none';
-            if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'none';
-            if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'none';
+
+            // Service-Scoped Document Boxes Visibility Control
+            const photoDocBox = document.getElementById('editPhotoDocBox');
+            const headAadhaarDocBox = document.getElementById('editHeadAadhaarDocBox');
+            const residenceDocBox = document.getElementById('editResidenceDocBox');
+            const smartCardDocBox = document.getElementById('editSmartCardBox');
+            const universalDocsContainer = document.getElementById('editUniversalDocsContainer');
+            const membersAadhaarContainer = document.getElementById('editMembersAadhaarContainer');
+
+            if (forceMasterProfile) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'flex';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'flex';
+            } else if (isCommunityMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isIncomeMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isResidenceMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'flex';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isCanMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else {
+                // New Ration Card Mode
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'flex';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'flex';
+            }
+
+            // Service-Scoped Form Fields Visibility Control
+            const commFieldsWrap = document.getElementById('editCommunityFieldsWrap');
+            const incFieldsWrap = document.getElementById('editIncomeFieldsWrap');
+            const resFieldsWrap = document.getElementById('editResidenceFieldsWrap');
+            const rationFieldsWrap = document.getElementById('editRationFieldsWrap');
+            const smartCardNoWrap = document.getElementById('editSmartCardNoWrap');
+            const canNoWrap = document.getElementById('editCanNumberWrap');
+
+            if (forceMasterProfile) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isCommunityMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isIncomeMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isResidenceMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isCanMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'none';
+            } else {
+                // New Ration Card Mode
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'none';
+            }
 
             // 1. Photo (Strict Physical Disk Verification)
             const foundPhoto = getVerifiedDoc('profilePhoto') || getVerifiedDoc('headPhoto');
@@ -1188,17 +1303,19 @@
                     });
                 }
 
-                const standardTypes = new Set(['profilePhoto', 'headPhoto', 'headAadhaar', 'residenceProof', 'gasBook', 'smartCard', 'rationCard', 'applicationPdf']);
-                for (const vDoc of verifiedPhysicalDocs) {
-                    if (!standardTypes.has(vDoc.type) && !vDoc.type.startsWith('memberAadhaar')) {
-                        if (!dynamicDocTypesToShow.some(d => d.type === vDoc.type)) {
-                            dynamicDocTypesToShow.push({
-                                type: vDoc.type,
-                                title: vDoc.title || `📄 ஆவணம் (${vDoc.type})`,
-                                titleEng: vDoc.titleEng || vDoc.type,
-                                icon: vDoc.icon || 'fa-file-lines',
-                                defaultPrompt: `${vDoc.title || vDoc.type} தேவை`
-                            });
+                if (forceMasterProfile) {
+                    const standardTypes = new Set(['profilePhoto', 'headPhoto', 'headAadhaar', 'residenceProof', 'gasBook', 'smartCard', 'rationCard', 'applicationPdf']);
+                    for (const vDoc of verifiedPhysicalDocs) {
+                        if (!standardTypes.has(vDoc.type) && !vDoc.type.startsWith('memberAadhaar')) {
+                            if (!dynamicDocTypesToShow.some(d => d.type === vDoc.type)) {
+                                dynamicDocTypesToShow.push({
+                                    type: vDoc.type,
+                                    title: vDoc.title || `📄 ஆவணம் (${vDoc.type})`,
+                                    titleEng: vDoc.titleEng || vDoc.type,
+                                    icon: vDoc.icon || 'fa-file-lines',
+                                    defaultPrompt: `${vDoc.title || vDoc.type} தேவை`
+                                });
+                            }
                         }
                     }
                 }
@@ -1367,6 +1484,15 @@
                 safeSetVal('editAadhaar', data.headAadhaar);
                 safeSetVal('editSmartCardNo', data.smartCardNumber || data.rationCardNumber || data.rationCardNo);
                 safeSetVal('editCanNumber', data.canNumber);
+                safeSetVal('editReligion', data.religion || 'Hindu');
+                safeSetVal('editCommunity', data.community || 'MBC');
+                safeSetVal('editCaste', data.caste || '');
+                safeSetVal('editFatherCaste', data.fatherCaste || data.caste || '');
+                safeSetVal('editMotherCaste', data.motherCaste || data.caste || '');
+                safeSetVal('editAnnualIncome', data.annualIncome || '');
+                safeSetVal('editOccupation', data.profession || data.occupation || '');
+                safeSetVal('editResidenceYears', data.residenceYears || '10');
+                safeSetVal('editResidencePurpose', data.residencePurpose || 'கல்வி / வேலைவாய்ப்பு');
                 
                 const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
                 const editHasGasEl = document.getElementById('editHasGas');
@@ -1733,8 +1859,45 @@
                     }
                 }
 
-                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : null;
-                const keepSubData = forceMasterProfile ? (currentCitizenData?.subServiceData || null) : null;
+                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : (currentCitizenData?.subService || window.lastSubService || null);
+                let keepSubData = forceMasterProfile ? (currentCitizenData?.subServiceData || null) : (currentCitizenData?.subServiceData || window.lastSubServiceData || null);
+
+                const commVal = document.getElementById('editCommunity')?.value || currentCitizenData?.community || 'MBC';
+                const casteVal = document.getElementById('editCaste')?.value?.trim() || currentCitizenData?.caste || '';
+                const fatCasteVal = document.getElementById('editFatherCaste')?.value?.trim() || currentCitizenData?.fatherCaste || casteVal;
+                const motCasteVal = document.getElementById('editMotherCaste')?.value?.trim() || currentCitizenData?.motherCaste || casteVal;
+                const relVal = document.getElementById('editReligion')?.value || currentCitizenData?.religion || 'Hindu';
+                const incVal = document.getElementById('editAnnualIncome')?.value?.trim() || currentCitizenData?.annualIncome || '';
+                const occVal = document.getElementById('editOccupation')?.value?.trim() || currentCitizenData?.profession || '';
+                const resYearsVal = document.getElementById('editResidenceYears')?.value?.trim() || currentCitizenData?.residenceYears || '';
+                const resPurpVal = document.getElementById('editResidencePurpose')?.value?.trim() || currentCitizenData?.residencePurpose || '';
+                const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
+
+                if (keepSub === 'COMMUNITY' || keepSub === 'COMMUNITY_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        community: commVal,
+                        caste: casteVal,
+                        fatherCaste: fatCasteVal,
+                        motherCaste: motCasteVal,
+                        religion: relVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'INCOME' || keepSub === 'INCOME_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        annualIncome: incVal,
+                        profession: occVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'RESIDENCE' || keepSub === 'RESIDENCE_CERTIFICATE' || keepSub === 'NATIVITY') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        residenceYears: resYearsVal,
+                        residencePurpose: resPurpVal,
+                        canNumber: canVal
+                    };
+                }
 
                 updated = {
                     subService: keepSub,
@@ -1760,7 +1923,16 @@
                     headAadhaar: document.getElementById('editAadhaar').value.replace(/\s+/g, ''),
                     smartCardNumber: document.getElementById('editSmartCardNo')?.value.trim() || currentCitizenData?.smartCardNumber || '',
                     rationCardNo: document.getElementById('editSmartCardNo')?.value.trim() || currentCitizenData?.rationCardNo || '',
-                    canNumber: document.getElementById('editCanNumber')?.value.replace(/\s+/g, '') || currentCitizenData?.canNumber || '',
+                    canNumber: canVal,
+                    religion: relVal,
+                    community: commVal,
+                    caste: casteVal,
+                    fatherCaste: fatCasteVal,
+                    motherCaste: motCasteVal,
+                    annualIncome: incVal,
+                    profession: occVal,
+                    residenceYears: resYearsVal,
+                    residencePurpose: resPurpVal,
                     members: existingMembers,
                     gasDetails: {
                         ...(currentCitizenData ? currentCitizenData.gasDetails : {}),
@@ -1927,7 +2099,7 @@
                         e.preventDefault();
                         e.stopPropagation();
                         if (typeof window.openEditModal === 'function') {
-                            window.openEditModal();
+                            window.openEditModal(null, true);
                         }
                     });
                 }

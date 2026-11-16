@@ -10,6 +10,7 @@
  */
 
 const assert = require('assert');
+const path = require('path');
 const storageService = require('../src/services/storage_service');
 const { getOrCreateSession, createFreshProfile, sessions } = storageService;
 const { handleServiceSelection, handleRationSubserviceWorkflow } = require('../src/core/chat_fsm');
