@@ -85,7 +85,7 @@ async function compressHeavyPdf(inputPdfPath) {
         await page.waitForTimeout(1000);
 
         const canvas = page.locator('#pdfCanvas');
-        const imgBuf = await canvas.screenshot({ type: 'jpeg', quality: 80 });
+        const imgBuf = await canvas.screenshot({ type: 'jpeg', quality: 75 });
         await browser.close();
 
         return new Promise((resolve) => {
@@ -465,13 +465,14 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
     }
 
     try {
-        let finalPdf = await generatePdfAtQuality(82);
+        let finalPdf = await generatePdfAtQuality(80);
         if (finalPdf && fs.existsSync(finalPdf)) {
             let fileSizeKB = fs.statSync(finalPdf).size / 1024;
-            if (fileSizeKB > 240) {
-                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 240 KB). Re-encoding at quality 72 for strict compliance...`);
+            // Universal Document Ceiling: Strictly < 185 KB to pass TNeGA (<200KB) and TNPDS (<1MB)
+            if (fileSizeKB > 185) {
+                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 185 KB). Re-encoding at quality 70 for strict universal compliance...`);
                 try { fs.unlinkSync(finalPdf); } catch (e) {}
-                finalPdf = await generatePdfAtQuality(72);
+                finalPdf = await generatePdfAtQuality(70);
                 if (finalPdf && fs.existsSync(finalPdf)) {
                     fileSizeKB = fs.statSync(finalPdf).size / 1024;
                 }

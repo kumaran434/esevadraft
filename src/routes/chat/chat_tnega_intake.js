@@ -6,7 +6,7 @@ const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { searchCitizenCan, registerNewCan } = require('../../../tnega_can_automation');
 const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow } = require('../../core/fsm/tnega_flow_engine');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
-const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
+const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
 const { persistSessions } = storageService;
 
@@ -982,13 +982,14 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
                 return true;
             }
 
-            sess.citizenProfile.communityProof = uploadedFile.path;
-            sess.citizenProfile.communityCertificatePath = uploadedFile.path;
-            sess.citizenProfile.familyCommunityProofPath = uploadedFile.path;
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.communityProof = compliantProof;
+            sess.citizenProfile.communityCertificatePath = compliantProof;
+            sess.citizenProfile.familyCommunityProofPath = compliantProof;
             if (!sess.tempUploads) sess.tempUploads = {};
-            sess.tempUploads.communityProof = uploadedFile.path;
+            sess.tempUploads.communityProof = compliantProof;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
-            sess.citizenProfile.documents.communityProof = uploadedFile.path;
+            sess.citizenProfile.documents.communityProof = compliantProof;
 
             let extraInfo = '';
             if (extracted && (extracted.caste || extracted.subCaste)) {
@@ -1021,6 +1022,101 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             persistSessions();
 
             const flowStep = advanceTnegaCommunityFlow(sess);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // MANDATORY APPLICANT PASSPORT PHOTO GATE (TNeGA Revenue Services)
+    // -------------------------------------------------------------------------
+    if (['COMMUNITY_PHOTO_WAIT', 'INCOME_PHOTO_WAIT', 'RESIDENCE_PHOTO_WAIT'].includes(sess.intakeState)) {
+        if (text === 'TRIGGER_FILE_UPLOAD' || text?.includes('புகைப்படம் பதிவேற்றுக') || text === 'UPLOAD_PHOTO') {
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `📸 தயவுசெய்து விண்ணப்பதாரரின் **பாஸ்போர்ட் புகைப்படத்தை** கீழே உள்ள கோப்பு/கேமரா பொத்தானைப் பயன்படுத்திப் பதிவேற்றவும்.\n\n(அரசு போர்ட்டல் விதிகளுக்கு ஏற்ப <50KB அளவிற்கு வெள்ளை பின்னணியுடன் தானாக செப்பனிடப்படும் ✨).`,
+                actionRequired: 'upload',
+                uploadPrompt: 'பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்'
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            // Zero-Crop Law: Reject Aadhaar/Certificates uploaded in photo field
+            const isAadhaarOrCert = extracted && (
+                extracted.aadhaarNumber ||
+                extracted.isFullAadhaar ||
+                (extracted.documentType && (extracted.documentType.includes('AADHAAR') || extracted.documentType.includes('COMMUNITY') || extracted.documentType.includes('RATION')))
+            );
+
+            if (isAadhaarOrCert) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `⚠️ **ஆதார் அட்டை / அரசு ஆவணம் கண்டறியப்பட்டது:**\n\n` +
+                          `அரசு விதிப்படி விண்ணப்பத்திற்கு விண்ணப்பதாரரின் **நேரடி பாஸ்போர்ட் அளவிலான புகைப்படம்** மட்டுமே ஏற்கப்படும். ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது (Zero-Cropping Law).\n\n` +
+                          `தயவுசெய்து விண்ணப்பதாரரின் நேரடி பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும் (அல்லது செல்ஃபி எடுக்கவும்):`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'நேரடி பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்'
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            // Quality Check
+            if (extracted && extracted.isQualityAcceptable === false) {
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `⚠️ **புகைப்படம் தெளிவாக இல்லை:**\n\n${extracted.feedbackTamil || 'மங்கலாக உள்ளது.'}\n\nதயவுசெய்து தெளிவான பாஸ்போர்ட் புகைப்படத்தை மீண்டும் பதிவேற்றவும்:`,
+                    actionRequired: 'upload',
+                    uploadPrompt: 'தெளிவான பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்'
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const studioPhoto = await produceCompliantPassportPhoto(uploadedFile.path);
+            sess.citizenProfile.headPhotoPath = studioPhoto;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.profilePhoto = studioPhoto;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.profilePhoto = studioPhoto;
+
+            const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+            if (activeMobile) {
+                saveCitizenProfile(activeMobile, sess.citizenProfile);
+                const { saveCitizenDraft } = require('../../../firestore_db');
+                saveCitizenDraft(activeMobile, {
+                    operatorUid: sess.operatorUid || null,
+                    operatorName: sess.operatorName || null,
+                    operatorMobile: sess.operatorMobile || null,
+                    citizenProfile: sess.citizenProfile,
+                    documents: sess.citizenProfile.documents || {},
+                    tempUploads: sess.tempUploads || {},
+                    intakeState: sess.intakeState,
+                    step: sess.step,
+                    chatHistory: sess.chatHistory
+                }).catch(() => {});
+            }
+            persistSessions();
+
+            const flowStep = sess.intakeState === 'COMMUNITY_PHOTO_WAIT'
+                ? advanceTnegaCommunityFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                : (sess.intakeState === 'INCOME_PHOTO_WAIT'
+                    ? advanceTnegaIncomeFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                    : advanceTnegaResidenceFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`));
+
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,

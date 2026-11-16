@@ -10,6 +10,8 @@ const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { handleTnegaSavedApplication } = require('./tnega_residence_certificate');
+const { resolveOrRestoreFile } = require('../../services/draft_file_restorer');
+const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
 
 function resolveCommunityCode(commText) {
     const c = String(commText || '').toLowerCase();
@@ -708,11 +710,21 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
                     // 6C. Prepare compliant normalized documents
                     // Government portal requirement: Passport photo MUST be <250px width/height and <50KB
-                    let photoPath = citizenProfile.headPhotoPath || citizenProfile.documents?.profilePhoto;
+                    let photoPath = citizenProfile.headPhotoPath || citizenProfile.documents?.profilePhoto || citizenProfile.documents?.headPhoto;
+                    if (photoPath && !fs.existsSync(photoPath)) {
+                        const resolved = await resolveOrRestoreFile(photoPath, null, 'profilePhoto');
+                        if (resolved && fs.existsSync(resolved)) photoPath = resolved;
+                    }
+                    if (!photoPath || !fs.existsSync(photoPath)) {
+                        const uploadsDir = path.join(process.cwd(), 'uploads');
+                        if (fs.existsSync(uploadsDir)) {
+                            const phFiles = fs.readdirSync(uploadsDir).filter(f => f.includes('passport') || f.includes('photo'));
+                            if (phFiles.length > 0) photoPath = path.join(uploadsDir, phFiles[phFiles.length - 1]);
+                        }
+                    }
                     if (!photoPath || !fs.existsSync(photoPath)) {
                         throw new Error('❌ விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் இல்லை! புகைப்படத்தைப் பதிவேற்றிய பின் தொடரவும்.');
                     }
-                    const compliantPhotoPath = path.join(process.cwd(), 'compressed', 'studio_passport_compliant.jpeg');
 
                     try {
                         let sharp;
@@ -721,30 +733,57 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                                 sharp = require(path.join('d:', 'downloads', 'ai assitant 2', 'node_modules', 'sharp'));
                             }
                         }
-                        if (fs.existsSync(photoPath)) {
-                            const meta = await sharp(photoPath).metadata();
-                            if (meta.width > 240 || meta.height > 240 || fs.statSync(photoPath).size > 50000) {
+                        if (sharp && fs.existsSync(photoPath)) {
+                            const meta = await sharp(photoPath).metadata().catch(() => ({}));
+                            const sz = fs.statSync(photoPath).size;
+                            if (meta.width !== 200 || meta.height !== 230 || sz > 45000) {
+                                const compPhoto = path.join(process.cwd(), 'compressed', `studio_passport_compliant_${Date.now()}.jpeg`);
                                 await sharp(photoPath)
-                                    .resize({ width: 200, height: 230, fit: 'cover' })
-                                    .jpeg({ quality: 85 })
-                                    .toFile(compliantPhotoPath);
-                                photoPath = compliantPhotoPath;
-                                onProgress('📷 [புகைப்பட அளவு உறுதி] அரசு போர்ட்டல் விதிகளின்படி 200x230 பிக்சல் & <50KB அளவிற்கு மாற்றப்பட்டது ✅');
+                                    .flatten({ background: { r: 255, g: 255, b: 255 } })
+                                    .resize({ width: 200, height: 230, fit: 'cover', position: 'top' })
+                                    .jpeg({ quality: sz > 45000 ? 76 : 84 })
+                                    .toFile(compPhoto);
+                                if (fs.existsSync(compPhoto)) {
+                                    photoPath = compPhoto;
+                                    onProgress('📷 [புகைப்பட அளவு உறுதி] அரசு போர்ட்டல் விதிகளின்படி 200x230 பிக்சல் & <50KB அளவிற்கு மாற்றப்பட்டது ✅');
+                                }
                             }
                         }
-                    } catch (_) {
-                        if (fs.existsSync(compliantPhotoPath)) photoPath = compliantPhotoPath;
-                    }
+                    } catch (_) {}
                     
                     let aadhaarDocPath = citizenProfile.headAadhaarDocPath || citizenProfile.documents?.headAadhaar;
+                    if (aadhaarDocPath && !fs.existsSync(aadhaarDocPath)) {
+                        const resolved = await resolveOrRestoreFile(aadhaarDocPath, null, 'headAadhaar');
+                        if (resolved && fs.existsSync(resolved)) aadhaarDocPath = resolved;
+                    }
                     if (!aadhaarDocPath || !fs.existsSync(aadhaarDocPath)) {
-                        aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_under200kb.pdf');
-                        if (!fs.existsSync(aadhaarDocPath)) {
-                            aadhaarDocPath = path.join(process.cwd(), 'compressed', 'aadhaar_2in1_under200kb.jpeg');
+                        const fCand = citizenProfile.documents?.headAadhaarFront || citizenProfile.documents?.headAadhaar || citizenProfile.headAadhaarDocPath;
+                        const bCand = citizenProfile.documents?.headAadhaarBack;
+                        if (fCand && bCand && fs.existsSync(fCand) && fs.existsSync(bCand)) {
+                            aadhaarDocPath = await produceDualSidedDocument(fCand, bCand);
+                        } else if (fCand && fs.existsSync(fCand)) {
+                            aadhaarDocPath = await produceCompliantDocument(fCand);
+                        }
+                    }
+                    if (!aadhaarDocPath || !fs.existsSync(aadhaarDocPath)) {
+                        const compDir = path.join(process.cwd(), 'compressed');
+                        if (fs.existsSync(compDir)) {
+                            const cPdfs = fs.readdirSync(compDir).filter(f => f.includes('aadhaar') && f.endsWith('.pdf'));
+                            if (cPdfs.length > 0) aadhaarDocPath = path.join(compDir, cPdfs[cPdfs.length - 1]);
                         }
                     }
                     if (!aadhaarDocPath || !fs.existsSync(aadhaarDocPath)) {
                         throw new Error('❌ விண்ணப்பதாரரின் ஆதார் அட்டை ஆவணம் இல்லை! ஆதாரைப் பதிவேற்றிய பின் தொடரவும்.');
+                    }
+
+                    // Auto-ensure Aadhaar is < 190 KB
+                    if (fs.existsSync(aadhaarDocPath)) {
+                        const aSz = fs.statSync(aadhaarDocPath).size;
+                        if (aSz > 190000) {
+                            onProgress(`📦 [தானியங்கி சுருக்கம்] ஆதார் அட்டை (${(aSz / 1024).toFixed(1)} KB > 190 KB) அரசு வரம்பிற்குள் (<200KB) சுருக்கப்படுகிறது...`);
+                            const compAadh = await produceCompliantDocument(aadhaarDocPath);
+                            if (compAadh && fs.existsSync(compAadh)) aadhaarDocPath = compAadh;
+                        }
                     }
 
                     // Zero-Fallback Law: NEVER substitute Aadhaar for Community Proof!
@@ -752,8 +791,22 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                                              citizenProfile.familyCommunityProofPath || 
                                              citizenProfile.communityProof || 
                                              citizenProfile.documents?.communityProof;
+                    if (communityProofPath && !fs.existsSync(communityProofPath)) {
+                        const resolved = await resolveOrRestoreFile(communityProofPath, null, 'communityProof');
+                        if (resolved && fs.existsSync(resolved)) communityProofPath = resolved;
+                    }
                     if (!communityProofPath || !fs.existsSync(communityProofPath)) {
                         throw new Error('❌ குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC ஆவணம் இல்லை! ஆவணம் இல்லாமல் போர்ட்டலில் பதிவேற்ற முடியாது.');
+                    }
+
+                    // Auto-ensure Community Proof is < 190 KB (eliminates the 225.7 KB rejection!)
+                    if (fs.existsSync(communityProofPath)) {
+                        const cSz = fs.statSync(communityProofPath).size;
+                        if (cSz > 190000) {
+                            onProgress(`📦 [தானியங்கி சுருக்கம்] குடும்ப சாதிச் சான்றிதழ் (${(cSz / 1024).toFixed(1)} KB > 190 KB) அரசு வரம்பிற்குள் (<200KB) சுருக்கப்படுகிறது...`);
+                            const compComm = await produceCompliantDocument(communityProofPath);
+                            if (compComm && fs.existsSync(compComm)) communityProofPath = compComm;
+                        }
                     }
 
                     // Strict Dropdown Option values discovered live on REV-101:
@@ -803,7 +856,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
                         if (alreadyUploaded) {
                             onProgress(`✅ [ஏற்கெனவே உள்ளது] ${item.nameTamil} ஏற்கெனவே போர்ட்டலில் பதிவேற்றப்பட்டுள்ளது.`);
-                            uploadedSuccessList.push(item.nameEng);
+                            uploadedSuccessList.push(item.nameTamil);
                             continue;
                         }
 
@@ -812,7 +865,9 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                             continue;
                         }
 
-                        const sizeKb = (fs.statSync(item.filePath).size / 1024).toFixed(1);
+                        let currentFile = item.filePath;
+                        const curSize = fs.statSync(currentFile).size;
+                        const sizeKb = (curSize / 1024).toFixed(1);
                         onProgress(`📤 [பதிவேற்றம்] ${item.nameTamil} (${sizeKb} KB - அரசு வரம்பு: <${item.maxKb} KB)...`);
 
                         // 1. Select Document Type from dropdown
@@ -838,7 +893,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                         // 2. Enter Document Number
                         const numLoc = tnegaPage.locator('#ss\\:dscnum, input[name*="dscnum"]').first();
                         if (await numLoc.count() > 0) {
-                            await numLoc.fill(item.docNum);
+                            await numLoc.fill(item.docNum || '1');
                             await numLoc.dispatchEvent('input', { bubbles: true }).catch(() => {});
                             await numLoc.dispatchEvent('change', { bubbles: true }).catch(() => {});
                             await tnegaPage.waitForTimeout(600);
@@ -847,26 +902,35 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                         // 3. Attach file to RichFaces file input
                         const fileLoc = tnegaPage.locator('input.rf-fu-inp[type="file"]').last();
                         if (await fileLoc.count() > 0) {
-                            await fileLoc.setInputFiles(item.filePath);
-                            await tnegaPage.waitForTimeout(1500);
+                            await fileLoc.setInputFiles(currentFile);
+                            await tnegaPage.waitForTimeout(1200);
                         }
 
                         // 4. Trigger RichFaces Upload via internal component API + button click fallback
                         onProgress(`⏳ [பதிவேற்றப்படுகிறது...] ${item.nameTamil} போர்ட்டலில் சேர்க்கப்படுகிறது...`);
                         await tnegaPage.evaluate(() => {
+                            const uplBtn = document.querySelector('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl');
+                            if (uplBtn && uplBtn.offsetParent !== null) {
+                                uplBtn.click();
+                                return;
+                            }
                             const fu = document.querySelector('.rf-fu');
                             const comp = window.RichFaces ? window.RichFaces.$(fu) : null;
                             if (comp && comp.items && comp.items.length > 0) {
                                 comp.__startUpload();
                                 return;
                             }
-                            const uplBtn = document.querySelector('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl');
                             if (uplBtn) uplBtn.click();
                         });
 
-                        // 5. Poll for confirmation in #ss:msg2 and #ss:docTable (up to 10 seconds)
+                        const clickUpl = tnegaPage.locator('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl').first();
+                        if (await clickUpl.count() > 0 && await clickUpl.isVisible()) {
+                            await clickUpl.click().catch(() => {});
+                        }
+
+                        // 5. Poll for confirmation in #ss:msg2 and #ss:docTable (up to 15 seconds)
                         let isConfirmed = false;
-                        for (let poll = 0; poll < 10; poll++) {
+                        for (let poll = 0; poll < 15; poll++) {
                             await tnegaPage.waitForTimeout(1000);
                             const check = await tnegaPage.evaluate((searchTerms) => {
                                 const table = document.getElementById('ss:docTable');
@@ -877,9 +941,9 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                                 return { tableHasDoc, msgText };
                             }, item.searchTerms).catch(() => ({ tableHasDoc: false, msgText: '' }));
 
-                            if (check.tableHasDoc || check.msgText.includes('Successfully')) {
+                            if (check.tableHasDoc || check.msgText.includes('Successfully') || check.msgText.includes('வெற்றிகரமாக')) {
                                 isConfirmed = true;
-                                uploadedSuccessList.push(item.nameEng);
+                                uploadedSuccessList.push(item.nameTamil);
                                 onProgress(`🎉 [வெற்றி] ${item.nameTamil} வெற்றிகரமாகப் பதிவேற்றப்பட்டது! ✅`);
                                 break;
                             }
@@ -892,7 +956,15 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                     }
 
                     // 6D. Pre-Submit Human Gate (Safe Halt - NEVER CLICK SUBMIT)
-                    onProgress('🛡️ [ஆப்ரேட்டர் ஆய்வு நிலையம் (Pre-Submit Gate)] சாதிச் சான்றிதழ் ஆவணங்கள் வெற்றிகரமாகப் பதிவேற்றப்பட்டன!');
+                    if (uploadedSuccessList.length > 0) {
+                        onProgress(`📸 [ஆவணப் பதிவேற்ற நிலை] ${uploadedSuccessList.length}/${docUploadList.length} ஆவணங்கள் வெற்றிகரமாகப் பதிவேற்றப்பட்டன: ${uploadedSuccessList.join(', ')} ✅`);
+                    }
+                    const failedDocs = docUploadList.filter(d => !uploadedSuccessList.includes(d.nameTamil));
+                    if (failedDocs.length > 0) {
+                        onProgress(`⚠️ [கவனத்திற்கு] ${failedDocs.map(d => d.nameTamil).join(', ')} போர்ட்டலில் விடுபட்டுள்ளது. ஆப்ரேட்டர் ஆய்வு செய்து கைமுறையாகப் பதிவேற்றலாம்.`);
+                    }
+
+                    onProgress('🛡️ [ஆப்ரேட்டர் ஆய்வு நிலையம் (Pre-Submit Gate)] ஆவணங்கள் சரிபார்க்கப்பட்டு தயார் நிலையில் வைக்கப்பட்டுள்ளன!');
                     onProgress('✍️ சுய உறுதிமொழிப் படிவம் Google Chrome புதிய Tab-ல் திறக்கப்பட்டுள்ளது. ஆப்ரேட்டர் கையொப்பமிட்ட படிவத்தைப் பதிவேற்றிய பின் Submit செய்ய ஏதுவாக ஆட்டோமேஷன் பாதுகாப்பாக நிறுத்தப்பட்டது.');
 
                     await updateTnegaHud(tnegaPage, {

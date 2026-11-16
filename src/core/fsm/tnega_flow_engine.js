@@ -38,7 +38,8 @@ const TNEGA_PORTAL_SCHEMAS = {
             { key: 'motherNameTam', state: 'INCOME_MOTHER_NAME_WAIT', label: 'தாயாரின் பெயர் (Mother Name)' },
             { key: 'community', state: 'INCOME_COMMUNITY_WAIT', label: 'வகுப்பு / பிரிவு (Community)' },
             { key: 'annualIncome', state: 'INCOME_INTAKE', label: 'குடும்ப ஆண்டு வருமானம் (Annual Income)' },
-            { key: 'profession', state: 'INCOME_INTAKE', label: 'தொழில் (Occupation)' }
+            { key: 'profession', state: 'INCOME_INTAKE', label: 'தொழில் (Occupation)' },
+            { key: 'headPhotoPath', state: 'INCOME_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' }
         ]
     },
     RESIDENCE_CERTIFICATE: {
@@ -51,7 +52,8 @@ const TNEGA_PORTAL_SCHEMAS = {
         bucketB_UserPrompted: [
             { key: 'canNumber', state: 'RESIDENCE_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
             { key: 'yearsOfResidence', state: 'RESIDENCE_YEARS_WAIT', label: 'வசிக்கும் காலம் (Years of Continuous Residence)' },
-            { key: 'purposeOfCertificate', state: 'RESIDENCE_PURPOSE_WAIT', label: 'சான்றிதழ் பயன்பாடு / நோக்கம் (Purpose)' }
+            { key: 'purposeOfCertificate', state: 'RESIDENCE_PURPOSE_WAIT', label: 'சான்றிதழ் பயன்பாடு / நோக்கம் (Purpose)' },
+            { key: 'headPhotoPath', state: 'RESIDENCE_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' }
         ]
     },
     COMMUNITY_CERTIFICATE: {
@@ -66,7 +68,9 @@ const TNEGA_PORTAL_SCHEMAS = {
             { key: 'motherNameTam', state: 'COMMUNITY_MOTHER_NAME_WAIT', label: 'தாயாரின் பெயர் (Mother Name)' },
             { key: 'religion', state: 'COMMUNITY_RELIGION_WAIT', label: 'மதம் (Religion)' },
             { key: 'community', state: 'COMMUNITY_COMM_WAIT', label: 'வகுப்பு / பிரிவு (Community)' },
-            { key: 'caste', state: 'COMMUNITY_CASTE_WAIT', label: 'சாதி / உட்பிரிவு (Caste / Sub-caste)' }
+            { key: 'caste', state: 'COMMUNITY_CASTE_WAIT', label: 'சாதி / உட்பிரிவு (Caste / Sub-caste)' },
+            { key: 'communityProof', state: 'COMMUNITY_PROOF_WAIT', label: 'குடும்ப சாதிச் சான்று (Family Community Proof)' },
+            { key: 'headPhotoPath', state: 'COMMUNITY_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' }
         ]
     }
 };
@@ -112,6 +116,13 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
     const hasIncome = Boolean(p.annualIncome);
     const hasProfession = Boolean(p.profession);
     const hasBasicDemographics = Boolean(p.headAadhaar || p.aadhaarNumber || p.fullNameTam || p.fullNameEng);
+    const hasPhoto = Boolean(
+        p.headPhotoPath ||
+        p.photoPath ||
+        (p.documents && (p.documents.profilePhoto || p.documents.headPhoto || p.documents.photo)) ||
+        (sess.draftData?.base64Docs && (sess.draftData.base64Docs.profilePhoto || sess.draftData.base64Docs.headPhoto)) ||
+        (sess.tempUploads && (sess.tempUploads.profilePhoto || sess.tempUploads.headPhoto))
+    );
 
     // -------------------------------------------------------------------------
     // STEP 0: Multi-Member Family Card Gate
@@ -291,6 +302,25 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
             `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! தந்தை/கணவர் பெயர் மற்றும் முகவரி உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
         const options = [
             { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 9.5: Mandatory Applicant Passport Photo Gate (TNeGA REV-103)
+    // -------------------------------------------------------------------------
+    if (!hasPhoto) {
+        sess.intakeState = 'INCOME_PHOTO_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📷 **விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் தேவை:**\n\n` +
+            `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
+            `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-103 Portal Rule):**\n` +
+            `வருமானச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் நேரடி பாஸ்போர்ட் புகைப்படம் (<50KB) போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து நேரடி பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும் (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது):`;
+        const options = [
+            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
@@ -481,6 +511,13 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
     const hasYears = Boolean(p.yearsOfResidence);
     const hasPurpose = Boolean(p.purposeOfCertificate);
     const hasBasicDemographics = Boolean(p.headAadhaar || p.aadhaarNumber || p.fullNameTam || p.fullNameEng);
+    const hasPhoto = Boolean(
+        p.headPhotoPath ||
+        p.photoPath ||
+        (p.documents && (p.documents.profilePhoto || p.documents.headPhoto || p.documents.photo)) ||
+        (sess.draftData?.base64Docs && (sess.draftData.base64Docs.profilePhoto || sess.draftData.base64Docs.headPhoto)) ||
+        (sess.tempUploads && (sess.tempUploads.profilePhoto || sess.tempUploads.headPhoto))
+    );
 
     // STEP 0: Family Member Selection Gate (if family card has multiple members)
     if (hasFamily && !sess.selectedMember) {
@@ -577,6 +614,25 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
+    // -------------------------------------------------------------------------
+    // STEP 4.5: Mandatory Applicant Passport Photo Gate (TNeGA REV-102)
+    // -------------------------------------------------------------------------
+    if (!hasPhoto) {
+        sess.intakeState = 'RESIDENCE_PHOTO_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📷 **விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் தேவை:**\n\n` +
+            `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
+            `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-102 Portal Rule):**\n` +
+            `இருப்பிடச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் நேரடி பாஸ்போர்ட் புகைப்படம் (<50KB) போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து நேரடி பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும் (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது):`;
+        const options = [
+            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
     // STEP 5: 100% Ready Station
     sess.intakeState = 'READY_TO_APPLY_RESIDENCE';
     const chk = evaluateServiceChecklist('RESIDENCE_CERTIFICATE', sess.citizenProfile, sess.draftData?.base64Docs || {});
@@ -632,9 +688,15 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
         p.communityProof ||
         p.communityCertificatePath ||
         p.familyCommunityProofPath ||
-        p.communityProofSkipped ||
         (sess.tempUploads && sess.tempUploads.communityProof) ||
         (p.documents && (p.documents.communityProof || p.documents.communityCertificate))
+    );
+    const hasPhoto = Boolean(
+        p.headPhotoPath ||
+        p.photoPath ||
+        (p.documents && (p.documents.profilePhoto || p.documents.headPhoto || p.documents.photo)) ||
+        (sess.draftData?.base64Docs && (sess.draftData.base64Docs.profilePhoto || sess.draftData.base64Docs.headPhoto)) ||
+        (sess.tempUploads && (sess.tempUploads.profilePhoto || sess.tempUploads.headPhoto))
     );
 
     // STEP 0: Multi-Member Family Selection Gate
@@ -813,6 +875,24 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
         const options = [
             { label: "📷 குடும்ப சாதிச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
             { label: "⏩ ஏற்கெனவே உள்ளது / பிறகு பதிவேற்றுக", value: "SKIP_COMMUNITY_PROOF" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // STEP 6.6: Mandatory Applicant Passport Photo Gate (TNeGA REV-101)
+    if (!hasPhoto) {
+        sess.intakeState = 'COMMUNITY_PHOTO_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📷 **விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் தேவை:**\n\n` +
+            `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
+            `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
+            `• 🏛️ **பிரிவு & சாதி:** ${p.community || 'MBC'} - ${p.caste || p.subCaste || '—'}\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-101 Portal Rule):**\n` +
+            `சாதிச் சான்றிதழ் விண்ணப்பத்திற்கு விண்ணப்பதாரரின் நேரடி பாஸ்போர்ட் புகைப்படம் (<50KB) போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து நேரடி பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும் (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது):`;
+        const options = [
+            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
     }

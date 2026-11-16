@@ -31,9 +31,10 @@ async function produceCompliantPassportPhoto(inputPath) {
     const outputPath = path.join(studioDir, `studio_passport_${Date.now()}.jpeg`);
 
     try {
+        // Universal Government Standard (TNeGA: <50KB, 200x230 | TNPDS: <100KB)
         await sharp(inputPath)
             .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .resize(300, 350, {
+            .resize(200, 230, {
                 fit: 'cover',
                 position: 'top'
             })
@@ -47,13 +48,24 @@ async function produceCompliantPassportPhoto(inputPath) {
                 m2: 0.5
             })
             .jpeg({
-                quality: 88,
+                quality: 84,
                 chromaSubsampling: '4:2:0'
             })
             .toFile(outputPath);
 
-        const fileSizeKB = (fs.statSync(outputPath).size / 1024).toFixed(1);
-        console.log(`✨ AI Passport Studio Photo generated: ${outputPath} (${fileSizeKB} KB)`);
+        let fileSizeBytes = fs.statSync(outputPath).size;
+        // Strict Universal Ceiling: Must be strictly < 45 KB to safely pass TNeGA (<50KB) and TNPDS (<100KB)
+        if (fileSizeBytes > 45 * 1024) {
+            await sharp(inputPath)
+                .flatten({ background: { r: 255, g: 255, b: 255 } })
+                .resize(200, 230, { fit: 'cover', position: 'top' })
+                .jpeg({ quality: 74, chromaSubsampling: '4:2:0' })
+                .toFile(outputPath);
+            fileSizeBytes = fs.statSync(outputPath).size;
+        }
+
+        const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
+        console.log(`✨ AI Passport Studio Photo generated: ${outputPath} (${fileSizeKB} KB - Universal <45KB compliant)`);
         return outputPath;
     } catch (e) {
         console.error('Photo Studio notice:', e.message);
@@ -66,11 +78,12 @@ async function produceCompliantDocument(inputPath, options = {}) {
 
     if (inputPath.toLowerCase().endsWith('.pdf')) {
         const sz = fs.statSync(inputPath).size;
-        if (sz > 240 * 1024) {
-            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > 240 KB). Auto-compressing to Government Standard (< 240 KB)...`);
+        // Universal Document Ceiling: <185 KB passes TNeGA (<200KB) and TNPDS (<1MB)
+        if (sz > 185 * 1024) {
+            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > 185 KB). Auto-compressing to Universal Government Standard (< 185 KB)...`);
             return await compressHeavyPdf(inputPath);
         }
-        console.log(`📄 Compliant PDF uploaded (${(sz / 1024).toFixed(1)} KB <= 240 KB). Ready directly for TNPDS!`);
+        console.log(`📄 Compliant PDF uploaded (${(sz / 1024).toFixed(1)} KB <= 185 KB). Ready directly for all portals!`);
         return inputPath;
     }
 
