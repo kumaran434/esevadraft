@@ -154,6 +154,25 @@ function applyProfileUpdates(sess, updated) {
         sess.citizenProfile.members[0].aadhaarNumber = sess.citizenProfile.headAadhaar || sess.citizenProfile.members[0].aadhaarNumber;
     }
 
+    // Dynamic Extensible Master Profile Property Accumulation
+    // Ensures any new field from future services (e.g., voterEpicNo, surveyNumber, pattaNumber, firstGraduateDegree, etc.)
+    // automatically persists into sess.citizenProfile without requiring code changes!
+    const explicitlyHandledKeys = new Set([
+        'fullNameTam', 'fullNameEng', 'fatherNameTam', 'fatherNameEng', 'motherNameTam', 'motherNameEng', 'motherName',
+        'community', 'caste', 'religion', 'fatherCaste', 'motherCaste', 'fatherCommunity', 'motherCommunity',
+        'residenceYears', 'residencePurpose', 'canNumber', 'annualIncome', 'profession',
+        'headDob', 'dob', 'headGender', 'headGenderTam', 'doorNo', 'streetTam', 'streetEng',
+        'areaTam', 'areaEng', 'pincode', 'district', 'taluk', 'village', 'headAadhaar',
+        'rationCardNo', 'subService', 'subServiceData', 'gasDetails', 'residenceProof', 'documents', 'members',
+        'step', 'mobileNumber', 'chatHistory', 'status', 'intakeState', 'isDeleted', 'isTrashed',
+        'tempUploads', 'base64Docs', 'storageUrls', 'createdAt', 'updatedAt'
+    ]);
+    for (const [k, v] of Object.entries(updated)) {
+        if (!explicitlyHandledKeys.has(k) && v !== undefined && v !== null && v !== '') {
+            sess.citizenProfile[k] = v;
+        }
+    }
+
     syncFatherOrHusband(sess.citizenProfile);
 }
 

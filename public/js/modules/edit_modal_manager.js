@@ -1508,6 +1508,47 @@
                 safeSetVal('editGasNo', data.gasDetails?.consumerNumber || '');
                 safeSetVal('editGasAgency', data.gasDetails?.agencyName || '');
                 safeSetVal('editGasCyl', data.gasDetails?.cylinders || '1');
+
+                // Dynamic Master Profile Accumulated Custom Fields
+                const customWrap = document.getElementById('editDynamicCustomFieldsWrap');
+                if (customWrap) {
+                    customWrap.innerHTML = '';
+                    const standardKeySet = new Set([
+                        'fullNameTam', 'fullNameEng', 'fatherNameTam', 'fatherNameEng', 'motherNameTam', 'motherNameEng', 'motherName',
+                        'headDob', 'dob', 'headGender', 'headGenderTam', 'doorNo', 'streetTam', 'streetEng', 'areaTam', 'areaEng',
+                        'pincode', 'district', 'taluk', 'village', 'districtTam', 'talukTam', 'villageTam',
+                        'headAadhaar', 'smartCardNumber', 'rationCardNo', 'canNumber', 'religion', 'community', 'caste',
+                        'fatherCaste', 'motherCaste', 'fatherCommunity', 'motherCommunity', 'annualIncome', 'profession',
+                        'residenceYears', 'residencePurpose', 'gasDetails', 'residenceProof', 'documents', 'members',
+                        'subService', 'subServiceData', 'step', 'intakeState', 'status', 'chatHistory', 'createdAt', 'updatedAt',
+                        'isDeleted', 'isTrashed', 'tempUploads', 'base64Docs', 'storageUrls', 'mobileNumber', 'headPhotoPath',
+                        'operatorUid', 'districtAutoCorrected', 'districtCorrectionReason', 'tempMember', 'selectedService',
+                        'serviceId', 'service', 'targetService', 'serviceName', 'applicationNumber', 'applicationPdfUrl'
+                    ]);
+
+                    const customEntries = Object.entries(data).filter(([k, v]) => {
+                        return !standardKeySet.has(k) && v !== undefined && v !== null && typeof v !== 'object' && String(v).trim() !== '';
+                    });
+
+                    if (forceMasterProfile && customEntries.length > 0) {
+                        customWrap.style.display = 'grid';
+                        let cHtml = `<div style="grid-column: span 2; font-weight: 700; color: #1e293b; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                            <i class="fa-solid fa-layer-group" style="color: #0284c7;"></i> கூடுதல் மாஸ்டர் விவரங்கள் (Additional Accumulated Profile Details):
+                        </div>`;
+                        for (const [k, v] of customEntries) {
+                            const labelText = k.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                            cHtml += `
+                                <div>
+                                    <label style="font-size: 11px; font-weight: 600; color: #475569;">${labelText}:</label>
+                                    <input type="text" id="editCustomField_${k}" data-custom-key="${k}" value="${v}" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;">
+                                </div>
+                            `;
+                        }
+                        customWrap.innerHTML = cHtml;
+                    } else {
+                        customWrap.style.display = 'none';
+                    }
+                }
             } catch (err) {
                 console.error('Error populating edit modal fields:', err);
             } finally {
@@ -1945,6 +1986,15 @@
                     }
                 };
             }
+
+            // Harvest dynamic accumulated custom fields
+            const customInputs = document.querySelectorAll('#editDynamicCustomFieldsWrap input[data-custom-key]');
+            customInputs.forEach(inp => {
+                const k = inp.getAttribute('data-custom-key');
+                if (k) {
+                    updated[k] = inp.value.trim();
+                }
+            });
 
             try {
                 const res = await fetch('/api/profile/update', {
