@@ -66,15 +66,15 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
     onProgress('📜 வருமானச் சான்றிதழ் விண்ணப்ப செயல்முறை (REV-103 Income Certificate) தொடங்குகிறது...');
 
     const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || options.canNumber || options.draftData?.canNumber || options.draftData?.citizenProfile?.canNumber || '').replace(/\D+/g, '');
-    const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '9842367866').replace(/\D+/g, '');
-    const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '575567662931').replace(/\D+/g, '');
+    const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '').replace(/\D+/g, '');
+    const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '').replace(/\D+/g, '');
 
     const namePair = ensureBilingualPair(
-        citizenProfile.fullNameEng || citizenProfile.headNameEng || 'Kumaran K',
-        citizenProfile.fullNameTam || citizenProfile.headNameTam || 'குமரன் கி'
+        citizenProfile.fullNameEng || citizenProfile.headNameEng || citizenProfile.name || '',
+        citizenProfile.fullNameTam || citizenProfile.headNameTam || citizenProfile.nameTam || ''
     );
-    const fullNameEng = namePair.eng;
-    const fullNameTam = namePair.tam;
+    const fullNameEng = namePair.eng || citizenProfile.fullNameEng || citizenProfile.headNameEng || '';
+    const fullNameTam = namePair.tam || citizenProfile.fullNameTam || citizenProfile.headNameTam || '';
 
     const annualIncome = parseInt(String(citizenProfile.annualIncome || '72000').replace(/\D+/g, ''), 10) || 72000;
     const monthlyIncome = Math.round(annualIncome / 12) || 6000;

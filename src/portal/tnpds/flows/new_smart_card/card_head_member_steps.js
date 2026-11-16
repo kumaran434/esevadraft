@@ -357,11 +357,11 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
             window.__tnpdsComp = comp;
         }
     }, {
-        eng: citizenProfile.fullNameEng || citizenProfile.name || 'Kumaran K',
-        tam: citizenProfile.fullNameTam || 'குமரன் கி',
-        dob: citizenProfile.headDob || citizenProfile.dob || '10/06/1993',
+        eng: citizenProfile.fullNameEng || citizenProfile.name || '',
+        tam: citizenProfile.fullNameTam || '',
+        dob: citizenProfile.headDob || citizenProfile.dob || '',
         income: '3000',
-        aadhaar: citizenProfile.headAadhaar || '575567662931',
+        aadhaar: citizenProfile.headAadhaar || '',
         isHeadFemale: Boolean(isHeadFemale)
     }).catch(() => {});
 

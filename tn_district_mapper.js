@@ -33,7 +33,7 @@ function lookupTnVillage(villageName = '', fullAddress = '') {
         for (const item of TN_VILLAGE_LEXICON) {
             if (item.names.some(n => {
                 const nClean = cleanStr(n);
-                return vClean === nClean || vClean.includes(nClean) || nClean.includes(vClean);
+                return vClean === nClean || (nClean.length >= 4 && vClean.includes(nClean));
             })) {
                 return item;
             }
@@ -143,9 +143,12 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
     // -------------------------------------------------------------------------
     for (const [distKey, info] of Object.entries(TN_BIFURCATED_TALUKS)) {
         if (tClean) {
-            const matchedTaluk = info.taluks.find(t => tClean.includes(cleanStr(t)) || cleanStr(t).includes(tClean));
+            const parentDistClean = cleanStr(info.parentDistrict || '');
+            const isEligible = !dClean || (parentDistClean && dClean.includes(parentDistClean)) || dClean.includes(distKey);
+            if (!isEligible) continue;
+
+            const matchedTaluk = info.taluks.find(t => tClean === cleanStr(t));
             if (matchedTaluk) {
-                const parentDistClean = cleanStr(info.parentDistrict || '');
                 const wasCorrected = parentDistClean && dClean.includes(parentDistClean);
                 const talukIdx = info.taluks.indexOf(matchedTaluk);
                 const talukTamName = (info.taluksTam && info.taluksTam[talukIdx]) || matchedTaluk;
@@ -167,25 +170,24 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
     }
 
     // -------------------------------------------------------------------------
-    // TIER 4: 4-Digit Pincode Prefix Fallback
+    // TIER 4: 4-Digit Pincode Prefix Fallback (Only for Old Parent District Correction)
     // -------------------------------------------------------------------------
     if (pinStr.length >= 4) {
         for (const [distKey, info] of Object.entries(TN_BIFURCATED_TALUKS)) {
-            if (info.pincodePrefixes.some(pfx => pinStr.startsWith(pfx.substring(0, 4)))) {
-                const parentDistClean = cleanStr(info.parentDistrict || '');
-                const wasCorrected = parentDistClean && dClean.includes(parentDistClean);
-                return {
-                    district: info.nameEng,
-                    districtTam: info.nameTam,
-                    taluk: taluk || info.taluks[0],
-                    talukTam: (info.taluksTam && info.taluksTam[0]) || taluk,
-                    village: village,
-                    wasAutoCorrected: !!wasCorrected,
-                    originalDistrict: district,
-                    reason: wasCorrected 
-                        ? `பின்கோடு (${pinStr}) தமிழக அரசு போர்ட்டலில் '${info.nameTam}' மாவட்டத்தின் கீழ் வருகிறது.`
-                        : null
-                };
+            const parentDistClean = cleanStr(info.parentDistrict || '');
+            if (parentDistClean && dClean.includes(parentDistClean)) {
+                if (info.pincodePrefixes.some(pfx => pinStr.startsWith(pfx.substring(0, 4)))) {
+                    return {
+                        district: info.nameEng,
+                        districtTam: info.nameTam,
+                        taluk: taluk || info.taluks[0],
+                        talukTam: (info.taluksTam && info.taluksTam[0]) || taluk,
+                        village: village,
+                        wasAutoCorrected: true,
+                        originalDistrict: district,
+                        reason: `ஆதார் அட்டையில் '${district}' என இருந்தாலும், பின்கோடு (${pinStr}) தமிழக அரசு போர்ட்டலில் '${info.nameTam}' மாவட்டத்தின் கீழ் வருகிறது.`
+                    };
+                }
             }
         }
     }
@@ -193,12 +195,14 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
     // -------------------------------------------------------------------------
     // TIER 5: Default Passthrough
     // -------------------------------------------------------------------------
+    const bifurcatedMatch = TN_BIFURCATED_TALUKS[dClean];
     return {
-        district: district || 'Ranipet',
-        districtTam: district || 'இராணிப்பேட்டை',
-        taluk: taluk || 'Arakkonam',
-        talukTam: taluk || 'அரக்கோணம்',
-        village: village,
+        district: district || (bifurcatedMatch ? bifurcatedMatch.nameEng : ''),
+        districtTam: (bifurcatedMatch ? bifurcatedMatch.nameTam : district) || '',
+        taluk: taluk || '',
+        talukTam: taluk || '',
+        village: village || '',
+        villageTam: village || '',
         wasAutoCorrected: false,
         originalDistrict: district,
         reason: null

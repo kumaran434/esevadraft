@@ -50,15 +50,15 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
     onProgress('📜 சாதிச் சான்றிதழ் விண்ணப்ப செயல்முறை (REV-101 Community Certificate) தொடங்குகிறது...');
 
     const cleanCan = String(citizenProfile.canNumber || citizenProfile.can || options.canNumber || options.draftData?.canNumber || options.draftData?.citizenProfile?.canNumber || '').replace(/\D+/g, '');
-    const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '9842367866').replace(/\D+/g, '');
-    const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '575567662931').replace(/\D+/g, '');
+    const cleanMob = String(citizenProfile.mobileNumber || citizenProfile.mobile || '').replace(/\D+/g, '');
+    const cleanAadhaar = String(citizenProfile.headAadhaar || citizenProfile.aadhaar || '').replace(/\D+/g, '');
 
     const namePair = ensureBilingualPair(
-        citizenProfile.fullNameEng || citizenProfile.headNameEng || 'Kumaran K',
-        citizenProfile.fullNameTam || citizenProfile.headNameTam || 'குமரன் கி'
+        citizenProfile.fullNameEng || citizenProfile.headNameEng || citizenProfile.name || '',
+        citizenProfile.fullNameTam || citizenProfile.headNameTam || citizenProfile.nameTam || ''
     );
-    const fullNameEng = namePair.eng;
-    const fullNameTam = namePair.tam;
+    const fullNameEng = namePair.eng || citizenProfile.fullNameEng || citizenProfile.headNameEng || '';
+    const fullNameTam = namePair.tam || citizenProfile.fullNameTam || citizenProfile.headNameTam || '';
 
     const fatherCommunity = citizenProfile.fatherCommunity || citizenProfile.community || 'MBC';
     const motherCommunity = citizenProfile.motherCommunity || citizenProfile.community || 'MBC';

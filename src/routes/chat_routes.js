@@ -174,8 +174,8 @@ router.get('/api/chat/history', async (req, res) => {
             sess.intakeState = 'READY_TO_APPLY';
             sess.step = 'READY';
             const headName = sess.citizenProfile.fullNameTam || sess.citizenProfile.fullNameEng || 'வாடிக்கையாளர்';
-            const dist = sess.citizenProfile.district || 'இராணிப்பேட்டை';
-            const tlk = sess.citizenProfile.taluk || 'அரக்கோணம்';
+            const dist = sess.citizenProfile.district || '';
+            const tlk = sess.citizenProfile.taluk || '';
 
             if (Array.isArray(sess.chatHistory)) {
                 sess.chatHistory = sess.chatHistory.filter(m => {

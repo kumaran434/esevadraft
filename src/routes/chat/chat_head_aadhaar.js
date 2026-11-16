@@ -6,6 +6,7 @@ const { saveCitizenProfile } = require('../../../database');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
+const { resolveTnDistrict } = require('../../../tn_district_mapper');
 
 const { persistSessions } = storageService;
 
@@ -68,9 +69,32 @@ async function handleHeadAadhaar(ctx, req, res) {
             sess.citizenProfile.areaEng = extracted.areaEng || sess.citizenProfile.areaEng || '';
             sess.citizenProfile.areaTam = extracted.areaTam || sess.citizenProfile.areaTam || '';
             sess.citizenProfile.pincode = extracted.pincode || sess.citizenProfile.pincode || '';
-            sess.citizenProfile.district = extracted.district || sess.citizenProfile.district || 'Ranipet';
-            sess.citizenProfile.taluk = extracted.taluk || sess.citizenProfile.taluk || 'Arakkonam';
-            sess.citizenProfile.village = extracted.village || sess.citizenProfile.village || 'Minnal';
+
+            const fullAddrText = [
+                sess.citizenProfile.doorNo,
+                sess.citizenProfile.streetTam || sess.citizenProfile.streetEng,
+                sess.citizenProfile.areaTam || sess.citizenProfile.areaEng,
+                extracted.village || sess.citizenProfile.village,
+                extracted.taluk || sess.citizenProfile.taluk,
+                extracted.district || sess.citizenProfile.district
+            ].filter(Boolean).join(' ');
+
+            const resolvedLoc = resolveTnDistrict(
+                extracted.district || sess.citizenProfile.district || '',
+                extracted.taluk || sess.citizenProfile.taluk || '',
+                extracted.village || sess.citizenProfile.village || '',
+                extracted.pincode || sess.citizenProfile.pincode || '',
+                fullAddrText
+            );
+
+            sess.citizenProfile.district = resolvedLoc.district || extracted.district || sess.citizenProfile.district || '';
+            sess.citizenProfile.districtTam = resolvedLoc.districtTam || sess.citizenProfile.districtTam || sess.citizenProfile.district;
+            sess.citizenProfile.taluk = resolvedLoc.taluk || extracted.taluk || sess.citizenProfile.taluk || '';
+            sess.citizenProfile.talukTam = resolvedLoc.talukTam || sess.citizenProfile.talukTam || sess.citizenProfile.taluk;
+            sess.citizenProfile.village = resolvedLoc.village || extracted.village || sess.citizenProfile.village || '';
+            sess.citizenProfile.villageTam = resolvedLoc.villageTam || sess.citizenProfile.villageTam || sess.citizenProfile.village;
+            if (resolvedLoc.areaEng && !sess.citizenProfile.areaEng) sess.citizenProfile.areaEng = resolvedLoc.areaEng;
+            if (resolvedLoc.areaTam && !sess.citizenProfile.areaTam) sess.citizenProfile.areaTam = resolvedLoc.areaTam;
 
             updateHeadMember(sess.citizenProfile, fullPdf);
             if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
@@ -90,7 +114,7 @@ async function handleHeadAadhaar(ctx, req, res) {
                       `• ⚧️ **பாலினம் (Gender):** ${sess.citizenProfile.headGenderTam || '—'} (${sess.citizenProfile.headGender || '—'})\n` +
                       `• 🪪 **ஆதார் எண்:** ${formattedAadhaar || '—'}\n` +
                       `• 🏠 **முகவரி:** ${sess.citizenProfile.doorNo ? sess.citizenProfile.doorNo + ', ' : ''}${sess.citizenProfile.streetTam || sess.citizenProfile.streetEng || '—'}, ${sess.citizenProfile.pincode || '—'}\n` +
-                      `• 🏛️ **மாவட்டம் / வட்டம் / கிராமம்:** ${sess.citizenProfile.district}, ${sess.citizenProfile.taluk}, ${sess.citizenProfile.village}\n\n` +
+                      `• 🏛️ **மாவட்டம் / வட்டம் / கிராமம்:** ${[sess.citizenProfile.district, sess.citizenProfile.taluk, sess.citizenProfile.village].filter(Boolean).join(', ') || '—'}\n\n` +
                       `விவரங்கள் சரியாக இருந்தால் **'விவரங்கள் அனைத்தும் சரி'** என்பதைத் தொடரவும்:`,
                 options: [
                     { label: "✅ விவரங்கள் அனைத்தும் சரி (All Correct - Continue)", value: "HEAD_DETAILS_CONFIRMED" },
@@ -182,9 +206,32 @@ async function handleHeadAadhaar(ctx, req, res) {
         sess.citizenProfile.areaEng = extracted.areaEng || sess.citizenProfile.areaEng || '';
         sess.citizenProfile.areaTam = extracted.areaTam || sess.citizenProfile.areaTam || '';
         sess.citizenProfile.pincode = extracted.pincode || sess.citizenProfile.pincode || '';
-        sess.citizenProfile.district = extracted.district || 'Ranipet';
-        sess.citizenProfile.taluk = extracted.taluk || 'Arakkonam';
-        sess.citizenProfile.village = extracted.village || 'Minnal';
+
+        const fullBackAddrText = [
+            sess.citizenProfile.doorNo,
+            sess.citizenProfile.streetTam || sess.citizenProfile.streetEng,
+            sess.citizenProfile.areaTam || sess.citizenProfile.areaEng,
+            extracted.village || sess.citizenProfile.village,
+            extracted.taluk || sess.citizenProfile.taluk,
+            extracted.district || sess.citizenProfile.district
+        ].filter(Boolean).join(' ');
+
+        const resolvedBackLoc = resolveTnDistrict(
+            extracted.district || sess.citizenProfile.district || '',
+            extracted.taluk || sess.citizenProfile.taluk || '',
+            extracted.village || sess.citizenProfile.village || '',
+            extracted.pincode || sess.citizenProfile.pincode || '',
+            fullBackAddrText
+        );
+
+        sess.citizenProfile.district = resolvedBackLoc.district || extracted.district || sess.citizenProfile.district || '';
+        sess.citizenProfile.districtTam = resolvedBackLoc.districtTam || sess.citizenProfile.districtTam || sess.citizenProfile.district;
+        sess.citizenProfile.taluk = resolvedBackLoc.taluk || extracted.taluk || sess.citizenProfile.taluk || '';
+        sess.citizenProfile.talukTam = resolvedBackLoc.talukTam || sess.citizenProfile.talukTam || sess.citizenProfile.taluk;
+        sess.citizenProfile.village = resolvedBackLoc.village || extracted.village || sess.citizenProfile.village || '';
+        sess.citizenProfile.villageTam = resolvedBackLoc.villageTam || sess.citizenProfile.villageTam || sess.citizenProfile.village;
+        if (resolvedBackLoc.areaEng && !sess.citizenProfile.areaEng) sess.citizenProfile.areaEng = resolvedBackLoc.areaEng;
+        if (resolvedBackLoc.areaTam && !sess.citizenProfile.areaTam) sess.citizenProfile.areaTam = resolvedBackLoc.areaTam;
 
         sess.tempUploads.headAadhaar = mergedPdf;
         sess.citizenProfile.headAadhaarDocPath = mergedPdf;

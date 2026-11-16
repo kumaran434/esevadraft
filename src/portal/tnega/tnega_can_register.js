@@ -266,6 +266,60 @@ async function safeSelect(locator, matchVal) {
 }
 
 /**
+ * Dedicated Location Dropdown Selector for District, Taluk & Village (Golden Rule 9 & 14)
+ * Matches applicant's real candidates (English, Tamil, normalized) against actual dropdown options.
+ * Never defaults to hardcoded fallback IDs.
+ */
+async function safeSelectLocation(locator, candidates = []) {
+    if ((await locator.count()) === 0) return false;
+    const validCandidates = (Array.isArray(candidates) ? candidates : [candidates])
+        .filter(Boolean)
+        .map(c => String(c).trim());
+    if (validCandidates.length === 0) return false;
+
+    try {
+        const options = await locator.locator('option').all();
+        // Pass 1: Exact or Substring match on option text (Case-insensitive)
+        for (const candidate of validCandidates) {
+            const candLower = candidate.toLowerCase();
+            for (const opt of options) {
+                const txt = (await opt.innerText()).trim();
+                const val = (await opt.getAttribute('value')) || '';
+                if (!val || val === '0' || val === '-1' || txt.includes('தேர்ந்தெடு') || txt.toLowerCase().includes('select')) continue;
+                
+                const txtLower = txt.toLowerCase();
+                if (txtLower === candLower || txtLower.includes(candLower) || candLower.includes(txtLower)) {
+                    await locator.selectOption(val);
+                    await locator.dispatchEvent('input').catch(() => {});
+                    await locator.dispatchEvent('change').catch(() => {});
+                    return { success: true, selectedValue: val, selectedText: txt };
+                }
+            }
+        }
+
+        // Pass 2: Cleaned alphanumeric + Tamil unicode match (strips dots, spaces, parenthetical codes like "37 - Ranipet")
+        for (const candidate of validCandidates) {
+            const cleanCand = candidate.toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+            if (cleanCand.length < 3) continue;
+            for (const opt of options) {
+                const txt = (await opt.innerText()).trim();
+                const val = (await opt.getAttribute('value')) || '';
+                if (!val || val === '0' || val === '-1' || txt.includes('தேர்ந்தெடு') || txt.toLowerCase().includes('select')) continue;
+                
+                const cleanTxt = txt.toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+                if (cleanTxt.includes(cleanCand) || cleanCand.includes(cleanTxt)) {
+                    await locator.selectOption(val);
+                    await locator.dispatchEvent('input').catch(() => {});
+                    await locator.dispatchEvent('change').catch(() => {});
+                    return { success: true, selectedValue: val, selectedText: txt };
+                }
+            }
+        }
+    } catch (_) {}
+    return false;
+}
+
+/**
  * Resolves saved TNeGA operator credentials across all candidate operator identifiers
  * (operatorUid -> citizenProfile.operatorUid -> draftData.operatorUid -> operatorName -> active local desktop session)
  */
@@ -852,28 +906,38 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
 
     onProgress('📝 புதிய CAN பதிவு (New CAN Registration) தொடங்குகிறது...');
 
-    const rawAddr = [citizenProfile.streetEng, citizenProfile.streetTam, citizenProfile.areaEng, citizenProfile.areaTam].filter(Boolean).join(' ');
+    const rawAddr = [
+        citizenProfile.streetEng,
+        citizenProfile.streetTam,
+        citizenProfile.areaEng,
+        citizenProfile.areaTam,
+        citizenProfile.village,
+        citizenProfile.taluk,
+        citizenProfile.district,
+        citizenProfile.address
+    ].filter(Boolean).join(' ');
+
     const geo = resolveTnDistrict(
-        citizenProfile.district || 'Ranipet',
+        citizenProfile.district || '',
         citizenProfile.taluk || '',
         citizenProfile.village || '',
-        citizenProfile.pincode,
+        citizenProfile.pincode || '',
         rawAddr
     );
 
     const namePair = ensureBilingualPair(
-        citizenProfile.fullNameEng || citizenProfile.headNameEng || 'Kumaran K',
-        citizenProfile.fullNameTam || citizenProfile.headNameTam || 'குமரன் கி'
+        citizenProfile.fullNameEng || citizenProfile.headNameEng || citizenProfile.name || '',
+        citizenProfile.fullNameTam || citizenProfile.headNameTam || citizenProfile.nameTam || ''
     );
-    const fullNameEng = namePair.eng;
-    const fullNameTam = namePair.tam;
+    const fullNameEng = namePair.eng || citizenProfile.fullNameEng || citizenProfile.headNameEng || '';
+    const fullNameTam = namePair.tam || citizenProfile.fullNameTam || citizenProfile.headNameTam || '';
 
     const fatherPair = ensureBilingualPair(
-        citizenProfile.fatherNameEng || citizenProfile.relativeNameEng || 'Kirubakaran',
-        citizenProfile.fatherNameTam || citizenProfile.relativeNameTam || 'கிருபாகரன்'
+        citizenProfile.fatherNameEng || citizenProfile.relativeNameEng || '',
+        citizenProfile.fatherNameTam || citizenProfile.relativeNameTam || ''
     );
-    const fatherNameEng = fatherPair.eng;
-    const fatherNameTam = fatherPair.tam;
+    const fatherNameEng = fatherPair.eng || citizenProfile.fatherNameEng || citizenProfile.relativeNameEng || '';
+    const fatherNameTam = fatherPair.tam || citizenProfile.fatherNameTam || citizenProfile.relativeNameTam || '';
 
     const rawMotherEng = citizenProfile.motherNameEng || citizenProfile.motherName || '';
     const rawMotherTam = citizenProfile.motherNameTam || citizenProfile.motherName || '';
@@ -881,15 +945,15 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
     const motherNameEng = motherPair.eng;
     const motherNameTam = motherPair.tam;
 
-    const dob = citizenProfile.dob || citizenProfile.headDob || '10/06/1993';
+    const dob = citizenProfile.dob || citizenProfile.headDob || '';
     const gender = citizenProfile.gender || citizenProfile.headGender || 'Male';
     const genderTam = citizenProfile.genderTam || citizenProfile.headGenderTam || (gender === 'Female' ? 'பெண்' : 'ஆண்');
-    const mobile = (citizenProfile.mobileNumber || citizenProfile.mobile || '9842367866').replace(/\D+/g, '');
-    const aadhaar = (citizenProfile.headAadhaar || citizenProfile.aadhaar || citizenProfile.aadhaarNumber || '575567662931').replace(/\s+/g, '');
+    const mobile = (citizenProfile.mobileNumber || citizenProfile.mobile || '').replace(/\D+/g, '');
+    const aadhaar = (citizenProfile.headAadhaar || citizenProfile.aadhaar || citizenProfile.aadhaarNumber || '').replace(/\s+/g, '');
     const community = citizenProfile.community || citizenProfile.caste || 'MBC';
     const religion = citizenProfile.religion || 'Hindu';
-    const doorNo = citizenProfile.doorNo || '216';
-    const pincode = citizenProfile.pincode || '632510';
+    const doorNo = citizenProfile.doorNo || '';
+    const pincode = citizenProfile.pincode || geo.pincode || '';
 
     // Hamlet & Street Formatting (Rule 6 & Rule 7): Always include Hamlet/Village in both English & Tamil
     const { fullStreetEng, fullStreetTam } = formatStreetWithHamlet(citizenProfile, geo);
@@ -1557,9 +1621,22 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         );
 
         // 4. Relationship & Father/Spouse Name (Rule 7)
+        const relStr = (citizenProfile.relationship || citizenProfile.headRelationship || (citizenProfile.spouseName ? 'Husband' : 'Father')).toLowerCase();
+        let relCode = '4';
+        let relName = 'Father';
+        if (relStr.includes('husband') || relStr.includes('கணவர்') || relStr.includes('spouse')) {
+            relCode = '2';
+            relName = 'Husband';
+        } else if (relStr.includes('mother') || relStr.includes('தாய்')) {
+            relCode = '1';
+            relName = 'Mother';
+        } else if (relStr.includes('guardian') || relStr.includes('பாதுகாவலர்')) {
+            relCode = '3';
+            relName = 'Guardian';
+        }
         const relSelect = tnegaPage.locator('#canreg\\:relation, select#ddlRelationship, select[name*="relation"], select#ddlRelation').first();
         if (await relSelect.count() > 0 && await relSelect.isVisible()) {
-            await safeSelect(relSelect, '4') || await safeSelect(relSelect, 'Father');
+            await safeSelect(relSelect, relCode) || await safeSelect(relSelect, relName);
             await tnegaPage.waitForTimeout(500);
         }
         await fillBilingualPair(
@@ -1593,9 +1670,22 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         }
 
         // 6. Marital Status
+        const maritalStr = (citizenProfile.maritalStatus || (citizenProfile.spouseName || relCode === '2' ? 'Married' : 'Unmarried')).toLowerCase();
+        let mCode = '2';
+        let mName = 'Unmarried';
+        if (maritalStr.includes('married') || maritalStr.includes('திருமணமானவர்')) {
+            mCode = '1';
+            mName = 'Married';
+        } else if (maritalStr.includes('widow') || maritalStr.includes('கைம்பெண்')) {
+            mCode = '3';
+            mName = 'Widowed';
+        } else if (maritalStr.includes('divorce') || maritalStr.includes('விவாகரத்து')) {
+            mCode = '4';
+            mName = 'Divorced';
+        }
         const maritalSelect = tnegaPage.locator('#canreg\\:maritalid, select#ddlMaritalStatus, select[name*="maritalid"]').first();
         if (await maritalSelect.count() > 0 && await maritalSelect.isVisible()) {
-            await safeSelect(maritalSelect, '2') || await safeSelect(maritalSelect, 'Unmarried');
+            await safeSelect(maritalSelect, mCode) || await safeSelect(maritalSelect, mName);
             await tnegaPage.waitForTimeout(500);
         }
 
@@ -1662,20 +1752,53 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             onProgress(`🏷️ சமூகப் பிரிவு (Community): ${community} (குறியீடு: ${cCode})`);
         }
 
-        // 9. District, Taluk, Village
+        // 9. District, Taluk, Village (Golden Rule 9 & 14: Dynamic Exact Candidate Matching)
         const distSelect = tnegaPage.locator('#canreg\\:cdistrictid, select#ddlDistrict, select[name*="cdistrictid"]').first();
         if (await distSelect.count() > 0 && await distSelect.isVisible()) {
-            await safeSelect(distSelect, '37') || await safeSelect(distSelect, geo.district);
+            const distCandidates = [geo.district, geo.districtTam, citizenProfile.district, citizenProfile.districtTam];
+            const distResult = await safeSelectLocation(distSelect, distCandidates);
+            if (distResult) {
+                onProgress(`🏛️ மாவட்டம் தேர்வு செய்யப்பட்டது: ${distResult.selectedText}`);
+            }
             await tnegaPage.waitForTimeout(1200); // Wait for taluk ajax
         }
         const talukSelect = tnegaPage.locator('#canreg\\:ctalukaid, select#ddlTaluk, select[name*="ctalukaid"]').first();
         if (await talukSelect.count() > 0 && await talukSelect.isVisible()) {
-            await safeSelect(talukSelect, '342') || await safeSelect(talukSelect, geo.taluk);
+            // Wait for taluk options to populate via ajax
+            for (let waitT = 0; waitT < 20; waitT++) {
+                const optCount = await talukSelect.evaluate(sel => (sel && sel.options ? sel.options.length : 0)).catch(() => 0);
+                if (optCount > 1) break;
+                await tnegaPage.waitForTimeout(500);
+            }
+            const talukCandidates = [geo.taluk, geo.talukTam, citizenProfile.taluk, citizenProfile.talukTam];
+            const talukResult = await safeSelectLocation(talukSelect, talukCandidates);
+            if (talukResult) {
+                onProgress(`🏛️ வட்டம் தேர்வு செய்யப்பட்டது: ${talukResult.selectedText}`);
+            }
             await tnegaPage.waitForTimeout(1200); // Wait for village ajax
         }
         const villSelect = tnegaPage.locator('#canreg\\:cvillageid, select#ddlVillage, select[name*="cvillageid"]').first();
         if (await villSelect.count() > 0 && await villSelect.isVisible()) {
-            await safeSelect(villSelect, '23595') || await safeSelect(villSelect, geo.village);
+            // Wait for village options to populate via ajax
+            for (let waitV = 0; waitV < 20; waitV++) {
+                const optCount = await villSelect.evaluate(sel => (sel && sel.options ? sel.options.length : 0)).catch(() => 0);
+                if (optCount > 1) break;
+                await tnegaPage.waitForTimeout(500);
+            }
+            const villageCandidates = [
+                geo.village,
+                geo.villageTam,
+                citizenProfile.village,
+                citizenProfile.villageTam,
+                geo.areaEng,
+                geo.areaTam,
+                citizenProfile.areaEng,
+                citizenProfile.areaTam
+            ];
+            const villResult = await safeSelectLocation(villSelect, villageCandidates);
+            if (villResult) {
+                onProgress(`🏛️ வருவாய் கிராமம் தேர்வு செய்யப்பட்டது: ${villResult.selectedText}`);
+            }
             await tnegaPage.waitForTimeout(500);
         }
 
