@@ -156,13 +156,15 @@ function provideOtp(otp, targetSessionId = null) {
         if (targetSessionId && activeSessions.has(targetSessionId)) {
             const sess = activeSessions.get(targetSessionId);
             if (typeof sess.provideOtp === 'function') {
-                return sess.provideOtp(clean);
+                const ok = sess.provideOtp(clean);
+                if (ok) { cachedUserOtp = ''; cachedOtpTimestamp = 0; }
+                return ok;
             }
         } else {
             for (const [, sess] of activeSessions) {
                 if (typeof sess.provideOtp === 'function') {
                     const r = sess.provideOtp(clean);
-                    if (r) return true;
+                    if (r) { cachedUserOtp = ''; cachedOtpTimestamp = 0; return true; }
                 }
             }
         }
@@ -279,10 +281,13 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                     if (u.includes('perfdrive') || u.includes('validate.') || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha')) {
                         return '__RADWARE_ACTIVE__';
                     }
-                    const isModalVisible = Boolean(document.querySelector('.modal, div[role="dialog"]'));
+                    const isModalVisible = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
+                        const s = window.getComputedStyle(m);
+                        return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show')) && s.visibility !== 'hidden';
+                    });
                     const isSubmittingOnPortal = Boolean(document.querySelector('.spinner-border, .loading'));
-                    if (isSubmittingOnPortal) return 'ALREADY_VERIFIED_ON_PORTAL';
-                    if (type !== 'aadhaar_otp' && u.includes('newsmartcard')) {
+                    if (isSubmittingOnPortal && !isModalVisible && type === 'mobile_login') return 'ALREADY_VERIFIED_ON_PORTAL';
+                    if (type !== 'aadhaar_otp' && !isModalVisible && u.includes('newsmartcard')) {
                         const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
                         const isDobVisible = dobInp && (dobInp.offsetParent !== null || window.getComputedStyle(dobInp).display !== 'none');
                         const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));
@@ -512,9 +517,13 @@ function createScopedSessionContext(sessionId = 'default') {
                             if (u.includes('perfdrive') || u.includes('validate.') || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha')) {
                                 return '__RADWARE_ACTIVE__';
                             }
+                            const isModalVisible = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
+                                const s = window.getComputedStyle(m);
+                                return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show')) && s.visibility !== 'hidden';
+                            });
                             const isSubmittingOnPortal = Boolean(document.querySelector('.spinner-border, .loading'));
-                            if (isSubmittingOnPortal) return 'ALREADY_VERIFIED_ON_PORTAL';
-                            if (type !== 'aadhaar_otp' && u.includes('newsmartcard')) {
+                            if (isSubmittingOnPortal && !isModalVisible && type === 'mobile_login') return 'ALREADY_VERIFIED_ON_PORTAL';
+                            if (type !== 'aadhaar_otp' && !isModalVisible && u.includes('newsmartcard')) {
                                 const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
                                 const isDobVisible = dobInp && (dobInp.offsetParent !== null || window.getComputedStyle(dobInp).display !== 'none');
                                 const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));

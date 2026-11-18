@@ -8,6 +8,112 @@ try {
 } catch (e) {
     resolveTnDistrict = (d, t, v) => ({ district: d, taluk: t, village: v, wasAutoCorrected: false });
 }
+let transliterateToTamil = (s) => s;
+let transliterateToEnglish = (s) => s;
+try {
+    const bh = require('../../../../utils/bilingual_helper');
+    transliterateToTamil = bh.transliterateToTamil || transliterateToTamil;
+    transliterateToEnglish = bh.transliterateToEnglish || transliterateToEnglish;
+} catch (_) {}
+
+function buildGeoCandidates(primaryEng, primaryTam, extras = []) {
+    const raw = [primaryEng, primaryTam, ...extras].filter(Boolean).map(s => String(s).trim()).filter(Boolean);
+    const expanded = new Set();
+    for (const r of raw) {
+        expanded.add(r);
+        if (/[a-zA-Z]/.test(r)) {
+            const t = transliterateToTamil(r);
+            if (t) expanded.add(t);
+            if (/tirupathur/i.test(r)) expanded.add(r.replace(/tirupathur/ig, 'Tirupattur'));
+            if (/tirupattur/i.test(r)) expanded.add(r.replace(/tirupattur/ig, 'Tirupathur'));
+        }
+        if (/[\u0B80-\u0BFF]/.test(r)) {
+            const e = transliterateToEnglish(r);
+            if (e) expanded.add(e);
+        }
+    }
+    return Array.from(expanded);
+}
+
+/**
+ * Selects the best matching <option> inside a <select> dropdown across Tamil & English variants
+ * using normalized exact, substring, phonetic skeleton, and Dice bigram similarity (NEVER blind index[1]!).
+ */
+async function matchBestSelectOption(selectLoc, candidates = [], translitFn = null) {
+    const rawOpts = await selectLoc.evaluate(sel => {
+        if (!sel || !sel.options) return [];
+        return Array.from(sel.options).map((o, idx) => ({ idx, value: o.value, text: (o.text || '').trim() }));
+    }).catch(() => []);
+
+    const validOpts = rawOpts.filter(o => o.value && !o.text.includes('தேர்ந்தெடுக்கவும்') && !o.text.toLowerCase().includes('select'));
+    if (validOpts.length === 0) return null;
+
+    const norm = (s) => String(s || '').toLowerCase().replace(/\([^)]*\)/g, '').replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+    const phonSkel = (s) => String(s || '').toLowerCase()
+        .replace(/[^a-z]/g, '')
+        .replace(/aa/g, 'a').replace(/ee|ii/g, 'i').replace(/oo|uu/g, 'u')
+        .replace(/th|dh/g, 't').replace(/tt/g, 't').replace(/kk/g, 'k').replace(/pp/g, 'p').replace(/nn/g, 'n').replace(/ll/g, 'l')
+        .replace(/ph/g, 'f').replace(/v|w/g, 'v').replace(/g/g, 'k');
+
+    const bigrams = (s) => {
+        const out = [];
+        for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+        return out;
+    };
+    const dice = (a, b) => {
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        if (a.length < 2 || b.length < 2) return 0;
+        const ba = bigrams(a), bb = bigrams(b);
+        let hits = 0;
+        const used = new Array(bb.length).fill(false);
+        for (const x of ba) {
+            const idx = bb.findIndex((y, j) => !used[j] && y === x);
+            if (idx !== -1) { used[idx] = true; hits++; }
+        }
+        return (2 * hits) / (ba.length + bb.length);
+    };
+
+    const candForms = candidates.map(c => {
+        const cStr = String(c || '').trim();
+        const extraEng = (/[\u0B80-\u0BFF]/.test(cStr) && translitFn) ? translitFn(cStr) : '';
+        return { raw: cStr, n: norm(cStr), skel: phonSkel(cStr), extraN: norm(extraEng), extraSkel: phonSkel(extraEng) };
+    }).filter(c => c.n);
+
+    let best = null;
+    let bestScore = 0;
+
+    for (const o of validOpts) {
+        const oN = norm(o.text);
+        const oEngFromTam = (/[\u0B80-\u0BFF]/.test(o.text) && translitFn) ? translitFn(o.text) : '';
+        const oEngN = norm(oEngFromTam);
+        const oSkel = phonSkel(o.text);
+        const oTamSkel = phonSkel(oEngFromTam);
+
+        for (const c of candForms) {
+            let s = 0;
+            if (c.n && oN && (oN === c.n || (oEngN && oEngN === c.n))) s = 1.0;
+            else if (c.n.length >= 3 && (oN.includes(c.n) || c.n.includes(oN) || (oEngN && (oEngN.includes(c.n) || c.n.includes(oEngN))))) s = 0.9;
+            else if (c.skel.length >= 3 && ((oSkel && oSkel === c.skel) || (oTamSkel && oTamSkel === c.skel))) s = 0.85;
+            else {
+                const d1 = dice(c.n, oN);
+                const d2 = c.skel && oSkel ? dice(c.skel, oSkel) : 0;
+                const d3 = c.skel && oTamSkel ? dice(c.skel, oTamSkel) : 0;
+                const d4 = c.extraN && oN ? dice(c.extraN, oN) : 0;
+                s = Math.max(d1, d2 * 0.92, d3 * 0.92, d4 * 0.88);
+            }
+            if (s > bestScore) {
+                bestScore = s;
+                best = o;
+            }
+        }
+    }
+
+    if (best && bestScore >= 0.58) {
+        return { value: best.value, text: best.text, score: bestScore };
+    }
+    return null;
+}
 
 async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const { requestOtpFromUser } = sharedContext;
@@ -48,7 +154,8 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         return Boolean(sel && sel.options && sel.options.length > 1);
     }, { timeout: 15000 }).catch(() => {});
 
-    const distOpt = await distSelect.evaluate((sel, { dName, dTam }) => {
+    const distCands = buildGeoCandidates(targetDist, citizenProfile.districtTam, [citizenProfile.district]);
+    const distOpt = await matchBestSelectOption(distSelect, distCands, transliterateToEnglish) || await distSelect.evaluate((sel, { dName, dTam }) => {
         const dLower = (dName || '').toLowerCase();
         let opt = Array.from(sel.options).find(o => {
             const txt = (o.text || '').toLowerCase();
@@ -95,7 +202,8 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         await page.waitForTimeout(1000);
     }
 
-    const talukOpt = await talukSelect.evaluate((sel, { tName, tTam }) => {
+    const talukCands = buildGeoCandidates(targetTaluk, citizenProfile.talukTam, [citizenProfile.taluk]);
+    const talukOpt = await matchBestSelectOption(talukSelect, talukCands, transliterateToEnglish) || await talukSelect.evaluate((sel, { tName, tTam }) => {
         const tLower = (tName || '').toLowerCase();
         let opt = Array.from(sel.options).find(o => {
             const txt = (o.text || '').toLowerCase();
@@ -107,7 +215,7 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         if (!opt && (tLower.includes('nemili') || (tTam && tTam.includes('நெமிலி')))) {
             opt = Array.from(sel.options).find(o => o.text.includes('Nemili') || o.text.includes('நெமிலி'));
         }
-        return opt ? { value: opt.value, text: opt.text } : (sel.options.length > 1 ? { value: sel.options[1].value, text: sel.options[1].text } : null);
+        return opt ? { value: opt.value, text: opt.text } : null;
     }, { tName: targetTaluk, tTam: citizenProfile.talukTam });
 
     if (talukOpt) {
@@ -145,14 +253,21 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         await page.waitForTimeout(1000);
     }
 
-    const villageOpt = await villageSelect.evaluate((sel, { vName, vTam }) => {
+    const villageCands = buildGeoCandidates(
+        targetVillage,
+        citizenProfile.villageTam,
+        [citizenProfile.village, citizenProfile.areaEng, citizenProfile.areaTam, engArea, tamArea]
+    );
+    const villageOpt = await matchBestSelectOption(villageSelect, villageCands, transliterateToEnglish) || await villageSelect.evaluate((sel, { vName, vTam }) => {
         if (!sel || sel.options.length <= 1) return null;
         const cleanV = (vName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanVTam = (vTam || '').trim();
         let opt = Array.from(sel.options).find(o => {
             const txt = (o.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            return (cleanV && txt.includes(cleanV)) || (vTam && o.text.includes(vTam));
+            return (cleanV && txt.includes(cleanV)) || (cleanVTam && o.text.includes(cleanVTam));
         });
-        if (!opt && sel.options.length > 1) opt = sel.options[1];
+        // ONLY fall back to index[1] if no targetVillage was provided at all; NEVER pick wrong alphabetical village!
+        if (!opt && !cleanV && !cleanVTam && sel.options.length > 1) opt = sel.options[1];
         return opt ? { value: opt.value, text: opt.text } : null;
     }, { vName: targetVillage, vTam: citizenProfile.villageTam });
 
@@ -254,6 +369,11 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         await otpBtn.click({ force: true }).catch(() => {});
         await page.waitForTimeout(2500);
         await scanAndBroadcastToasts();
+    }
+
+    // Clear any stale cached OTP from previous runs BEFORE requesting Mobile OTP
+    if (typeof sharedContext.clearStaleOtpState === 'function') {
+        sharedContext.clearStaleOtpState();
     }
 
     // படி 20: மொபைல் OTP பெறுதல்

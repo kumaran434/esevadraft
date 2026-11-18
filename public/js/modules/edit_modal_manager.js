@@ -461,6 +461,12 @@
 
                 if (memberIndex > 0 && Array.isArray(prof.members) && prof.members[memberIndex]) {
                     const m = prof.members[memberIndex];
+                    const isBirthCert = m.docType === 'BIRTH_CERTIFICATE' || m.hasAadhaar === false;
+                    const dtEl = document.getElementById(`editMemberDocType_${memberIndex}`);
+                    if (dtEl) {
+                        dtEl.value = isBirthCert ? 'BIRTH_CERTIFICATE' : 'AADHAAR_CARD';
+                        flash(dtEl);
+                    }
                     setVal(`editMemberNameTam_${memberIndex}`, m.nameTam);
                     setVal(`editMemberNameEng_${memberIndex}`, m.nameEng || m.name);
                     setVal(`editMemberDob_${memberIndex}`, m.dob);
@@ -468,8 +474,19 @@
                         const mgEl = document.getElementById(`editMemberGender_${memberIndex}`);
                         if (mgEl) { mgEl.value = m.gender; flash(mgEl); }
                     }
-                    if (m.aadhaarNumber) {
-                        setVal(`editMemberAadhaar_${memberIndex}`, m.aadhaarNumber.replace(/(\d{4})/g, '$1 ').trim());
+                    const mAadhInput = document.getElementById(`editMemberAadhaar_${memberIndex}`);
+                    if (mAadhInput) {
+                        if (isBirthCert) {
+                            mAadhInput.value = '';
+                            mAadhInput.disabled = true;
+                            mAadhInput.placeholder = 'பிறப்புச் சான்றிதழ் (ஆதார் தேவையில்லை)';
+                        } else {
+                            mAadhInput.disabled = false;
+                            mAadhInput.placeholder = '1234 5678 9012';
+                            if (m.aadhaarNumber) {
+                                setVal(`editMemberAadhaar_${memberIndex}`, m.aadhaarNumber.replace(/(\d{4})/g, '$1 ').trim());
+                            }
+                        }
                     }
                 }
             } else if (docType === 'smartCard' || docType === 'rationCard') {
@@ -1564,12 +1581,13 @@
                 membersContainer.innerHTML = '';
                 const members = (data.members || []).slice(1);
                 if (members.length > 0) {
-                    let memHtml = `<div style="font-weight: 700; color: #1e293b; font-size: 12px; margin-top: 4px;">👥 குடும்ப உறுப்பினர்கள் ஆதார் (Family Members Aadhaar):</div>`;
+                    let memHtml = `<div style="font-weight: 700; color: #1e293b; font-size: 12px; margin-top: 4px;">👥 குடும்ப உறுப்பினர்கள் ஆவணங்கள் (Family Members — Aadhaar / Birth Certificate):</div>`;
                     members.forEach((m, idx) => {
                         const mIdx = idx + 1;
                         const mName = m.nameTam ? `${m.nameTam} (${m.nameEng || ''})` : (m.nameEng || `உறுப்பினர் ${mIdx}`);
                         const mRel = m.relationshipTam || m.relationship || '';
-                        const mDoc = m.docPath || '';
+                        const isMemBirthCert = m.docType === 'BIRTH_CERTIFICATE' || m.hasAadhaar === false;
+                        const mDoc = m.docPath || m.birthCertificatePath || '';
                         const mDocStr = typeof mDoc === 'object' ? (mDoc?.path || mDoc?.docPath || '') : String(mDoc || '');
                         const mUrl = formatDocUrl(mDocStr);
                         const isPdf = isPdfPath(mDocStr);
@@ -1581,7 +1599,7 @@
                                 <div style="display: flex; gap: 12px; align-items: center;">
                                     <div style="width: 72px; height: 88px; border-radius: 8px; overflow: hidden; background: #eff6ff; display: flex; align-items: center; justify-content: center; border: 1.5px solid #bfdbfe; flex-shrink: 0; position: relative;">
                                         <img id="editMemberAadhaarPreview_${mIdx}" src="${isImg ? mUrl : ''}" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; display: ${isImg ? 'block' : 'none'};">
-                                        <i id="editMemberAadhaarPlaceholder_${mIdx}" class="fa-solid fa-id-card" style="font-size: 26px; color: #2563eb; display: ${!mDoc ? 'block' : 'none'};"></i>
+                                        <i id="editMemberAadhaarPlaceholder_${mIdx}" class="fa-solid ${isMemBirthCert ? 'fa-baby' : 'fa-id-card'}" style="font-size: 26px; color: #2563eb; display: ${!mDoc ? 'block' : 'none'};"></i>
                                         <div id="editMemberAadhaarPdfBadge_${mIdx}" style="display: ${isPdf ? 'flex' : 'none'}; width: 100%; height: 100%; background: #fee2e2; color: #dc2626; font-weight: 800; font-size: 13px; align-items: center; justify-content: center; flex-direction: column; gap: 2px;">
                                             <i class="fa-solid fa-file-pdf" style="font-size: 24px;"></i>
                                             <span>PDF</span>
@@ -1590,13 +1608,13 @@
                                     <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
                                         <div style="font-weight: 700; font-size: 12.5px; color: #0f172a; margin-bottom: 2px;">👥 உறுப்பினர் ${mIdx + 1}: ${mName} ${mRel ? `(${mRel})` : ''}</div>
                                         <div id="editMemberAadhaarStatus_${mIdx}" style="font-size: 11px; color: ${mDoc ? '#16a34a' : '#64748b'}; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                            ${mDoc ? `✅ ${mFileName.length > 20 ? mFileName.substring(0, 18) + '...' : mFileName}` : 'ஆதார் அட்டை தேவை'}
+                                            ${mDoc ? `✅ ${mFileName.length > 20 ? mFileName.substring(0, 18) + '...' : mFileName}` : (isMemBirthCert ? 'பிறப்புச் சான்றிதழ் தேவை' : 'ஆதார் அட்டை தேவை')}
                                         </div>
                                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                                             <input type="file" id="editMemberAadhaarInput_${mIdx}" accept="image/*,application/pdf" multiple style="display: none;" onchange="handleEditDocChosen('memberAadhaar', event, ${mIdx})">
                                             <input type="file" id="editMemberAadhaarBackInput_${mIdx}" accept="image/*,application/pdf" style="display: none;" onchange="handleEditDocChosen('memberAadhaarBack', event, ${mIdx})">
                                             <button type="button" onclick="document.getElementById('editMemberAadhaarInput_${mIdx}').click()" style="height: 32px; padding: 0 10px; background: #eff6ff; border: 1.5px solid #93c5fd; color: #1d4ed8; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                                                <i class="fa-solid fa-file-arrow-up"></i> முன்பக்கம்
+                                                <i class="fa-solid fa-file-arrow-up"></i> ${isMemBirthCert ? 'பிறப்புச் சான்றிதழ்' : 'முன்பக்கம் / ஆவணம்'}
                                             </button>
                                             <button type="button" onclick="document.getElementById('editMemberAadhaarBackInput_${mIdx}').click()" style="height: 32px; padding: 0 10px; background: #eef2ff; border: 1.5px solid #a5b4fc; color: #4338ca; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                                                 <i class="fa-solid fa-plus"></i> பின்பக்கம்
@@ -1611,6 +1629,13 @@
                                     </div>
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; padding-top: 8px; border-top: 1px dashed #e2e8f0;">
+                                    <div style="grid-column: span 2;">
+                                        <label style="font-size: 11px; font-weight: 700; color: #475569;">சான்று வகை (Document Proof Type):</label>
+                                        <select id="editMemberDocType_${mIdx}" onchange="(function(sel,i){var a=document.getElementById('editMemberAadhaar_'+i); if(a){if(sel.value==='BIRTH_CERTIFICATE'){a.value='';a.disabled=true;a.placeholder='பிறப்புச் சான்றிதழ் (ஆதார் தேவையில்லை)';}else{a.disabled=false;a.placeholder='1234 5678 9012';}}})(this,${mIdx})" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700; background: #f8fafc;">
+                                            <option value="AADHAAR_CARD" ${!isMemBirthCert ? 'selected' : ''}>🪪 ஆதார் அட்டை (Aadhaar Card)</option>
+                                            <option value="BIRTH_CERTIFICATE" ${isMemBirthCert ? 'selected' : ''}>📜 பிறப்புச் சான்றிதழ் (Birth Certificate - ஆதார் இல்லாத குழந்தை)</option>
+                                        </select>
+                                    </div>
                                     <div>
                                         <label style="font-size: 11px; font-weight: 700; color: #475569;">பெயர் (தமிழ்):</label>
                                         <input type="text" id="editMemberNameTam_${mIdx}" value="${m.nameTam || ''}" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700;">
@@ -1647,7 +1672,7 @@
                                     </div>
                                     <div>
                                         <label style="font-size: 11px; font-weight: 700; color: #475569;">12-இலக்க ஆதார் எண்:</label>
-                                        <input type="text" id="editMemberAadhaar_${mIdx}" value="${(m.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim()}" placeholder="1234 5678 9012" maxlength="14" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;">
+                                        <input type="text" id="editMemberAadhaar_${mIdx}" value="${isMemBirthCert ? '' : (m.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim()}" placeholder="${isMemBirthCert ? 'பிறப்புச் சான்றிதழ் (ஆதார் தேவையில்லை)' : '1234 5678 9012'}" ${isMemBirthCert ? 'disabled' : ''} maxlength="14" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;">
                                     </div>
                                 </div>
                             </div>
@@ -2115,10 +2140,15 @@
                     const mDobEl = document.getElementById(`editMemberDob_${idx}`);
                     const mGenEl = document.getElementById(`editMemberGender_${idx}`);
                     const mAadhEl = document.getElementById(`editMemberAadhaar_${idx}`);
+                    const mDocTypeEl = document.getElementById(`editMemberDocType_${idx}`);
 
-                    if (mNameTamEl || mNameEngEl || mAadhEl) {
+                    if (mNameTamEl || mNameEngEl || mAadhEl || mDocTypeEl) {
+                        const resolvedDocType = mDocTypeEl ? mDocTypeEl.value : (existingMembers[idx].docType || 'AADHAAR_CARD');
+                        const isBc = resolvedDocType === 'BIRTH_CERTIFICATE';
                         existingMembers[idx] = {
                             ...existingMembers[idx],
+                            docType: resolvedDocType,
+                            hasAadhaar: !isBc,
                             nameTam: mNameTamEl ? mNameTamEl.value.trim() : existingMembers[idx].nameTam,
                             nameEng: mNameEngEl ? mNameEngEl.value.trim() : existingMembers[idx].nameEng,
                             name: (mNameEngEl && mNameEngEl.value.trim()) || (mNameTamEl && mNameTamEl.value.trim()) || existingMembers[idx].name,
@@ -2127,7 +2157,7 @@
                             dob: mDobEl ? mDobEl.value.trim() : existingMembers[idx].dob,
                             gender: mGenEl ? mGenEl.value : existingMembers[idx].gender,
                             genderTam: mGenEl ? (mGenEl.value === 'Female' ? 'பெண்' : 'ஆண்') : existingMembers[idx].genderTam,
-                            aadhaarNumber: mAadhEl ? mAadhEl.value.replace(/\s+/g, '') : existingMembers[idx].aadhaarNumber
+                            aadhaarNumber: isBc ? '' : (mAadhEl ? mAadhEl.value.replace(/\s+/g, '') : existingMembers[idx].aadhaarNumber)
                         };
                     }
                 }

@@ -262,6 +262,78 @@ const INITIAL_ENG_TO_TAM = {
 };
 
 /**
+ * Splits dotted or attached single-letter initials cleanly:
+ * e.g. "G.Suman" -> "G Suman", "A.B. Kumar" -> "A B Kumar", "Suman.G" -> "Suman G"
+ */
+function tokenizeNameWithInitials(rawStr) {
+    return String(rawStr || '')
+        .replace(/([A-Za-z])\.([A-Za-z])/g, '$1 $2')
+        .replace(/\.+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+}
+
+/**
+ * Enforces exact Tamil initial transliteration matching English single-letter initials
+ * (prevents Gemini/phonetic engines from turning 'G' -> 'ஜே'/'க' or 'J' -> 'ஜ'/'ஜி' or leaving English initials untranslated).
+ */
+function normalizeTamilInitialsFromEnglish(engText, tamText) {
+    const rawEng = String(engText || '').trim();
+    const rawTam = String(tamText || '').trim();
+    if (!rawEng || !rawTam) return rawTam;
+
+    const engTokens = tokenizeNameWithInitials(rawEng);
+    const engInitials = engTokens.filter(t => /^[A-Za-z]$/.test(t));
+    if (engInitials.length === 0) return rawTam;
+
+    // Normalize Tamil tokens: strip dots between Tamil initials/words if spaced
+    const tamTokens = rawTam.replace(/([A-Za-z])\.([A-Za-z])/g, '$1 $2').replace(/\./g, ' ').trim().split(/\s+/).filter(Boolean);
+
+    const engFirstIsInit = /^[A-Za-z]$/.test(engTokens[0]);
+    const engLastIsInit = /^[A-Za-z]$/.test(engTokens[engTokens.length - 1]);
+
+    const replaceIfShortTamilInitial = (tok, expectedEngChar) => {
+        const expectedTam = INITIAL_ENG_TO_TAM[expectedEngChar.toLowerCase()];
+        if (!expectedTam) return tok;
+        // Replace if token is raw Latin letter (e.g. 'G'), OR short phonetic artifact (<=3 chars) that isn't already expectedTam
+        if (/^[A-Za-z]$/.test(tok)) return expectedTam;
+        if (tok.length <= 4 && !/^[0-9]+$/.test(tok)) {
+            return expectedTam;
+        }
+        return tok;
+    };
+
+    if (tamTokens.length >= 2) {
+        if (engFirstIsInit) {
+            tamTokens[0] = replaceIfShortTamilInitial(tamTokens[0], engTokens[0]);
+        }
+        if (engLastIsInit) {
+            const lastIdx = tamTokens.length - 1;
+            tamTokens[lastIdx] = replaceIfShortTamilInitial(tamTokens[lastIdx], engTokens[engTokens.length - 1]);
+        }
+        // Also replace any lingering standalone English single-letter initial tokens anywhere in tamTokens
+        for (let idx = 0; idx < tamTokens.length; idx++) {
+            if (/^[A-Za-z]$/.test(tamTokens[idx])) {
+                const mapChar = INITIAL_ENG_TO_TAM[tamTokens[idx].toLowerCase()];
+                if (mapChar) tamTokens[idx] = mapChar;
+            }
+        }
+    } else if (tamTokens.length === 1 && engTokens.length >= 2) {
+        // Initial was omitted or fused — prepend/append the expected Tamil initial
+        if (engLastIsInit) {
+            const expTam = INITIAL_ENG_TO_TAM[engTokens[engTokens.length - 1].toLowerCase()];
+            if (expTam && !tamTokens[0].endsWith(expTam)) tamTokens.push(expTam);
+        } else if (engFirstIsInit) {
+            const expTam = INITIAL_ENG_TO_TAM[engTokens[0].toLowerCase()];
+            if (expTam && !tamTokens[0].startsWith(expTam)) tamTokens.unshift(expTam);
+        }
+    }
+
+    return tamTokens.join(' ');
+}
+
+/**
  * Phonetic English Word -> Tamil Unicode Transliterator
  */
 function phoneticEngWordToTam(word) {
@@ -413,13 +485,13 @@ function transliterateToTamil(input) {
     const lowerFull = raw.toLowerCase().replace(/\s+/g, ' ');
     if (ENG_TO_TAM_DICT[lowerFull]) return ENG_TO_TAM_DICT[lowerFull];
 
-    // Split by comma first to preserve address segments
+    // Split by comma first to preserve address segments, then separate attached dotted initials
     return raw.split(',').map(segment => {
         const segClean = segment.trim();
         const segLower = segClean.toLowerCase().replace(/\s+/g, ' ');
         if (ENG_TO_TAM_DICT[segLower]) return ENG_TO_TAM_DICT[segLower];
 
-        return segClean.split(/\s+/).map(token => {
+        return tokenizeNameWithInitials(segClean).map(token => {
             if (containsTamil(token) && !containsEnglish(token)) return token;
             return phoneticEngWordToTam(token);
         }).join(' ');
@@ -480,6 +552,10 @@ function ensureBilingualPair(engInput, tamInput) {
         cleanTam = transliterateToTamil(cleanEng);
     } else if (rawTam) {
         cleanTam = transliterateToTamil(rawTam);
+    }
+
+    if (cleanEng && cleanTam) {
+        cleanTam = normalizeTamilInitialsFromEnglish(cleanEng, cleanTam);
     }
 
     return {
@@ -570,5 +646,7 @@ module.exports = {
     transliterateToTamil,
     transliterateToEnglish,
     ensureBilingualPair,
+    normalizeTamilInitialsFromEnglish,
+    tokenizeNameWithInitials,
     formatStreetWithHamlet
 };

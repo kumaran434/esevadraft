@@ -33,7 +33,10 @@ async function handleMemberVerification(ctx, req, res) {
             if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
         }
 
-        const formattedMemberAadhaar = (sess.tempMember.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim();
+        const isBirthCert = sess.tempMember.docType === 'BIRTH_CERTIFICATE' || sess.tempMember.hasAadhaar === false;
+        const formattedMemberAadhaar = isBirthCert
+            ? 'பிறப்புச் சான்றிதழ் (ஆதார் இல்லை)'
+            : ((sess.tempMember.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim() || '—');
         sess.intakeState = 'MEMBER_DETAILS_VERIFY';
         sess.chatHistory.push({
             sender: 'bot',
@@ -43,7 +46,7 @@ async function handleMemberVerification(ctx, req, res) {
                   `• 🤝 **உறவுமுறை:** ${relInfo.tam} (${relInfo.eng})\n` +
                   `• 🎂 **பிறந்த தேதி:** ${sess.tempMember.dob || '—'}\n` +
                   `• ⚧️ **பாலினம்:** ${sess.tempMember.genderTam || '—'} (${sess.tempMember.gender || '—'})\n` +
-                  `• 🪪 **ஆதார் எண்:** ${formattedMemberAadhaar || '—'}\n\n` +
+                  `• ${isBirthCert ? '📜 **ஆவண வகை:**' : '🪪 **ஆதார் எண்:**'} ${formattedMemberAadhaar}\n\n` +
                   `விவரங்கள் சரியாக இருந்தால் **'உறுப்பினர் விவரங்கள் சரி'** என்பதைத் தேர்ந்தெடுக்கவும், அல்லது ஏதேனும் மாற்றங்கள் இருந்தால் **'விவரங்களைச் சரிபார் / திருத்து'** என்பதைத் தேர்ந்தெடுக்கவும்:`,
             options: [
                 { label: "✅ உறுப்பினர் விவரங்கள் சரி (Details Correct - Continue)", value: "MEMBER_DETAILS_CONFIRMED" },
@@ -132,14 +135,19 @@ async function handleMemberVerification(ctx, req, res) {
                 sess.tempUploads = sess.tempUploads || {};
                 sess.tempUploads.currentMemberFront = null;
                 sess.tempUploads.currentMemberBack = null;
+                sess.tempUploads.expectingMemberDocType = null;
                 sess.tempMember = null;
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `✅ **உறுப்பினர் ${sess.currentMemberIdx} (${confirmedRelTam}) வெற்றிகரமாகச் சேர்க்கப்பட்டார்!**\n\n` +
-                          `👥 **படி 3/6: குடும்ப உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டை**\n\n` +
-                          `உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையின் **முன்பக்கத்தைப் (Front Side)** பதிவேற்றவும்:`,
+                          `👥 **படி 3/6: குடும்ப உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆவணம்**\n\n` +
+                          `உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் **ஆதார் அட்டை** (அல்லது ஆதார் இல்லாத குழந்தை எனில் **பிறப்புச் சான்றிதழ்**) பதிவேற்றவும்:`,
                     actionRequired: 'upload',
-                    uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் முன்பக்கம்`
+                    uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் / பிறப்புச் சான்றிதழ்`,
+                    options: [
+                        { label: "🪪 ஆதார் அட்டை பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "📜 பிறப்புச் சான்றிதழ் (ஆதார் இல்லாத குழந்தை)", value: "MEMBER_BIRTH_CERT_UPLOAD" }
+                    ]
                 });
                 persistSessions(activeMobile);
                 if (activeMobile) {

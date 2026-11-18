@@ -1,6 +1,7 @@
 /**
  * TNPDS New Smart Card - Navigation, Challenge Detection, & Preflight Sanitization
  */
+const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../../../utils/bilingual_helper');
 const seenToasts = new Set();
 
 async function scanAndBroadcastToasts(page, onProgress = () => {}, logDiag = () => {}) {
@@ -87,7 +88,7 @@ async function navigateAndPrepareForm(page, onProgress = () => {}, sharedContext
 }
 
 function sanitizeNewCardProfile(citizenProfile) {
-    const tamName = (citizenProfile.fullNameTam || citizenProfile.name || '').trim();
+    let tamName = (citizenProfile.fullNameTam || citizenProfile.name || '').trim();
     let tamFather = (citizenProfile.fatherNameTam || citizenProfile.fatherOrHusbandNameTam || citizenProfile.husbandNameTam || '').trim();
     const doorNo = (citizenProfile.doorNo || '').trim();
     const tamStreet = (citizenProfile.streetTam || '').trim();
@@ -98,7 +99,10 @@ function sanitizeNewCardProfile(citizenProfile) {
     let engStreet = (citizenProfile.streetEng || '').trim();
     let engArea = (citizenProfile.areaEng || '').trim();
 
-    if (engFather && !tamFather) tamFather = engFather;
+    if (engName && tamName) tamName = normalizeTamilInitialsFromEnglish(engName, tamName);
+    else if (engName && !tamName) tamName = ensureBilingualPair(engName, '').tam;
+    if (engFather && tamFather) tamFather = normalizeTamilInitialsFromEnglish(engFather, tamFather);
+    if (engFather && !tamFather) tamFather = ensureBilingualPair(engFather, '').tam;
     if (tamFather && !engFather) engFather = tamFather;
 
     if (!engArea || /[\u0B80-\u0BFF]/.test(engArea)) {

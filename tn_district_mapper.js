@@ -28,26 +28,29 @@ function lookupTnVillage(villageName = '', fullAddress = '') {
     const vClean = cleanStr(villageName);
     const addrClean = cleanStr(fullAddress);
 
-    // 1. Direct match on villageName
+    // 1. Direct match on villageName (checks all entries including villages, towns, hamlets)
     if (vClean) {
         for (const item of TN_VILLAGE_LEXICON) {
             if (item.names.some(n => {
                 const nClean = cleanStr(n);
                 return vClean === nClean || (nClean.length >= 4 && vClean.includes(nClean));
             })) {
-                return item;
+                return { item, matchedDirect: true };
             }
         }
     }
 
-    // 2. Scan fullAddress string if village name didn't match directly
+    // 2. Scan fullAddress string:
+    //    - ALWAYS check Hamlet villages (so Narasingapuram/Kunnathur Colony in street/area resolve to parent Revenue Village)
+    //    - ONLY match non-hamlet town entries when villageName was NOT already supplied!
     if (addrClean) {
         for (const item of TN_VILLAGE_LEXICON) {
+            if (!item.isHamlet && vClean) continue;
             if (item.names.some(n => {
                 const nClean = cleanStr(n);
                 return nClean.length >= 4 && addrClean.includes(nClean);
             })) {
-                return item;
+                return { item, matchedDirect: false };
             }
         }
     }
@@ -74,12 +77,14 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
     const tClean = cleanStr(taluk);
     const vClean = cleanStr(village);
     const pinStr = (pincode || '').trim().replace(/\D/g, '');
-    const combinedAddr = [village, taluk, fullAddressText].filter(Boolean).join(' ');
+    const combinedAddr = [village, fullAddressText].filter(Boolean).join(' ');
 
     // -------------------------------------------------------------------------
     // TIER 1: Match by Village / Town / Hamlet Lexicon (Highest Precision)
     // -------------------------------------------------------------------------
-    const villageMatch = lookupTnVillage(village, combinedAddr);
+    const villageLookup = lookupTnVillage(village, combinedAddr);
+    const villageMatch = villageLookup ? (villageLookup.item || villageLookup) : null;
+    const matchedDirect = villageLookup ? Boolean(villageLookup.matchedDirect) : false;
     if (villageMatch) {
         const expectedDistClean = cleanStr(villageMatch.district);
         const parentDistClean = cleanStr(TN_BIFURCATED_TALUKS[villageMatch.district.toLowerCase()]?.parentDistrict || '');
@@ -87,11 +92,16 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
         const wasDistrictCorrected = !dClean.includes(expectedDistClean) || (parentDistClean && dClean.includes(parentDistClean));
         const wasTalukFilled = !tClean || !tClean.includes(cleanStr(villageMatch.taluk));
 
+        // Preserve citizen's standalone village unless this is a hamlet resolution OR village matched directly OR village was blank
+        const preserveStandaloneVillage = Boolean(vClean && !matchedDirect && !villageMatch.isHamlet);
+        const finalVillage = preserveStandaloneVillage ? village : villageMatch.village;
+        const finalVillageTam = preserveStandaloneVillage ? '' : villageMatch.villageTam;
+
         let reason = null;
         if (wasDistrictCorrected || wasTalukFilled) {
             reason = villageMatch.isHamlet
                 ? `${villageMatch.areaTam || village} என்பது ${villageMatch.talukTam} வட்டம் ${villageMatch.villageTam} வருவாய் கிராமத்தின் கீழ் உள்ள துணைக் கிராமம் (Hamlet Village) ஆகும். இது ${villageMatch.districtTam} மாவட்டத்தின் கீழ் வருகிறது.`
-                : `ஆதார் அட்டையில் '${district || 'பழைய மாவட்டம்'}' என இருந்தாலும், ${villageMatch.villageTam} (${villageMatch.village}) தமிழக அரசு விதிகளின்படி ${villageMatch.districtTam} மாவட்டம், ${villageMatch.talukTam} வட்டத்தின் கீழ் வருகிறது.`;
+                : `ஆதார் அட்டையில் '${district || 'பழைய மாவட்டம்'}' என இருந்தாலும், ${finalVillageTam || finalVillage} தமிழக அரசு விதிகளின்படி ${villageMatch.districtTam} மாவட்டம், ${villageMatch.talukTam} வட்டத்தின் கீழ் வருகிறது.`;
         }
 
         return {
@@ -99,8 +109,8 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
             districtTam: villageMatch.districtTam,
             taluk: villageMatch.taluk,
             talukTam: villageMatch.talukTam,
-            village: villageMatch.village,
-            villageTam: villageMatch.villageTam,
+            village: finalVillage,
+            villageTam: finalVillageTam,
             areaEng: villageMatch.areaEng || undefined,
             areaTam: villageMatch.areaTam || undefined,
             wasAutoCorrected: wasDistrictCorrected || villageMatch.isHamlet,

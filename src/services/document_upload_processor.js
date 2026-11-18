@@ -140,30 +140,51 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
 
         const fKey = `memberAadhaarFront_${memberIndex}`;
         const bKey = `memberAadhaarBack_${memberIndex}`;
+        const isBirthCertDoc = extractedMember?.documentType === 'BIRTH_CERTIFICATE';
         if (isBackSide) {
             sess.tempUploads[bKey] = optimizedPath;
-            sess.tempUploads.memberAadhaarBack = optimizedPath;
+            if (memberIndex === 0) sess.tempUploads.memberAadhaarBack = optimizedPath;
         } else {
             sess.tempUploads[fKey] = optimizedPath;
-            sess.tempUploads.memberAadhaarFront = optimizedPath;
+            // Clear stale per-slot back image if uploading a brand new single-file/birth-cert front for this member
+            if (isBirthCertDoc || (uploadedFile.path || '').toLowerCase().endsWith('.pdf')) {
+                delete sess.tempUploads[bKey];
+            }
+            if (memberIndex === 0) sess.tempUploads.memberAadhaarFront = optimizedPath;
         }
 
-        const mFront = sess.tempUploads[fKey] || sess.tempUploads.memberAadhaarFront || (!isBackSide ? optimizedPath : (sess.citizenProfile.members?.[memberIndex]?.docPath || null));
-        const mBack = sess.tempUploads[bKey] || sess.tempUploads.memberAadhaarBack || (isBackSide ? optimizedPath : null);
-        if (mFront && mBack && mFront !== mBack && fs.existsSync(mFront) && fs.existsSync(mBack)) {
+        // Strict per-member isolation: NEVER merge Member N's front with another member's stale global back!
+        const mFront = memberIndex > 0
+            ? (sess.tempUploads[fKey] || (!isBackSide ? optimizedPath : (sess.citizenProfile.members?.[memberIndex]?.docPath || null)))
+            : (sess.tempUploads[fKey] || sess.tempUploads.memberAadhaarFront || (!isBackSide ? optimizedPath : (sess.citizenProfile.members?.[memberIndex]?.docPath || null)));
+        const mBack = memberIndex > 0
+            ? (sess.tempUploads[bKey] || (isBackSide ? optimizedPath : null))
+            : (sess.tempUploads[bKey] || sess.tempUploads.memberAadhaarBack || (isBackSide ? optimizedPath : null));
+        if (!isBirthCertDoc && mFront && mBack && mFront !== mBack && fs.existsSync(mFront) && fs.existsSync(mBack)) {
             try {
                 const mergedPdf = await produceDualSidedDocument(mFront, mBack);
                 if (mergedPdf && fs.existsSync(mergedPdf)) {
                     optimizedPath = mergedPdf;
-                    sess.tempUploads.memberAadhaar = mergedPdf;
-                    sess.citizenProfile.documents.memberAadhaar = mergedPdf;
+                    if (memberIndex === 0) {
+                        sess.tempUploads.memberAadhaar = mergedPdf;
+                        sess.citizenProfile.documents.memberAadhaar = mergedPdf;
+                    }
                 }
             } catch (e) {}
         }
 
         if (sess.citizenProfile.members && sess.citizenProfile.members[memberIndex]) {
             sess.citizenProfile.members[memberIndex].docPath = optimizedPath;
-            sess.citizenProfile.members[memberIndex].docType = 'AADHAAR_CARD';
+            sess.citizenProfile.members[memberIndex].docType = isBirthCertDoc ? 'BIRTH_CERTIFICATE' : 'AADHAAR_CARD';
+            sess.citizenProfile.members[memberIndex].hasAadhaar = !isBirthCertDoc;
+            if (isBirthCertDoc) {
+                sess.citizenProfile.members[memberIndex].birthCertificatePath = optimizedPath;
+                sess.citizenProfile.members[memberIndex].aadhaarNumber = '';
+            }
+        }
+        sess.citizenProfile.documents[`memberDoc_${memberIndex}`] = optimizedPath;
+        if (memberIndex > 0) {
+            sess.citizenProfile.documents[`memberAadhaar${memberIndex - 1}`] = optimizedPath;
         }
         sess.tempUploads[`memberAadhaar_${memberIndex}`] = optimizedPath;
 
@@ -181,7 +202,7 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                     dob: extractedMember.dob || sess.citizenProfile.subServiceData?.dob || '',
                     gender: extractedMember.gender || sess.citizenProfile.subServiceData?.gender || 'Male',
                     genderTam: extractedMember.genderTam || (extractedMember.gender === 'Female' ? 'பெண்' : 'ஆண்'),
-                    aadhaarNo: extractedMember.aadhaarNumber ? String(extractedMember.aadhaarNumber).replace(/\s+/g, '') : (sess.citizenProfile.subServiceData?.aadhaarNo || ''),
+                    aadhaarNo: isBirthCertDoc ? '' : (extractedMember.aadhaarNumber ? String(extractedMember.aadhaarNumber).replace(/\s+/g, '') : (sess.citizenProfile.subServiceData?.aadhaarNo || '')),
                     docPath: optimizedPath
                 };
                 sess.subServiceData = sess.citizenProfile.subServiceData;
@@ -195,8 +216,10 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                     sess.citizenProfile.members[memberIndex].gender = extractedMember.gender;
                     sess.citizenProfile.members[memberIndex].genderTam = extractedMember.genderTam || (extractedMember.gender === 'Female' ? 'பெண்' : 'ஆண்');
                 }
-                if (extractedMember.aadhaarNumber) {
-                    sess.citizenProfile.members[memberIndex].aadhaarNumber = String(extractedMember.aadhaarNumber).replace(/\s+/g, '');
+                if (isBirthCertDoc) {
+                    sess.citizenProfile.members[memberIndex].aadhaarNumber = '';
+                } else if (extractedMember.aadhaarNumber && /^\d{12}$/.test(String(extractedMember.aadhaarNumber).replace(/\D/g, ''))) {
+                    sess.citizenProfile.members[memberIndex].aadhaarNumber = String(extractedMember.aadhaarNumber).replace(/\D/g, '');
                 }
             }
         }

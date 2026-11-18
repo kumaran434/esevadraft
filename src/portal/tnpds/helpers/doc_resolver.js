@@ -10,7 +10,7 @@ try {
     produceDualSidedDocument = require('../../../services/photo_studio').produceDualSidedDocument;
 } catch (_) {}
 
-async function resolveDocFromOptions(candidateFilePath, options, citizenProfile, docCategory) {
+async function resolveDocFromOptions(candidateFilePath, options, citizenProfile, docCategory, memberIndex = -1) {
     options = options || {};
     citizenProfile = citizenProfile || {};
     docCategory = docCategory || 'memberAadhaar';
@@ -19,11 +19,13 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
     // Priority 0a: Dual-Sided Aadhaar Front + Back Auto-Merge
     if (docCategory === 'memberAadhaar' || docCategory === 'headAadhaar' || docCategory === 'aadhaar') {
         const isMem = (docCategory === 'memberAadhaar');
+        const memSlotFront = isMem && memberIndex >= 0 ? (citizenProfile.documents?.[`memberAadhaarFront_${memberIndex + 1}`] || options.draftData?.documents?.[`memberAadhaarFront_${memberIndex + 1}`]) : null;
+        const memSlotBack = isMem && memberIndex >= 0 ? (citizenProfile.documents?.[`memberAadhaarBack_${memberIndex + 1}`] || options.draftData?.documents?.[`memberAadhaarBack_${memberIndex + 1}`]) : null;
         const fPath = isMem
-            ? (citizenProfile.documents?.memberAadhaarFront || options.draftData?.documents?.memberAadhaarFront || subData.docPath || candidateFilePath)
+            ? (memSlotFront || (memberIndex >= 0 ? candidateFilePath : (citizenProfile.documents?.memberAadhaarFront || options.draftData?.documents?.memberAadhaarFront || subData.docPath || candidateFilePath)))
             : (citizenProfile.documents?.headAadhaarFront || options.draftData?.documents?.headAadhaarFront || subData.docPath || candidateFilePath);
         const bPath = isMem
-            ? (citizenProfile.documents?.memberAadhaarBack || options.draftData?.documents?.memberAadhaarBack || subData.backPath)
+            ? (memSlotBack || (memberIndex >= 0 ? null : (citizenProfile.documents?.memberAadhaarBack || options.draftData?.documents?.memberAadhaarBack || subData.backPath)))
             : (citizenProfile.documents?.headAadhaarBack || options.draftData?.documents?.headAadhaarBack || subData.backPath);
 
         if (fPath && bPath && typeof fPath === 'string' && typeof bPath === 'string' && fPath !== bPath && fs.existsSync(fPath) && fs.existsSync(bPath) && typeof produceDualSidedDocument === 'function') {
@@ -38,26 +40,38 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
         }
     }
 
-    // Priority 0b: Check candidate file path properties
-    const candidatePaths = [
-        candidateFilePath,
-        subData.docPath,
-        subData.memberAadhaarPath,
-        subData.aadhaarPath,
-        subData.filePath,
-        subData.surrenderDocPath,
-        citizenProfile.tempMember?.docPath,
-        citizenProfile.tempMember?.filePath,
-        citizenProfile.docPath,
-        citizenProfile.members?.[0]?.docPath,
-        citizenProfile.documents?.memberAadhaar,
-        citizenProfile.documents?.birthCertificate,
-        options.draftData?.documents?.memberAadhaar,
-        options.draftData?.documents?.birthCertificate,
-        options.draftData?.documents?.headAadhaar,
-        options.draftData?.citizenProfile?.members?.[0]?.docPath,
-        options.draftData?.subServiceData?.docPath
-    ].filter(Boolean);
+    // Priority 0b: Check candidate file path properties (Strict isolation when memberIndex >= 0 — NEVER fall back to members[0]/headAadhaar!)
+    const isIndexedAdditionalMember = (docCategory === 'memberAadhaar' && memberIndex >= 0);
+    const candidatePaths = isIndexedAdditionalMember
+        ? [
+            candidateFilePath,
+            citizenProfile.members?.[memberIndex + 1]?.docPath,
+            citizenProfile.members?.[memberIndex + 1]?.birthCertificatePath,
+            citizenProfile.documents?.[`memberDoc_${memberIndex + 1}`],
+            citizenProfile.documents?.[`memberAadhaar${memberIndex}`],
+            options.draftData?.citizenProfile?.members?.[memberIndex + 1]?.docPath,
+            options.draftData?.documents?.[`memberDoc_${memberIndex + 1}`],
+            options.draftData?.documents?.[`memberAadhaar${memberIndex}`]
+        ].filter(Boolean)
+        : [
+            candidateFilePath,
+            subData.docPath,
+            subData.memberAadhaarPath,
+            subData.aadhaarPath,
+            subData.filePath,
+            subData.surrenderDocPath,
+            citizenProfile.tempMember?.docPath,
+            citizenProfile.tempMember?.filePath,
+            citizenProfile.docPath,
+            citizenProfile.members?.[0]?.docPath,
+            citizenProfile.documents?.memberAadhaar,
+            citizenProfile.documents?.birthCertificate,
+            options.draftData?.documents?.memberAadhaar,
+            options.draftData?.documents?.birthCertificate,
+            options.draftData?.documents?.headAadhaar,
+            options.draftData?.citizenProfile?.members?.[0]?.docPath,
+            options.draftData?.subServiceData?.docPath
+        ].filter(Boolean);
 
     for (const cp of candidatePaths) {
         if (typeof cp === 'string' && fs.existsSync(cp)) {
@@ -119,7 +133,8 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
             } catch (_) {}
         }
         if (docCategory === 'memberAadhaar' && Array.isArray(b64Map.memberAadhaarsBase64) && b64Map.memberAadhaarsBase64.length > 0) {
-            const matched = b64Map.memberAadhaarsBase64[0];
+            const pickIdx = (memberIndex >= 0) ? memberIndex : 0;
+            const matched = pickIdx < b64Map.memberAadhaarsBase64.length ? b64Map.memberAadhaarsBase64[pickIdx] : null;
             if (matched) {
                 const rawMemB64 = typeof matched === 'object' ? (matched.base64 || matched.data || '') : matched;
                 if (rawMemB64 && rawMemB64.length > 50) {

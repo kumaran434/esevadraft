@@ -7,8 +7,12 @@ const fs = require('fs');
 async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
         requestOtpFromUser,
+        clearStaleOtpState = () => {},
         showBrowserHud = async () => {}
     } = sharedContext;
+
+    // Clear previous Mobile OTP from cache/IPC BEFORE Head Aadhaar UIDAI OTP step!
+    clearStaleOtpState();
 
     // படி 35: ஆதார் OTP சாளரம் (Modal) இடைமறிப்பு ➔ அரசு கண்டிப்பான OTP சரிபார்ப்பு
     onProgress('📍 [படி 35/51] அரசு சர்வரில் ஆதார் OTP கோரப்படுகிறது... உங்கள் கைபேசிக்கு SMS வரும் வரை காத்திருக்கிறது...');
@@ -57,11 +61,15 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
         }, { eng: citizenProfile.fullNameEng, tam: citizenProfile.fullNameTam }).catch(() => false);
         if (inTable) break;
 
-        if (waitSec === 8 || waitSec === 18) {
-            onProgress('📍 ஆதார் OTP சாளரம் திறக்க மீண்டும் ஒருமுறை "உறுப்பினர் விவரம் சேமி" அழுத்தப்படுகிறது...');
-            const saveHeadBtn = page.getByRole('button', { name: /உறுப்பினர் விவரம் சேமி|Save Member/i }).last();
-            if (await saveHeadBtn.count() > 0 && await saveHeadBtn.isVisible().catch(() => false)) {
-                await saveHeadBtn.click({ force: true }).catch(() => {});
+        if (waitSec === 22) {
+            // Only click Save Member once more if NO modal AND NO busy spinner appeared after 22s!
+            const isBusyNow = await page.evaluate(() => Boolean(document.querySelector('.spinner-border, .loading'))).catch(() => false);
+            if (!isBusyNow) {
+                onProgress('📍 ஆதார் OTP சாளரம் இன்னும் திறக்கவில்லை — "உறுப்பினர் விவரம் சேமி" மீண்டும் ஒருமுறை அழுத்தப்படுகிறது...');
+                const saveHeadBtn = page.getByRole('button', { name: /உறுப்பினர் விவரம் சேமி|Save Member/i }).last();
+                if (await saveHeadBtn.count() > 0 && await saveHeadBtn.isVisible().catch(() => false)) {
+                    await saveHeadBtn.click({ force: true }).catch(() => {});
+                }
             }
         }
         await page.waitForTimeout(1000);
@@ -76,6 +84,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
     const headDisplayName = citizenProfile.fullNameTam || citizenProfile.fullNameEng || 'தலைவர்';
     let isHeadInTable = false;
     let lastSubmittedOtp = '';
+    let lastAadhaarResendAt = Date.now();
     const maxWatchSec = 600; // 10 minutes live watch
     let watchTicks = 0;
 
@@ -202,8 +211,9 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             continue;
         }
 
-        // 3. 300 விநாடிகள் முடிந்து டைமர் 0 ஆனால் தானாக 'OTP மீண்டும் அனுப்பவும்' அழுத்துதல்
-        if (modalInfo.timerVal === 0 && modalInfo.hasResendBtn) {
+        // 3. 300 விநாடிகள் முடிந்து டைமர் 0 ஆனால் (மற்றும் 65 விநாடி cooldown முடிந்தால்) தானாக 'OTP மீண்டும் அனுப்பவும்' அழுத்துதல்
+        if (modalInfo.timerVal === 0 && modalInfo.hasResendBtn && (Date.now() - lastAadhaarResendAt >= 65000)) {
+            lastAadhaarResendAt = Date.now();
             onProgress('📍 [ஆதார் OTP] 300 விநாடிகள் முடிவடைந்தது. புதிய UIDAI OTP பெற "OTP மீண்டும் அனுப்பவும்" பொத்தான் அழுத்தப்படுகிறது...');
             try {
                 const resendLoc = page.locator('input[formcontrolname="otp"]').locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(text(),"மீண்டும்") or contains(text(),"Resend")]').first();
@@ -212,7 +222,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
                 }
             } catch (_) {}
             lastSubmittedOtp = '';
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(2500);
             continue;
         }
 

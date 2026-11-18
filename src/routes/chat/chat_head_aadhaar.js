@@ -311,14 +311,20 @@ async function handleHeadAadhaar(ctx, req, res) {
                 sess.currentMemberIdx = nextMemberIdx;
                 sess.tempUploads.currentMemberFront = null;
                 sess.tempUploads.currentMemberBack = null;
+                sess.tempUploads.expectingMemberDocType = null;
                 sess.intakeState = 'MEMBER_AADHAAR_FRONT';
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `✅ **குடும்பத் தலைவர் விவரங்கள் 100% உறுதி செய்யப்பட்டன!**\n\n` +
-                          `👥 **படி 3/6: குடும்ப உறுப்பினர் ${nextMemberIdx + 1}-ன் ஆதார் அட்டை**\n\n` +
-                          `உறுப்பினர் ${nextMemberIdx + 1}-ன் ஆதார் அட்டையின் **முன்பக்கத்தைப் (Front Side)** பதிவேற்றவும்:`,
+                          `👥 **படி 3/6: குடும்ப உறுப்பினர் ${nextMemberIdx + 1}-ன் ஆவணம்**\n\n` +
+                          `உறுப்பினர் ${nextMemberIdx + 1}-ன் **ஆதார் அட்டையைப் (முன்பக்கம் / முழு அட்டை)** பதிவேற்றவும்.\n` +
+                          `*(👶 ஆதார் அட்டை இல்லாத சிறிய குழந்தை எனில் **பிறப்புச் சான்றிதழ் (Birth Certificate)** பதிவேற்றவும்!)*`,
                     actionRequired: 'upload',
-                    uploadPrompt: `உறுப்பினர் ${nextMemberIdx + 1} ஆதார் முன்பக்கம்`
+                    uploadPrompt: `உறுப்பினர் ${nextMemberIdx + 1} ஆதார் / பிறப்புச் சான்றிதழ்`,
+                    options: [
+                        { label: "🪪 ஆதார் அட்டை பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "📜 பிறப்புச் சான்றிதழ் (ஆதார் இல்லாத குழந்தை)", value: "MEMBER_BIRTH_CERT_UPLOAD" }
+                    ]
                 });
                 persistSessions(activeMobile);
                 if (activeMobile) {

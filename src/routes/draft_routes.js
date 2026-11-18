@@ -130,16 +130,40 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
             } catch (_) {}
 
             draft.base64Docs = draft.base64Docs || {};
-            const memDocPath = draft.documents?.memberAadhaar || draft.citizenProfile?.subServiceData?.docPath || draft.citizenProfile?.tempMember?.docPath || draft.citizenProfile?.members?.[0]?.docPath;
-            if (memDocPath && (!draft.base64Docs.memberAadhaarBase64 || !draft.base64Docs.memberAadhaarsBase64 || draft.base64Docs.memberAadhaarsBase64.length === 0)) {
-                let resolvedP = fs.existsSync(memDocPath) ? memDocPath : path.join(__dirname, '..', '..', 'uploads', path.basename(memDocPath));
-                if (fs.existsSync(resolvedP)) {
-                    try {
-                        const b64 = fs.readFileSync(resolvedP).toString('base64');
-                        draft.base64Docs.memberAadhaarBase64 = b64;
-                        draft.base64Docs.memberAadhaarName = path.basename(resolvedP);
-                        draft.base64Docs.memberAadhaarsBase64 = [{ name: path.basename(resolvedP), base64: b64 }];
-                    } catch (e) {}
+            const extraMembers = Array.isArray(draft.citizenProfile?.members) ? draft.citizenProfile.members.slice(1) : [];
+            if (extraMembers.length > 0 && (!draft.base64Docs.memberAadhaarsBase64 || draft.base64Docs.memberAadhaarsBase64.length < extraMembers.length)) {
+                const rebuiltMemDocs = [];
+                for (let ei = 0; ei < extraMembers.length; ei++) {
+                    const em = extraMembers[ei];
+                    const emPath = em?.docPath || em?.birthCertificatePath || draft.documents?.[`memberDoc_${ei + 1}`] || draft.documents?.[`memberAadhaar${ei}`] || '';
+                    if (emPath) {
+                        const resolvedEm = fs.existsSync(emPath) ? emPath : path.join(__dirname, '..', '..', 'uploads', path.basename(emPath));
+                        if (fs.existsSync(resolvedEm)) {
+                            try {
+                                const b64 = fs.readFileSync(resolvedEm).toString('base64');
+                                rebuiltMemDocs.push({ name: path.basename(resolvedEm), docType: em?.docType || 'AADHAAR_CARD', memberIdx: ei + 1, base64: b64 });
+                            } catch (_) {}
+                        }
+                    }
+                }
+                if (rebuiltMemDocs.length > 0) {
+                    draft.base64Docs.memberAadhaarsBase64 = rebuiltMemDocs;
+                    draft.base64Docs.memberAadhaarBase64 = rebuiltMemDocs[0].base64;
+                    draft.base64Docs.memberAadhaarName = rebuiltMemDocs[0].name;
+                }
+            } else {
+                // Single-member subservices (ADD_MEMBER) ONLY — NEVER fall back to members[0] (Head)!
+                const memDocPath = draft.documents?.memberAadhaar || draft.citizenProfile?.subServiceData?.docPath || draft.citizenProfile?.tempMember?.docPath;
+                if (memDocPath && (!draft.base64Docs.memberAadhaarBase64 || !draft.base64Docs.memberAadhaarsBase64 || draft.base64Docs.memberAadhaarsBase64.length === 0)) {
+                    let resolvedP = fs.existsSync(memDocPath) ? memDocPath : path.join(__dirname, '..', '..', 'uploads', path.basename(memDocPath));
+                    if (fs.existsSync(resolvedP)) {
+                        try {
+                            const b64 = fs.readFileSync(resolvedP).toString('base64');
+                            draft.base64Docs.memberAadhaarBase64 = b64;
+                            draft.base64Docs.memberAadhaarName = path.basename(resolvedP);
+                            draft.base64Docs.memberAadhaarsBase64 = [{ name: path.basename(resolvedP), base64: b64 }];
+                        } catch (e) {}
+                    }
                 }
             }
             const draftOp = normalizeOperatorUid(draft.operatorUid);

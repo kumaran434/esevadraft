@@ -3893,6 +3893,49 @@ async function runTests() {
             passedCount += 16;
         }
 
+        // =========================================================================
+        // TEST 60: 🪪 Suman Production New Ration Card 4-Bug Hardening Lock
+        // (Standalone Village + Child Birth Certificate + Double OTP + Tamil Initials)
+        // =========================================================================
+        console.log('\n[TEST 60] 🪪 Verifying New Ration Card 4-Bug Hardening (Village, Birth Cert, Double OTP, Initials)...');
+        {
+            const { ensureBilingualPair, normalizeTamilInitialsFromEnglish } = require('../src/utils/bilingual_helper');
+            assert(ensureBilingualPair('Suman G', '').tam.endsWith('ஜி'), "ensureBilingualPair maps trailing initial 'G' -> 'ஜி'");
+            assert(normalizeTamilInitialsFromEnglish('Suman G', 'சுமன் ஜே') === 'சுமன் ஜி', "normalizeTamilInitialsFromEnglish corrects mismatched G->ஜே into ஜி");
+            assert(normalizeTamilInitialsFromEnglish('J. Priya', 'ஜே. பிரியா') === 'ஜே பிரியா', "normalizeTamilInitialsFromEnglish keeps J -> ஜே accurately");
+            assert(ensureBilingualPair('G.Suman', '').tam.startsWith('ஜி'), "ensureBilingualPair splits dotted initial G.Suman cleanly -> ஜி சுமன்");
+
+            const { resolveTnDistrict } = require('../tn_district_mapper');
+            const amburTest = resolveTnDistrict('Vellore', 'Ambur', 'Periyavarikkam', '635804', 'Periyavarikkam, Ambur Taluk, Vellore');
+            assert(/^Tirupat(h|t)ur$/i.test(amburTest.district) && amburTest.taluk === 'Ambur' && amburTest.village === 'Periyavarikkam', "resolveTnDistrict maps Vellore/Ambur to Tirupathur while preserving standalone village Periyavarikkam");
+
+            const jurSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_jurisdiction_steps.js'), 'utf8');
+            assert(jurSrc.includes('matchBestSelectOption') && !jurSrc.includes("if (!opt && sel.options.length > 1) opt = sel.options[1];"), "card_jurisdiction_steps uses bilingual fuzzy matchBestSelectOption instead of blind sel.options[1]");
+
+            const memChatSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_member_aadhaar.js'), 'utf8');
+            assert(memChatSrc.includes('MEMBER_BIRTH_CERT_UPLOAD') && memChatSrc.includes("docType: isBirthCert ? 'BIRTH_CERTIFICATE' : 'AADHAAR_CARD'") && !memChatSrc.includes(": '491436223971'"), "chat_member_aadhaar supports child Birth Certificate without fabricating dummy Aadhaar");
+
+            const addMemFormSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_additional_member_form.js'), 'utf8');
+            assert(addMemFormSrc.includes('isBirthCertMember') && addMemFormSrc.includes("o.text.includes('பிறப்பு')") && addMemFormSrc.includes("'memberAadhaar', targetIdx"), "card_additional_member_form supports Birth Certificate selection and isolated per-member docs");
+
+            const draftRouteSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'draft_routes.js'), 'utf8');
+            assert(!draftRouteSrc.includes("draft.citizenProfile?.members?.[0]?.docPath"), "draft_routes NEVER steals Head member[0] docPath for additional members");
+
+            const headStepsSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_member_steps.js'), 'utf8');
+            assert(!headStepsSrc.includes('comp.aadharCheck()') && headStepsSrc.includes('new Date(dYear, dMonth, dDay, 12, 0, 0)'), "card_head_member_steps avoids duplicate aadharCheck() OTP firing and parses DOB dynamically");
+
+            const step21Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
+            assert(step21Src.includes('65000') && fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_aadhaar_otp_steps.js'), 'utf8').includes('65000'), "OTP verifiers enforce strict 65s resend cooldown");
+
+            const famLoopSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
+            assert(famLoopSrc.includes('if (!isBirthCertMember)') && famLoopSrc.includes('clearStaleOtpState'), "card_family_members_loop skips Aadhaar OTP for Birth Certificate members and clears stale OTP between members");
+
+            const tnpdsAutoSrc = fs.readFileSync(path.join(__dirname, '..', 'tnpds_automation.js'), 'utf8');
+            assert(tnpdsAutoSrc.includes('cachedUserOtp = \'\'; cachedOtpTimestamp = 0;') && tnpdsAutoSrc.includes('!isModalVisible'), "tnpds_automation clears cachedUserOtp on consumption and ignores spinner while OTP modal is open");
+
+            passedCount += 13;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');

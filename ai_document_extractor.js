@@ -101,9 +101,11 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * "BANK_PASSBOOK" (வங்கி கணக்குப் புத்தகம்)
   * "NONE" (if it is photo or aadhaar)
 - Full Name in English and accurate Tamil transliteration.
-- Father / Husband Name in English and accurate Tamil transliteration.
+  * CRITICAL TAMIL INITIAL RULE: For single-letter initials in names (e.g., "G. Suman", "Suman G", "J. Kumar", "K. Priya"), NEVER leave the initial in English and NEVER write wrong phonetic consonants (like க for G or ஜ for J). Strictly map standard Tamil letter-sounds: G -> ஜி, J -> ஜே, K -> கி, C -> சி, S -> எஸ், R -> ஆர், M -> எம், N -> என், P -> பி, B -> பி, D -> டி, T -> டி, V -> வி, L -> எல், A -> அ, E -> இ, I -> ஐ, O -> ஓ, U -> யூ, H -> ஹெச், F -> எஃப்.
+- Father / Husband Name in English and accurate Tamil transliteration (apply the same Tamil Initial Rule).
 - Date of Birth (format: DD/MM/YYYY).
 - Gender ("Male" / "Female").
+- BIRTH CERTIFICATE SPECIAL RULE: If documentType is "BIRTH_CERTIFICATE", extract the CHILD'S name as fullNameEng/fullNameTam, the child's DOB as dob, child's gender as gender, father's name as fatherNameEng/fatherNameTam, registration number as certificateNumber, and set aadhaarNumber strictly to null unless a 12-digit Aadhaar number specifically for that child is printed (NEVER put parent's phone/Aadhaar into child's aadhaarNumber).
 - 12-Digit Aadhaar Number (without spaces, ONLY if an Aadhaar number is printed on the document; do not confuse LPG ID with Aadhaar).
 - Smart Ration Card Number ("smartCardNumber", e.g., 12-digit number starting with 33... or old format like 05/G/..., ONLY if visible on a Ration/Smart Card).
 - Door No / House No.
@@ -190,6 +192,22 @@ Respond strictly in JSON format (use null for fields not present in the image):
         });
 
         const result = JSON.parse(response.text);
+        try {
+            const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('./src/utils/bilingual_helper');
+            if (result.fullNameEng && result.fullNameTam) {
+                result.fullNameTam = normalizeTamilInitialsFromEnglish(result.fullNameEng, result.fullNameTam);
+            } else if (result.fullNameEng && !result.fullNameTam) {
+                result.fullNameTam = ensureBilingualPair(result.fullNameEng, '').tam;
+            }
+            if (result.fatherNameEng && result.fatherNameTam) {
+                result.fatherNameTam = normalizeTamilInitialsFromEnglish(result.fatherNameEng, result.fatherNameTam);
+            } else if (result.fatherNameEng && !result.fatherNameTam) {
+                result.fatherNameTam = ensureBilingualPair(result.fatherNameEng, '').tam;
+            }
+            if (result.documentType === 'BIRTH_CERTIFICATE' && result.aadhaarNumber && !/^\d{12}$/.test(String(result.aadhaarNumber).replace(/\D/g, ''))) {
+                result.aadhaarNumber = null;
+            }
+        } catch (_) {}
         console.log('\n📄 --- AI DOCUMENT INSPECTOR REPORT ---');
         console.log(`📄 Document Type: ${result.documentType}`);
         console.log(`📄 Quality Acceptable: ${result.isQualityAcceptable ? '✅ YES' : '❌ NO'}`);

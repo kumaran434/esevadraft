@@ -1,12 +1,14 @@
 /**
  * TNPDS New Smart Card - Additional Family Members Loop & Table Verification
  */
+const fs = require('fs');
 const path = require('path');
 const { fillAdditionalMemberForm } = require('./card_additional_member_form');
 
 async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
         requestOtpFromUser,
+        clearStaleOtpState = () => {},
         showBrowserHud = async () => {},
         removeBrowserHud = async () => {}
     } = sharedContext;
@@ -76,11 +78,12 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         // Fill Form
         const formRes = await fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, scanAndBroadcastToasts);
         if (!formRes.success) return formRes;
-        const { memPdf, targetRelTam, targetRelEng } = formRes;
+        const { memPdf, targetRelTam, targetRelEng, isBirthCertMember } = formRes;
+        const docLabel = isBirthCertMember ? 'பிறப்புச் சான்றிதழ் PDF' : 'ஆதார் PDF';
 
         // 12. "பதிவேற்றம்" பொத்தான் கிளிக் ➔ பச்சைக் குறியீடு உறுதி
-        onProgress(`📍 [உறுப்பினர் ${memNum}] ஆதார் PDF பதிவேற்றம் ("பதிவேற்றம்") பொத்தான் அழுத்தப்படுகிறது...`);
-        await showBrowserHud(`📤 [உறுப்பினர் ${memNum}] ஆதார் சர்வரில் பதிவேற்றப்படுகிறது...`, 'அரசு தளத்தில் பதிவேற்றம் ஆகிறது • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');
+        onProgress(`📍 [உறுப்பினர் ${memNum}] ${docLabel} பதிவேற்றம் ("பதிவேற்றம்") பொத்தான் அழுத்தப்படுகிறது...`);
+        await showBrowserHud(`📤 [உறுப்பினர் ${memNum}] ${docLabel} சர்வரில் பதிவேற்றப்படுகிறது...`, 'அரசு தளத்தில் பதிவேற்றம் ஆகிறது • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');
 
         await page.evaluate(() => {
             const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
@@ -123,10 +126,13 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         }, path.basename(memPdf));
 
         if (!isGreenInDOM && !isMockSandboxMode) {
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} ஆதார் PDF பதிவேற்றத்தில் பச்சைக் குறியீடு வரவில்லை!`);
-            return { success: false, message: `உறுப்பினர் ${memNum} ஆதார் PDF பதிவேற்றம் தோல்வி.` };
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} ${docLabel} பதிவேற்றத்தில் பச்சைக் குறியீடு வரவில்லை!`);
+            return { success: false, message: `உறுப்பினர் ${memNum} ${docLabel} பதிவேற்றம் தோல்வி.` };
         }
-        onProgress(`✅ [உறுப்பினர் ${memNum}] ஆதார் PDF வெற்றிகரமாகப் பதிவேற்றப்பட்டு பச்சைக் குறியீடு உறுதி செய்யப்பட்டது!`);
+        onProgress(`✅ [உறுப்பினர் ${memNum}] ${docLabel} வெற்றிகரமாகப் பதிவேற்றப்பட்டு பச்சைக் குறியீடு உறுதி செய்யப்பட்டது!`);
+
+        // Clear any leftover OTP from previous member BEFORE saving this member (prevents UIDAI/mobile OTP collisions)
+        clearStaleOtpState();
 
         // 13. உறுப்பினர் விவரம் சேமி பொத்தான் கிளிக்
         onProgress(`📍 [உறுப்பினர் ${memNum}] உறுப்பினர் விவரம் சேமி பொத்தான் அழுத்தப்படுகிறது...`);
@@ -152,53 +158,161 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         await scanAndBroadcastToasts();
         await removeBrowserHud();
 
-        // 14. ஆதார் OTP (Modal தோன்றினால்)
+        // 14. ஆதார் OTP (ஆதார் உறுப்பினருக்கு Modal தோன்றினால்; பிறப்புச் சான்றிதழ் குழந்தைக்கு ஆதார் OTP தேவையில்லை)
         let isMemModalVisible = false;
-        for (let waitSec = 0; waitSec < 25; waitSec++) {
-            isMemModalVisible = await checkAadhaarModal();
-            if (isMemModalVisible) break;
-            const alreadyInTable = await page.evaluate((cnt) => {
-                const table = document.querySelector('table');
-                if (!table) return false;
-                const rows = Array.from(table.querySelectorAll('tr')).filter(r => !r.innerText.includes('பெயர்') && !r.innerText.includes('name'));
-                return rows.length >= cnt;
-            }, memNum).catch(() => false);
-            if (alreadyInTable) break;
-            await page.waitForTimeout(1000);
+        if (!isBirthCertMember) {
+            for (let waitSec = 0; waitSec < 25; waitSec++) {
+                isMemModalVisible = await checkAadhaarModal();
+                if (isMemModalVisible) break;
+                const alreadyInTable = await page.evaluate((cnt) => {
+                    const table = document.querySelector('table');
+                    if (!table) return false;
+                    const rows = Array.from(table.querySelectorAll('tr')).filter(r => !r.innerText.includes('பெயர்') && !r.innerText.includes('name'));
+                    return rows.length >= cnt;
+                }, memNum).catch(() => false);
+                if (alreadyInTable) break;
+                await page.waitForTimeout(1000);
+            }
         }
 
         if (isMemModalVisible) {
             onProgress(`🔐 [ஆதார் OTP தேவை] உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ஆதார் OTP சாளரம் திரையில் உள்ளது!`);
-            const memOtp = await requestOtpFromUser(
-                `🔐 **ஆதார் சரிபார்ப்பு OTP (${mem.nameTam || mem.nameEng}):**\n\n${mem.relationshipTam || 'உறுப்பினர்'} (${mem.nameTam || mem.nameEng}) ஆதார் எண்ணிற்கு வந்துள்ள 6-இலக்க ஆதார் OTP எண்ணை இங்கே தட்டச்சு செய்யவும்:`,
-                onProgress, 'aadhaar_otp', page
-            );
-            const cleanMemOtp = (memOtp && memOtp !== 'ALREADY_VERIFIED_ON_PORTAL') ? String(memOtp).replace(/\D/g, '') : '';
-            if (cleanMemOtp && cleanMemOtp.length === 6) {
-                await page.evaluate((otpVal) => {
-                    const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp') ||
-                        Array.from(document.querySelectorAll('input:not([type="hidden"])')).find(i => !i.disabled && !i.readOnly);
-                    if (otpInp) {
-                        otpInp.value = otpVal;
-                        otpInp.dispatchEvent(new Event('input', { bubbles: true }));
-                        otpInp.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, cleanMemOtp);
+            await showBrowserHud(`[ஆதார் OTP தேவை] உறுப்பினர் ${memNum}`, `${mem.nameTam || mem.nameEng} ஆதார் SMS OTP உள்ளிடவும்`, 'warning');
 
-                // Playwright Single Atomic Click strictly inside this Aadhaar modal
-                const subBtnLoc = page.locator('input[formcontrolname="otp"], input#otp')
-                    .locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(@class,"btn-success") or contains(text(),"சமர்ப்பிக்கவும்") or contains(text(),"Submit")]')
-                    .first();
-                if (await subBtnLoc.count() > 0 && await subBtnLoc.isVisible().catch(() => false)) {
-                    await subBtnLoc.click({ delay: 50 }).catch(() => {});
+            // Live self-healing watch loop supporting app chat/IPC AND direct Chrome typing + resend cooldown + toast retry
+            let lastMemOtpSubmitted = '';
+            let lastMemResendAt = Date.now();
+            let promptedAppOnce = false;
+
+            for (let tick = 0; tick < 360; tick++) {
+                const nowInTable = await page.evaluate((cnt) => {
+                    const table = document.querySelector('table');
+                    if (!table) return false;
+                    const rows = Array.from(table.querySelectorAll('tr')).filter(r => !r.innerText.includes('பெயர்') && !r.innerText.includes('name'));
+                    return rows.length >= cnt;
+                }, memNum).catch(() => false);
+                if (nowInTable) break;
+
+                if (!(await checkAadhaarModal())) {
+                    await page.waitForTimeout(1000);
+                    continue;
                 }
-            }
-            await page.waitForTimeout(2000);
-            for (let w = 0; w < 25; w++) {
-                if (!(await checkAadhaarModal())) break;
+
+                // Check disk IPC OTP (data/pending_otp.txt) from App chat/webhook
+                const pendingOtpPaths = [
+                    path.join(process.cwd(), 'data', 'pending_otp.txt'),
+                    path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'data', 'pending_otp.txt'),
+                    path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'pending_otp.txt')
+                ];
+                let typedFromApp = '';
+                for (const pPath of pendingOtpPaths) {
+                    if (fs.existsSync(pPath)) {
+                        try {
+                            const st = fs.statSync(pPath);
+                            if (Date.now() - st.mtimeMs < 45000) {
+                                const dVal = fs.readFileSync(pPath, 'utf8').trim().replace(/\D/g, '');
+                                if (dVal.length === 6) {
+                                    typedFromApp = dVal;
+                                    try { fs.unlinkSync(pPath); } catch (_) {}
+                                    break;
+                                }
+                            } else {
+                                try { fs.unlinkSync(pPath); } catch (_) {}
+                            }
+                        } catch (_) {}
+                    }
+                }
+                if (typedFromApp) {
+                    await page.evaluate((otpVal) => {
+                        const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp') ||
+                            Array.from(document.querySelectorAll('.modal input:not([type="hidden"])')).find(i => !i.disabled && !i.readOnly);
+                        if (otpInp) {
+                            otpInp.value = otpVal;
+                            otpInp.dispatchEvent(new Event('input', { bubbles: true }));
+                            otpInp.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, typedFromApp);
+                } else if (!promptedAppOnce && tick === 0) {
+                    promptedAppOnce = true;
+                    // Register background chat OTP listener so operator can type either in App OR directly in Chrome
+                    Promise.resolve(requestOtpFromUser(
+                        `🔐 **ஆதார் சரிபார்ப்பு OTP (${mem.nameTam || mem.nameEng}):**\n\n${mem.relationshipTam || 'உறுப்பினர்'} (${mem.nameTam || mem.nameEng}) ஆதார் எண்ணிற்கு வந்துள்ள 6-இலக்க ஆதார் OTP எண்ணை இங்கே (அல்லது Chrome திரையில்) உள்ளிடவும்:`,
+                        onProgress, 'aadhaar_otp', page
+                    )).then(async (appOtp) => {
+                        const cleanAppOtp = (appOtp && appOtp !== 'ALREADY_VERIFIED_ON_PORTAL') ? String(appOtp).replace(/\D/g, '') : '';
+                        if (cleanAppOtp && cleanAppOtp.length === 6) {
+                            await page.evaluate((otpVal) => {
+                                const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp');
+                                if (otpInp && (otpInp.value || '').replace(/\D/g, '') !== otpVal) {
+                                    otpInp.value = otpVal;
+                                    otpInp.dispatchEvent(new Event('input', { bubbles: true }));
+                                    otpInp.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                            }, cleanAppOtp).catch(() => {});
+                        }
+                    }).catch(() => {});
+                }
+
+                const modalSnap = await page.evaluate(() => {
+                    const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp');
+                    const modal = otpInp ? otpInp.closest('.modal, div[role="dialog"]') : document.querySelector('.modal.show, div[role="dialog"]');
+                    if (!modal) return { otpVal: '', timerVal: null, canResend: false };
+                    const val = ((otpInp || modal.querySelector('input:not([type="hidden"])'))?.value || '').replace(/\D/g, '');
+                    const timerSpan = Array.from(modal.querySelectorAll('span.text-danger, span')).find(s => /^\d+$/.test((s.innerText || '').trim()));
+                    const timerVal = timerSpan ? parseInt(timerSpan.innerText.trim(), 10) : null;
+                    const resendBtn = Array.from(modal.querySelectorAll('button')).find(b => {
+                        const bt = (b.innerText || '').trim();
+                        return bt.includes('மீண்டும் அனுப்பவும்') || bt.includes('Resend');
+                    });
+                    return { otpVal: val, timerVal, canResend: Boolean(resendBtn && !resendBtn.disabled) };
+                }).catch(() => ({ otpVal: '', timerVal: null, canResend: false }));
+
+                if (modalSnap.timerVal === 0 && modalSnap.canResend && (Date.now() - lastMemResendAt >= 65000)) {
+                    lastMemResendAt = Date.now();
+                    onProgress(`🔄 [உறுப்பினர் ${memNum}] 300 விநாடிகள் முடிந்தது — புதிய UIDAI ஆதார் OTP கோரப்படுகிறது...`);
+                    const resendLoc = page.locator('input[formcontrolname="otp"], input#otp')
+                        .locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(text(),"மீண்டும்") or contains(text(),"Resend")]')
+                        .first();
+                    if (await resendLoc.count() > 0 && await resendLoc.isVisible().catch(() => false)) {
+                        await resendLoc.click({ delay: 50 }).catch(() => {});
+                    }
+                    lastMemOtpSubmitted = '';
+                    await page.waitForTimeout(2500);
+                    continue;
+                }
+
+                if (modalSnap.otpVal.length === 6 && modalSnap.otpVal !== lastMemOtpSubmitted) {
+                    lastMemOtpSubmitted = modalSnap.otpVal;
+                    onProgress(`🔑 [உறுப்பினர் ${memNum}] ஆதார் OTP (${lastMemOtpSubmitted}) சமர்ப்பிக்கப்படுகிறது...`);
+                    // Playwright Single Atomic Click strictly inside this Aadhaar modal
+                    const subBtnLoc = page.locator('input[formcontrolname="otp"], input#otp')
+                        .locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(@class,"btn-success") or contains(text(),"சமர்ப்பிக்கவும்") or contains(text(),"Submit")]')
+                        .first();
+                    if (await subBtnLoc.count() > 0 && await subBtnLoc.isVisible().catch(() => false)) {
+                        await subBtnLoc.click({ delay: 60 }).catch(() => {});
+                    }
+                    await page.waitForTimeout(3000);
+                    await scanAndBroadcastToasts();
+
+                    const toastErr = await page.evaluate(() => {
+                        const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert')).map(t => (t.innerText || '').trim());
+                        return toasts.find(t => /txn|xsd|தவறான|invalid|failed|expired|காலாவதி/i.test(t));
+                    }).catch(() => null);
+                    if (toastErr) {
+                        onProgress(`⚠️ [உறுப்பினர் ${memNum} ஆதார் OTP] "${toastErr}" — புதிய OTP உள்ளிடவும்...`);
+                        await page.evaluate(() => {
+                            const inp = document.querySelector('input[formcontrolname="otp"], input#otp');
+                            if (inp) {
+                                inp.value = '';
+                                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }).catch(() => {});
+                        lastMemOtpSubmitted = '';
+                    }
+                }
                 await page.waitForTimeout(1000);
             }
-            await scanAndBroadcastToasts();
         }
 
         // 15. இரும்புக் கோட்டைப் பூட்டு: அட்டவணையில் சரிபார்த்தல்
@@ -230,6 +344,8 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
             return { success: false, message: `உறுப்பினர் ${memNum} அட்டவணையில் உறுதி செய்யப்படவில்லை.` };
         }
         onProgress(`✅ [உறுப்பினர் ${memNum}] ${mem.nameTam || mem.nameEng} அரசு அட்டவணையில் வெற்றிகரமாகச் சேர்க்கப்பட்டு பச்சையாகப் பூட்டப்பட்டது!`);
+        clearStaleOtpState();
+        await page.waitForTimeout(2000);
     }
 
     return { success: true };

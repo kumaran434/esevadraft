@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../../../utils/bilingual_helper');
 
 let produceCompliantDocument;
 try {
@@ -37,8 +38,13 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     await nameEngInp.dispatchEvent('change');
     await page.waitForTimeout(600);
 
-    // 3. பெயர் (தமிழில்) உள்ளீடு & சரிபார்ப்பு பூட்டு
-    const targetMemTam = (mem.nameTam || mem.name || '').trim();
+    // 3. பெயர் (தமிழில்) உள்ளீடு & சரிபார்ப்பு பூட்டு (இருமொழி இனிஷியல் துல்லிய ஒத்திசைவு)
+    let targetMemTam = (mem.nameTam || mem.name || '').trim();
+    if (targetMemEng && targetMemTam) {
+        targetMemTam = normalizeTamilInitialsFromEnglish(targetMemEng, targetMemTam);
+    } else if (targetMemEng && !targetMemTam) {
+        targetMemTam = ensureBilingualPair(targetMemEng, '').tam;
+    }
     onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் தமிழ் (${targetMemTam}) உள்ளிடப்படுகிறது...`);
     const nameTamInp = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').nth(1);
     
@@ -164,72 +170,121 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         await page.waitForTimeout(300);
     }
 
+    const cleanMemAadhaar = String(mem.aadhaarNumber || '').replace(/\D/g, '');
+    const isBirthCertMember = Boolean(
+        mem.docType === 'BIRTH_CERTIFICATE' ||
+        mem.proofType === 'BIRTH_CERTIFICATE' ||
+        mem.hasAadhaar === false ||
+        (!cleanMemAadhaar && mem.birthCertificatePath)
+    );
+
+    // Compute approximate age from DOB (DD/MM/YYYY) for minor/child detection
+    let memAge = 30;
+    if (memDobVal && /\d{4}/.test(memDobVal)) {
+        const yrMatch = memDobVal.match(/(\d{4})/);
+        if (yrMatch) memAge = Math.max(0, new Date().getFullYear() - parseInt(yrMatch[1], 10));
+    }
+
     // 8. தொழில் & வருமானம்
     const profSelect = page.locator('select[formcontrolname="profession"]').last();
     if (await profSelect.count() > 0) {
-        await profSelect.selectOption({ index: 1 }).catch(() => {});
+        if (isBirthCertMember || memAge < 15) {
+            const pOpts = await profSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: (o.text || '').trim() }))).catch(() => []);
+            const childOpt = pOpts.find(o => /student|child|none|not applicable|மாணவ|குழந்தை|பொருந்தாது|இல்லை/i.test(o.text + ' ' + o.value));
+            if (childOpt) await profSelect.selectOption(childOpt.value).catch(() => {});
+            else await profSelect.selectOption({ index: pOpts.length > 1 ? pOpts.length - 1 : 1 }).catch(() => {});
+        } else {
+            await profSelect.selectOption({ index: 1 }).catch(() => {});
+        }
         await profSelect.dispatchEvent('change');
         await page.waitForTimeout(300);
     }
 
     const incInp = page.locator('input[formcontrolname="monthlyIncome"]').last();
     if (await incInp.count() > 0) {
-        await incInp.fill('3000');
+        const memInc = (isBirthCertMember || memAge < 18) ? '0' : String(mem.monthlyIncome || '3000');
+        await incInp.fill(memInc);
         await incInp.dispatchEvent('input');
         await incInp.dispatchEvent('change');
         await page.waitForTimeout(300);
     }
 
-    // 9. மற்ற ஆவணங்கள் * (ஆதார் அட்டை) தேர்வு
-    onProgress(`📍 [உறுப்பினர் ${memNum}] ஆவண வகை (ஆதார் அட்டை) தேர்ந்தெடுக்கப்பட்டு ஆதார் பெட்டிகள் திறக்கப்படுகின்றன...`);
+    // 9. மற்ற ஆவணங்கள் * (பிறப்புச் சான்றிதழ் vs ஆதார் அட்டை — உறுப்பினருக்கு ஏற்ப 1-to-1 தேர்வு)
+    onProgress(`📍 [உறுப்பினர் ${memNum}] ஆவண வகை (${isBirthCertMember ? 'பிறப்புச் சான்றிதழ் - ஆதார் இல்லை' : 'ஆதார் அட்டை'}) தேர்ந்தெடுக்கப்படுகிறது...`);
     const docSelect = page.locator('select[formcontrolname="supportingDocument"]').last();
     if (await docSelect.count() > 0) {
         const dOptions = await docSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
-        const aadhaarDocOpt = dOptions.find(o => o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar') || o.value.toLowerCase().includes('aadhaar'));
-        if (aadhaarDocOpt) {
-            await docSelect.selectOption(aadhaarDocOpt.value).catch(() => {});
+        const targetDocOpt = isBirthCertMember
+            ? dOptions.find(o => o.text.includes('பிறப்பு') || o.text.toLowerCase().includes('birth') || o.value.toLowerCase().includes('birth'))
+            : dOptions.find(o => o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar') || o.value.toLowerCase().includes('aadhaar'));
+        if (targetDocOpt) {
+            await docSelect.selectOption(targetDocOpt.value).catch(() => {});
         } else if (dOptions.length > 1) {
             await docSelect.selectOption({ index: 1 }).catch(() => {});
         }
+        await docSelect.dispatchEvent('input').catch(() => {});
         await docSelect.dispatchEvent('change').catch(() => {});
         await page.waitForTimeout(1000);
     }
 
-    // 10. 12-இலக்க ஆதார் எண் உள்ளீடு
-    const mAadhaarRaw = (mem.aadhaarNumber || '491436223971').replace(/\D/g, '').padEnd(12, '1');
-    const mPart1 = mAadhaarRaw.substring(0, 4);
-    const mPart2 = mAadhaarRaw.substring(4, 8);
-    const mPart3 = mAadhaarRaw.substring(8, 12);
-
-    onProgress(`📍 [உறுப்பினர் ${memNum}] 12-இலக்க ஆதார் எண் (${mPart1} ${mPart2} ${mPart3}) உள்ளிடப்படுகிறது...`);
+    // 10. 12-இலக்க ஆதார் எண் உள்ளீடு (பிறப்புச் சான்றிதழ் உறுப்பினருக்கு ஆதார் எண் ஒருபோதும் நிரப்பப்படாது!)
     const a1 = page.locator('input[formcontrolname="aadhaarNumber"]').last();
     const a2 = page.locator('input[formcontrolname="aadhaarNumber1"]').last();
     const a3 = page.locator('input[formcontrolname="aadhaarNumber2"]').last();
 
-    if (await a1.count() > 0 && await a2.count() > 0 && await a3.count() > 0) {
-        await a1.fill(mPart1); await a1.dispatchEvent('input'); await a1.dispatchEvent('change');
-        await a2.fill(mPart2); await a2.dispatchEvent('input'); await a2.dispatchEvent('change');
-        await a3.fill(mPart3); await a3.dispatchEvent('input'); await a3.dispatchEvent('change');
+    if (isBirthCertMember) {
+        onProgress(`👶 [உறுப்பினர் ${memNum}] பிறப்புச் சான்றிதழ் உறுப்பினர் — ஆதார் எண் பெட்டிகள் காலியாக வைக்கப்படுகின்றன.`);
+        if (await a1.count() > 0 && await a1.isVisible().catch(() => false)) {
+            await a1.fill('').catch(() => {});
+            await a2.fill('').catch(() => {});
+            await a3.fill('').catch(() => {});
+        }
+    } else {
+        let validMemAadhaar = cleanMemAadhaar;
+        if (validMemAadhaar.length !== 12 && isMockSandboxMode) {
+            validMemAadhaar = '491436223971';
+        }
+        if (validMemAadhaar.length !== 12) {
+            const errMsg = `உறுப்பினர் ${memNum} (${targetMemTam || targetMemEng}) 12-இலக்க ஆதார் எண் இல்லை! வேறொருவரின் ஆதார் எண்ணைப் பயன்படுத்தாமல், Edit Modal-ல் சரியான ஆதார் எண் (அல்லது குழந்தை எனில் பிறப்புச் சான்றிதழ்) தேர்ந்தெடுக்கவும்.`;
+            onProgress(`🛑 **பிழை:** ${errMsg}`);
+            return { success: false, message: errMsg };
+        }
+        const mPart1 = validMemAadhaar.substring(0, 4);
+        const mPart2 = validMemAadhaar.substring(4, 8);
+        const mPart3 = validMemAadhaar.substring(8, 12);
+
+        onProgress(`📍 [உறுப்பினர் ${memNum}] 12-இலக்க ஆதார் எண் (${mPart1} ${mPart2} ${mPart3}) உள்ளிடப்படுகிறது...`);
+        if (await a1.count() > 0 && await a2.count() > 0 && await a3.count() > 0) {
+            await a1.fill(mPart1); await a1.dispatchEvent('input'); await a1.dispatchEvent('change');
+            await a2.fill(mPart2); await a2.dispatchEvent('input'); await a2.dispatchEvent('change');
+            await a3.fill(mPart3); await a3.dispatchEvent('input'); await a3.dispatchEvent('change');
+        }
     }
     await page.waitForTimeout(500);
 
-    // 11. ஆதார் PDF ஆவணம் தேர்வு செய்து இணைத்தல்
+    // 11. உறுப்பினர் ஆவண PDF தேர்வு செய்து இணைத்தல் (Strict Per-Member Resolution — NEVER steal Head/Other Member doc!)
     const targetIdx = Math.max(0, memNum - 2);
+    const indexedSlotDoc = citizenProfile.documents?.[`memberDoc_${memNum - 1}`] || citizenProfile.documents?.[`memberAadhaar${targetIdx}`];
     let rawMemDoc = null;
     if (mem.docPath && fs.existsSync(mem.docPath)) rawMemDoc = mem.docPath;
-    if (!rawMemDoc) rawMemDoc = await resolveDocFromOptions(options, 'memberAadhaar', targetIdx);
+    else if (mem.birthCertificatePath && fs.existsSync(mem.birthCertificatePath)) rawMemDoc = mem.birthCertificatePath;
+    else if (indexedSlotDoc && fs.existsSync(indexedSlotDoc)) rawMemDoc = indexedSlotDoc;
+    if (!rawMemDoc) {
+        rawMemDoc = await resolveDocFromOptions(mem.docPath || indexedSlotDoc || null, options, citizenProfile, 'memberAadhaar', targetIdx);
+    }
     if (!rawMemDoc && isMockSandboxMode) rawMemDoc = path.join(__dirname, 'uploads', 'priya_sister_aadhaar.pdf');
 
     if (!rawMemDoc || !fs.existsSync(rawMemDoc)) {
         if (!isMockSandboxMode) {
-            onProgress(`⚠️ **[கடும் புலக் கட்டுப்பாடு]** உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng || ''}) அசல் ஆதார் PDF தேவைப்படுகிறது...`);
+            const docLabel = isBirthCertMember ? 'பிறப்புச் சான்றிதழ் (Birth Certificate)' : 'ஆதார்';
+            onProgress(`⚠️ **[கடும் புலக் கட்டுப்பாடு]** உறுப்பினர் ${memNum} (${targetMemTam || targetMemEng || ''}) அசல் ${docLabel} PDF தேவைப்படுகிறது...`);
             const replacement = await requestReplacementFileFromUser(
-                `⚠️ உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng || ''}) ஆதார் PDF ஆவணத்தைத் தேர்ந்தெடுக்கவும்:`,
-                onProgress, `MEMBER_${memNum}_AADHAAR`
+                `⚠️ உறுப்பினர் ${memNum} (${targetMemTam || targetMemEng || ''}) ${docLabel} PDF ஆவணத்தைத் தேர்ந்தெடுக்கவும்:`,
+                onProgress, isBirthCertMember ? `MEMBER_${memNum}_BIRTH_CERT` : `MEMBER_${memNum}_AADHAAR`
             );
             if (replacement && fs.existsSync(replacement)) rawMemDoc = replacement;
             else {
-                const gateErrorMsg = `கடுமையான புலக் கட்டுப்பாடு (Field Gate): உறுப்பினர் ${memNum} ஆதார் ஆவணம் இணைக்கப்படவில்லை!`;
+                const gateErrorMsg = `கடுமையான புலக் கட்டுப்பாடு (Field Gate): உறுப்பினர் ${memNum} ${docLabel} ஆவணம் இணைக்கப்படவில்லை!`;
                 onProgress(`🛑 **பிழை:** ${gateErrorMsg}`);
                 logDiag(11, 'FAIL', gateErrorMsg);
                 throw new Error(gateErrorMsg);
@@ -243,8 +298,8 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     if (rawMemDoc && fs.existsSync(rawMemDoc)) {
         try { memPdf = await produceCompliantDocument(rawMemDoc); } catch (e) { memPdf = rawMemDoc; }
     }
-    onProgress(`📍 [உறுப்பினர் ${memNum}] ஆதார் PDF கோப்பு (${path.basename(memPdf)}) இணைக்கப்படுகிறது...`);
-    await showBrowserHud(`📄 [உறுப்பினர் ${memNum}] ஆதார் PDF இணைக்கப்படுகிறது...`, 'தயவுசெய்து காத்திருக்கவும் • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');
+    onProgress(`📍 [உறுப்பினர் ${memNum}] ${isBirthCertMember ? 'பிறப்புச் சான்றிதழ்' : 'ஆதார்'} PDF கோப்பு (${path.basename(memPdf)}) இணைக்கப்படுகிறது...`);
+    await showBrowserHud(`📄 [உறுப்பினர் ${memNum}] ${isBirthCertMember ? 'பிறப்புச் சான்றிதழ்' : 'ஆதார்'} PDF இணைக்கப்படுகிறது...`, 'தயவுசெய்து காத்திருக்கவும் • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');
     
     const aadhaarFileInput = page.locator('input[formcontrolname="supportingDocumentProof"]').last();
     if (await aadhaarFileInput.count() > 0) {
@@ -264,7 +319,7 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         return { success: false, message: `உறுப்பினர் ${memNum} கோப்பு உள்ளீட்டுக் களம் இல்லை.` };
     }
 
-    return { success: true, memPdf, targetRelTam, targetRelEng };
+    return { success: true, memPdf, targetRelTam, targetRelEng, isBirthCertMember };
 }
 
 module.exports = {

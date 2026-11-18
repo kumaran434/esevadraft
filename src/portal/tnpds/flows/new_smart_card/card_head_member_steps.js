@@ -313,14 +313,19 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
             setVal('input[formcontrolname="aadhaarNumber2"]', cleanA.substring(8, 12));
         }
 
-        // Note: Do NOT overwrite dateOfBirth input with a raw string like '10/06/1993'
-        // because JavaScript Date.parse('10/06/1993') parses as October 6th (MM/DD/YYYY)!
-        // selectDateInMatCalendar has already chosen 10th June 1993 natively in the calendar.
-
-        // Native JS Date Object for Kumaran K (10th June 1993):
-        // Note: Month 5 is June in Javascript (0-indexed: 0=Jan, 1=Feb, 2=Mar, 3=Apr, 4=May, 5=Jun)
-        // Day is 10, Year is 1993
-        const dobNativeDate = new Date(1993, 5, 10, 12, 0, 0);
+        // Parse Head Member DOB (DD/MM/YYYY) dynamically into native JS Date object
+        let dobNativeDate = new Date(1990, 0, 1, 12, 0, 0);
+        if (dob && typeof dob === 'string') {
+            const parts = dob.trim().split(/[/\-]/);
+            if (parts.length === 3) {
+                const dDay = parseInt(parts[0], 10);
+                const dMonth = parseInt(parts[1], 10) - 1;
+                const dYear = parseInt(parts[2], 10);
+                if (!isNaN(dDay) && !isNaN(dMonth) && !isNaN(dYear) && dYear > 1900) {
+                    dobNativeDate = new Date(dYear, dMonth, dDay, 12, 0, 0);
+                }
+            }
+        }
 
         // If Angular component is accessible, patch and updateValidity directly:
         if (comp && comp.addmemberForm) {
@@ -348,12 +353,6 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
 
             comp.supportingDocumentFile = 'AADHAAR_CARD';
             comp.selectedFileName = 'aadhaar.pdf';
-            if (typeof comp.onUploadClick === 'function') {
-                try { comp.onUploadClick('SUPPORTING_DOC'); } catch (_) {}
-            }
-            if (typeof comp.aadharCheck === 'function') {
-                try { comp.aadharCheck(); } catch (_) {}
-            }
             window.__tnpdsComp = comp;
         }
     }, {

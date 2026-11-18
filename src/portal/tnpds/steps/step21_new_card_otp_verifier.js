@@ -53,6 +53,7 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
 
         // STRICT INVARIANT: Ensure OTP input contains at least 6 digits before proceeding to click verify!
         let activeVal = (await otpInput.inputValue().catch(() => '')).replace(/\D/g, '');
+        let lastMobileResendAt = Date.now();
         if (activeVal.length < 6) {
             if (onProgress) {
                 onProgress('⏳ [படி 21/51] அரசு TNPDS மொபைல் SMS OTP (6 அல்லது 7 இலக்கங்கள்) உள்ளிடப்படுவதற்காகக் காத்திருக்கிறது...');
@@ -150,32 +151,32 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                     }
                 }
 
-                // Check countdown expiry inside modal -> auto click resend to restore Submit button
-                const resent = await page.evaluate(() => {
-                    const modal = document.querySelector('.modal, div[role="dialog"]');
-                    if (modal) {
-                        const mText = (modal.innerText || '').trim();
-                        const btns = Array.from(modal.querySelectorAll('button, a'));
-                        const resendBtn = btns.find(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
-                        });
-                        const hasVerifyBtn = btns.some(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            return t.includes('பதிவு செய்') || t.includes('சமர்ப்பி') || t.includes('submit') || t.includes('verify');
-                        });
-
-                        // If 0 seconds OR resend is present while verify is missing -> trigger fresh OTP
-                        if ((mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி') || (!hasVerifyBtn && resendBtn)) && resendBtn && !resendBtn.disabled) {
-                            resendBtn.click();
-                            return true;
+                // Check countdown expiry inside modal -> auto click resend ONLY if timer truly expired (0s) & cooldown elapsed (65s)
+                let resent = false;
+                if (Date.now() - lastMobileResendAt >= 65000) {
+                    resent = await page.evaluate(() => {
+                        const modal = document.querySelector('.modal.show, div[role="dialog"]');
+                        if (modal) {
+                            const mText = (modal.innerText || '').trim();
+                            const btns = Array.from(modal.querySelectorAll('button, a'));
+                            const resendBtn = btns.find(b => {
+                                const t = (b.innerText || '').toLowerCase();
+                                return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
+                            });
+                            if ((mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) && resendBtn && !resendBtn.disabled) {
+                                resendBtn.click();
+                                return true;
+                            }
                         }
-                    }
-                    return false;
-                }).catch(() => false);
+                        return false;
+                    }).catch(() => false);
+                }
 
-                if (resent && onProgress) {
-                    onProgress('🔄 [OTP மீட்சி] முந்தைய OTP 60 நொடிகள் காலாவதியாகிவிட்டது! போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" தானாக அழுத்தப்பட்டு புதிய OTP கோரப்பட்டது! புதிய SMS OTP-க்காகக் காத்திருக்கிறது...');
+                if (resent) {
+                    lastMobileResendAt = Date.now();
+                    if (onProgress) {
+                        onProgress('🔄 [OTP மீட்சி] முந்தைய OTP 60 நொடிகள் காலாவதியாகிவிட்டது! போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" அழுத்தப்பட்டு புதிய OTP கோரப்பட்டது!');
+                    }
                 }
 
                 activeVal = (await otpInput.inputValue().catch(() => '')).replace(/\D/g, '');
@@ -185,24 +186,6 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                 }
             }
         }
-
-        // Check if countdown expired inside modal -> auto click resend to re-enable submit button
-        await page.evaluate(() => {
-            const modal = document.querySelector('.modal.show, div[role="dialog"]');
-            if (!modal) return;
-            const resendBtn = Array.from(modal.querySelectorAll('button')).find(b => {
-                const t = (b.innerText || '').trim();
-                return t.includes('மீண்டும்') || t.includes('resend') || t.includes('மறுமுறை');
-            });
-            const verifyBtn = Array.from(modal.querySelectorAll('button')).find(b => {
-                const t = (b.innerText || '').trim().toLowerCase();
-                return t.includes('பதிவு செய்') || t.includes('சமர்ப்பி') || t.includes('submit') || t.includes('verify') || b.classList.contains('btn-success');
-            });
-            // If resend is visible and verify is missing, timer expired -> click resend
-            if (resendBtn && !verifyBtn) {
-                resendBtn.click();
-            }
-        }).catch(() => {});
 
         if (activeVal.length >= 6) {
             // Dispatch Angular reactive form events on mobileOtp input
@@ -305,21 +288,24 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
             }
         }
 
-        // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Countdown expiry)
-        const alertInfo = await page.evaluate(() => {
-            // Check countdown timer expiry -> auto click resend button
-            const modal = document.querySelector('.modal.show, div.modal[style*="display: block"], div[role="dialog"]:not([style*="display: none"]), .modal-dialog, .modal');
-            if (modal) {
-                const mText = (modal.innerText || modal.textContent || '').trim();
-                if (mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) {
-                    const btns = Array.from(modal.querySelectorAll('button, a'));
-                    const resendBtn = btns.find(b => {
-                        const t = (b.innerText || '').toLowerCase();
-                        return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
-                    });
-                    if (resendBtn && !resendBtn.disabled) {
-                        resendBtn.click();
-                        return '__OTP_RESENT_AUTOMATICALLY__';
+        // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Countdown expiry with 65s cooldown)
+        const allowPollResend = (Date.now() - lastMobileResendAt >= 65000);
+        const alertInfo = await page.evaluate((canResend) => {
+            // Check countdown timer expiry -> auto click resend button only after 65s cooldown
+            if (canResend) {
+                const modal = document.querySelector('.modal.show, div.modal[style*="display: block"], div[role="dialog"]:not([style*="display: none"])');
+                if (modal) {
+                    const mText = (modal.innerText || modal.textContent || '').trim();
+                    if (mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) {
+                        const btns = Array.from(modal.querySelectorAll('button, a'));
+                        const resendBtn = btns.find(b => {
+                            const t = (b.innerText || '').toLowerCase();
+                            return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
+                        });
+                        if (resendBtn && !resendBtn.disabled) {
+                            resendBtn.click();
+                            return '__OTP_RESENT_AUTOMATICALLY__';
+                        }
                     }
                 }
             }
@@ -333,11 +319,12 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                 }
             }
             return null;
-        }).catch(() => null);
+        }, allowPollResend).catch(() => null);
 
         if (alertInfo === '__OTP_RESENT_AUTOMATICALLY__') {
+            lastMobileResendAt = Date.now();
             if (onProgress) {
-                onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" தானாக அழுத்தப்பட்டது! புதிய OTP-க்காகக் காத்திருக்கிறது...');
+                onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" அழுத்தப்பட்டது! புதிய OTP-க்காகக் காத்திருக்கிறது...');
             }
             await page.waitForTimeout(2000);
             continue;
