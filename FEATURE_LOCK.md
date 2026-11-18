@@ -544,6 +544,35 @@
 - `public/index.html` — `#tnegaPortalVaultModal` பல-போர்ட்டல் தேர்வு டிராப்டவுன், கஸ்டம் போர்ட்டல் சாளரம்
 - `tests/regression_suite.js` — `[TEST 49]` பல போர்ட்டல் ஒருங்கிணைப்பு மற்றும் தனிமைப்படுத்தல் தானியங்கி சோதனைப் பூட்டு (1,078 checks pass 100%)
 
+---
+
+## 22. TNeGA 6 வருவாய்த் துறை சான்றிதழ்கள் நிரந்தர குறியீட்டு முடக்கம் & SHA-256 பாதுகாப்புப் பூட்டு (Permanent Code Freeze & Cryptographic Seal — 100% Certified)
+
+> **நிரந்தரப் பூட்டு சாசனம் (IMMUTABLE FREEZE CONTRACT):**
+> நேரலை தமிழ்நாடு அரசு போர்ட்டலில் (`tnesevai.tn.gov.in` / `tnedistrict.tn.gov.in`) முழுமையாகச் சோதிக்கப்பட்டு சான்றளிக்கப்பட்ட கீழ்க்கண்ட 6 வருவாய்த் துறை சான்றிதழ் ஆட்டோமேஷன் எஞ்சின்கள் மற்றும் சட்ட வாரிசு சான்றிதழ் (`REV-114`) உட்பட அனைத்துப் படிவப் பூட்டுகளும் **நிரந்தரமாக முடக்கப்பட்டு (FROZEN / SEALED)** உள்ளன.
+> நிறுவனரின் நேரடி அனுமதி இன்றி கீழ்க்கண்ட கோப்புகளில் ஒரு எழுத்துகூட மாற்றப்படக் கூடாது; மாற்றப்பட்டால் `npm.cmd test` (`[TEST 59]`) உடனடியாகத் தோல்வியடைந்து தடுக்கும்.
+
+### 22.1 நிரந்தரமாகப் பூட்டப்பட்ட 6 சான்றிதழ் எஞ்சின்கள் & SHA-256 முத்திரை (Frozen SHA-256 Checksums):
+1. **REV-114 சட்ட வாரிசு சான்றிதழ் (`src/portal/tnega/tnega_legal_heir.js`)**
+   - SHA-256: `50e377ae6acb8765f22a86192526b26d2d0967f22c99a2aea3c7c0c867129ccd`
+   - விதி: இறந்தவர் முகவரி (`dDistrictId` -> `dTalukId` -> `dRvId`) JSF AJAX ஒத்திசைவு, அனைத்து வாரிசுதாரர்கள் (`lhRelationIdid` + `lhAliveDeathid` -> `lhMaritalIdid` -> `submit1`), ஆப்ரேட்டர் `Submit` நிறுத்த வாயில் (`Click Submit ⌨️`), சுய உறுதிமொழி PDF புதிய Tab திறப்பு, மற்றும் 4/4 ஆவணப் பதிவேற்றம் (`430`, `432`, `433`, `434`; `'435'` தானியங்கி அப்லோடு தடை).
+2. **REV-101 சாதிச் சான்றிதழ் (`src/portal/tnega/tnega_community_certificate.js`)**
+   - SHA-256: `45a52d8ec902627124d013167a64c6b0a951ae6345da0b46a3329242198317e4`
+3. **REV-102 இருப்பிடச் சான்றிதழ் (`src/portal/tnega/tnega_residence_certificate.js`)**
+   - SHA-256: `09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272`
+4. **REV-103 வருமானச் சான்றிதழ் (`src/portal/tnega/tnega_income_certificate.js`)**
+   - SHA-256: `7e3380d9db969ab4e38be5064b37980ef1e5bf7a0f4d1b1deb42a28c220b6f42`
+5. **REV-104 முதல் பட்டதாரி சான்றிதழ் (`src/portal/tnega/tnega_first_graduate.js`)**
+   - SHA-256: `1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b`
+6. **REV-115 OBC சான்றிதழ் (`src/portal/tnega/tnega_obc_certificate.js`)**
+   - SHA-256: `d77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7`
+
+### 22.2 மாற்றமுடியாத ஆப்ரேட்டர் & ஸ்கீமா விதிகள் (Frozen Architectural Guarantees):
+- **Operator Form Submit Gate:** எந்தவொரு வருவாய்த் துறை படிவத்திலும் ஆட்டோமேஷன் தானாகப் படிவத்தை `Submit` செய்யாது; ஆப்ரேட்டர் சரிபார்த்து `Submit` அழுத்திய பிறகே ஆவணப் பதிவேற்றப் பக்கம் (`uploadDocs.xhtml`) தொடரும்.
+- **No Auto-Upload of Self-Declaration:** சுய உறுதிமொழிப் படிவம் (`SelfDeclarationForm_TN-*.pdf`) பதிவிறக்கப்பட்டு புதிய Chrome Tab-ல் திறக்கப்படுமே தவிர தானாகப் பதிவேற்றப்படாது (`PRE_SUBMIT_GATE`).
+- **REV-114 Delta Chat & Edit Modal Contract:** `src/routes/chat/chat_tnega_intake.js` (`isLegalHeirFlow`, `LEGAL_HEIR_*_WAIT`), `public/js/modules/submission_engine.js` (`LEGAL_HEIR` pre-flight check), `public/js/modules/edit_modal_manager.js` (`isLegalHeirMode`, `editLegalHeirFieldsWrap`), `desktop/automation_runner.js` (`isLegalHeir` -> `startTnegaLegalHeirFlow`), மற்றும் `tests/regression_suite.js` (`[TEST 58]` & `[TEST 59]`).
+
+
 
 
 

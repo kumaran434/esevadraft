@@ -3856,6 +3856,43 @@ async function runTests() {
             passedCount += 11;
         }
 
+        // =========================================================================
+        // TEST 59: 🔒 6 TNeGA REVENUE SERVICES PERMANENT SHA-256 CODE FREEZE & TAMPER LOCK
+        // =========================================================================
+        console.log('\n[TEST 59] 🔒 Verifying 6 TNeGA Revenue Services Permanent SHA-256 Code Freeze...');
+        {
+            const crypto = require('crypto');
+            const frozenEngines = {
+                'src/portal/tnega/tnega_legal_heir.js': '50e377ae6acb8765f22a86192526b26d2d0967f22c99a2aea3c7c0c867129ccd',
+                'src/portal/tnega/tnega_community_certificate.js': '45a52d8ec902627124d013167a64c6b0a951ae6345da0b46a3329242198317e4',
+                'src/portal/tnega/tnega_residence_certificate.js': '09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272',
+                'src/portal/tnega/tnega_income_certificate.js': '7e3380d9db969ab4e38be5064b37980ef1e5bf7a0f4d1b1deb42a28c220b6f42',
+                'src/portal/tnega/tnega_first_graduate.js': '1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b',
+                'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7'
+            };
+            for (const [relPath, expectedSha] of Object.entries(frozenEngines)) {
+                const fullP = path.join(__dirname, '..', relPath);
+                assert(fs.existsSync(fullP), `Frozen engine exists: ${relPath}`);
+                const normText = fs.readFileSync(fullP, 'utf8').replace(/\r\n/g, '\n');
+                const actualSha = crypto.createHash('sha256').update(normText, 'utf8').digest('hex');
+                assert(actualSha === expectedSha, `FROZEN SEAL INTACT (${relPath}) — SHA-256 matches permanent freeze lock`);
+            }
+
+            const featLock = fs.readFileSync(path.join(__dirname, '..', 'FEATURE_LOCK.md'), 'utf8');
+            assert(featLock.includes('22. TNeGA 6 வருவாய்த் துறை சான்றிதழ்கள் நிரந்தர குறியீட்டு முடக்கம்'), 'FEATURE_LOCK.md documents Section 22 Permanent Code Freeze');
+
+            const chatIntakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_tnega_intake.js'), 'utf8');
+            assert(chatIntakeSrc.includes('isLegalHeirFlow') && chatIntakeSrc.includes('advanceTnegaLegalHeirFlow') && chatIntakeSrc.includes('LEGAL_HEIR_DEATH_CERT_WAIT'), 'chat_tnega_intake routes CAN search & docs into advanceTnegaLegalHeirFlow');
+
+            const subEngSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
+            assert(subEngSrc.includes("curSub.includes('LEGAL_HEIR')"), 'submission_engine enforces pre-flight document gate for LEGAL_HEIR');
+
+            const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            assert(runnerSrc.includes('isLegalHeir') && runnerSrc.includes('startTnegaLegalHeirFlow'), 'desktop/automation_runner routes LEGAL_HEIR to startTnegaLegalHeirFlow');
+
+            passedCount += 16;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');
