@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, isTnegaSessionAlive, isFatalBrowserClosedError, stopTnegaAutomation } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
@@ -60,6 +60,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
     const state = getTnegaState();
     const isMock = options.isMockSandbox !== false && options.forceRealGovtOtp !== true;
     state.isMockSandboxMode = isMock;
+    state.isStopped = false;
     state.currentTnegaStep = 'INCOME_CERTIFICATE_INIT';
     state.lastTnegaError = null;
 
@@ -191,12 +192,23 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
 
         while (!formCompleted) {
             loopCounter++;
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
+
+            if (!isTnegaSessionAlive(tnegaPage)) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
 
             try {
                 // Focus on active tab
                 if (state.context) {
                     const allPages = state.context.pages().filter(p => !p.isClosed());
+                    if (allPages.length === 0) {
+                        await stopTnegaAutomation().catch(() => {});
+                        onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                        return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                    }
                     for (const p of allPages) {
                         const pu = p.url().toLowerCase();
                         if (pu.includes('/tneda/default.aspx') || pu.includes('/tneda/portallogin.aspx')) {
@@ -215,6 +227,12 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         state.page = bestPage;
                         await tnegaPage.bringToFront().catch(() => {});
                     }
+                }
+
+                if (!tnegaPage || tnegaPage.isClosed()) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
                 }
 
                 const currentUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
@@ -416,19 +434,6 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
 
                 // 5. IncomeCertificate.xhtml -> Fill Family Member Details & Monthly Income & Submit
                 if (currentUrl.includes('incomecertificate.xhtml') || (await tnegaPage.locator('#incme\\:fmdNameId, #incme\\:salTxtId, #incme\\:totalFamilyMember').count()) > 0) {
-                    await updateTnegaHud(tnegaPage, {
-                        title: '📝 வருமானச் சான்றிதழ் படிவம்',
-                        desc: `குடும்ப வருமான விவரங்கள் நிரப்பப்படுகின்றன (ஆண்டு: ₹${annualIncome.toLocaleString('en-IN')})...`,
-                        badge: 'Filling Form',
-                        type: 'working'
-                    });
-
-                    // 5A. Auto-extract pre-filled details to verify/sync Master Profile
-                    const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
-                    if (preFilled) {
-                        onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
-                    }
-
                     // 5B. Check if member already added to actual data table (#incme:landDet)
                     // CRITICAL: We MUST exclude the input form row! The input row contains <input> and <select> elements!
                     const actualAddedRows = await tnegaPage.evaluate(() => {
@@ -438,61 +443,95 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         return rows.filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5).map(r => r.innerText || '');
                     }).catch(() => []);
 
-                    const hasApplicant = actualAddedRows.some(t => t.includes('Self') || (fullNameEng && t.includes(fullNameEng)) || (fullNameTam && t.includes(fullNameTam)));
+                    const hasApplicant = actualAddedRows.some(t => (t.includes('Self') || (fullNameEng && t.includes(fullNameEng)) || (fullNameTam && t.includes(fullNameTam))) && !/\b0\s+0\b/.test(t));
 
                     if (!memberAdded && !hasApplicant) {
+                        await updateTnegaHud(tnegaPage, {
+                            title: '📝 வருமானச் சான்றிதழ் படிவம்',
+                            desc: `குடும்ப வருமான விவரங்கள் நிரப்பப்படுகின்றன (ஆண்டு: ₹${annualIncome.toLocaleString('en-IN')})...`,
+                            badge: 'Filling Form',
+                            type: 'working'
+                        });
+
+                        // 5A. Auto-extract pre-filled details to verify/sync Master Profile
+                        const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
+                        if (preFilled) {
+                            onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
+                        }
+
                         onProgress('✍️ [படிவம் நிரப்புதல்] குடும்ப உறுப்பினர் மற்றும் தொழில் விவரங்கள் சேர்க்கப்படுகின்றன...');
 
-                        // Fill Applicant Name English & Tamil
-                        const nameEngLoc = tnegaPage.locator('input[id*="fmdNameId"], #incme\\:fmdNameId').first();
-                        if (await nameEngLoc.count() > 0) await nameEngLoc.fill(fullNameEng);
-
-                        const nameTamLoc = tnegaPage.locator('input[id*="fmdNameTmId"], #incme\\:fmdNameTmId').first();
-                        if (await nameTamLoc.count() > 0) await nameTamLoc.fill(fullNameTam);
-
-                        // Fill Age
-                        const ageLoc = tnegaPage.locator('input[id*="fmdDob"], #incme\\:fmdDob').first();
-                        if (await ageLoc.count() > 0) await ageLoc.fill(String(age));
-
-                        // Select Sex (1=Male, 2=Female)
-                        const sexLoc = tnegaPage.locator('select[id*="sexId"], #incme\\:sexId').first();
-                        if (await sexLoc.count() > 0) await sexLoc.selectOption(gender === '2' ? '2' : '1').catch(() => {});
-
-                        // Select Relationship (8=Self)
-                        const relLoc = tnegaPage.locator('select[id*="fmdRelationId"], #incme\\:fmdRelationId').first();
-                        if (await relLoc.count() > 0) await relLoc.selectOption('8').catch(() => {});
-
-                        // Select Profession (4=Private)
+                        // Fill Applicant Name English & Tamil, Age, Sex, Relationship (8=Self), and Profession with JSF AJAX sync
                         const profCode = resolveProfessionCode(profession);
                         onProgress(`💼 [தொழில் தேர்வு] தொழில் குறியீடு: ${profCode} தேர்வு செய்யப்படுகிறது...`);
-                        const profLoc = tnegaPage.locator('select[id*="fmdProffId"], #incme\\:fmdProffId').first();
-                        if (await profLoc.count() > 0) {
-                            await profLoc.selectOption(profCode).catch(() => {});
-                            await tnegaPage.waitForTimeout(1000);
-                        }
 
-                        // Check Salary Checkbox (#incme:sal)
-                        const salCheckbox = tnegaPage.locator('input[id*="sal"][type="checkbox"], #incme\\:sal').first();
-                        if (await salCheckbox.count() > 0 && await salCheckbox.isVisible()) {
-                            await salCheckbox.check().catch(() => {});
-                            await tnegaPage.waitForTimeout(800);
-                        }
+                        await tnegaPage.evaluate(({ nameEng, nameTam, ageStr, sexCode, pCode }) => {
+                            return new Promise((resolve) => {
+                                const setVal = (id, v) => {
+                                    const el = document.getElementById(id);
+                                    if (el) {
+                                        el.value = v;
+                                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                                        el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                    }
+                                };
+                                setVal('incme:fmdNameId', nameEng);
+                                setVal('incme:fmdNameTmId', nameTam);
+                                setVal('incme:fmdDob', ageStr);
+                                setVal('incme:sexId', sexCode);
+                                setVal('incme:fmdRelationId', '8');
 
-                        // Fill Monthly Income into #incme:salTxtId
-                        const salInput = tnegaPage.locator('input[id*="salTxtId"], #incme\\:salTxtId').first();
-                        if (await salInput.count() > 0 && await salInput.isVisible()) {
-                            onProgress(`💰 [மாத வருமானம்] ₹${monthlyIncome} உள்ளிடப்படுகிறது (ஆண்டு மொத்தம்: ₹${annualIncome})...`);
-                            await salInput.fill(String(monthlyIncome));
-                            await salInput.dispatchEvent('input', { bubbles: true }).catch(() => {});
-                            await salInput.dispatchEvent('keyup', { bubbles: true }).catch(() => {});
-                            await salInput.dispatchEvent('blur', { bubbles: true }).catch(() => {});
-                            await tnegaPage.waitForTimeout(500);
-                        }
-
-                        // Run findTotal() in DOM to guarantee grand totals update
-                        await tnegaPage.evaluate(() => {
-                            if (typeof window.findTotal === 'function') window.findTotal();
+                                const prof = document.getElementById('incme:fmdProffId');
+                                if (!prof) return resolve(false);
+                                let done = false;
+                                const timer = setTimeout(() => { if (!done) { done = true; resolve(true); } }, 3500);
+                                if (window.jsf && window.jsf.ajax) {
+                                    window.jsf.ajax.addOnEvent((data) => {
+                                        if (!done && data && data.status === 'success') {
+                                            done = true;
+                                            clearTimeout(timer);
+                                            setTimeout(() => resolve(true), 250);
+                                        }
+                                    });
+                                }
+                                prof.value = pCode;
+                                prof.dispatchEvent(new Event('change', { bubbles: true }));
+                            });
+                        }, {
+                            nameEng: fullNameEng,
+                            nameTam: fullNameTam,
+                            ageStr: String(age),
+                            sexCode: gender === '2' ? '2' : '1',
+                            pCode: profCode
                         }).catch(() => {});
+
+                        // Check Salary Checkbox (#incme:sal) and wait for RichFaces AJAX to render #incme:salTxtId
+                        await tnegaPage.evaluate(() => {
+                            const sal = document.getElementById('incme:sal');
+                            if (sal && !sal.checked) {
+                                sal.click();
+                            }
+                        }).catch(() => {});
+
+                        await tnegaPage.waitForFunction(() => {
+                            const txt = document.getElementById('incme:salTxtId');
+                            return txt && txt.offsetParent !== null;
+                        }, { timeout: 5000 }).catch(() => {});
+
+                        // Fill Monthly Income into #incme:salTxtId and calculate totals
+                        onProgress(`💰 [மாத வருமானம்] ₹${monthlyIncome} உள்ளிடப்படுகிறது (ஆண்டு மொத்தம்: ₹${annualIncome})...`);
+                        await tnegaPage.evaluate((mInc) => {
+                            const txt = document.getElementById('incme:salTxtId');
+                            if (txt) {
+                                txt.value = String(mInc);
+                                txt.dispatchEvent(new Event('input', { bubbles: true }));
+                                txt.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                txt.dispatchEvent(new Event('change', { bubbles: true }));
+                                txt.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                            if (typeof window.findTotal === 'function') window.findTotal();
+                        }, String(monthlyIncome)).catch(() => {});
                         await tnegaPage.waitForTimeout(500);
 
                         // Click Add button (#incme:submit1)
@@ -501,7 +540,6 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         if (await addBtn.count() > 0) {
                             await addBtn.click().catch(() => {});
                             await tnegaPage.waitForTimeout(2500);
-                            memberAdded = true;
                             onProgress('✅ விண்ணப்பதாரர் விவரங்கள் அட்டவணையில் சேர்க்கப்பட்டன!');
 
                             // Check and add Member 2 (e.g. Mother Devaki) if total members >= 2
@@ -518,28 +556,70 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                     monthlyIncome: '0'
                                 }] : []);
 
+                            const rowsAfterSelf = await tnegaPage.evaluate(() => {
+                                const table = document.getElementById('incme:landDet');
+                                if (!table) return [];
+                                return Array.from(table.querySelectorAll('tr'))
+                                    .filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5)
+                                    .map(r => r.innerText || '');
+                            }).catch(() => []);
+
                             for (const addl of addlMembers) {
-                                onProgress(`➕ [கூடுதல் உறுப்பினர் சேர்த்தல்] ${addl.name || addl.nameTam} (${addl.relationship}) விவரங்கள் சேர்க்கப்படுகின்றன...`);
                                 const addlNameEng = addl.nameEng || addl.name || 'Devaki';
                                 const addlNameTam = addl.nameTam || addl.name || 'தேவகி';
+                                const alreadyInTable = rowsAfterSelf.some(t => t.includes(addlNameEng) || t.includes(addlNameTam) || (addl.relationship && t.includes(addl.relationship)));
+                                if (alreadyInTable) {
+                                    onProgress(`✅ உறுப்பினர் ${addlNameTam} (${addl.relationship}) ஏற்கனவே அட்டவணையில் உள்ளார்!`);
+                                    continue;
+                                }
+
+                                onProgress(`➕ [கூடுதல் உறுப்பினர் சேர்த்தல்] ${addl.name || addl.nameTam} (${addl.relationship}) விவரங்கள் சேர்க்கப்படுகின்றன...`);
                                 const addlAge = addl.age || '55';
                                 const isFemale = addl.relationship === 'Mother' || addl.relationship === 'Wife' || addl.gender === 'Female' || (addl.name || '').includes('தேவகி');
                                 const addlSex = isFemale ? '2' : '1';
                                 const addlRel = resolveRelationCode(addl.relationship);
                                 const addlProfCode = resolveProfessionCode(addl.profession || 'தலைவி');
 
-                                if (await nameEngLoc.count() > 0) await nameEngLoc.fill(addlNameEng);
-                                if (await nameTamLoc.count() > 0) await nameTamLoc.fill(addlNameTam);
-                                if (await ageLoc.count() > 0) await ageLoc.fill(String(addlAge));
-                                if (await sexLoc.count() > 0) await sexLoc.selectOption(addlSex).catch(() => {});
-                                if (await relLoc.count() > 0) await relLoc.selectOption(addlRel).catch(() => {});
-                                if (await profLoc.count() > 0) {
-                                    await profLoc.selectOption(addlProfCode).catch(() => {});
-                                    await tnegaPage.waitForTimeout(800);
-                                }
-                                if (await salInput.count() > 0 && await salInput.isVisible()) {
-                                    await salInput.fill('0');
-                                }
+                                await tnegaPage.evaluate(({ nEng, nTam, aAge, aSex, aRel, aProf }) => {
+                                    return new Promise((resolve) => {
+                                        const setVal = (id, v) => {
+                                            const el = document.getElementById(id);
+                                            if (el) {
+                                                el.value = v;
+                                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                            }
+                                        };
+                                        setVal('incme:fmdNameId', nEng);
+                                        setVal('incme:fmdNameTmId', nTam);
+                                        setVal('incme:fmdDob', String(aAge));
+                                        setVal('incme:sexId', aSex);
+                                        setVal('incme:fmdRelationId', aRel);
+                                        const prof = document.getElementById('incme:fmdProffId');
+                                        if (!prof) return resolve(false);
+                                        let done = false;
+                                        const timer = setTimeout(() => { if (!done) { done = true; resolve(true); } }, 3000);
+                                        if (window.jsf && window.jsf.ajax) {
+                                            window.jsf.ajax.addOnEvent((data) => {
+                                                if (!done && data && data.status === 'success') {
+                                                    done = true;
+                                                    clearTimeout(timer);
+                                                    setTimeout(() => resolve(true), 200);
+                                                }
+                                            });
+                                        }
+                                        prof.value = aProf;
+                                        prof.dispatchEvent(new Event('change', { bubbles: true }));
+                                    });
+                                }, {
+                                    nEng: addlNameEng,
+                                    nTam: addlNameTam,
+                                    aAge: addlAge,
+                                    aSex: addlSex,
+                                    aRel: addlRel,
+                                    aProf: addlProfCode
+                                }).catch(() => {});
 
                                 if (await addBtn.count() > 0) {
                                     await addBtn.click().catch(() => {});
@@ -547,28 +627,43 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                     onProgress(`✅ உறுப்பினர் ${addlNameTam} (${addl.relationship}) வெற்றிகரமாக அட்டவணையில் சேர்க்கப்பட்டார்!`);
                                 }
                             }
+
+                            const verifiedSelf = await tnegaPage.evaluate((fEng) => {
+                                const table = document.getElementById('incme:landDet');
+                                if (!table) return false;
+                                const rows = Array.from(table.querySelectorAll('tr'))
+                                    .filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5)
+                                    .map(r => r.innerText || '');
+                                return rows.some(t => (t.includes('Self') || (fEng && t.includes(fEng))) && !/\b0\s+0\b/.test(t));
+                            }, fullNameEng).catch(() => false);
+
+                            if (verifiedSelf) {
+                                memberAdded = true;
+                            }
                         }
+                    } else if (hasApplicant) {
+                        memberAdded = true;
                     }
 
                     // 5C. Set Total number of family members & Submit
                     if (!formSubmitted) {
-                        const finalCount = await tnegaPage.evaluate(() => {
-                            const table = document.getElementById('incme:landDet');
-                            if (!table) return 0;
-                            return Array.from(table.querySelectorAll('tr')).filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5).length;
-                        }).catch(() => 0);
-
-                        const totalCountStr = String(finalCount || citizenProfile.familyMemberCount || ((citizenProfile.incomeMembers && citizenProfile.incomeMembers.length > 0) ? (citizenProfile.incomeMembers.length + 1) : 2));
-                        const totalInput = tnegaPage.locator('input[id*="totalFamilyMember"], #incme\\:totalFamilyMember').first();
-                        if (await totalInput.count() > 0 && await totalInput.isVisible()) {
-                            await totalInput.fill(totalCountStr);
-                            await totalInput.dispatchEvent('input', { bubbles: true }).catch(() => {});
-                            await totalInput.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                            await totalInput.dispatchEvent('blur', { bubbles: true }).catch(() => {});
-                        }
-
                         // Operator Review & Manual Submit Gate (to advance to uploadDocs.xhtml)
                         if (!waitingForOperatorSubmit) {
+                            const finalCount = await tnegaPage.evaluate(() => {
+                                const table = document.getElementById('incme:landDet');
+                                if (!table) return 0;
+                                return Array.from(table.querySelectorAll('tr')).filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5).length;
+                            }).catch(() => 0);
+
+                            const totalCountStr = String(finalCount || citizenProfile.familyMemberCount || ((citizenProfile.incomeMembers && citizenProfile.incomeMembers.length > 0) ? (citizenProfile.incomeMembers.length + 1) : 2));
+                            const totalInput = tnegaPage.locator('input[id*="totalFamilyMember"], #incme\\:totalFamilyMember').first();
+                            if (await totalInput.count() > 0 && await totalInput.isVisible()) {
+                                await totalInput.fill(totalCountStr);
+                                await totalInput.dispatchEvent('input', { bubbles: true }).catch(() => {});
+                                await totalInput.dispatchEvent('change', { bubbles: true }).catch(() => {});
+                                await totalInput.dispatchEvent('blur', { bubbles: true }).catch(() => {});
+                            }
+
                             waitingForOperatorSubmit = true;
                             onProgress('🔍 [படிவ சரிபார்ப்பு] வருமானச் சான்றிதழ் விவரங்கள் அனைத்தும் நிரப்பப்பட்டுவிட்டன. விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை நீங்களே அழுத்தவும் ⌨️');
                             onProgress('⏳ ஆப்ரேட்டர் Submit பொத்தானை அழுத்த காத்திருக்கிறது... (சமர்ப்பித்தவுடன் ஆவணப் பதிவேற்றம் தானாகத் தொடங்கும் 🚀)');
@@ -578,12 +673,20 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                 badge: 'Click Submit ⌨️',
                                 type: 'attention'
                             });
+                            if (options.stopAtFormReviewGate) {
+                                await tnegaPage.waitForTimeout(2000);
+                                return { success: true, isFormReviewGate: true, message: 'REV-103 form filled and waiting at Operator Submit Gate.' };
+                            }
+                            if (options.autoClickFormSubmit) {
+                                await tnegaPage.waitForTimeout(3000);
+                                onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
+                                const subBtn = tnegaPage.locator('#incme\\:submit, input[id="incme:submit"], input[type="submit"][value="Submit"]').first();
+                                if (await subBtn.count() > 0) {
+                                    await subBtn.click().catch(() => {});
+                                    await tnegaPage.waitForTimeout(2500);
+                                }
+                            }
                         }
-
-                        // Auto-accept any confirmation dialog when user clicks Submit
-                        tnegaPage.on('dialog', async d => {
-                            try { await d.accept(); } catch (_) {}
-                        });
 
                         // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
                         const newUrl = tnegaPage.url().toLowerCase();
@@ -784,8 +887,13 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         }
                     ];
 
-                    if (citizenProfile.salaryProofPath && fs.existsSync(citizenProfile.salaryProofPath)) {
-                        let salPath = citizenProfile.salaryProofPath;
+                    let salRawPath = citizenProfile.salaryProofPath || citizenProfile.incomeProofPath || citizenProfile.documents?.incomeProof || citizenProfile.documents?.salarySlip || citizenProfile.documents?.salaryCertificate;
+                    if (salRawPath && !fs.existsSync(salRawPath)) {
+                        const resolved = await resolveOrRestoreFile(salRawPath, null, 'incomeProof');
+                        if (resolved && fs.existsSync(resolved)) salRawPath = resolved;
+                    }
+                    if (salRawPath && fs.existsSync(salRawPath)) {
+                        let salPath = salRawPath;
                         if (fs.statSync(salPath).size > 190000) {
                             const compSal = await produceCompliantDocument(salPath);
                             if (compSal && fs.existsSync(compSal)) salPath = compSal;
@@ -794,7 +902,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             nameTamil: 'வருமானச் சான்று / ஊதியச் சான்று (Salary Certificate)',
                             nameEng: 'Salary Certificate',
                             searchTerms: ['salary certificate', 'salary'],
-                            optionVal: '2030',
+                            optionVal: '2031',
                             docNum: '1',
                             filePath: salPath,
                             maxKb: 200
@@ -828,7 +936,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         const sizeKb = (curSize / 1024).toFixed(1);
                         onProgress(`📤 [பதிவேற்றம்] ${item.nameTamil} (${sizeKb} KB - அரசு வரம்பு: <${item.maxKb} KB)...`);
 
-                        // 1. Select Document Type from dropdown
+                        // 1. Select Document Type from dropdown and wait for JSF AJAX response
                         const selectLoc = tnegaPage.locator('#ss\\:do, select[name*="do"]').first();
                         if (await selectLoc.count() > 0) {
                             const availableVals = await tnegaPage.evaluate(() => {
@@ -843,63 +951,57 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             );
                             if (foundOpt) matchedVal = foundOpt.value;
 
+                            const waitDoAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
                             await selectLoc.selectOption(matchedVal).catch(() => {});
-                            await selectLoc.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                            await tnegaPage.waitForTimeout(1000);
+                            await waitDoAjax;
+                            await tnegaPage.waitForTimeout(500);
                         }
 
-                        // 2. Enter Document Number
+                        // 2. Enter Document Number and trigger blur/Tab AJAX
                         const numLoc = tnegaPage.locator('#ss\\:dscnum, input[name*="dscnum"]').first();
                         if (await numLoc.count() > 0) {
-                            await numLoc.fill(item.docNum || '1');
-                            await numLoc.dispatchEvent('input', { bubbles: true }).catch(() => {});
-                            await numLoc.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                            await tnegaPage.waitForTimeout(600);
+                            const waitNumAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
+                            await numLoc.click().catch(() => {});
+                            await numLoc.fill(item.docNum || '1').catch(() => {});
+                            await numLoc.press('Tab').catch(() => {});
+                            await waitNumAjax;
+                            await tnegaPage.waitForTimeout(500);
                         }
 
                         // 3. Attach file to RichFaces file input
                         const fileLoc = tnegaPage.locator('input.rf-fu-inp[type="file"]').last();
                         if (await fileLoc.count() > 0) {
                             await fileLoc.setInputFiles(currentFile);
-                            await tnegaPage.waitForTimeout(1200);
+                            await tnegaPage.waitForTimeout(600);
                         }
 
                         // 4. Trigger RichFaces Upload via internal component API + button click fallback
                         onProgress(`⏳ [பதிவேற்றப்படுகிறது...] ${item.nameTamil} போர்ட்டலில் சேர்க்கப்படுகிறது...`);
                         await tnegaPage.evaluate(() => {
-                            const uplBtn = document.querySelector('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl');
-                            if (uplBtn && uplBtn.offsetParent !== null) {
-                                uplBtn.click();
-                                return;
-                            }
                             const fu = document.querySelector('.rf-fu');
-                            const comp = window.RichFaces ? window.RichFaces.$(fu) : null;
-                            if (comp && comp.items && comp.items.length > 0) {
-                                comp.__startUpload();
-                                return;
+                            if (fu && window.RichFaces && window.RichFaces.$(fu.id)) {
+                                const comp = window.RichFaces.$(fu.id);
+                                if (typeof comp.__startUpload === 'function') {
+                                    comp.__startUpload();
+                                    return;
+                                }
                             }
+                            const uplBtn = document.querySelector('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl');
                             if (uplBtn) uplBtn.click();
-                        });
+                        }).catch(() => {});
 
-                        const clickUpl = tnegaPage.locator('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl').first();
-                        if (await clickUpl.count() > 0 && await clickUpl.isVisible()) {
-                            await clickUpl.click().catch(() => {});
-                        }
-
-                        // 5. Poll for confirmation in #ss:msg2 and #ss:docTable (up to 15 seconds)
+                        // 5. Poll for confirmation in #ss:docTable (up to 15 seconds)
                         let isConfirmed = false;
                         for (let poll = 0; poll < 15; poll++) {
                             await tnegaPage.waitForTimeout(1000);
                             const check = await tnegaPage.evaluate((searchTerms) => {
                                 const table = document.getElementById('ss:docTable');
-                                const msg2 = document.getElementById('ss:msg2');
                                 const tableText = table ? table.innerText.toLowerCase() : '';
-                                const msgText = msg2 ? msg2.innerText.trim() : '';
                                 const tableHasDoc = searchTerms.some(term => tableText.includes(term.toLowerCase()));
-                                return { tableHasDoc, msgText };
-                            }, item.searchTerms).catch(() => ({ tableHasDoc: false, msgText: '' }));
+                                return { tableHasDoc };
+                            }, item.searchTerms).catch(() => ({ tableHasDoc: false }));
 
-                            if (check.tableHasDoc || check.msgText.includes('Successfully') || check.msgText.includes('வெற்றிகரமாக')) {
+                            if (check.tableHasDoc) {
                                 isConfirmed = true;
                                 uploadedSuccessList.push(item.nameTamil);
                                 onProgress(`🎉 [வெற்றி] ${item.nameTamil} வெற்றிகரமாகப் பதிவேற்றப்பட்டது! ✅`);
@@ -947,6 +1049,11 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                 }
 
             } catch (err) {
+                if (isFatalBrowserClosedError(err, tnegaPage)) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                }
                 onProgress(`⚠️ கண்காணிப்பு எச்சரிக்கை: ${err.message}`);
             }
 

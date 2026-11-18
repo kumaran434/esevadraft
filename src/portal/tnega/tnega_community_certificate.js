@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, isTnegaSessionAlive, isFatalBrowserClosedError, stopTnegaAutomation } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
@@ -44,6 +44,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
     const state = getTnegaState();
     const isMock = options.isMockSandbox !== false && options.forceRealGovtOtp !== true;
     state.isMockSandboxMode = isMock;
+    state.isStopped = false;
     state.currentTnegaStep = 'COMMUNITY_CERTIFICATE_INIT';
     state.lastTnegaError = null;
 
@@ -187,12 +188,23 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
         while (!formCompleted) {
             loopCounter++;
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
+
+            if (!isTnegaSessionAlive(tnegaPage)) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
 
             try {
                 // Focus on active tab
                 if (state.context) {
                     const allPages = state.context.pages().filter(p => !p.isClosed());
+                    if (allPages.length === 0) {
+                        await stopTnegaAutomation().catch(() => {});
+                        onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                        return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                    }
                     for (const p of allPages) {
                         const pu = p.url().toLowerCase();
                         if (pu.includes('/tneda/default.aspx') || pu.includes('/tneda/portallogin.aspx')) {
@@ -211,6 +223,12 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                         state.page = bestPage;
                         await tnegaPage.bringToFront().catch(() => {});
                     }
+                }
+
+                if (!tnegaPage || tnegaPage.isClosed()) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
                 }
 
                 const currentUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
@@ -405,234 +423,176 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
                 // 5. community_certificate.xhtml -> Select Religion, Communities, Castes & Submit
                 if (currentUrl.includes('community_certificate') || (await tnegaPage.locator('#community\\:fcommunityid, #community\\:reqcommunityid').count()) > 0) {
-                    await updateTnegaHud(tnegaPage, {
-                        title: '📝 சாதிச் சான்றிதழ் படிவம்',
-                        desc: `மதம் & சாதிப் பிரிவு விவரங்கள் நிரப்பப்படுகின்றன (${citizenProfile.community || 'MBC'})...`,
-                        badge: 'Filling Form',
-                        type: 'working'
-                    });
-
-                    // 5A. Auto-extract pre-filled details to verify/sync Master Profile
-                    const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
-                    if (preFilled) {
-                        onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
-                    }
-
                     if (!communityFormFilled) {
+                        await updateTnegaHud(tnegaPage, {
+                            title: '📝 சாதிச் சான்றிதழ் படிவம்',
+                            desc: `மதம் & சாதிப் பிரிவு விவரங்கள் நிரப்பப்படுகின்றன (${citizenProfile.community || 'MBC'})...`,
+                            badge: 'Filling Form',
+                            type: 'working'
+                        });
+
+                        // 5A. Auto-extract pre-filled details to verify/sync Master Profile
+                        const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
+                        if (preFilled) {
+                            onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
+                        }
+
                         onProgress('✍️ [படிவம் நிரப்புதல்] மதம் மற்றும் சாதிப் பிரிவு விவரங்கள் தேர்ந்தெடுக்கப்படுகின்றன...');
 
-                        // 5B. Select Religion (#community:religionId)
-                        const religionSel = tnegaPage.locator('#community\\:religionId, select[name*="religionId"]').first();
-                        if (await religionSel.count() > 0) {
-                            onProgress(`🏛️ [மதம் தேர்வு] மதம்: ${citizenProfile.religion || 'Hindu'} (Code: ${religionCode})...`);
-                            await religionSel.selectOption(religionCode).catch(() => {});
-                            await tnegaPage.evaluate((val) => {
-                                const el = document.getElementById('community:religionId');
-                                if (el) {
-                                    el.value = val;
-                                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                                }
-                            }, religionCode).catch(() => {});
-                            await tnegaPage.waitForTimeout(1500);
+                        // JSF AJAX-Synchronized Dropdown Selector (waits for jsf.ajax 'success' before proceeding!)
+                        const selectWithJsfAjax = async (selectId, targetVal, targetText, isCaste = false) => {
+                            return await tnegaPage.evaluate(({ selId, tVal, tText, casteMode }) => {
+                                return new Promise((resolve) => {
+                                    const selectEl = document.getElementById(selId);
+                                    if (!selectEl || selectEl.disabled) return resolve(null);
+                                    const options = Array.from(selectEl.options).filter(o => o.value && o.value !== '' && o.value !== '0' && !o.text.toUpperCase().includes('SELECT'));
+                                    if (!options.length) return resolve(null);
+
+                                    let matched = null;
+                                    const cleanText = String(tText || '').trim().toLowerCase();
+                                    const cleanVal = String(tVal || '').trim();
+
+                                    if (!casteMode) {
+                                        if (cleanVal) matched = options.find(o => o.value === cleanVal);
+                                        if (!matched && cleanText) matched = options.find(o => o.text.toLowerCase().includes(cleanText));
+                                        if (!matched && options.length === 1) matched = options[0];
+                                    } else {
+                                        if (cleanText) matched = options.find(o => o.text.toLowerCase().includes(cleanText));
+                                        if (!matched && cleanText) {
+                                            const CASTE_RULES = [
+                                                { test: /(வன்னிய|சத்ரிய|படையாட்சி|கவுண்டர்|கண்டர்|பள்ளி|அக்னி|vanni|kshatriya|padayachi|palli|agnikula)/i, targetRegex: /(vanniakula\s*kshatriya|vanniyar|vanni|padayachi|palli|agnikula)/i },
+                                                { test: /(அகமுடைய|சேர்வை|துளுவ|வேளாளர்|agamuday|agamudaiy|servai|thuluva)/i, targetRegex: /(agamuday|agamudaiy|servai|thuluva)/i },
+                                                { test: /(மருத்துவர்|நாவிதர்|மங்கல|maruthuvar|navithar|mangala)/i, targetRegex: /(maruthuvar|navithar|mangala)/i },
+                                                { test: /(வண்ணார்|சலவை|ஏகாலி|vannar|salavai|ekali)/i, targetRegex: /(vannar|salavai|ekali)/i },
+                                                { test: /(நாடார்|கிராமணி|சான்றார்|nadar|gramani|sanror)/i, targetRegex: /(nadar|gramani|sanror)/i },
+                                                { test: /(கொங்கு.*வேளாளர்|கொங்கு.*கவுண்டர்|kongu.*vellal|kongu.*gound)/i, targetRegex: /(kongu\s*vellal|kongu\s*chettiar|kongu)/i },
+                                                { test: /(செட்டியார்|செட்டி|chettiar|chetty)/i, targetRegex: /(chettiar|chetty)/i },
+                                                { test: /(முக்குலத்தோர்|தேவர்|கள்ளர்|மறவர்|thevar|kallar|maravar|mukkulathor)/i, targetRegex: /(kallar|maravar|thevar|mukkulat)/i },
+                                                { test: /(ஆதி\s*திராவிட|திராவிட|adi\s*dravid)/i, targetRegex: /(adi\s*dravid)/i },
+                                                { test: /(பறைய|சாம்பவ|paraiy|parayan|sambav)/i, targetRegex: /(paraiy|parayan|sambav)/i },
+                                                { test: /(அருந்ததிய|சக்கிலிய|மாதாரி|arunthathiy|chakkili|madhari)/i, targetRegex: /(arunthathiy|chakkili)/i },
+                                                { test: /(போயர்|ஒட்டர்|boya|boyer|oddar)/i, targetRegex: /(boya|boyer|oddar)/i },
+                                                { test: /(குயவர்|குலாலர்|கும்பாரர்|kulala|kuyav|kumbar)/i, targetRegex: /(kulala|kuyav|kumbar)/i },
+                                                { test: /(அம்பலக்காரர்|ambalakarar)/i, targetRegex: /(ambalakar)/i },
+                                                { test: /(ஆண்டிப்பண்டாரம்|andipandaram)/i, targetRegex: /(andipandaram)/i },
+                                                { test: /(செங்குந்தர்|கைக்கோளர்|sengunth|kaikol)/i, targetRegex: /(sengunth|kaikol)/i },
+                                                { test: /(யாதவர்|கோனார்|பிள்ளை|yadava|konar|pillai)/i, targetRegex: /(yadava|konar)/i }
+                                            ];
+                                            for (const rule of CASTE_RULES) {
+                                                if (rule.test.test(cleanText)) {
+                                                    matched = options.find(o => rule.targetRegex.test(o.text));
+                                                    if (matched) break;
+                                                }
+                                            }
+                                        }
+                                        if (!matched && cleanText) {
+                                            const words = cleanText.split(/[\s,/-]+/).filter(w => w.length >= 3);
+                                            for (const w of words) {
+                                                matched = options.find(o => o.text.toLowerCase().includes(w));
+                                                if (matched) break;
+                                            }
+                                        }
+                                        if (!matched && options.length === 1) {
+                                            matched = options[0];
+                                        }
+                                    }
+
+                                    if (!matched) return resolve(null);
+
+                                    const onchangeAttr = selectEl.getAttribute('onchange') || '';
+                                    const hasJsfAjax = onchangeAttr.includes('jsf.ajax.request');
+                                    let finished = false;
+                                    const finish = (status) => {
+                                        if (finished) return;
+                                        finished = true;
+                                        resolve({ value: matched.value, text: matched.text.trim(), ajaxStatus: status });
+                                    };
+
+                                    if (hasJsfAjax && window.jsf && window.jsf.ajax) {
+                                        const onAjaxEvent = (data) => {
+                                            if (data && data.status === 'success') {
+                                                setTimeout(() => finish('success'), 150);
+                                            }
+                                        };
+                                        window.jsf.ajax.addOnEvent(onAjaxEvent);
+                                        setTimeout(() => finish('timeout'), 4500);
+                                    } else {
+                                        setTimeout(() => finish('no_ajax'), 200);
+                                    }
+
+                                    selectEl.value = matched.value;
+                                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                                });
+                            }, { selId: selectId, tVal: targetVal, tText: targetText, casteMode: isCaste }).catch(() => null);
+                        };
+
+                        // 5B. Select Religion (#community:religionId) if not already set
+                        const curRelVal = await tnegaPage.evaluate(() => document.getElementById('community:religionId')?.value || '').catch(() => '');
+                        if (curRelVal !== religionCode) {
+                            await selectWithJsfAjax('community:religionId', religionCode, citizenProfile.religion || 'Hindu', false);
                         }
 
-                        // 5C. Select Father Community (#community:fcommunityid)
+                        // 5C. Select Father Community -> Wait for JSF AJAX -> Select Father Caste -> Wait for JSF AJAX
                         onProgress(`👨 [தந்தை வகுப்பு] பிரிவு: ${fatherCommunity} (Code: ${fatherCommunityCode})...`);
-                        await tnegaPage.evaluate((code) => {
-                            const el = document.getElementById('community:fcommunityid');
-                            if (el) {
-                                el.value = code;
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, fatherCommunityCode).catch(() => {});
-                        await tnegaPage.waitForTimeout(2500);
+                        await selectWithJsfAjax('community:fcommunityid', fatherCommunityCode, fatherCommunity, false);
+                        const fMatch = await selectWithJsfAjax('community:fcastid', '', fatherCaste, true);
+                        if (fMatch) {
+                            onProgress(`🏷️ [தந்தை சாதி] ${fMatch.text} தேர்வு செய்யப்பட்டது ✅`);
+                        }
 
-                        // 5D. Select Mother Community (#community:mcommunityid)
+                        // 5D. Select Mother Community -> Wait for JSF AJAX -> Select Mother Caste -> Wait for JSF AJAX
                         onProgress(`👩 [தாய் வகுப்பு] பிரிவு: ${motherCommunity} (Code: ${motherCommunityCode})...`);
-                        await tnegaPage.evaluate((code) => {
-                            const el = document.getElementById('community:mcommunityid');
-                            if (el) {
-                                el.value = code;
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, motherCommunityCode).catch(() => {});
-                        await tnegaPage.waitForTimeout(2500);
+                        await selectWithJsfAjax('community:mcommunityid', motherCommunityCode, motherCommunity, false);
+                        const mMatch = await selectWithJsfAjax('community:mcastid', '', motherCaste, true);
+                        if (mMatch) {
+                            onProgress(`🏷️ [தாய் சாதி] ${mMatch.text} தேர்வு செய்யப்பட்டது ✅`);
+                        }
 
-                        // 5E. Select Requested Community (#community:reqcommunityid)
+                        // If Mother Caste AJAX re-rendered fcastid and cleared it, re-select fcastid!
+                        const fCasteStillSet = await tnegaPage.evaluate(() => Boolean(document.getElementById('community:fcastid')?.value)).catch(() => true);
+                        if (!fCasteStillSet) {
+                            await selectWithJsfAjax('community:fcastid', '', fatherCaste, true);
+                        }
+
+                        // 5E. Select Requested Community -> Wait for JSF AJAX -> Select Requested Caste
                         onProgress(`🎯 [கோரப்படும் வகுப்பு] பிரிவு: ${requestedCommunity} (Code: ${requestedCommunityCode})...`);
-                        await tnegaPage.evaluate((code) => {
-                            const el = document.getElementById('community:reqcommunityid');
-                            if (el && el.options.length > 1) {
-                                el.value = code || el.options[1].value;
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, requestedCommunityCode).catch(() => {});
-                        await tnegaPage.waitForTimeout(2500);
-
-                        // 5F. Select Father Caste, Mother Caste & Requested Caste with Comprehensive Bilingual Matching (Golden Rule 9 Zero Guesswork)
-                        const casteSelectionResult = await tnegaPage.evaluate(({ fTarget, mTarget, reqTarget }) => {
-                            function matchCasteDropdownOption(selectEl, targetCaste) {
-                                if (!selectEl || !targetCaste) return null;
-                                const options = Array.from(selectEl.options).filter(o => o.value && o.value !== '' && o.value !== '0');
-                                if (!options.length) return null;
-
-                                const clean = String(targetCaste).trim().toLowerCase();
-
-                                // 1. Direct includes in English/Tamil text
-                                let matched = options.find(o => o.text.toLowerCase().includes(clean));
-                                if (matched) return { value: matched.value, text: matched.text };
-
-                                // 2. Comprehensive Tamil Nadu Caste Synonym Matrix
-                                const CASTE_RULES = [
-                                    {
-                                        test: /(வன்னிய|சத்ரிய|படையாட்சி|கவுண்டர்|கண்டர்|பள்ளி|அக்னி|vanni|kshatriya|padayachi|palli|agnikula)/i,
-                                        targetRegex: /(vanniakula\s*kshatriya|vanniyar|vanni|padayachi|palli|agnikula)/i
-                                    },
-                                    {
-                                        test: /(அகமுடைய|சேர்வை|துளுவ|வேளாளர்|agamuday|agamudaiy|servai|thuluva)/i,
-                                        targetRegex: /(agamuday|agamudaiy|servai|thuluva)/i
-                                    },
-                                    {
-                                        test: /(மருத்துவர்|நாவிதர்|மங்கல|maruthuvar|navithar|mangala)/i,
-                                        targetRegex: /(maruthuvar|navithar|mangala)/i
-                                    },
-                                    {
-                                        test: /(வண்ணார்|சலவை|ஏகாலி|vannar|salavai|ekali)/i,
-                                        targetRegex: /(vannar|salavai|ekali)/i
-                                    },
-                                    {
-                                        test: /(நாடார்|கிராமணி|சான்றார்|nadar|gramani|sanror)/i,
-                                        targetRegex: /(nadar|gramani|sanror)/i
-                                    },
-                                    {
-                                        test: /(கொங்கு.*வேளாளர்|கொங்கு.*கவுண்டர்|kongu.*vellal|kongu.*gound)/i,
-                                        targetRegex: /(kongu\s*vellal|kongu\s*chettiar|kongu)/i
-                                    },
-                                    {
-                                        test: /(செட்டியார்|செட்டி|chettiar|chetty)/i,
-                                        targetRegex: /(chettiar|chetty)/i
-                                    },
-                                    {
-                                        test: /(முக்குலத்தோர்|தேவர்|கள்ளர்|மறவர்|thevar|kallar|maravar|mukkulathor)/i,
-                                        targetRegex: /(kallar|maravar|thevar|mukkulat)/i
-                                    },
-                                    {
-                                        test: /(ஆதி\s*திராவிட|திராவிட|adi\s*dravid)/i,
-                                        targetRegex: /(adi\s*dravid)/i
-                                    },
-                                    {
-                                        test: /(பறைய|சாம்பவ|paraiy|parayan|sambav)/i,
-                                        targetRegex: /(paraiy|parayan|sambav)/i
-                                    },
-                                    {
-                                        test: /(அருந்ததிய|சக்கிலிய|மாதாரி|arunthathiy|chakkili|madhari)/i,
-                                        targetRegex: /(arunthathiy|chakkili)/i
-                                    },
-                                    {
-                                        test: /(போயர்|ஒட்டர்|boya|boyer|oddar)/i,
-                                        targetRegex: /(boya|boyer|oddar)/i
-                                    },
-                                    {
-                                        test: /(குயவர்|குலாலர்|கும்பாரர்|kulala|kuyav|kumbar)/i,
-                                        targetRegex: /(kulala|kuyav|kumbar)/i
-                                    },
-                                    {
-                                        test: /(அம்பலக்காரர்|ambalakarar)/i,
-                                        targetRegex: /(ambalakar)/i
-                                    },
-                                    {
-                                        test: /(ஆண்டிப்பண்டாரம்|andipandaram)/i,
-                                        targetRegex: /(andipandaram)/i
-                                    },
-                                    {
-                                        test: /(செங்குந்தர்|கைக்கோளர்|sengunth|kaikol)/i,
-                                        targetRegex: /(sengunth|kaikol)/i
-                                    },
-                                    {
-                                        test: /(யாதவர்|கோனார்|பிள்ளை|yadava|konar|pillai)/i,
-                                        targetRegex: /(yadava|konar)/i
-                                    }
-                                ];
-
-                                for (const rule of CASTE_RULES) {
-                                    if (rule.test.test(clean)) {
-                                        matched = options.find(o => rule.targetRegex.test(o.text));
-                                        if (matched) return { value: matched.value, text: matched.text };
-                                    }
-                                }
-
-                                // 3. Word-by-word token match
-                                const words = clean.split(/[\s,/-]+/).filter(w => w.length >= 3);
-                                for (const w of words) {
-                                    matched = options.find(o => o.text.toLowerCase().includes(w));
-                                    if (matched) return { value: matched.value, text: matched.text };
-                                }
-
-                                // Golden Rule 9: Return null if no match; NEVER fallback to options[1]!
-                                return null;
-                            }
-
-                            const fSel = document.getElementById('community:fcastid');
-                            const mSel = document.getElementById('community:mcastid');
-                            const reqSel = document.getElementById('community:reqcateid');
-
-                            const fMatch = matchCasteDropdownOption(fSel, fTarget);
-                            if (fMatch && fSel) {
-                                fSel.value = fMatch.value;
-                                fSel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-
-                            const mMatch = matchCasteDropdownOption(mSel, mTarget);
-                            if (mMatch && mSel) {
-                                mSel.value = mMatch.value;
-                                mSel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-
-                            const reqMatch = matchCasteDropdownOption(reqSel, reqTarget);
-                            if (reqMatch && reqSel) {
-                                reqSel.value = reqMatch.value;
-                                reqSel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-
-                            return {
-                                fMatched: fMatch ? fMatch.text : null,
-                                mMatched: mMatch ? mMatch.text : null,
-                                reqMatched: reqMatch ? reqMatch.text : null
-                            };
-                        }, { fTarget: fatherCaste, mTarget: motherCaste, reqTarget: requestedCaste }).catch(() => null);
-
-                        await tnegaPage.waitForTimeout(2500);
-
-                        if (casteSelectionResult) {
-                            if (casteSelectionResult.fMatched) {
-                                onProgress(`🏷️ [தந்தை சாதி] ${casteSelectionResult.fMatched} தேர்வு செய்யப்பட்டது ✅`);
-                            } else {
-                                onProgress(`⚠️ [தந்தை சாதி] "${fatherCaste}" போர்ட்டல் பட்டியலில் நேரடியாகப் பொருந்தவில்லை — ஆப்ரேட்டர் சரிபார்க்கவும்.`);
-                            }
-
-                            if (casteSelectionResult.mMatched) {
-                                onProgress(`🏷️ [தாய் சாதி] ${casteSelectionResult.mMatched} தேர்வு செய்யப்பட்டது ✅`);
-                            } else {
-                                onProgress(`⚠️ [தாய் சாதி] "${motherCaste}" போர்ட்டல் பட்டியலில் நேரடியாகப் பொருந்தவில்லை — ஆப்ரேட்டர் சரிபார்க்கவும்.`);
-                            }
-
-                            if (casteSelectionResult.reqMatched) {
-                                onProgress(`🏷️ [கோரப்படும் சாதி] ${casteSelectionResult.reqMatched} தேர்வு செய்யப்பட்டது ✅`);
-                            } else {
-                                onProgress(`⚠️ [கோரப்படும் சாதி] "${requestedCaste}" போர்ட்டல் பட்டியலில் நேரடியாகப் பொருந்தவில்லை — ஆப்ரேட்டர் சரிபார்க்கவும்.`);
-                            }
+                        const reqCommSelected = await selectWithJsfAjax('community:reqcommunityid', requestedCommunityCode, requestedCommunity, false);
+                        if (reqCommSelected) {
+                            onProgress(`🎯 [கோரப்படும் வகுப்பு] ${reqCommSelected.text} தேர்வு செய்யப்பட்டது ✅`);
                         }
 
-                        // 5H. Select Permanent Certificate Radio: No (#community:prmntCert_id:1)
-                        onProgress('📄 [நிரந்தர சான்றிதழ்] நிரந்தர ஆன்லைன் சான்றிதழ்: "இல்லை (No)" எனத் தேர்வு செய்யப்படுகிறது...');
-                        const radioNo = tnegaPage.locator('#community\\:prmntCert_id\\:1, input[name*="prmntCert_id"][value="2"]').first();
-                        if (await radioNo.count() > 0) {
-                            await radioNo.click().catch(() => {});
-                            await tnegaPage.waitForTimeout(1500);
+                        // 5F. Select Requested Caste (#community:reqcateid)
+                        const reqMatch = await selectWithJsfAjax('community:reqcateid', '', requestedCaste || (fMatch && fMatch.text) || fatherCaste, true);
+                        if (reqMatch) {
+                            onProgress(`🏷️ [கோரப்படும் சாதி] ${reqMatch.text} தேர்வு செய்யப்பட்டது ✅`);
                         }
 
-                        communityFormFilled = true;
-                        onProgress('✅ சாதிச் சான்றிதழ் படிவ விவரங்கள் வெற்றிகரமாக நிரப்பப்பட்டன!');
+                        // 5G. Select Permanent Certificate Radio: No (#community:prmntCert_id:1)
+                        await tnegaPage.evaluate(() => {
+                            const r = document.getElementById('community:prmntCert_id:1') || document.querySelector('input[name*="prmntCert_id"][value="2"]');
+                            if (r && !r.checked) {
+                                r.click();
+                                r.checked = true;
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }).catch(() => {});
+
+                        // 5H. Final Verification Gate before declaring communityFormFilled = true!
+                        const allSixFilled = await tnegaPage.evaluate(() => {
+                            const ids = ['community:fcommunityid', 'community:fcastid', 'community:mcommunityid', 'community:mcastid', 'community:reqcommunityid', 'community:reqcateid'];
+                            return ids.every(id => {
+                                const el = document.getElementById(id);
+                                return el && el.value && el.value !== '0' && el.value !== '';
+                            });
+                        }).catch(() => false);
+
+                        if (allSixFilled) {
+                            communityFormFilled = true;
+                            onProgress('✅ சாதிச் சான்றிதழ் படிவ விவரங்கள் (6/6 புலங்கள்) 100% வெற்றிகரமாக நிரப்பப்பட்டன!');
+                        } else {
+                            onProgress('🔄 [சுய-சரிபார்ப்பு] சில சாதிப் புலங்கள் மீண்டும் சரிபார்க்கப்படுகின்றன...');
+                            continue;
+                        }
                     }
 
                     // 5I. Operator Review & Manual Submit Gate (to navigate to uploadDocs.xhtml)
@@ -647,12 +607,20 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                                 badge: 'Click Submit ⌨️',
                                 type: 'attention'
                             });
+                            if (options.stopAtFormReviewGate) {
+                                await tnegaPage.waitForTimeout(2000);
+                                return { success: true, isFormReviewGate: true, message: 'REV-101 form filled and waiting at Operator Submit Gate.' };
+                            }
+                            if (options.autoClickFormSubmit) {
+                                await tnegaPage.waitForTimeout(3000);
+                                onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
+                                const subBtn = tnegaPage.locator('#community\\:submit, input[id="community:submit"], input[type="submit"][value="Submit"]').first();
+                                if (await subBtn.count() > 0) {
+                                    await subBtn.click().catch(() => {});
+                                    await tnegaPage.waitForTimeout(2500);
+                                }
+                            }
                         }
-
-                        // Auto-accept any confirmation dialog when user clicks Submit
-                        tnegaPage.on('dialog', async d => {
-                            try { await d.accept(); } catch (_) {}
-                        });
 
                         // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
                         const newUrl = tnegaPage.url().toLowerCase();
@@ -1017,6 +985,11 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                 }
 
             } catch (err) {
+                if (isFatalBrowserClosedError(err, tnegaPage)) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                }
                 onProgress(`⚠️ கண்காணிப்பு எச்சரிக்கை: ${err.message}`);
             }
 

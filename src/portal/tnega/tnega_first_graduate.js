@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, downloadAndOpenSelfDeclaration } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, downloadAndOpenSelfDeclaration, isTnegaSessionAlive, isFatalBrowserClosedError, stopTnegaAutomation } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
@@ -20,6 +20,7 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
     const state = getTnegaState();
     const isMock = options.isMockSandbox !== false && options.forceRealGovtOtp !== true;
     state.isMockSandboxMode = isMock;
+    state.isStopped = false;
     state.currentTnegaStep = 'FIRST_GRADUATE_CERTIFICATE_INIT';
     state.lastTnegaError = null;
 
@@ -156,12 +157,23 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
 
         while (!formCompleted) {
             loopCounter++;
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
+
+            if (!isTnegaSessionAlive(tnegaPage)) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
 
             try {
                 // Focus on active tab
                 if (state.context) {
                     const allPages = state.context.pages().filter(p => !p.isClosed());
+                    if (allPages.length === 0) {
+                        await stopTnegaAutomation().catch(() => {});
+                        onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                        return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                    }
                     for (const p of allPages) {
                         const pu = p.url().toLowerCase();
                         if (pu.includes('/tneda/default.aspx') || pu.includes('/tneda/portallogin.aspx')) {
@@ -192,6 +204,12 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         state.page = bestPage;
                         await tnegaPage.bringToFront().catch(() => {});
                     }
+                }
+
+                if (!tnegaPage || tnegaPage.isClosed()) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
                 }
 
                 const currentUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
@@ -359,37 +377,40 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
 
                 // 5. First Graduate Form Page (NoGraduateCertificate.xhtml / firstgraduate.xhtml)
                 if (currentUrl.includes('nograduatecertificate') || currentUrl.includes('firstgraduate') || (await tnegaPage.locator('#nograduate\\:submit, #firstgrad\\:submit, #nograduate\\:submit1, input[value="Submit"]').count()) > 0) {
-                    await updateTnegaHud(tnegaPage, {
-                        title: '📝 முதல் பட்டதாரி படிவம் (REV-104)',
-                        desc: `படிப்பு: ${courseName} | கல்லூரி: ${institutionName}...`,
-                        badge: 'Filling Form',
-                        type: 'working'
-                    });
-
                     if (!firstGraduateFormFilled) {
+                        await updateTnegaHud(tnegaPage, {
+                            title: '📝 முதல் பட்டதாரி படிவம் (REV-104)',
+                            desc: `படிப்பு: ${courseName} | கல்லூரி: ${institutionName}...`,
+                            badge: 'Filling Form',
+                            type: 'working'
+                        });
+
                         onProgress('✍️ [படிவம் நிரப்புதல்] முதல் பட்டதாரி படிவக் கேள்விகள் நிரப்பப்படுகின்றன...');
 
-                        // Radio 1: Whether any other member of family is graduate? -> No (value="2")
-                        const radGradNo = tnegaPage.locator('input[name*="graduation_id"][value="2"], #nograduate\\:graduation_id\\:1').first();
-                        if (await radGradNo.count() > 0 && !(await radGradNo.isChecked())) {
-                            await radGradNo.check().catch(() => {});
-                            await tnegaPage.waitForTimeout(600);
-                            onProgress('✅ குடும்பத்தில் வேறு யாரும் பட்டதாரி இல்லை (Graduation: No) தேர்வு செய்யப்பட்டது.');
-                        }
-
-                        // Radio 2: Whether any family member availed concession? -> No (value="2")
-                        const radAvailNo = tnegaPage.locator('input[name*="pdGraduationId"][value="2"], #nograduate\\:pdGraduationId\\:1').first();
-                        if (await radAvailNo.count() > 0 && !(await radAvailNo.isChecked())) {
-                            await radAvailNo.check().catch(() => {});
-                            await tnegaPage.waitForTimeout(600);
-                            onProgress('✅ குடும்பத்தில் சலுகை பெற்றவர் எவருமில்லை (Concession: No) தேர்வு செய்யப்பட்டது.');
-                        }
+                        // Radio 1 & Radio 2 via DOM evaluate (0ms, no timeout if already checked)
+                        await tnegaPage.evaluate(() => {
+                            const r1 = document.getElementById('nograduate:graduation_id:1') || document.querySelector('input[name*="graduation_id"][value="2"]');
+                            if (r1 && !r1.checked) {
+                                r1.click();
+                                r1.checked = true;
+                                r1.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            const r2 = document.getElementById('nograduate:pdGraduationId:1') || document.querySelector('input[name*="pdGraduationId"][value="2"]');
+                            if (r2 && !r2.checked) {
+                                r2.click();
+                                r2.checked = true;
+                                r2.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }).catch(() => {});
 
                         // Check Family Members Education Table (#nograduate:imprpt / #firstgrad:landDet)
+                        // CRITICAL: Use !r.querySelector('input[type="text"], select') because Delete button is <input type="image">!
                         const addedRows = await tnegaPage.evaluate(() => {
-                            const table = document.getElementById('nograduate:imprpt') || document.getElementById('firstgrad:landDet');
+                            const table = document.getElementById('nograduate:imprpt') || document.getElementById('firstgrad:landDet') || document.querySelector('table[id*="imprpt"], table[id*="landDet"]');
                             if (!table) return [];
-                            return Array.from(table.querySelectorAll('tr')).filter(r => !r.querySelector('input, select') && r.querySelectorAll('td').length >= 4).map(r => r.innerText || '');
+                            return Array.from(table.querySelectorAll('tr'))
+                                .filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 4)
+                                .map(r => r.innerText || '');
                         }).catch(() => []);
 
                         const hasFather = addedRows.some(t => t.includes('Father') || t.includes('தந்தை'));
@@ -402,9 +423,6 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
 
                         const nameLoc = tnegaPage.locator('input[id="nograduate:gnameid"], #nograduate\\:gnameid').first();
                         const ageLoc = tnegaPage.locator('input[id="nograduate:gageid"], #nograduate\\:gageid').first();
-                        const qualLoc = tnegaPage.locator('select[id="nograduate:gqualificationid"], #nograduate\\:gqualificationid').first();
-                        const relLoc = tnegaPage.locator('select[id="nograduate:grelationid"], #nograduate\\:grelationid').first();
-                        const aliveLoc = tnegaPage.locator('select[id="nograduate:gAliveDead"], #nograduate\\:gAliveDead').first();
                         const addBtn = tnegaPage.locator('input[id="nograduate:submit1"], #nograduate\\:submit1').first();
 
                         const mapQualCode = (eduStr) => {
@@ -420,139 +438,125 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         const fatherQualVal = mapQualCode(fatherEducation);
                         const motherQualVal = mapQualCode(motherEducation);
 
+                        // Helper to add a parent row without any 30s Playwright selectOption timeouts
+                        const addParentMemberRow = async (pNameEng, pAge, qualVal, relCode, relKeyword) => {
+                            if (await nameLoc.count() > 0) await nameLoc.fill(pNameEng);
+                            if (await ageLoc.count() > 0) {
+                                await ageLoc.fill(String(pAge));
+                                await ageLoc.dispatchEvent('change').catch(() => {});
+                                await ageLoc.dispatchEvent('blur').catch(() => {});
+                            }
+                            await tnegaPage.waitForFunction(() => {
+                                const q = document.getElementById('nograduate:gqualificationid');
+                                const r = document.getElementById('nograduate:grelationid');
+                                return q && q.options.length > 1 && r && r.options.length > 1;
+                            }, { timeout: 3500 }).catch(() => {});
+                            await tnegaPage.waitForTimeout(400);
+
+                            await tnegaPage.evaluate(({ qVal, rCode, rKey }) => {
+                                const qSel = document.getElementById('nograduate:gqualificationid') || document.querySelector('select[id*="gqualificationid"]');
+                                if (qSel) {
+                                    const qOpts = Array.from(qSel.options).filter(o => o.value && o.value !== '0' && !o.text.toUpperCase().includes('SELECT'));
+                                    const qMatch = qOpts.find(o => o.value === qVal) || qOpts.find(o => o.text.includes('10th') || o.text.includes('Less than')) || qOpts[0];
+                                    if (qMatch) {
+                                        qSel.value = qMatch.value;
+                                        qSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                }
+                                const rSel = document.getElementById('nograduate:grelationid') || document.querySelector('select[id*="grelationid"]');
+                                if (rSel) {
+                                    const rOpts = Array.from(rSel.options).filter(o => o.value && o.value !== '0' && !o.text.toUpperCase().includes('SELECT'));
+                                    const rMatch = rOpts.find(o => o.value === rCode) || rOpts.find(o => o.text.toLowerCase().includes(rKey.toLowerCase())) || rOpts[0];
+                                    if (rMatch) {
+                                        rSel.value = rMatch.value;
+                                        rSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                }
+                                const aSel = document.getElementById('nograduate:gAliveDead') || document.querySelector('select[id*="gAliveDead"]');
+                                if (aSel) {
+                                    const aOpts = Array.from(aSel.options).filter(o => o.value && o.value !== '0' && !o.text.toUpperCase().includes('SELECT'));
+                                    const aMatch = aOpts.find(o => o.value === '1' || o.text.toLowerCase().includes('yes') || o.text.includes('ஆம்')) || aOpts[0];
+                                    if (aMatch) {
+                                        aSel.value = aMatch.value;
+                                        aSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                }
+                            }, { qVal: qualVal, rCode: relCode, rKey: relKeyword }).catch(() => {});
+
+                            await tnegaPage.waitForTimeout(300);
+                            await addBtn.click().catch(() => {});
+                            await tnegaPage.waitForTimeout(2000);
+                        };
+
                         // 1. Add Father Details
                         if (!hasFather && (await addBtn.count() > 0)) {
                             onProgress(`➕ [குடும்ப உறுப்பினர் சேர்த்தல்] தந்தை: ${fNameTam} (${fNameEng}) - கல்வி: ${fatherEducation}...`);
-                            if (await nameLoc.count() > 0) await nameLoc.fill(fNameEng);
-                            if (await ageLoc.count() > 0) {
-                                await ageLoc.fill(String(citizenProfile.fatherAge || '55'));
-                                await ageLoc.dispatchEvent('change').catch(() => {});
-                                await tnegaPage.waitForTimeout(1500); // Wait for RichFaces Ajax relation population
-                            }
-                            if (await qualLoc.count() > 0) {
-                                await qualLoc.selectOption(fatherQualVal).catch(() => qualLoc.selectOption({ index: 4 }));
-                            }
-                            if (await relLoc.count() > 0) {
-                                await relLoc.selectOption('6').catch(() => relLoc.selectOption({ label: 'Father / தந்தை' })); // Father
-                            }
-                            if (await aliveLoc.count() > 0) {
-                                await aliveLoc.selectOption('1').catch(() => {}); // Yes / ஆம்
-                            }
-
-                            await addBtn.click().catch(() => {});
-                            await tnegaPage.waitForTimeout(2500);
+                            await addParentMemberRow(fNameEng, citizenProfile.fatherAge || '55', fatherQualVal, '6', 'father');
                             onProgress('✅ தந்தை விவரங்கள் கல்வி அட்டவணையில் சேர்க்கப்பட்டன!');
                         }
 
                         // 2. Add Mother Details
                         if (!hasMother && (await addBtn.count() > 0)) {
                             onProgress(`➕ [குடும்ப உறுப்பினர் சேர்த்தல்] தாய்: ${mNameTam} (${mNameEng}) - கல்வி: ${motherEducation}...`);
-                            if (await nameLoc.count() > 0) await nameLoc.fill(mNameEng);
-                            if (await ageLoc.count() > 0) {
-                                await ageLoc.fill(String(citizenProfile.motherAge || '50'));
-                                await ageLoc.dispatchEvent('change').catch(() => {});
-                                await tnegaPage.waitForTimeout(1500); // Wait for RichFaces Ajax relation population
-                            }
-                            if (await qualLoc.count() > 0) {
-                                await qualLoc.selectOption(motherQualVal).catch(() => qualLoc.selectOption({ index: 2 }));
-                            }
-                            if (await relLoc.count() > 0) {
-                                await relLoc.selectOption('3').catch(() => relLoc.selectOption({ label: 'Mother / தாய்' })); // Mother
-                            }
-                            if (await aliveLoc.count() > 0) {
-                                await aliveLoc.selectOption('1').catch(() => {}); // Yes / ஆம்
-                            }
-
-                            await addBtn.click().catch(() => {});
-                            await tnegaPage.waitForTimeout(2500);
+                            await addParentMemberRow(mNameEng, citizenProfile.motherAge || '50', motherQualVal, '3', 'mother');
                             onProgress('✅ தாய் விவரங்கள் கல்வி அட்டவணையில் சேர்க்கப்பட்டன!');
                         }
 
-                        // 3. Course Completed & Current Course Details (Bottom Section)
-                        const courseCompleteLoc = tnegaPage.locator('#nograduate\\:coursecompleteid, select[id*="coursecompleteid"]').first();
-                        if (await courseCompleteLoc.count() > 0) {
-                            const curCompVal = await courseCompleteLoc.inputValue().catch(() => '');
-                            if (curCompVal !== '2') {
-                                onProgress('🎓 [படிப்பு விவரங்கள்] மாணவரின் முந்தைய கல்வித் தகுதி (Higher Secondary) பதிவு செய்யப்படுகிறது...');
-                                await courseCompleteLoc.selectOption('2').catch(() => courseCompleteLoc.selectOption({ index: 2 })); // Higher Secondary
-                                await courseCompleteLoc.dispatchEvent('change').catch(() => {});
-                                await tnegaPage.waitForTimeout(1500); // Wait for RichFaces Ajax to populate current course
+                        // 3. Course Completed & Current Course Details (Bottom Section) via zero-timeout DOM evaluation
+                        onProgress('🎓 [படிப்பு விவரங்கள்] மாணவரின் முந்தைய கல்வித் தகுதி (Higher Secondary) பதிவு செய்யப்படுகிறது...');
+                        await tnegaPage.evaluate(() => {
+                            const cc = document.getElementById('nograduate:coursecompleteid') || document.querySelector('select[id*="coursecompleteid"]');
+                            if (!cc) return;
+                            const opts = Array.from(cc.options).filter(o => o.value && o.value !== '0' && o.value !== '-1' && !o.text.toUpperCase().includes('SELECT'));
+                            const target = opts.find(o => o.value === '2' || o.text.toLowerCase().includes('higher secondary') || o.text.toLowerCase().includes('hsc')) || opts[0];
+                            if (target) {
+                                cc.value = target.value;
+                                cc.dispatchEvent(new Event('change', { bubbles: true }));
                             }
-                        }
+                        }).catch(() => {});
 
-                        // Wait for current course dropdown to be populated with options (more than 1 option)
-                        const currentCourseLoc = tnegaPage.locator('#nograduate\\:currentcourseid, select[id*="currentcourseid"]').first();
-                        if (await currentCourseLoc.count() > 0) {
-                            await tnegaPage.waitForFunction(() => {
-                                const sel = document.querySelector('#nograduate\\:currentcourseid, select[id*="currentcourseid"]');
-                                return sel && sel.options && sel.options.length > 1;
-                            }, { timeout: 4000 }).catch(() => {});
+                        // Wait for current course dropdown to be populated by RichFaces AJAX
+                        await tnegaPage.waitForFunction(() => {
+                            const sel = document.getElementById('nograduate:currentcourseid') || document.querySelector('select[id*="currentcourseid"]');
+                            return sel && Array.from(sel.options).filter(o => o.value && o.value !== '0' && o.value !== '-1' && !o.text.toUpperCase().includes('SELECT')).length > 0;
+                        }, { timeout: 4500 }).catch(() => {});
+                        await tnegaPage.waitForTimeout(450);
 
-                            const currentCourseOptions = await tnegaPage.evaluate(() => {
-                                const sel = document.querySelector('#nograduate\\:currentcourseid, select[id*="currentcourseid"]');
-                                if (!sel) return [];
-                                return Array.from(sel.options).map((o, idx) => ({ index: idx, value: o.value, text: o.text.trim() }));
-                            }).catch(() => []);
-
-                            const curSelVal = await currentCourseLoc.inputValue().catch(() => '');
-                            const isAlreadySelected = curSelVal && curSelVal !== '' && curSelVal !== '-1' && curSelVal !== '0';
-
-                            if (!isAlreadySelected && currentCourseOptions.length > 0) {
-                                const cNameLower = String(courseName || '').toLowerCase();
-                                const isDiploma = cNameLower.includes('diploma');
-
-                                let targetOpt = currentCourseOptions.find(o =>
-                                    o.value && o.value !== '-1' && o.value !== '0' && !o.text.toUpperCase().includes('SELECT') && (
-                                        (isDiploma && o.text.toLowerCase().includes('diploma')) ||
-                                        (!isDiploma && (
-                                            o.text.toLowerCase().includes('graduate') ||
-                                            o.text.toLowerCase().includes('under graduate') ||
-                                            o.text.toLowerCase().includes('engineering') ||
-                                            o.text.toLowerCase().includes('degree') ||
-                                            o.text.toLowerCase().includes('ug')
-                                        ))
-                                    )
-                                );
-
-                                if (!targetOpt) {
-                                    targetOpt = currentCourseOptions.find(o => o.value && o.value !== '-1' && o.value !== '0' && !o.text.toUpperCase().includes('SELECT'));
-                                }
-
-                                if (targetOpt) {
-                                    onProgress(`🎓 [தற்போதைய படிப்பு] "${targetOpt.text}" தேர்வு செய்யப்படுகிறது...`);
-                                    await currentCourseLoc.selectOption(targetOpt.value).catch(async () => {
-                                        await currentCourseLoc.selectOption({ index: targetOpt.index }).catch(() => {});
-                                    });
-                                    await currentCourseLoc.dispatchEvent('change').catch(() => {});
-                                    await tnegaPage.waitForTimeout(600);
-                                }
+                        const selectedCourseText = await tnegaPage.evaluate((cName) => {
+                            const sel = document.getElementById('nograduate:currentcourseid') || document.querySelector('select[id*="currentcourseid"]');
+                            if (!sel) return null;
+                            const opts = Array.from(sel.options).filter(o => o.value && o.value !== '0' && o.value !== '-1' && !o.text.toUpperCase().includes('SELECT'));
+                            if (!opts.length) return null;
+                            const cLower = String(cName || '').toLowerCase();
+                            const isDip = cLower.includes('diploma');
+                            let target = opts.find(o =>
+                                (isDip && o.text.toLowerCase().includes('diploma')) ||
+                                (!isDip && (
+                                    o.text.toLowerCase().includes('under graduate') ||
+                                    o.text.toLowerCase().includes('graduate') ||
+                                    o.text.toLowerCase().includes('engineering') ||
+                                    o.text.toLowerCase().includes('degree') ||
+                                    o.text.toLowerCase().includes('b.e') ||
+                                    o.text.toLowerCase().includes('ug')
+                                ))
+                            ) || opts[0];
+                            if (target) {
+                                sel.value = target.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                                return target.text.trim();
                             }
-                        }
+                            return null;
+                        }, courseName).catch(() => null);
 
-                        // 4. Year of Passing
+                        if (selectedCourseText) {
+                            onProgress(`🎓 [தற்போதைய படிப்பு] "${selectedCourseText}" தேர்வு செய்யப்பட்டது ✅`);
+                        }
+                        await tnegaPage.waitForTimeout(500);
+
+                        // 4. Year of Passing & 5. Current Academic Year & 6. Institution Name & Address (Bilingual: English + Tamil)
                         const yopVal = String(citizenProfile.yearOfPassing || citizenProfile.passingYear || '2024').replace(/\D+/g, '').slice(0, 4) || '2024';
-                        const yopLoc = tnegaPage.locator('#nograduate\\:yearofpassingid, input[id*="yearofpassingid"], input[id*="yearofpassing"], input[name*="yearofpassing"], input[id*="yop"]').first();
-                        if (await yopLoc.count() > 0) {
-                            const curYop = await yopLoc.inputValue().catch(() => '');
-                            if (!curYop) {
-                                onProgress(`📅 [தேர்ச்சி பெற்ற ஆண்டு] ${yopVal} பதிவு செய்யப்படுகிறது...`);
-                                await yopLoc.fill(yopVal);
-                                await yopLoc.dispatchEvent('change').catch(() => {});
-                                await yopLoc.dispatchEvent('blur').catch(() => {});
-                            }
-                        }
+                        const curYearVal = String(new Date().getFullYear());
 
-                        // 5. Current Academic Year (fill if empty)
-                        const acadYearLoc = tnegaPage.locator('#nograduate\\:currentacademicyear, input[id*="academicyear"], input[name*="academicyear"]').first();
-                        if (await acadYearLoc.count() > 0) {
-                            const curAcad = await acadYearLoc.inputValue().catch(() => '');
-                            if (!curAcad) {
-                                await acadYearLoc.fill(String(new Date().getFullYear())).catch(() => {});
-                                await acadYearLoc.dispatchEvent('change').catch(() => {});
-                            }
-                        }
-
-                        // 6. Institution Name & Address (Bilingual: English + Tamil)
                         const instPair = ensureBilingualPair(
                             institutionName || 'Government College of Technology Coimbatore',
                             citizenProfile.institutionNameTam || ''
@@ -567,74 +571,70 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         const cleanAddEng = (instAddPair.eng || 'Thadagam Road Coimbatore').replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
                         const cleanAddTam = (instAddPair.tam && /[஀-௿]/.test(instAddPair.tam) ? instAddPair.tam : 'தடாகம் ரோடு கோயம்புத்தூர்').replace(/[^஀-௿\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-                        onProgress(`🏛️ [கல்வி நிறுவனம்] ${cleanInstTam} (${cleanInstEng}) பதிவு செய்யப்படுகிறது...`);
+                        onProgress(`📅 [தேர்ச்சி பெற்ற ஆண்டு] ${yopVal} & 🏛️ [கல்வி நிறுவனம்] ${cleanInstTam} (${cleanInstEng}) பதிவு செய்யப்படுகிறது...`);
 
-                        // Evaluate filling both English and Tamil into the portal inputs directly
-                        await tnegaPage.evaluate(({ cleanInstEng, cleanInstTam, cleanAddEng, cleanAddTam }) => {
+                        await tnegaPage.evaluate(({ yopVal, curYearVal, cleanInstEng, cleanInstTam, cleanAddEng, cleanAddTam }) => {
+                            const setField = (el, val) => {
+                                if (!el || el.disabled || el.readOnly) return false;
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                return true;
+                            };
+
+                            // Year of Passing: check known IDs OR find input adjacent to "Year of Passing" label
+                            let yopEl = document.getElementById('nograduate:yearofpassingid') ||
+                                        document.getElementById('nograduate:yrpassid') ||
+                                        document.querySelector('input[id*="yearofpass"], input[id*="yrpass"], input[id*="passing"], input[id*="yop"]');
+                            if (!yopEl) {
+                                const cells = Array.from(document.querySelectorAll('td, label, span'));
+                                const yopCell = cells.find(c => /year\s*of\s*passing/i.test(c.innerText || ''));
+                                if (yopCell) {
+                                    const row = yopCell.closest('tr');
+                                    if (row) {
+                                        const inputs = Array.from(row.querySelectorAll('input[type="text"]'));
+                                        if (inputs.length > 0) yopEl = inputs[inputs.length - 1];
+                                    }
+                                }
+                            }
+                            setField(yopEl, yopVal);
+
+                            // Current Academic Year
+                            const acadEl = document.getElementById('nograduate:currentacademicyear') ||
+                                           document.querySelector('input[id*="academicyear"], input[name*="academicyear"]');
+                            if (acadEl && !acadEl.value) {
+                                setField(acadEl, curYearVal);
+                            }
+
                             // English Institute Name
                             const engName = document.getElementById('nograduate:nameofinstituteid') || 
                                             document.querySelector('input[id*="nameofinstitute"]:not([id*="tn"])') ||
                                             document.querySelector('input[name*="nameofinstitute"]:not([name*="tn"])');
-                            if (engName) {
-                                engName.value = cleanInstEng;
-                                engName.dispatchEvent(new Event('input', { bubbles: true }));
-                                engName.dispatchEvent(new Event('change', { bubbles: true }));
-                                engName.dispatchEvent(new Event('blur', { bubbles: true }));
-                            }
+                            setField(engName, cleanInstEng);
 
                             // Tamil Institute Name
                             const tamName = document.getElementById('nograduate:nameofinstitutetnid') || 
                                             document.querySelector('input[id*="nameofinstitutetn"]') ||
                                             document.querySelector('input[name*="nameofinstitutetn"]') ||
                                             document.querySelector('input[placeholder*="கல்வி"], input[title*="கல்வி"]');
-                            if (tamName) {
-                                tamName.value = cleanInstTam;
-                                tamName.dispatchEvent(new Event('input', { bubbles: true }));
-                                tamName.dispatchEvent(new Event('change', { bubbles: true }));
-                                tamName.dispatchEvent(new Event('blur', { bubbles: true }));
-                            }
+                            setField(tamName, cleanInstTam);
 
                             // English Institute Address
                             const engAdd = document.getElementById('nograduate:instituteaddid') || 
                                            document.querySelector('textarea[id*="instituteadd"]:not([id*="tn"])') ||
                                            document.querySelector('textarea[name*="instituteadd"]:not([name*="tn"])');
-                            if (engAdd) {
-                                engAdd.value = cleanAddEng;
-                                engAdd.dispatchEvent(new Event('input', { bubbles: true }));
-                                engAdd.dispatchEvent(new Event('change', { bubbles: true }));
-                                engAdd.dispatchEvent(new Event('blur', { bubbles: true }));
-                            }
+                            setField(engAdd, cleanAddEng);
 
                             // Tamil Institute Address
                             const tamAdd = document.getElementById('nograduate:instituteaddtnid') || 
                                            document.querySelector('textarea[id*="instituteaddtn"]') ||
                                            document.querySelector('textarea[name*="instituteaddtn"]') ||
                                            document.querySelector('textarea[placeholder*="முகவரி"], textarea[title*="முகவரி"]');
-                            if (tamAdd) {
-                                tamAdd.value = cleanAddTam;
-                                tamAdd.dispatchEvent(new Event('input', { bubbles: true }));
-                                tamAdd.dispatchEvent(new Event('change', { bubbles: true }));
-                                tamAdd.dispatchEvent(new Event('blur', { bubbles: true }));
-                            }
-                        }, { cleanInstEng, cleanInstTam, cleanAddEng, cleanAddTam }).catch(() => {});
+                            setField(tamAdd, cleanAddTam);
+                        }, { yopVal, curYearVal, cleanInstEng, cleanInstTam, cleanAddEng, cleanAddTam }).catch(() => {});
 
-                        // Fallback Playwright filling if locator exists
-                        const instNameLoc = tnegaPage.locator('input[id="nograduate:nameofinstituteid"], #nograduate\\:nameofinstituteid').first();
-                        if (await instNameLoc.count() > 0 && !(await instNameLoc.inputValue().catch(() => ''))) {
-                            await instNameLoc.fill(cleanInstEng).catch(() => {});
-                        }
-                        const instNameTmLoc = tnegaPage.locator('input[id="nograduate:nameofinstitutetnid"], #nograduate\\:nameofinstitutetnid').first();
-                        if (await instNameTmLoc.count() > 0 && !(await instNameTmLoc.inputValue().catch(() => ''))) {
-                            await instNameTmLoc.fill(cleanInstTam).catch(() => {});
-                        }
-                        const instAddLoc = tnegaPage.locator('textarea[id="nograduate:instituteaddid"], #nograduate\\:instituteaddid').first();
-                        if (await instAddLoc.count() > 0 && !(await instAddLoc.inputValue().catch(() => ''))) {
-                            await instAddLoc.fill(cleanAddEng).catch(() => {});
-                        }
-                        const instAddTmLoc = tnegaPage.locator('textarea[id="nograduate:instituteaddtnid"], #nograduate\\:instituteaddtnid').first();
-                        if (await instAddTmLoc.count() > 0 && !(await instAddTmLoc.inputValue().catch(() => ''))) {
-                            await instAddTmLoc.fill(cleanAddTam).catch(() => {});
-                        }
+                        await tnegaPage.waitForTimeout(500);
 
                         firstGraduateFormFilled = true;
                         onProgress('✅ முதல் பட்டதாரி படிவ விவரங்கள் அனைத்தும் வெற்றிகரமாக நிரப்பப்பட்டன!');
@@ -652,12 +652,20 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                                 badge: 'Click Submit ⌨️',
                                 type: 'attention'
                             });
+                            if (options.stopAtFormReviewGate) {
+                                await tnegaPage.waitForTimeout(2000);
+                                return { success: true, isFormReviewGate: true, message: 'REV-104 form filled and waiting at Operator Submit Gate.' };
+                            }
+                            if (options.autoClickFormSubmit) {
+                                await tnegaPage.waitForTimeout(3000);
+                                onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
+                                const subBtn = tnegaPage.locator('#nograduate\\:submit, input[id="nograduate:submit"], input[type="submit"][value="Submit"]').first();
+                                if (await subBtn.count() > 0) {
+                                    await subBtn.click().catch(() => {});
+                                    await tnegaPage.waitForTimeout(2500);
+                                }
+                            }
                         }
-
-                        // Auto-accept any confirmation dialog when user clicks Submit
-                        tnegaPage.on('dialog', async d => {
-                            try { await d.accept(); } catch (_) {}
-                        });
 
                         // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
                         const newUrl = tnegaPage.url().toLowerCase();
@@ -882,6 +890,11 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                 }
 
             } catch (stepErr) {
+                if (isFatalBrowserClosedError(stepErr, tnegaPage)) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                }
                 onProgress(`⚠️ படிநிலை பிழை: ${stepErr.message}`);
                 await new Promise(r => setTimeout(r, 2000));
             }

@@ -126,7 +126,28 @@
 
         function appendLiveAutomationStep(msg) {
             if (!msg || typeof msg !== 'string' || window.isScreenResetting || msg.includes('Chrome Console') || msg.includes('Failed to load resource')) return;
+            if (msg.includes('தொடங்குகிறது') || msg.includes('தொடங்கப்படுகிறது') || msg.includes('Google Chrome') || msg.includes('தளம் திறக்க')) {
+                window.isAutomationManuallyStopped = false;
+            }
+            if (window.isAutomationManuallyStopped) return;
             console.log('[Live Automation Step]', msg);
+
+            if (/பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன்|Target page, context or browser has been closed|Target closed|Browser has been closed|ஆட்டோமேஷன் நிறுத்தப்பட்டது/i.test(msg)) {
+                window.isAutomationManuallyStopped = true;
+                const pBar = document.getElementById('automationProgressBar');
+                if (pBar) {
+                    pBar.classList.remove('active');
+                    pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
+                }
+                const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+                if (headerStopBtn) headerStopBtn.style.display = 'none';
+                const stepper = document.getElementById('liveAutomationStepperCard');
+                if (stepper) stepper.remove();
+                const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+                const activeName = localStorage.getItem('eseva_active_customer_name') || 'வாடிக்கையாளர்';
+                renderAutomationStoppedCard(activeMob, activeName);
+                return;
+            }
 
             // 1. Extract step number if present, e.g. [படி 21/51] or [படிகள் 23-35/51] or Step 21/51
             const stepMatch = msg.match(/(?:\[\s*(?:படி|படிகள்|Step)\s*|(?:படி|படிகள்|Step)\s+)(\d+)(?:\s*-\s*(\d+))?\s*\/\s*(\d+)\]?/i);
@@ -426,6 +447,27 @@
 
         async function handleAutomationFinished(res) {
             console.log('[Automation Finished Event]', res);
+
+            if (!res || !res.success || res.stopped || res.browserClosed) {
+                window.isAutomationManuallyStopped = true;
+                const pBar = document.getElementById('automationProgressBar');
+                if (pBar) {
+                    pBar.classList.remove('active');
+                    pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
+                }
+                const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+                if (headerStopBtn) headerStopBtn.style.display = 'none';
+                const stepper = document.getElementById('liveAutomationStepperCard');
+                if (stepper) stepper.remove();
+                if (window.isScreenResetting || res?.silent || (res?.stopped && !res?.wasRunning)) {
+                    return;
+                }
+                const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+                const activeName = localStorage.getItem('eseva_active_customer_name') || 'வாடிக்கையாளர்';
+                renderAutomationStoppedCard(activeMob, activeName);
+                return;
+            }
+
             updateAutomationProgressBar(51, 51, 'முடிந்தது');
 
             if (res && res.success && (res.isTnegaCan || res.canNumber)) {
@@ -574,8 +616,27 @@
         // =========================================================================
 
         async function stopLiveAutomationUser() {
+            window.isAutomationManuallyStopped = true;
             const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
             const activeName = localStorage.getItem('eseva_active_customer_name') || currentCitizenData?.fullNameTam || currentCitizenData?.fullNameEng || 'வாடிக்கையாளர்';
+
+            // 1. Immediately hide progress bar, Stop button, and approval modal (0ms UI latency)
+            const pBar = document.getElementById('automationProgressBar');
+            if (pBar) {
+                pBar.classList.remove('active');
+                pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
+            }
+            const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+            if (headerStopBtn) headerStopBtn.style.display = 'none';
+            if (typeof closeHitlApprovalModal === 'function') closeHitlApprovalModal();
+
+            const fill = document.getElementById('apbFill');
+            if (fill) fill.style.width = '0%';
+
+            const stepper = document.getElementById('liveAutomationStepperCard');
+            if (stepper) stepper.remove();
+
+            renderAutomationStoppedCard(activeMob, activeName);
 
             const stopBtns = [document.getElementById('btnStopAutomationProgress'), document.getElementById('btnStopAutomationHeader')];
             stopBtns.forEach(btn => {
@@ -586,12 +647,12 @@
             });
 
             try {
-                // 1. Terminate local Playwright browser via Desktop Bridge
+                // 2. Terminate local Playwright browser via Desktop Bridge
                 if (window.esevaDesktopBridge && window.esevaDesktopBridge.stopLiveAutomation) {
                     await window.esevaDesktopBridge.stopLiveAutomation().catch(e => console.warn('[Desktop Bridge] Stop warn:', e));
                 }
 
-                // 2. Terminate server automation & TNeGA automation
+                // 3. Terminate server automation & TNeGA automation
                 await fetch('/api/automation/stop', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-session-mobile': activeMob },
@@ -599,30 +660,8 @@
                 }).catch(() => {});
 
                 await fetch('/api/tnega/stop', { method: 'POST' }).catch(() => {});
-
-                // 3. Immediately hide progress bar and approval modal
-                const pBar = document.getElementById('automationProgressBar');
-                if (pBar) {
-                    pBar.classList.remove('active');
-                    pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
-                }
-                const headerStopBtn = document.getElementById('btnStopAutomationHeader');
-                if (headerStopBtn) headerStopBtn.style.display = 'none';
-                if (typeof closeHitlApprovalModal === 'function') closeHitlApprovalModal();
-
-                const fill = document.getElementById('apbFill');
-                if (fill) fill.style.width = '0%';
-
-                // Remove live automation stepper from chat
-                const stepper = document.getElementById('liveAutomationStepperCard');
-                if (stepper) stepper.remove();
-
-                // 4. Render Simple Stopped Notification Pill
-                renderAutomationStoppedCard(activeMob, activeName);
-
             } catch (e) {
                 console.error('[Stop Automation Error]', e);
-                alert('ஆட்டோமேஷனை நிறுத்துவதில் பிழை: ' + e.message);
             } finally {
                 stopBtns.forEach(btn => {
                     if (btn) {

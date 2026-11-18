@@ -40,6 +40,7 @@ let pendingCanOtpResolver = null;
 let activeCanNumber = null;
 let currentTnegaStep = 'IDLE';
 let lastTnegaError = null;
+let isTnegaStopped = false;
 
 let pendingCanOtpValue = null;
 
@@ -70,8 +71,45 @@ function getTnegaState() {
         get currentTnegaStep() { return currentTnegaStep; },
         set currentTnegaStep(v) { currentTnegaStep = v; },
         get lastTnegaError() { return lastTnegaError; },
-        set lastTnegaError(v) { lastTnegaError = v; }
+        set lastTnegaError(v) { lastTnegaError = v; },
+        get isStopped() { return isTnegaStopped; },
+        set isStopped(v) { isTnegaStopped = Boolean(v); }
     };
+}
+
+function isTnegaSessionAlive(page) {
+    if (isTnegaStopped) return false;
+    if (tnegaBrowser && typeof tnegaBrowser.isConnected === 'function' && !tnegaBrowser.isConnected()) {
+        return false;
+    }
+    if (tnegaContext) {
+        try {
+            const openPages = tnegaContext.pages().filter(p => !p.isClosed());
+            if (openPages.length === 0) return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    if (!page || page.isClosed()) {
+        if (tnegaContext) {
+            try {
+                const openPages = tnegaContext.pages().filter(p => !p.isClosed());
+                if (openPages.length > 0) return true;
+            } catch (_) {}
+        }
+        return false;
+    }
+    return true;
+}
+
+function isFatalBrowserClosedError(err, page) {
+    if (isTnegaStopped) return true;
+    const msg = String(err && err.message ? err.message : err || '');
+    if (/Target page, context or browser has been closed|Target closed|Browser has been closed|Session closed|Connection closed|Browser disconnected|context or browser has been closed/i.test(msg)) {
+        if (!isTnegaSessionAlive(page)) return true;
+        if (!page || page.isClosed()) return true;
+    }
+    return false;
 }
 
 function getLiveTnegaStatus() {
@@ -98,6 +136,7 @@ async function maximizeTnegaWindow(page) {
 }
 
 async function launchTnegaBrowser(headless = false, options = {}) {
+    isTnegaStopped = false;
     if (tnegaPage && !tnegaPage.isClosed()) {
         await maximizeTnegaWindow(tnegaPage);
         return { browser: tnegaBrowser, context: tnegaContext, page: tnegaPage };
@@ -121,8 +160,15 @@ async function launchTnegaBrowser(headless = false, options = {}) {
     ];
 
     // 1. Try connecting to existing visible Chrome on port 9222
-    try {
+    const connectTo9222 = async () => {
         tnegaBrowser = await activeChromium.connectOverCDP('http://127.0.0.1:9222');
+        tnegaBrowser.on('disconnected', () => {
+            isTnegaStopped = true;
+            currentTnegaStep = 'IDLE';
+            tnegaBrowser = null;
+            tnegaContext = null;
+            tnegaPage = null;
+        });
         const contexts = tnegaBrowser.contexts();
         tnegaContext = contexts[0] || (await tnegaBrowser.newContext());
         tnegaPage = tnegaContext.pages().find(p => !p.isClosed() && (p.url().toLowerCase().includes('services.aspx') || p.url().toLowerCase().includes('canregistration') || p.url().toLowerCase().includes('instruction')))
@@ -136,7 +182,32 @@ async function launchTnegaBrowser(headless = false, options = {}) {
             }
         } catch (_) {}
         return { browser: tnegaBrowser, context: tnegaContext, page: tnegaPage };
+    };
+
+    try {
+        return await connectTo9222();
     } catch (_) {}
+
+    // 1B. On Windows when !headless, launch Chrome onto Winsta0\Default so it is 100% visible to the user
+    if (!headless && process.platform === 'win32') {
+        try {
+            const { spawn } = require('child_process');
+            const psScript = path.join('d:', 'downloads', 'ai assitant 2', 'scripts', 'launch_visible_chrome.ps1');
+            if (fs.existsSync(psScript)) {
+                const child = spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', psScript], {
+                    detached: true,
+                    stdio: 'ignore'
+                });
+                child.unref();
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    await new Promise(r => setTimeout(r, 800));
+                    try {
+                        return await connectTo9222();
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
 
     try {
         tnegaBrowser = await activeChromium.launch({
@@ -148,6 +219,16 @@ async function launchTnegaBrowser(headless = false, options = {}) {
         tnegaBrowser = await activeChromium.launch({
             headless: headless,
             args: launchArgs
+        });
+    }
+
+    if (tnegaBrowser) {
+        tnegaBrowser.on('disconnected', () => {
+            isTnegaStopped = true;
+            currentTnegaStep = 'IDLE';
+            tnegaBrowser = null;
+            tnegaContext = null;
+            tnegaPage = null;
         });
     }
 
@@ -196,16 +277,28 @@ function provideCanOtp(otp) {
 }
 
 async function stopTnegaAutomation() {
-    if (tnegaBrowser) {
-        await tnegaBrowser.close().catch(() => {});
-        tnegaBrowser = null;
-        tnegaContext = null;
-        tnegaPage = null;
-    }
+    isTnegaStopped = true;
+    currentTnegaStep = 'IDLE';
     isWaitingForCanOtp = false;
     isWaitingForCaptcha = false;
-    pendingCanOtpResolver = null;
-    currentTnegaStep = 'IDLE';
+    if (pendingCanOtpResolver) {
+        try { pendingCanOtpResolver(null); } catch (_) {}
+        pendingCanOtpResolver = null;
+    }
+    if (tnegaContext) {
+        try {
+            const pages = tnegaContext.pages();
+            for (const p of pages) {
+                await p.close().catch(() => {});
+            }
+        } catch (_) {}
+    }
+    if (tnegaBrowser) {
+        await tnegaBrowser.close().catch(() => {});
+    }
+    tnegaBrowser = null;
+    tnegaContext = null;
+    tnegaPage = null;
     return { success: true };
 }
 
@@ -290,5 +383,7 @@ module.exports = {
     provideCanOtp,
     stopTnegaAutomation,
     setTnegaChromiumInstance,
-    downloadAndOpenSelfDeclaration
+    downloadAndOpenSelfDeclaration,
+    isTnegaSessionAlive,
+    isFatalBrowserClosedError
 };

@@ -175,7 +175,14 @@ function resolveStorageService() {
     try { return require('../src/services/storage_service'); } catch (_) { return null; }
 }
 
+let activeAutomationAborted = false;
+let lastMainWindowRef = null;
+let lastActiveTnpdsModule = null;
+let lastActiveTnegaModule = null;
+
 async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModule, setActiveModule) {
+    activeAutomationAborted = false;
+    lastMainWindowRef = mainWindow;
     const runTimestamp = Date.now();
     const customerMobile = (draftData?.mobileNumber || draftData?.citizenProfile?.mobileNumber || 'run').toString().replace(/\D/g, '') || 'run';
     const logFileName = `live_desktop_${customerMobile}_${runTimestamp}.log`;
@@ -375,14 +382,57 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         try { fs.writeFileSync(t, startHeader, 'utf8'); } catch (_) {}
     }
 
+    const clearRunningSessionState = () => {
+        try {
+            const storageService = resolveStorageService();
+            if (storageService) {
+                const allSessions = storageService.getAllSessions ? storageService.getAllSessions() : [];
+                for (const s of allSessions) {
+                    if (s) {
+                        s.isAutomationRunning = false;
+                        s.isAutomating = false;
+                        s.automationStep = 0;
+                        s.automationCurrentStepMsg = '';
+                    }
+                }
+                if (customerMobile && storageService.getOrCreateSession) {
+                    const cSess = storageService.getOrCreateSession(customerMobile);
+                    if (cSess) {
+                        cSess.isAutomationRunning = false;
+                        cSess.isAutomating = false;
+                        cSess.automationStep = 0;
+                        cSess.automationCurrentStepMsg = '';
+                    }
+                }
+            }
+        } catch (_) {}
+    };
+
     const onProgress = (msg) => {
         writeLogEntry(msg);
+        if (activeAutomationAborted) return;
+
+        if (/பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன்|Target page, context or browser has been closed|Target closed|Browser has been closed/i.test(String(msg || ''))) {
+            activeAutomationAborted = true;
+            clearRunningSessionState();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('automation-finished', {
+                    success: false,
+                    stopped: true,
+                    browserClosed: true,
+                    wasRunning: true,
+                    message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.'
+                });
+            }
+            return;
+        }
+
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-step-update', msg);
         }
         try {
             const storageService = resolveStorageService();
-            if (storageService && customerMobile) {
+            if (storageService && customerMobile && !activeAutomationAborted) {
                 const sess = storageService.getOrCreateSession(customerMobile);
                 if (sess) {
                     const stepMatch = msg.match(/(?:\[\s*(?:படி|படிகள்|Step)\s*|(?:படி|படிகள்|Step)\s+)(\d+)(?:\s*-\s*\d+)?\s*\/\s*(\d+)\]?/i);
@@ -426,6 +476,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
 
 
     let automationModule = loadAutomationModule();
+    lastActiveTnpdsModule = automationModule;
     setActiveModule(automationModule);
     if (automationModule?.setChromiumInstance && playwrightChromium) {
         automationModule.setChromiumInstance(playwrightChromium);
@@ -439,6 +490,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
 
     const resolved = resolveDiskDraftAndGas(customerMobile, draftData);
     let tnegaModule = loadTnegaAutomationModule();
+    lastActiveTnegaModule = tnegaModule;
     if (tnegaModule?.setTnegaChromiumInstance && playwrightChromium) {
         tnegaModule.setTnegaChromiumInstance(playwrightChromium);
     }
@@ -580,14 +632,21 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         geminiApiKey: process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8'),
         serverUrl: process.env.ESEVA_DEV_URL || 'https://esevadraft.in'
     }).then(res => {
+        clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-finished', res);
         }
     }).catch(err => {
+        clearRunningSessionState();
         writeLogEntry(`[விபத்து பிழை] ${err.message}\n${err.stack}`);
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('automation-step-update', `⚠️ ஆட்டோமேஷன் பிழை: ${err.message}`);
+            mainWindow.webContents.send('automation-finished', {
+                success: false,
+                stopped: true,
+                error: err.message,
+                message: `ஆட்டோமேஷன் நிறுத்தப்பட்டது: ${err.message}`
+            });
         }
     });
 
@@ -596,17 +655,26 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
 }
 
 async function stopActiveAutomation() {
+    activeAutomationAborted = true;
+
     try {
-        const mod = getActiveModule() || loadAutomationModule();
+        const mod = lastActiveTnpdsModule || loadAutomationModule();
         if (mod && mod.stopTnpdsAutomation) {
             await mod.stopTnpdsAutomation();
         }
     } catch (_) {}
 
     try {
-        const tnegaModule = require('../tnega_can_automation');
-        if (tnegaModule && tnegaModule.stopTnegaAutomation) {
-            await tnegaModule.stopTnegaAutomation();
+        const tnegaMod1 = lastActiveTnegaModule || loadTnegaAutomationModule();
+        if (tnegaMod1 && tnegaMod1.stopTnegaAutomation) {
+            await tnegaMod1.stopTnegaAutomation();
+        }
+    } catch (_) {}
+
+    try {
+        const tnegaMod2 = require('../tnega_can_automation');
+        if (tnegaMod2 && tnegaMod2.stopTnegaAutomation) {
+            await tnegaMod2.stopTnegaAutomation();
         }
     } catch (_) {}
 
@@ -629,6 +697,17 @@ async function stopActiveAutomation() {
                 sess.automationStep = 0;
                 sess.automationCurrentStepMsg = '';
             }
+        }
+    } catch (_) {}
+
+    try {
+        if (lastMainWindowRef && !lastMainWindowRef.isDestroyed()) {
+            lastMainWindowRef.webContents.send('automation-finished', {
+                success: false,
+                stopped: true,
+                wasRunning: true,
+                message: 'ஆட்டோமேஷன் நிறுத்தப்பட்டது.'
+            });
         }
     } catch (_) {}
 

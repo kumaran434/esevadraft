@@ -9,7 +9,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, isTnegaSessionAlive, isFatalBrowserClosedError, stopTnegaAutomation } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
@@ -59,10 +59,14 @@ async function handleTnegaSavedApplication(tnegaPage, serviceCode = 'REV-102', a
     // Wait for table to be visible
     await tnegaPage.waitForSelector('table, tr', { timeout: 7000 }).catch(() => {});
 
-    // Find row matching serviceCode (REV-102 / Nativity)
+    // Find row matching serviceCode (REV-101..REV-115 or service name)
     let rows = tnegaPage.locator('tr').filter({ hasText: serviceCode });
     if (await rows.count() === 0) {
-        rows = tnegaPage.locator('tr').filter({ hasText: 'Nativity' });
+        const fallbackKeyword = serviceCode === 'REV-101' ? 'Community' :
+                                serviceCode === 'REV-103' ? 'Income' :
+                                serviceCode === 'REV-104' ? 'Graduate' :
+                                serviceCode === 'REV-115' ? 'Backward' : 'Nativity';
+        rows = tnegaPage.locator('tr').filter({ hasText: fallbackKeyword });
     }
 
     let targetRow = null;
@@ -116,13 +120,13 @@ async function handleTnegaSavedApplication(tnegaPage, serviceCode = 'REV-102', a
         }
     } else {
         // action === 'resume'
-        onProgress(`🚀 [ஆவணப் பதிவேற்றத்திற்குச் செல்கிறது] "Upload Documents" பொத்தான் அழுத்தப்படுகிறது...`);
-        const uploadBtn = tnegaPage.locator('input[value*="Upload Document"], button:has-text("Upload Documents")').first();
+        onProgress(`🚀 [ஆவணப் பதிவேற்றத்திற்குச் செல்கிறது] "Upload Documents / Proceed" பொத்தான் அழுத்தப்படுகிறது...`);
+        const uploadBtn = tnegaPage.locator('input[value*="Upload Document"], button:has-text("Upload Documents"), input[value*="Proceed"], button:has-text("Proceed")').first();
         if (await uploadBtn.count() > 0 && await uploadBtn.isVisible()) {
             await uploadBtn.click().catch(() => {});
             await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
             await tnegaPage.waitForTimeout(3000);
-            onProgress(`✅ [ஆவணப் பக்கம் திறக்கப்பட்டது] ${appNum} விண்ணப்பத்திற்கான uploadDocs.xhtml பக்கம் எட்டப்பட்டது!`);
+            onProgress(`✅ [மீட்புப் பக்கம் திறக்கப்பட்டது] ${appNum} விண்ணப்பத்திற்கான பக்கம் எட்டப்பட்டது!`);
             return { found: true, action: 'resumed', appNumber: appNum };
         }
     }
@@ -137,6 +141,7 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
     const state = getTnegaState();
     const isMock = options.isMockSandbox !== false && options.forceRealGovtOtp !== true;
     state.isMockSandboxMode = isMock;
+    state.isStopped = false;
     state.currentTnegaStep = 'RESIDENCE_CERTIFICATE_INIT';
     state.lastTnegaError = null;
 
@@ -274,12 +279,23 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
 
         while (!formCompleted) {
             loopCounter++;
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
+
+            if (!isTnegaSessionAlive(tnegaPage)) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
 
             try {
                 // Focus on active tab
                 if (state.context) {
                     const allPages = state.context.pages().filter(p => !p.isClosed());
+                    if (allPages.length === 0) {
+                        await stopTnegaAutomation().catch(() => {});
+                        onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                        return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                    }
                     for (const p of allPages) {
                         const pu = p.url().toLowerCase();
                         if (pu.includes('/tneda/default.aspx') || pu.includes('/tneda/portallogin.aspx')) {
@@ -299,6 +315,12 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                         state.page = bestPage;
                         await tnegaPage.bringToFront().catch(() => {});
                     }
+                }
+
+                if (!tnegaPage || tnegaPage.isClosed()) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
                 }
 
                 const currentUrl = tnegaPage.url() ? tnegaPage.url().toLowerCase() : '';
@@ -510,20 +532,20 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                 ) || (await tnegaPage.locator('input[id*="resYears"], select[id*="resType"], input[id*="periodOfResidence"]').count()) > 0;
 
                 if (isNativityPage) {
-                    await updateTnegaHud(tnegaPage, {
-                        title: '📝 இருப்பிடச் சான்றிதழ் படிவம்',
-                        desc: `குடியிருப்பு விவரங்கள் நிரப்பப்படுகின்றன (${yearsOfResidence} ஆண்டுகள்)...`,
-                        badge: 'Filling Form',
-                        type: 'working'
-                    });
-
-                    // 5A. Auto-extract pre-filled details to verify/sync Master Profile
-                    const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
-                    if (preFilled) {
-                        onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
-                    }
-
                     if (!formFilled) {
+                        await updateTnegaHud(tnegaPage, {
+                            title: '📝 இருப்பிடச் சான்றிதழ் படிவம்',
+                            desc: `குடியிருப்பு விவரங்கள் நிரப்பப்படுகின்றன (${yearsOfResidence} ஆண்டுகள்)...`,
+                            badge: 'Filling Form',
+                            type: 'working'
+                        });
+
+                        // 5A. Auto-extract pre-filled details to verify/sync Master Profile
+                        const preFilled = await extractPreFilledPortalCanDetails(tnegaPage);
+                        if (preFilled) {
+                            onProgress(`✅ [CAN இணைப்பு உறுதி] பெயர்: ${preFilled.fullNameTam || fullNameTam} | தந்தை: ${preFilled.fatherNameTam || '—'} | முகவரி: ${preFilled.streetTam || ''}`);
+                        }
+
                         onProgress('✍️ [படிவம் நிரப்புதல்] இருப்பிட காலம் மற்றும் சான்றிதழ் பயன்பாட்டு விவரங்கள் நிரப்பப்படுகின்றன...');
 
                         // 1. Fill Years of Residence (தமிழ்நாட்டில் தொடர்ந்து வசிக்கும் காலம்)
@@ -589,6 +611,19 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                                 badge: 'Click Submit ⌨️',
                                 type: 'attention'
                             });
+                            if (options.stopAtFormReviewGate) {
+                                await tnegaPage.waitForTimeout(2000);
+                                return { success: true, isFormReviewGate: true, message: 'REV-102 form filled and waiting at Operator Submit Gate.' };
+                            }
+                            if (options.autoClickFormSubmit) {
+                                await tnegaPage.waitForTimeout(3000);
+                                onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
+                                const subBtn = tnegaPage.locator('input[type="submit"][value="Submit"], button:has-text("Submit")').first();
+                                if (await subBtn.count() > 0) {
+                                    await subBtn.click().catch(() => {});
+                                    await tnegaPage.waitForTimeout(2500);
+                                }
+                            }
                         }
 
                         // Auto-accept any confirmation dialog when user clicks Submit
@@ -812,62 +847,72 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                         const sizeKb = (fs.statSync(item.filePath).size / 1024).toFixed(1);
                         onProgress(`📤 [பதிவேற்றம்] ${item.nameTamil} (${sizeKb} KB - அரசு வரம்பு: <${item.maxKb} KB)...`);
 
-                        // 1. Select Document Type from dropdown
+                        // 1. Select Document Type from dropdown and wait for JSF AJAX response
                         const selectLoc = tnegaPage.locator('#ss\\:do, select[name*="do"]').first();
                         if (await selectLoc.count() > 0) {
-                            await selectLoc.selectOption(item.optionVal).catch(() => {});
-                            await selectLoc.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                            await tnegaPage.waitForTimeout(1000);
+                            const availableVals = await tnegaPage.evaluate(() => {
+                                const sel = document.querySelector('#ss\\:do, select[name*="do"]');
+                                return sel ? Array.from(sel.options).map(o => ({ value: o.value, text: o.text.trim() })) : [];
+                            }).catch(() => []);
+
+                            let matchedVal = item.optionVal;
+                            const foundOpt = availableVals.find(o => 
+                                item.searchTerms.some(term => o.text.toLowerCase().includes(term.toLowerCase())) || 
+                                o.value === item.optionVal
+                            );
+                            if (foundOpt) matchedVal = foundOpt.value;
+
+                            const waitDoAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
+                            await selectLoc.selectOption(matchedVal).catch(() => {});
+                            await waitDoAjax;
+                            await tnegaPage.waitForTimeout(500);
                         }
 
-                        // 2. Enter Document Number
+                        // 2. Enter Document Number and trigger blur/Tab AJAX
                         const numLoc = tnegaPage.locator('#ss\\:dscnum, input[name*="dscnum"]').first();
                         if (await numLoc.count() > 0) {
-                            await numLoc.fill(item.docNum);
-                            await numLoc.dispatchEvent('input', { bubbles: true }).catch(() => {});
-                            await numLoc.dispatchEvent('change', { bubbles: true }).catch(() => {});
-                            await tnegaPage.waitForTimeout(600);
+                            const waitNumAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
+                            await numLoc.click().catch(() => {});
+                            await numLoc.fill(item.docNum || '1').catch(() => {});
+                            await numLoc.press('Tab').catch(() => {});
+                            await waitNumAjax;
+                            await tnegaPage.waitForTimeout(500);
                         }
 
                         // 3. Attach file to RichFaces file input
                         const fileLoc = tnegaPage.locator('input.rf-fu-inp[type="file"]').last();
                         if (await fileLoc.count() > 0) {
                             await fileLoc.setInputFiles(item.filePath);
-                            await tnegaPage.waitForTimeout(1500);
+                            await tnegaPage.waitForTimeout(600);
                         }
 
                         // 4. Trigger RichFaces Upload via internal component API + button click fallback
                         onProgress(`⏳ [பதிவேற்றப்படுகிறது...] ${item.nameTamil} போர்ட்டலில் சேர்க்கப்படுகிறது...`);
                         await tnegaPage.evaluate(() => {
                             const fu = document.querySelector('.rf-fu');
-                            const comp = window.RichFaces ? window.RichFaces.$(fu) : null;
-                            if (comp && comp.items && comp.items.length > 0) {
-                                comp.__startUpload();
-                                return;
+                            if (fu && window.RichFaces && window.RichFaces.$(fu.id)) {
+                                const comp = window.RichFaces.$(fu.id);
+                                if (typeof comp.__startUpload === 'function') {
+                                    comp.__startUpload();
+                                    return;
+                                }
                             }
                             const uplBtn = document.querySelector('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl');
                             if (uplBtn) uplBtn.click();
-                        });
+                        }).catch(() => {});
 
-                        const clickUpl = tnegaPage.locator('.rf-fu-btn-upl, .rf-fu-btn-cnt-upl').first();
-                        if (await clickUpl.count() > 0 && await clickUpl.isVisible()) {
-                            await clickUpl.click().catch(() => {});
-                        }
-
-                        // 5. Poll for confirmation in #ss:msg2 and #ss:docTable (up to 15 seconds)
+                        // 5. Poll for confirmation in #ss:docTable (up to 15 seconds)
                         let isConfirmed = false;
                         for (let poll = 0; poll < 15; poll++) {
                             await tnegaPage.waitForTimeout(1000);
                             const check = await tnegaPage.evaluate((searchTerms) => {
                                 const table = document.getElementById('ss:docTable');
-                                const msg2 = document.getElementById('ss:msg2');
                                 const tableText = table ? table.innerText.toLowerCase() : '';
-                                const msgText = msg2 ? msg2.innerText.trim() : '';
                                 const tableHasDoc = searchTerms.some(term => tableText.includes(term.toLowerCase()));
-                                return { tableHasDoc, msgText };
-                            }, item.searchTerms).catch(() => ({ tableHasDoc: false, msgText: '' }));
+                                return { tableHasDoc };
+                            }, item.searchTerms).catch(() => ({ tableHasDoc: false }));
 
-                            if (check.tableHasDoc || check.msgText.includes('Successfully') || check.msgText.includes('வெற்றிகரமாக')) {
+                            if (check.tableHasDoc) {
                                 isConfirmed = true;
                                 uploadedSuccessList.push(item.nameTamil);
                                 onProgress(`🎉 [வெற்றி] ${item.nameTamil} வெற்றிகரமாகப் பதிவேற்றப்பட்டது! ✅`);
@@ -915,6 +960,11 @@ async function startTnegaResidenceCertificateFlow(citizenProfile = {}, onProgres
                 }
 
             } catch (err) {
+                if (isFatalBrowserClosedError(err, tnegaPage)) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                }
                 onProgress(`⚠️ கண்காணிப்பு எச்சரிக்கை: ${err.message}`);
             }
 

@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, downloadAndOpenSelfDeclaration } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, downloadAndOpenSelfDeclaration, isTnegaSessionAlive, isFatalBrowserClosedError, stopTnegaAutomation } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage } = require('./tnega_can_register');
 const { handleTnegaSavedApplication } = require('./tnega_residence_certificate');
@@ -198,10 +198,20 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
             await tnegaPage.waitForTimeout(1500);
         }
 
-        const maxLoopTime = Date.now() + 300000; // 5 mins generous guard
+        let maxLoopTime = Date.now() + 300000; // 5 mins generous guard
         while (Date.now() < maxLoopTime && state.isAutomating) {
+            if (!isTnegaSessionAlive(tnegaPage)) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
             if (state.context) {
                 const allPages = state.context.pages().filter(p => !p.isClosed());
+                if (allPages.length === 0) {
+                    await stopTnegaAutomation().catch(() => {});
+                    onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                    return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+                }
                 if (tnegaPage.isClosed() && allPages.length > 0) {
                     tnegaPage = allPages[0];
                     state.page = tnegaPage;
@@ -215,7 +225,11 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                     attachSafeDialogHandler(tnegaPage, onProgress);
                 }
             }
-            if (tnegaPage.isClosed()) break;
+            if (!tnegaPage || tnegaPage.isClosed()) {
+                await stopTnegaAutomation().catch(() => {});
+                onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+                return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+            }
 
             const currentUrl = (tnegaPage.url() || '').toLowerCase();
 
@@ -602,6 +616,19 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                             badge: 'Click Submit ⌨️',
                             type: 'attention'
                         });
+                        if (options.stopAtFormReviewGate) {
+                            await tnegaPage.waitForTimeout(2000);
+                            return { success: true, isFormReviewGate: true, message: 'REV-115 form filled and waiting at Operator Submit Gate.' };
+                        }
+                        if (options.autoClickFormSubmit) {
+                            await tnegaPage.waitForTimeout(3000);
+                            onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
+                            const subBtn = tnegaPage.locator('button:has-text("Submit"), input[type="submit"][value="Submit"], .gwt-Button:has-text("Submit")').first();
+                            if (await subBtn.count() > 0) {
+                                await subBtn.click().catch(() => {});
+                                await tnegaPage.waitForTimeout(2500);
+                            }
+                        }
                     }
 
                     // Auto-accept any confirmation dialog when user clicks Submit
@@ -645,23 +672,24 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                     fs.mkdirSync(tempDir, { recursive: true });
                     const docsMap = citizenProfile.documents || {};
 
-                    const pickDoc = (keys, fallbackGolden) => {
+                    const pickDoc = async (keys, fallbackGolden) => {
                         for (const k of keys) {
                             const val = docsMap[k] || citizenProfile[k] || (citizenProfile[k]?.docPath);
                             if (val && typeof val === 'string') {
-                                const resolved = resolveOrRestoreFile(val, mobileNumber, k, citizenProfile.base64Docs);
-                                if (resolved && fs.existsSync(resolved)) return resolved;
+                                if (fs.existsSync(val)) return val;
+                                const resolved = await resolveOrRestoreFile(val, mobileNumber, k, citizenProfile.base64Docs).catch(() => null);
+                                if (resolved && typeof resolved === 'string' && fs.existsSync(resolved)) return resolved;
                             }
                         }
-                        if (fallbackGolden && fs.existsSync(fallbackGolden)) return fallbackGolden;
+                        if (fallbackGolden && typeof fallbackGolden === 'string' && fs.existsSync(fallbackGolden)) return fallbackGolden;
                         return null;
                     };
 
                     const obcGoldenDir = path.join(process.cwd(), 'data', 'golden_samples', 'obc');
-                    let photoRaw = pickDoc(['profilePhoto', 'photo', 'headPhoto'], path.join(obcGoldenDir, 'applicant_photo.jpg'));
-                    let addrRaw = pickDoc(['headAadhaar', 'aadhaar', 'smartCard', 'rationCard'], path.join(obcGoldenDir, 'applicant_aadhaar.jpg'));
-                    let commRaw = pickDoc(['communityCertificate', 'fatherCommunityCertificate', 'casteCertificate'], path.join(obcGoldenDir, 'community_certificate.jpg'));
-                    let itrRaw = pickDoc(['incomeTaxReturn', 'incomeCertificate', 'salarySlip', 'incomeProof'], path.join(obcGoldenDir, 'income_tax_return.jpg'));
+                    let photoRaw = await pickDoc(['profilePhoto', 'photo', 'headPhoto'], path.join(obcGoldenDir, 'applicant_photo.jpg'));
+                    let addrRaw = await pickDoc(['headAadhaar', 'aadhaar', 'smartCard', 'rationCard'], path.join(obcGoldenDir, 'applicant_aadhaar.jpg'));
+                    let commRaw = await pickDoc(['communityCertificate', 'fatherCommunityCertificate', 'casteCertificate'], path.join(obcGoldenDir, 'community_certificate.jpg'));
+                    let itrRaw = await pickDoc(['incomeTaxReturn', 'incomeCertificate', 'salarySlip', 'incomeProof'], path.join(obcGoldenDir, 'income_tax_return.jpg'));
 
                     // Strict Portal Size & Pixel Guards (Golden Rule 6)
                     const photoPath = await ensureObcPassportPhotoSize(photoRaw, tempDir, mobileNumber);
@@ -680,7 +708,7 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                         { code: '21', label: 'Photo', docNum: 'PHOTO-01', file: photoPath },
                         { code: '18', label: 'Any Address Proof', docNum: aadhaar || 'ADDR-01', file: addrPath },
                         { code: '17', label: 'Community Certificate', docNum: citizenProfile.communityCertNumber || 'COMM-01', file: commPath },
-                        { code: '358', label: 'Income Tax Return', docNum: `INC-${annualIncome}`, file: itrPath }
+                        { code: '20', label: 'Income Tax Return', docNum: `INC-${annualIncome}`, file: itrPath }
                     ];
 
                     const existingDocNames = await tnegaPage.evaluate(() =>
@@ -708,8 +736,18 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                         const prevCount = await getDataRowCount();
                         onProgress(`📤 [பதிவேற்றம் ${uploadedDocs.length + 1}] ${item.label} (${path.basename(item.file)})...`);
 
+                        const matchedCode = await tnegaPage.evaluate(({ code, label }) => {
+                            const sel = document.getElementById('ss:do');
+                            if (!sel) return code;
+                            const opts = Array.from(sel.options);
+                            const byVal = opts.find(o => o.value === code);
+                            if (byVal) return byVal.value;
+                            const byTxt = opts.find(o => o.text.toLowerCase().includes(label.toLowerCase()));
+                            return byTxt ? byTxt.value : code;
+                        }, { code: item.code, label: item.label }).catch(() => item.code);
+
                         const waitDoAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
-                        await tnegaPage.locator('#ss\\:do').selectOption(item.code).catch(() => {});
+                        await tnegaPage.locator('#ss\\:do').selectOption(matchedCode, { timeout: 3000 }).catch(() => {});
                         await waitDoAjax;
                         await tnegaPage.waitForTimeout(450);
 
@@ -783,6 +821,11 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
             message: 'REV-115 OBC flow loop exited cleanly.'
         };
     } catch (err) {
+        if (isFatalBrowserClosedError(err, tnegaPage)) {
+            await stopTnegaAutomation().catch(() => {});
+            onProgress('🛑 பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.');
+            return { success: false, stopped: true, browserClosed: true, message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.' };
+        }
         onProgress(`❌ [OBC ஆட்டோமேஷன் பிழை] ${err.message}`);
         return { success: false, error: err.message };
     } finally {

@@ -201,6 +201,7 @@
             // Cloud Run runs headless (operator can't see). Desktop App uses local Playwright.
             const isDesktopApp = !!(window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp);
 
+            window.isAutomationManuallyStopped = false;
             if (isDesktopApp && runAsRealLive) {
                 const activeMob = localStorage.getItem('eseva_active_customer_mobile') || '';
                 let draftData = Object.assign({}, currentCitizenData || {});
