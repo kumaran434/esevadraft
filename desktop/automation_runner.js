@@ -214,7 +214,20 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     );
 
     // 1. High-Priority Certificate Service Detection (Golden Rule 6 & 11)
-    const isObc = Boolean(
+    const isLegalHeir = Boolean(
+        explicitSub === 'LEGAL_HEIR' ||
+        explicitSub === 'LEGAL_HEIR_CERTIFICATE' ||
+        explicitSub === 'TNEGA_LEGAL_HEIR' ||
+        targetServiceHint === 'LEGAL_HEIR' ||
+        targetServiceHint.includes('LEGAL_HEIR') ||
+        serviceIdHint === 'LEGAL_HEIR_CERTIFICATE' ||
+        serviceIdHint === 'REV-114' ||
+        serviceHint.includes('வாரிசு') ||
+        serviceHint.includes('LEGAL HEIR') ||
+        intakeStateHint.includes('LEGAL_HEIR')
+    );
+
+    const isObc = !isLegalHeir && Boolean(
         explicitSub === 'OBC' ||
         explicitSub === 'OBC_CERTIFICATE' ||
         explicitSub === 'TNEGA_OBC' ||
@@ -285,7 +298,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     );
 
     // 2. CAN Operations Detection (ONLY if no target certificate goal is active, and NOT already having a CAN)
-    const isCanRegister = !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !hasCan && Boolean(
+    const isCanRegister = !isLegalHeir && !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !hasCan && Boolean(
         explicitSub === 'CAN_REGISTER' ||
         draftData?.subService === 'CAN_REGISTER' ||
         serviceIdHint === 'TNEGA_CAN_REGISTER' ||
@@ -293,14 +306,14 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         intakeStateHint.startsWith('CAN_REGISTER_INTAKE')
     );
 
-    const isCanSearch = !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !isCanRegister && Boolean(
+    const isCanSearch = !isLegalHeir && !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !isCanRegister && Boolean(
         explicitSub === 'CAN_SEARCH' ||
         draftData?.subService === 'CAN_SEARCH' ||
         serviceIdHint === 'TNEGA_CAN_SEARCH' ||
         intakeStateHint.startsWith('CAN_SEARCH_INTAKE')
     );
 
-    const isExplicitNewCard = !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !isCanRegister && !isCanSearch && (
+    const isExplicitNewCard = !isLegalHeir && !isObc && !isCommunity && !isResidence && !isIncome && !isFirstGraduate && !isCanRegister && !isCanSearch && (
                           explicitSub === 'NEW_CARD' ||
                           explicitSub === 'NEW_RATION_CARD' ||
                           explicitSub === 'new_smart_card' ||
@@ -310,14 +323,14 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                           explicitSub === 'NEW_SMART_CARD'
                         );
 
-    const isChangeAddress = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && (
+    const isChangeAddress = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && (
                             explicitSub === 'CHANGE_ADDRESS' ||
                             (!explicitSub && (
                                 (draftData?.intakeState && draftData.intakeState.startsWith('RATION_CHANGE_ADDRESS')) ||
                                 Boolean(draftData?.subServiceData?.doorNo) ||
                                 Boolean(draftData?.citizenProfile?.subServiceData?.doorNo)
                             )));
-    const isRemoveMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && explicitSub !== 'CHANGE_HEAD' && (
+    const isRemoveMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && explicitSub !== 'CHANGE_HEAD' && (
                                 explicitSub === 'REMOVE_MEMBER' ||
                                 (draftData?.intakeState && draftData.intakeState.startsWith('RATION_REMOVE_MEMBER')) ||
                                 (!explicitSub && (
@@ -325,7 +338,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                     (Boolean(draftData?.citizenProfile?.subServiceData?.memberName) && Boolean(draftData?.citizenProfile?.subServiceData?.reason))
                                 ))
                             );
-    const isAddMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && (
+    const isAddMember = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && (
                             explicitSub === 'ADD_MEMBER' ||
                             (draftData?.intakeState && draftData.intakeState.startsWith('RATION_ADD_MEMBER')) ||
                             (!explicitSub && (
@@ -333,7 +346,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                 Boolean(draftData?.citizenProfile?.subServiceData?.memberName)
                             ))
                         );
-    const isChangeMobile = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && !isAddMember && (
+    const isChangeMobile = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && !isAddMember && (
                             explicitSub === 'UPDATE_MOBILE' ||
                             explicitSub === 'CHANGE_MOBILE' ||
                             explicitSub === 'CHANGE_OF_MOBILE_NUMBER' ||
@@ -343,7 +356,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                 Boolean(draftData?.citizenProfile?.subServiceData?.newMobile)
                             ))
                         );
-    const isChangeHead = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && (
+    const isChangeHead = !isExplicitNewCard && !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate && !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && (
                             explicitSub === 'CHANGE_HEAD' ||
                             explicitSub === 'FAMILY_HEAD_MEMBER_CHANGE' ||
                             (draftData?.intakeState && draftData.intakeState.startsWith('RATION_CHANGE_HEAD')) ||
@@ -353,10 +366,11 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                             ))
                         );
 
-    const isNewCard = !isCanRegister && !isCanSearch && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate &&
+    const isNewCard = !isCanRegister && !isCanSearch && !isLegalHeir && !isObc && !isIncome && !isResidence && !isCommunity && !isFirstGraduate &&
                       !isChangeAddress && !isRemoveMember && !isAddMember && !isChangeMobile && !isChangeHead;
 
     const serviceName = isNewCard ? 'NEW_RATION_CARD (புதிய குடும்ப அட்டை)' :
+                       (isLegalHeir ? 'LEGAL_HEIR_CERTIFICATE (வாரிசு சான்றிதழ் - REV-114)' :
                        (isObc ? 'OBC_CERTIFICATE (OBC சான்றிதழ் - REV-115)' :
                        (isCommunity ? 'COMMUNITY_CERTIFICATE (சாதிச் சான்றிதழ் - REV-101)' :
                        (isResidence ? 'RESIDENCE_CERTIFICATE (இருப்பிடச் சான்றிதழ் - REV-102)' :
@@ -369,7 +383,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                        (isChangeHead ? 'CHANGE_HEAD (குடும்பத் தலைவர் மாற்றம்)' : 
                        (isCanRegister ? 'TNEGA_CAN_REGISTER (புதிய CAN பதிவு)' :
                        (isCanSearch ? 'TNEGA_CAN_SEARCH (CAN எண் தேடல்)' :
-                       'NEW_RATION_CARD (புதிய குடும்ப அட்டை)'))))))))))));
+                       'NEW_RATION_CARD (புதிய குடும்ப அட்டை)')))))))))))));
 
     const startHeader = [
         '================================================================================',
@@ -496,7 +510,15 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }
 
     let runner = null;
-    if (isObc) {
+    if (isLegalHeir) {
+        if (tnegaModule?.startTnegaLegalHeirFlow) {
+            runner = tnegaModule.startTnegaLegalHeirFlow;
+        } else {
+            const err = 'TNeGA Legal Heir Certificate தொகுதி (tnega_can_automation) கிடைக்கவில்லை';
+            writeLogEntry(`❌ ${err}`);
+            return { success: false, error: err };
+        }
+    } else if (isObc) {
         if (tnegaModule?.startTnegaObcFlow) {
             runner = tnegaModule.startTnegaObcFlow;
         } else {
@@ -566,7 +588,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         runner = automationModule.startTnpdsRationCardFlow;
     }
 
-    const detectedTargetService = isObc ? 'OBC' :
+    const detectedTargetService = isLegalHeir ? 'LEGAL_HEIR' :
+                                  (isObc ? 'OBC' :
                                   (isCommunity ? 'COMMUNITY' :
                                   (isResidence ? 'RESIDENCE' :
                                   (isIncome ? 'INCOME' :
@@ -575,18 +598,20 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                    draftData?.citizenProfile?.targetService || 
                                    draftData?.parentService || 
                                    draftData?.citizenProfile?.parentService ||
+                                   (draftData?.service === 'வாரிசு சான்றிதழ்' || draftData?.serviceId === 'LEGAL_HEIR_CERTIFICATE' ? 'LEGAL_HEIR' :
                                    (draftData?.service === 'OBC சான்றிதழ்' || draftData?.serviceId === 'OBC_CERTIFICATE' ? 'OBC' :
                                    (draftData?.service === 'முதல் பட்டதாரி சான்றிதழ்' || draftData?.serviceId === 'FIRST_GRADUATE_CERTIFICATE' ? 'FIRST_GRADUATE' :
                                    (draftData?.service === 'சாதிச் சான்றிதழ்' || draftData?.serviceId === 'COMMUNITY_CERTIFICATE' ? 'COMMUNITY' :
                                    (draftData?.service === 'இருப்பிடச் சான்றிதழ்' || draftData?.serviceId === 'RESIDENCE_CERTIFICATE' ? 'RESIDENCE' :
-                                   (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : ''))))))))));
+                                   (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : ''))))))))))));
 
     const targetProfile = {
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
         mobileNumber: draftData?.mobileNumber || resolved.mobClean,
         canNumber: String(draftData?.canNumber || draftData?.citizenProfile?.canNumber || resolved.diskDraft?.canNumber || resolved.diskDraft?.citizenProfile?.canNumber || '').replace(/\D+/g, ''),
-        subService: isObc ? 'OBC' :
+        subService: isLegalHeir ? 'LEGAL_HEIR' :
+                    (isObc ? 'OBC' :
                     (isCommunity ? 'COMMUNITY' :
                     (isResidence ? 'RESIDENCE' :
                     (isIncome ? 'INCOME' :
@@ -597,7 +622,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                     (isAddMember ? 'ADD_MEMBER' :
                     (isChangeAddress ? 'CHANGE_ADDRESS' :
                     (isChangeMobile ? 'UPDATE_MOBILE' :
-                    (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))))),
+                    (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD')))))))))))),
         targetService: detectedTargetService || targetProfile?.targetService,
         subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
         intakeState: draftData?.intakeState || '',

@@ -23,10 +23,13 @@ async function handleServiceSelector(ctx, req, res) {
                         text === 'START_COMMUNITY_APPLY' ||
                         text === 'START_FIRST_GRADUATE_APPLY' ||
                         text === 'START_OBC_APPLY' ||
+                        text === 'START_LEGAL_HEIR_APPLY' ||
                         text === 'FIRST_GRADUATE_CONFIRMED' ||
                         text === 'FIRST_GRADUATE_INELIGIBLE' ||
                         (text && text.startsWith('FIRST_GRADUATE_')) ||
                         (text && text.startsWith('OBC_')) ||
+                        (text && text.startsWith('LH_')) ||
+                        (text && text.startsWith('LEGAL_HEIR_')) ||
                         (text && text.startsWith('SELECT_MEMBER_')) ||
                         (text && text.startsWith('COMMUNITY_')) ||
                         (text && text.startsWith('RELIGION_')) ||
@@ -73,6 +76,11 @@ async function handleServiceSelector(ctx, req, res) {
                                     text === 'OBC_CERTIFICATE' ||
                                     text === 'OBC' ||
                                     text === 'OBC சான்றிதழ்' ||
+                                    text === 'LEGAL_HEIR_CERTIFICATE' ||
+                                    text === 'LEGAL_HEIR' ||
+                                    text === 'வாரிசு சான்றிதழ்' ||
+                                    text.includes('வாரிசு சான்றிதழ்') ||
+                                    text.toLowerCase().includes('legal heir') ||
                                     text === 'VOTER_ID' ||
                                     text === 'குடும்ப உறுப்பினர் சேர்க்க' ||
                                     text === 'குடும்ப உறுப்பினர் நீக்க' ||

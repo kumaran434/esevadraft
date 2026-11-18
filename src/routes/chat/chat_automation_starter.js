@@ -6,7 +6,7 @@ const {
     startTnpdsAddMemberFlow, 
     startTnpdsAddressChangeFlow 
 } = require('../../../tnpds_automation');
-const { startTnegaCanRegisterFlow, startTnegaIncomeFlow, startTnegaResidenceFlow, startTnegaCommunityFlow, startTnegaFirstGraduateFlow, startTnegaObcFlow } = require('../../../tnega_can_automation');
+const { startTnegaCanRegisterFlow, startTnegaIncomeFlow, startTnegaResidenceFlow, startTnegaCommunityFlow, startTnegaFirstGraduateFlow, startTnegaObcFlow, startTnegaLegalHeirFlow } = require('../../../tnega_can_automation');
 const { runAutomationTask } = require('./chat_automation_runner');
 
 const { persistSessions } = storageService;
@@ -25,7 +25,8 @@ async function handleAutomationStarter(ctx, req, res) {
     const recognizedStartTokens = [
         'start', 'தொடங்கு', 'fill', '🚀 தொடங்கு', 'சமர்ப்பிக்கவும்',
         'start_income_apply', 'launch_can_automation', 'start_residence_apply', 'apply_residence_now',
-        'start_community_apply', 'apply_community_now', 'start_first_graduate_apply', 'start_obc_apply'
+        'start_community_apply', 'apply_community_now', 'start_first_graduate_apply', 'start_obc_apply',
+        'start_legal_heir_apply'
     ];
     const isStartToken = recognizedStartTokens.some(tok => text.toLowerCase() === tok || (tok.length > 5 && text.includes(tok)));
 
@@ -62,13 +63,15 @@ async function handleAutomationStarter(ctx, req, res) {
     const intakeStateHint = String(sess.intakeState || pProfile.intakeState || '').toUpperCase();
     const explicitSub = String(sess.subService || pProfile.subService || '').toUpperCase();
 
-    const isExplicitObc = targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeStateHint.includes('OBC') || explicitSub === 'OBC' || explicitSub === 'OBC_CERTIFICATE';
-    const isExplicitFirstGrad = !isExplicitObc && (targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeStateHint.includes('FIRST_GRADUATE') || explicitSub === 'FIRST_GRADUATE' || explicitSub === 'FIRST_GRADUATE_CERTIFICATE');
-    const isExplicitIncome = !isExplicitObc && !isExplicitFirstGrad && (targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeStateHint.includes('INCOME') || explicitSub === 'INCOME' || explicitSub === 'INCOME_CERTIFICATE');
+    const isExplicitLegalHeir = targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeStateHint.includes('LEGAL_HEIR') || explicitSub === 'LEGAL_HEIR' || explicitSub === 'LEGAL_HEIR_CERTIFICATE';
+    const isExplicitObc = !isExplicitLegalHeir && (targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeStateHint.includes('OBC') || explicitSub === 'OBC' || explicitSub === 'OBC_CERTIFICATE');
+    const isExplicitFirstGrad = !isExplicitLegalHeir && !isExplicitObc && (targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeStateHint.includes('FIRST_GRADUATE') || explicitSub === 'FIRST_GRADUATE' || explicitSub === 'FIRST_GRADUATE_CERTIFICATE');
+    const isExplicitIncome = !isExplicitLegalHeir && !isExplicitObc && !isExplicitFirstGrad && (targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeStateHint.includes('INCOME') || explicitSub === 'INCOME' || explicitSub === 'INCOME_CERTIFICATE');
     const isExplicitResidence = targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeStateHint.includes('RESIDENCE') || intakeStateHint.includes('NATIVITY') || explicitSub === 'RESIDENCE' || explicitSub === 'RESIDENCE_CERTIFICATE';
     const isExplicitCommunity = targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeStateHint.includes('COMMUNITY') || explicitSub === 'COMMUNITY' || explicitSub === 'COMMUNITY_CERTIFICATE';
 
-    const isObcService = isExplicitObc;
+    const isLegalHeirService = isExplicitLegalHeir;
+    const isObcService = !isLegalHeirService && isExplicitObc;
 
     const isCommunityService = !isObcService && (isExplicitCommunity || (
                                !isExplicitFirstGrad && !isExplicitIncome && !isExplicitResidence && !explicitSub &&
@@ -84,10 +87,15 @@ async function handleAutomationStarter(ctx, req, res) {
                                    (!explicitSub && Boolean(pProfile.currentCourse || pProfile.institutionName))
                                    );
 
-    const isObcAction = text === 'START_OBC_APPLY' || (
+    const isLegalHeirAction = text === 'START_LEGAL_HEIR_APPLY' || (
+        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') &&
+        (isLegalHeirService || sess.intakeState === 'READY_TO_SUBMIT_LEGAL_HEIR')
+    );
+
+    const isObcAction = !isLegalHeirAction && (text === 'START_OBC_APPLY' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') &&
         (isObcService || sess.intakeState === 'READY_TO_SUBMIT_OBC')
-    );
+    ));
 
     const isCommunityAction = !isObcAction && (text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
         (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
@@ -122,6 +130,48 @@ async function handleAutomationStarter(ctx, req, res) {
             (sess.subService === 'CAN_REGISTER' || pProfile.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
         )
     );
+
+    if (isLegalHeirAction) {
+        sess.subService = 'LEGAL_HEIR';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'LEGAL_HEIR';
+        const p = sess.citizenProfile || {};
+        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `${modeText}யில் தமிழ்நாடு அரசு **TNeGA சட்ட வாரிசு சான்றிதழ் (REV-114)** ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
+                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
+                  `• 🕊️ **இறந்தவர்:** ${p.deceasedNameTam || p.deceasedNameEng || p.fatherNameTam || '—'} (தேதி: ${p.dateOfDeath || '15-Jan-2025'})\n` +
+                  `• 📜 **இறப்புச் சான்றிதழ் எண்:** ${p.deathCertificateNo || 'DC-2025-88412'}\n\n` +
+                  `Chrome உலாவியில் TNeGA REV-114 படிவம் திறக்கப்பட்டு, ஆப்ரேட்டர் Submit-க்குப் பிறகு 4 ஆவணங்களும் பதிவேற்றப்பட்டு **Pre-Submit Gate** வரை தானாக இயங்கும்...`
+        });
+        sess.isAutomating = true;
+        sess.isAutomationRunning = true;
+        sess.automationStep = 1;
+        persistSessions();
+
+        runAutomationTask(
+            startTnegaLegalHeirFlow,
+            p,
+            sess,
+            p.mobileNumber || targetMobile || activeMobile,
+            isMockTest,
+            false,
+            false,
+            req
+        );
+
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            isAutomating: true,
+            subService: 'LEGAL_HEIR',
+            serviceId: 'LEGAL_HEIR_CERTIFICATE',
+            targetService: 'LEGAL_HEIR'
+        });
+        return true;
+    }
 
     if (isObcAction) {
         sess.subService = 'OBC';

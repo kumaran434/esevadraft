@@ -14,6 +14,7 @@ const REVENUE_DEPARTMENT_SERVICE_OPTIONS = [
     { label: "💰 3. வருமானச் சான்றிதழ் (Income Certificate REV-103)", value: "வருமானச் சான்றிதழ்" },
     { label: "🎓 4. முதல் பட்டதாரி சான்றிதழ் (First Graduate REV-104)", value: "முதல் பட்டதாரி சான்றிதழ்" },
     { label: "📜 5. OBC சான்றிதழ் (OBC Certificate REV-115)", value: "OBC சான்றிதழ்" },
+    { label: "👨‍👩‍👧‍👦 6. வாரிசு சான்றிதழ் (Legal Heir Certificate REV-114)", value: "வாரிசு சான்றிதழ்" },
     { label: "🔙 முதன்மைப் பட்டியல் (Back to Main Menu)", value: "MAIN_MENU" }
 ];
 

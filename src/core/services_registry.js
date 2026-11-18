@@ -143,6 +143,15 @@ function evaluateServiceChecklist(serviceId, profile = {}, base64Docs = {}) {
             } else if (doc.key === 'selfDeclaration') {
                 candidatePaths.push(profile.selfDeclaration, profile.selfDeclarationPath, profile.documents?.selfDeclaration);
                 candidateB64.push(base64Docs.selfDeclarationBase64);
+            } else if (doc.key === 'deathCertificate') {
+                candidatePaths.push(profile.deathCertificate, profile.deathCertificatePath, profile.documents?.deathCertificate);
+                candidateB64.push(base64Docs.deathCertificateBase64);
+            } else if (doc.key === 'deceasedAddressProof') {
+                candidatePaths.push(profile.deceasedAddressProof, profile.residenceProof?.docPath, profile.residenceProof, profile.smartCard, profile.headAadhaarDocPath, profile.documents?.deceasedAddressProof, profile.documents?.residenceProof, profile.documents?.smartCard, profile.documents?.headAadhaar);
+                candidateB64.push(base64Docs.deceasedAddressProofBase64, base64Docs.residenceProofBase64, base64Docs.headAadhaarBase64);
+            } else if (doc.key === 'birthCertificate') {
+                candidatePaths.push(profile.birthCertificate, profile.applicantEducationProof, profile.studentTc, profile.documents?.birthCertificate, profile.documents?.applicantEducationProof, profile.documents?.studentTc);
+                candidateB64.push(base64Docs.birthCertificateBase64, base64Docs.applicantEducationProofBase64, base64Docs.studentTcBase64);
             }
 
             const hasValidPath = candidatePaths.some(p => Boolean(p && typeof p === 'string' && fs.existsSync(p)));

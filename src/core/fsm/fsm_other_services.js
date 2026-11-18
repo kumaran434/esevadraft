@@ -3,10 +3,22 @@
  * Handles Income, Residence, Voter ID, and general service fallback dialogs.
  */
 
-const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow } = require('./tnega_flow_engine');
+const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow } = require('./tnega_flow_engine');
 
 function handleNonRationServiceSelection(text, sess) {
-    if (text.includes('OBC') || text.includes('obc') || text.includes('இதர பிற்படுத்தப்பட்டோர்') || text.includes('REV-115')) {
+    if (text.includes('வாரிசு') || text.toLowerCase().includes('legal heir') || text.includes('REV-114') || text === 'LEGAL_HEIR' || text === 'LEGAL_HEIR_CERTIFICATE') {
+        sess.subService = 'LEGAL_HEIR';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'LEGAL_HEIR';
+        }
+        const flowStep = advanceTnegaLegalHeirFlow(sess);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        return true;
+    } else if (text.includes('OBC') || text.includes('obc') || text.includes('இதர பிற்படுத்தப்பட்டோர்') || text.includes('REV-115')) {
         sess.subService = 'OBC';
         if (sess.citizenProfile) {
             sess.citizenProfile.subService = 'OBC';

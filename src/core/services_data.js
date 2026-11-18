@@ -313,6 +313,40 @@ const SERVICES_REGISTRY = {
             { key: 'motherOccupation', labelTamil: 'தாயின் தொழில் / நிலை' },
             { key: 'annualIncome', labelTamil: 'குடும்ப ஆண்டு வருமானம் (ரூ)' }
         ]
+    },
+    LEGAL_HEIR_CERTIFICATE: {
+        id: 'LEGAL_HEIR_CERTIFICATE',
+        code: 'REV-114',
+        nameTamil: 'சட்ட வாரிசு சான்றிதழ் (REV-114)',
+        nameEnglish: 'Legal Heir Certificate',
+        portal: 'TNeGA Revenue Department (e-Sevai)',
+        portalUrl: 'https://www.tnesevai.tn.gov.in',
+        totalSteps: 18,
+        requiresFamilyMembers: true,
+        commonFields: [
+            { key: 'canNumber', label: '13-இலக்க CAN எண்' },
+            { key: 'fullNameEng', label: 'விண்ணப்பதாரர் பெயர் (ஆங்கிலம்)' },
+            { key: 'fullNameTam', label: 'விண்ணப்பதாரர் பெயர் (தமிழ்)' },
+            { key: 'doorNo', label: 'கதவு எண்' },
+            { key: 'streetEng', label: 'தெருப் பெயர்' },
+            { key: 'district', label: 'மாவட்டம்' },
+            { key: 'taluk', label: 'வட்டம்' },
+            { key: 'village', label: 'வருவாய் கிராமம்' },
+            { key: 'pincode', label: 'பின்கோடு' },
+            { key: 'headAadhaar', label: 'ஆதார் எண்' }
+        ],
+        specificFields: [
+            { key: 'deceasedNameTam', label: 'இறந்தவரின் பெயர் (Deceased Name)', mandatory: true },
+            { key: 'dateOfDeath', label: 'இறந்த தேதி (Date of Death)', mandatory: true },
+            { key: 'placeOfDeath', label: 'இறந்த இடம் (Place of Death)', mandatory: true },
+            { key: 'deathCertificateNo', label: 'இறப்புச் சான்றிதழ் எண் (Death Certificate No.)', mandatory: true }
+        ],
+        requiredDocuments: [
+            { key: 'deathCertificate', label: 'இறப்புச் சான்றிதழ் (Death Certificate of the deceased)', format: 'pdf' },
+            { key: 'deceasedAddressProof', label: 'இறந்தவரின் முகவரிச் சான்று (Address Proof of Deceased)', format: 'pdf' },
+            { key: 'headAadhaar', label: 'வாரிசு உறவுமுறைச் சான்று (ஆதார் / ஸ்மார்ட் கார்டு)', format: 'pdf' },
+            { key: 'birthCertificate', label: 'வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC', format: 'pdf' }
+        ]
     }
 };
 

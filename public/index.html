@@ -1356,6 +1356,9 @@
                         <button type="button" onclick="startDirectApplyService('OBC சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                             📜 OBC (REV-115)
                         </button>
+                        <button type="button" onclick="startDirectApplyService('வாரிசு சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            👨‍👩‍👧‍👦 வாரிசு (REV-114)
+                        </button>
                     </div>
 
                     <!-- Search and Status Filters -->
@@ -2634,6 +2637,37 @@
                     <div style="grid-column: span 2;">
                         <label>குடும்ப ஆண்டு வருமானம் (Annual Income Rs.):</label>
                         <input type="number" id="editObcAnnualIncome" placeholder="எ.கா: 72000" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                </div>
+
+                <!-- Legal Heir Certificate Form Fields (Service-Scoped REV-114) -->
+                <div id="editLegalHeirFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #fdf2f8; border: 1.5px solid #f9a8d4; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #9d174d; font-size: 12.5px;">
+                        👨‍👩‍👧‍👦 வாரிசு சான்றிதழ் & இறந்தவர் விவரங்கள் (Legal Heir REV-114)
+                    </div>
+                    <div>
+                        <label>இறந்தவரின் பெயர் (Deceased Name Eng):</label>
+                        <input type="text" id="editLhDeceasedNameEng" placeholder="எ.கா: Kirubakaran" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #831843;">
+                    </div>
+                    <div>
+                        <label>இறந்தவரின் பெயர் (தமிழில்):</label>
+                        <input type="text" id="editLhDeceasedNameTam" placeholder="எ.கா: கிருபாகரன்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #831843;">
+                    </div>
+                    <div>
+                        <label>இறந்த தேதி (Date of Death):</label>
+                        <input type="text" id="editLhDateOfDeath" placeholder="எ.கா: 15-Jan-2025" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label>இறந்த இடம் (Place of Death):</label>
+                        <input type="text" id="editLhPlaceOfDeath" placeholder="எ.கா: Arakkonam" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label>இறப்புச் சான்றிதழ் எண் (Death Cert No.):</label>
+                        <input type="text" id="editLhDeathCertNo" placeholder="எ.கா: DC-2025-88412" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                    <div>
+                        <label>இறந்தவரின் தந்தை / தாய் பெயர்:</label>
+                        <input type="text" id="editLhDeceasedParents" placeholder="எ.கா: Ramasamy / Lakshmi" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
                     </div>
                 </div>
 

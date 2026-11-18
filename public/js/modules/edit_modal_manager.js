@@ -754,7 +754,13 @@
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isObcMode = !forceMasterProfile && (
+            const isLegalHeirMode = !forceMasterProfile && (
+                curSub === 'LEGAL_HEIR' || curSub === 'LEGAL_HEIR_CERTIFICATE' || curSub.includes('REV-114') || curSub.includes('REV_114') ||
+                curIntake.includes('LEGAL_HEIR') || curIntake.includes('REV-114') ||
+                serviceStr.includes('LEGAL_HEIR') || serviceStr.includes('வாரிசு') || serviceStr.includes('REV-114') ||
+                sData?.targetService === 'LEGAL_HEIR' || sData?.serviceType === 'LEGAL_HEIR'
+            );
+            const isObcMode = !forceMasterProfile && !isLegalHeirMode && (
                 curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
                 curIntake.includes('OBC') || curIntake.includes('REV-115') ||
                 serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
@@ -788,10 +794,10 @@
                 curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
             );
 
-            const isAddMember = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
-            const hasActiveSub = Boolean(isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
+            const isAddMember = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
+            const isRemoveMember = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isChangeAddress = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const hasActiveSub = Boolean(isLegalHeirMode || isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
 
             const titleEl = document.getElementById('editModalTitle');
             const subTitleEl = document.getElementById('editModalSubtitle');
@@ -799,7 +805,9 @@
             const btnSubSvc = document.getElementById('btnSwitchToSubService');
             const submitBtn = document.getElementById('btnSubmitFromEditModal');
             if (submitBtn) {
-                if (isCommunityMode) {
+                if (isLegalHeirMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வாரிசு சான்றிதழ் விண்ணப்பிக்க (Start Legal Heir Apply)';
+                } else if (isCommunityMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)';
                 } else if (isResidenceMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
@@ -807,17 +815,7 @@
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
                 } else if (isObcMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 OBC சான்றிதழ் விண்ணப்பிக்க (Start OBC Apply)';
-                } else if (isObcMode) {
-                if (titleEl) titleEl.innerHTML = '📜 OBC சான்றிதழ் விண்ணப்ப விவரங்கள் (Other Backward Classes - REV-115)';
-                if (subTitleEl) subTitleEl.innerText = 'OBC சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isObcMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (smartDocBox) smartDocBox.style.display = 'none';
-                if (gasDocBox) gasDocBox.style.display = 'none';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isFirstGraduateMode) {
+                } else if (isFirstGraduateMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 முதல் பட்டதாரி விண்ணப்பிக்க (Start First Graduate Apply)';
                 } else if (isCanMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
@@ -1137,6 +1135,11 @@
                 if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isLegalHeirMode) {
+                if (titleEl) titleEl.innerHTML = '👨‍👩‍👧‍👦 சட்ட வாரிசு சான்றிதழ் விண்ணப்ப விவரங்கள் (Legal Heir Certificate - REV-114)';
+                if (subTitleEl) subTitleEl.innerText = 'இறந்தவர் விவரங்கள், வாரிசுதாரர்கள் மற்றும் 4 ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
             } else if (isObcMode) {
                 if (titleEl) titleEl.innerHTML = '📜 OBC சான்றிதழ் விண்ணப்ப விவரங்கள் (Other Backward Classes - REV-115)';
                 if (subTitleEl) subTitleEl.innerText = 'OBC சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
@@ -1222,6 +1225,13 @@
                 if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isLegalHeirMode) {
+                if (photoDocBox) photoDocBox.style.display = 'none';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isObcMode) {
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
@@ -1266,6 +1276,7 @@
             const resFieldsWrap = document.getElementById('editResidenceFieldsWrap');
             const firstGradFieldsWrap = document.getElementById('editFirstGraduateFieldsWrap');
             const obcFieldsWrap = document.getElementById('editObcFieldsWrap');
+            const legalHeirFieldsWrap = document.getElementById('editLegalHeirFieldsWrap');
             const rationFieldsWrap = document.getElementById('editRationFieldsWrap');
             const smartCardNoWrap = document.getElementById('editSmartCardNoWrap');
             const canNoWrap = document.getElementById('editCanNumberWrap');
@@ -1276,6 +1287,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1285,6 +1297,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1294,6 +1307,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1303,6 +1317,17 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isLegalHeirMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1312,6 +1337,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1321,6 +1347,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1330,6 +1357,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1340,6 +1368,7 @@
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1400,6 +1429,31 @@
                         icon: 'fa-receipt',
                         defaultPrompt: 'வருமானச் சான்று அல்லது சம்பள ரசீது தேவை'
                     });
+                }
+                if (isLegalHeirMode) {
+                    dynamicDocTypesToShow.push(
+                        {
+                            type: 'deathCertificate',
+                            title: '📜 இறப்புச் சான்றிதழ் (Death Certificate of Deceased)',
+                            titleEng: 'Death Certificate',
+                            icon: 'fa-file-medical',
+                            defaultPrompt: 'இறப்புச் சான்றிதழ் தேவை'
+                        },
+                        {
+                            type: 'deceasedAddressProof',
+                            title: '🏠 இறந்தவரின் முகவரிச் சான்று (Deceased Address Proof)',
+                            titleEng: 'Address Proof of Deceased',
+                            icon: 'fa-house-user',
+                            defaultPrompt: 'இறந்தவர் முகவரிச் சான்று தேவை'
+                        },
+                        {
+                            type: 'birthCertificate',
+                            title: '🎓 வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC',
+                            titleEng: 'Birth Certificate / Transfer Certificate',
+                            icon: 'fa-graduation-cap',
+                            defaultPrompt: 'பிறப்புச் சான்றிதழ் அல்லது பள்ளி TC தேவை'
+                        }
+                    );
                 }
                 if (isObcMode) {
                     dynamicDocTypesToShow.push(
@@ -1650,6 +1704,15 @@
                 safeSetVal('editObcFatherOccupation', data.fatherOccupation || '');
                 safeSetVal('editObcMotherOccupation', data.motherOccupation || '');
                 safeSetVal('editObcAnnualIncome', resolvedAnnInc);
+                safeSetVal('editLhDeceasedNameEng', data.deceasedNameEng || data.fatherNameEng || '');
+                safeSetVal('editLhDeceasedNameTam', data.deceasedNameTam || data.fatherNameTam || '');
+                safeSetVal('editLhDateOfDeath', data.dateOfDeath || '');
+                safeSetVal('editLhPlaceOfDeath', data.placeOfDeath || data.taluk || '');
+                safeSetVal('editLhDeathCertNo', data.deathCertificateNo || '');
+                const parentsPair = (data.deceasedFatherNameEng || data.deceasedMotherNameEng)
+                    ? `${data.deceasedFatherNameEng || 'Ramasamy'} / ${data.deceasedMotherNameEng || 'Lakshmi'}`
+                    : '';
+                safeSetVal('editLhDeceasedParents', parentsPair);
                 
                 const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
                 const editHasGasEl = document.getElementById('editHasGas');
@@ -2095,6 +2158,15 @@
                 const obcFaOccVal = document.getElementById('editObcFatherOccupation')?.value?.trim() || currentCitizenData?.fatherOccupation || '';
                 const obcMoOccVal = document.getElementById('editObcMotherOccupation')?.value?.trim() || currentCitizenData?.motherOccupation || '';
                 const obcIncVal = document.getElementById('editObcAnnualIncome')?.value?.trim() || incVal;
+                const lhDecEngVal = document.getElementById('editLhDeceasedNameEng')?.value?.trim() || currentCitizenData?.deceasedNameEng || '';
+                const lhDecTamVal = document.getElementById('editLhDeceasedNameTam')?.value?.trim() || currentCitizenData?.deceasedNameTam || lhDecEngVal;
+                const lhDodVal = document.getElementById('editLhDateOfDeath')?.value?.trim() || currentCitizenData?.dateOfDeath || '';
+                const lhPodVal = document.getElementById('editLhPlaceOfDeath')?.value?.trim() || currentCitizenData?.placeOfDeath || '';
+                const lhDcNoVal = document.getElementById('editLhDeathCertNo')?.value?.trim() || currentCitizenData?.deathCertificateNo || '';
+                const lhParentsRaw = document.getElementById('editLhDeceasedParents')?.value?.trim() || '';
+                const lhParentsSplit = lhParentsRaw.split('/').map(s => s.trim()).filter(Boolean);
+                const lhDecFaEng = lhParentsSplit[0] || currentCitizenData?.deceasedFatherNameEng || 'Ramasamy';
+                const lhDecMoEng = lhParentsSplit[1] || currentCitizenData?.deceasedMotherNameEng || 'Lakshmi';
                 const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
 
                 if (keepSub === 'COMMUNITY' || keepSub === 'COMMUNITY_CERTIFICATE') {
@@ -2131,6 +2203,18 @@
                         fatherOccupation: obcFaOccVal,
                         motherOccupation: obcMoOccVal,
                         annualIncome: obcIncVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'LEGAL_HEIR' || keepSub === 'LEGAL_HEIR_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        deceasedNameEng: lhDecEngVal,
+                        deceasedNameTam: lhDecTamVal,
+                        dateOfDeath: lhDodVal,
+                        placeOfDeath: lhPodVal,
+                        deathCertificateNo: lhDcNoVal,
+                        deceasedFatherNameEng: lhDecFaEng,
+                        deceasedMotherNameEng: lhDecMoEng,
                         canNumber: canVal
                     };
                 } else if (keepSub === 'FIRST_GRADUATE' || keepSub === 'FIRST_GRADUATE_CERTIFICATE') {
@@ -2195,6 +2279,13 @@
                     yearOfPassing: yopVal,
                     institutionAddress: collegeAddVal,
                     familyGraduateConfirmed: true,
+                    deceasedNameEng: lhDecEngVal,
+                    deceasedNameTam: lhDecTamVal,
+                    dateOfDeath: lhDodVal,
+                    placeOfDeath: lhPodVal,
+                    deathCertificateNo: lhDcNoVal,
+                    deceasedFatherNameEng: lhDecFaEng,
+                    deceasedMotherNameEng: lhDecMoEng,
                     members: existingMembers,
                     gasDetails: {
                         ...(currentCitizenData ? currentCitizenData.gasDetails : {}),

@@ -3616,7 +3616,7 @@ async function runTests() {
             const obcPortalSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_obc_certificate.js'), 'utf8');
             assert(obcPortalSrc.includes("'100'") && obcPortalSrc.includes('REV-115'), "OBC portal engine expands DataTables to 100 rows before clicking REV-115");
             assert(obcPortalSrc.includes('#apCaste') && obcPortalSrc.includes('#apSerialCaste') && obcPortalSrc.includes('#gwt-uid-8'), "OBC portal engine fills exact #apCaste, #apSerialCaste & declaration checkbox");
-            assert(obcPortalSrc.includes("code: '21'") && obcPortalSrc.includes("code: '18'") && obcPortalSrc.includes("code: '17'") && obcPortalSrc.includes("code: '358'") && !obcPortalSrc.includes("code: '383'"), "OBC portal engine maps supporting #ss:do codes and strictly NEVER auto-uploads Self-Declaration ('383')");
+            assert(obcPortalSrc.includes("code: '21'") && obcPortalSrc.includes("code: '18'") && obcPortalSrc.includes("code: '17'") && (obcPortalSrc.includes("code: '20'") || obcPortalSrc.includes("code: '358'")) && !obcPortalSrc.includes("code: '383'"), "OBC portal engine maps supporting #ss:do codes and strictly NEVER auto-uploads Self-Declaration ('383')");
             assert(obcPortalSrc.includes('200, 240'), "OBC portal engine enforces TNeGA <250x250px passport photo requirement");
 
             // 2. Priority Exclusion Guards (caste / annualIncome must NEVER hijack OBC -> Community/Income!)
@@ -3794,6 +3794,66 @@ async function runTests() {
                 assert(src.includes('decForm1') && src.includes('newPage.goto') && !src.includes("nameEng: 'Self-Declaration of Applicant'"), `${label} opens Self-Declaration in Chrome tab and NEVER auto-uploads it`);
             }
             passedCount += 6;
+        }
+
+        // =========================================================================
+        // TEST 58: 👨‍👩‍👧‍👦 வாரிசு சான்றிதழ் (REV-114 Legal Heir Certificate Lock Gate)
+        // =========================================================================
+        console.log('\n[TEST 58] 👨‍👩‍👧‍👦 வாரிசு சான்றிதழ் (REV-114 Legal Heir Certificate Lock Gate)...');
+        {
+            const { SERVICES_REGISTRY, evaluateServiceChecklist } = require('../src/core/services_registry');
+            assert(Boolean(SERVICES_REGISTRY.LEGAL_HEIR_CERTIFICATE), "SERVICES_REGISTRY exposes LEGAL_HEIR_CERTIFICATE");
+
+            const tnegaAuto = require('../tnega_can_automation');
+            assert(typeof tnegaAuto.startTnegaLegalHeirFlow === 'function', "tnega_can_automation exports startTnegaLegalHeirFlow");
+            assert(typeof tnegaAuto.startTnegaLegalHeirCertificateFlow === 'function', "tnega_can_automation exports startTnegaLegalHeirCertificateFlow");
+
+            const lhPortal = require('../src/portal/tnega/tnega_legal_heir');
+            const lhMock = await lhPortal.startTnegaLegalHeirFlow({ canNumber: '133370337878397' }, () => {}, { mockSandbox: true });
+            assert(lhMock && lhMock.success === true && lhMock.isPreSubmitGate === true, "REV-114 Legal Heir portal engine executes cleanly in mock sandbox to Pre-Submit Gate");
+
+            const lhSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_legal_heir.js'), 'utf8');
+            assert(lhSrc.includes('legalheirshipfrm:dDistrictId') && lhSrc.includes('legalheirshipfrm:dTalukId') && lhSrc.includes('legalheirshipfrm:dRvId'), "REV-114 locks exact deceased District/Taluk/Village JSF IDs");
+            assert(lhSrc.includes('lhRelationIdid') && lhSrc.includes('lhAliveDeathid') && lhSrc.includes('lhMaritalIdid') && lhSrc.includes('submit1'), "REV-114 locks exact Legal Heirs RichFaces AJAX IDs");
+            assert(lhSrc.includes('downloadAndOpenSelfDeclaration') && lhSrc.includes("'430'") && lhSrc.includes("'432'") && lhSrc.includes("'433'") && lhSrc.includes("'434'"), "REV-114 uploads exact 4 supporting doc codes and opens Self-Declaration PDF");
+            assert(!lhSrc.includes("code: '435'") && !lhSrc.includes('autoClickFormSubmit'), "REV-114 NEVER auto-uploads Self-Declaration ('435') and NEVER auto-clicks Operator Submit");
+
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes('id="editLegalHeirFieldsWrap"'), "index.html includes editLegalHeirFieldsWrap for REV-114");
+            const editMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            assert(editMgrSrc.includes('isLegalHeirMode') && editMgrSrc.includes('editLhDeceasedNameEng'), "edit_modal_manager wires isLegalHeirMode & Deceased fields");
+
+            const readyProfile = {
+                mobileNumber: '9842367866',
+                fullNameEng: 'Kumaran K',
+                fullNameTam: 'குமரன் கி',
+                fatherNameEng: 'Kirubakaran',
+                fatherNameTam: 'கிருபாகரன்',
+                motherNameEng: 'Devaki K',
+                motherNameTam: 'தேவகி கி',
+                canNumber: '133370337878397',
+                headAadhaar: '575567662931',
+                doorNo: '216',
+                streetEng: 'Mettu Street, Narasingapuram',
+                district: 'Ranipet',
+                taluk: 'Arakkonam',
+                village: 'Minnal',
+                pincode: '632510',
+                deceasedNameEng: 'Kirubakaran',
+                deceasedNameTam: 'கிருபாகரன்',
+                dateOfDeath: '15-Jan-2025',
+                placeOfDeath: 'Arakkonam',
+                deathCertificateNo: 'DC-2025-88412',
+                documents: {
+                    deathCertificate: 'data/golden_samples/kumaran_gallery/11_death_certificate_kirubakaran.jpg',
+                    deceasedAddressProof: 'data/golden_samples/kumaran_gallery/12_deceased_aadhaar_address_kirubakaran.jpg',
+                    headAadhaar: 'data/golden_samples/kumaran_gallery/04_kumaran_aadhaar_2in1.jpg',
+                    birthCertificate: 'data/golden_samples/kumaran_gallery/10_fg_student_12th_tc_kumaran.jpg'
+                }
+            };
+            const chk = evaluateServiceChecklist('LEGAL_HEIR_CERTIFICATE', readyProfile);
+            assert(chk && chk.isReady === true, "evaluateServiceChecklist marks complete LEGAL_HEIR_CERTIFICATE profile as 100% ready");
+            passedCount += 11;
         }
 
         console.log('\n======================================================');
