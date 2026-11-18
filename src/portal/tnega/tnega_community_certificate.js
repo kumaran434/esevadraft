@@ -183,6 +183,7 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
         let preSearchDone = false;
         let communityFormFilled = false;
         let formSubmitted = false;
+        let waitingForOperatorSubmit = false;
 
         while (!formCompleted) {
             loopCounter++;
@@ -634,20 +635,32 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                         onProgress('✅ சாதிச் சான்றிதழ் படிவ விவரங்கள் வெற்றிகரமாக நிரப்பப்பட்டன!');
                     }
 
-                    // 5I. Submit Form to navigate to uploadDocs.xhtml
-                    if (!formSubmitted) {
-                        onProgress('🚀 [படிவ சமர்ப்பிப்பு] Submit பொத்தான் அழுத்தப்படுகிறது...');
-                        const submitBtn = tnegaPage.locator('#community\\:submit, input[value="Submit"]').first();
-                        if (await submitBtn.count() > 0 && await submitBtn.isVisible()) {
-                            await submitBtn.click().catch(() => {});
-                            await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
-                            await tnegaPage.waitForTimeout(3500);
+                    // 5I. Operator Review & Manual Submit Gate (to navigate to uploadDocs.xhtml)
+                    if (communityFormFilled && !formSubmitted) {
+                        if (!waitingForOperatorSubmit) {
+                            waitingForOperatorSubmit = true;
+                            onProgress('🔍 [படிவ சரிபார்ப்பு] சாதிச் சான்றிதழ் விவரங்கள் அனைத்தும் நிரப்பப்பட்டுவிட்டன. விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை நீங்களே அழுத்தவும் ⌨️');
+                            onProgress('⏳ ஆப்ரேட்டர் Submit பொத்தானை அழுத்த காத்திருக்கிறது... (சமர்ப்பித்தவுடன் ஆவணப் பதிவேற்றம் தானாகத் தொடங்கும் 🚀)');
+                            await updateTnegaHud(tnegaPage, {
+                                title: '🔍 படிவ விவரங்களைச் சரிபார்க்கவும்',
+                                desc: '✅ விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை அழுத்தவும் ⌨️ (சப்மிட் செய்தவுடன் ஆவணப் பதிவேற்றம் தொடங்கும்).',
+                                badge: 'Click Submit ⌨️',
+                                type: 'attention'
+                            });
+                        }
 
-                            const newUrl = tnegaPage.url().toLowerCase();
-                            if (newUrl.includes('uploaddoc')) {
-                                formSubmitted = true;
-                                continue;
-                            }
+                        // Auto-accept any confirmation dialog when user clicks Submit
+                        tnegaPage.on('dialog', async d => {
+                            try { await d.accept(); } catch (_) {}
+                        });
+
+                        // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
+                        const newUrl = tnegaPage.url().toLowerCase();
+                        if (newUrl.includes('uploaddoc') || (await tnegaPage.locator('#ss\\:do').count()) > 0) {
+                            formSubmitted = true;
+                            waitingForOperatorSubmit = false;
+                            onProgress('🚀 [சமர்ப்பிப்பு உறுதி] ஆப்ரேட்டர் படிவத்தை சமர்ப்பித்தார்! ஆவணப் பதிவேற்றப் பக்கம் எட்டப்பட்டது ✅');
+                            continue;
                         }
                     }
                 }
@@ -1005,6 +1018,10 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
 
             } catch (err) {
                 onProgress(`⚠️ கண்காணிப்பு எச்சரிக்கை: ${err.message}`);
+            }
+
+            if (waitingForOperatorSubmit) {
+                loopCounter = 0; // Keep alive indefinitely while operator reviews form details
             }
 
             if (loopCounter > 80) {

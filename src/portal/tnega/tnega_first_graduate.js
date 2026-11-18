@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tnega_browser_manager');
+const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, downloadAndOpenSelfDeclaration } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
@@ -152,6 +152,7 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
         let preSearchDone = false;
         let firstGraduateFormFilled = false;
         let formSubmitted = false;
+        let waitingForOperatorSubmit = false;
 
         while (!formCompleted) {
             loopCounter++;
@@ -639,23 +640,32 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         onProgress('✅ முதல் பட்டதாரி படிவ விவரங்கள் அனைத்தும் வெற்றிகரமாக நிரப்பப்பட்டன!');
                     }
 
-                    // Submit Form to advance to uploadDocs.xhtml
-                    if (!formSubmitted && firstGraduateFormFilled) {
-                        onProgress('🚀 [படிவ சமர்ப்பிப்பு] முதல் பட்டதாரி படிவம் சமர்ப்பிக்கப்படுகிறது...');
+                    // Operator Review & Manual Submit Gate (to advance to uploadDocs.xhtml)
+                    if (firstGraduateFormFilled && !formSubmitted) {
+                        if (!waitingForOperatorSubmit) {
+                            waitingForOperatorSubmit = true;
+                            onProgress('🔍 [படிவ சரிபார்ப்பு] முதல் பட்டதாரி படிவ விவரங்கள் அனைத்தும் நிரப்பப்பட்டுவிட்டன. விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை நீங்களே அழுத்தவும் ⌨️');
+                            onProgress('⏳ ஆப்ரேட்டர் Submit பொத்தானை அழுத்த காத்திருக்கிறது... (சமர்ப்பித்தவுடன் ஆவணப் பதிவேற்றம் தானாகத் தொடங்கும் 🚀)');
+                            await updateTnegaHud(tnegaPage, {
+                                title: '🔍 படிவ விவரங்களைச் சரிபார்க்கவும்',
+                                desc: '✅ விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை அழுத்தவும் ⌨️ (சப்மிட் செய்தவுடன் ஆவணப் பதிவேற்றம் தொடங்கும்).',
+                                badge: 'Click Submit ⌨️',
+                                type: 'attention'
+                            });
+                        }
+
+                        // Auto-accept any confirmation dialog when user clicks Submit
                         tnegaPage.on('dialog', async d => {
                             try { await d.accept(); } catch (_) {}
                         });
-                        const submitBtn = tnegaPage.locator('input[id="nograduate:submit"], #nograduate\\:submit, input[type="submit"][value="Submit"], input[value="Submit"], button:has-text("Submit")').first();
-                        if (await submitBtn.count() > 0 && await submitBtn.isVisible()) {
-                            await submitBtn.click().catch(() => {});
-                            await tnegaPage.waitForLoadState('domcontentloaded').catch(() => {});
-                            await tnegaPage.waitForTimeout(3000);
 
-                            const newUrl = tnegaPage.url().toLowerCase();
-                            if (newUrl.includes('uploaddoc')) {
-                                formSubmitted = true;
-                                continue;
-                            }
+                        // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
+                        const newUrl = tnegaPage.url().toLowerCase();
+                        if (newUrl.includes('uploaddoc') || (await tnegaPage.locator('#ss\\:do').count()) > 0) {
+                            formSubmitted = true;
+                            waitingForOperatorSubmit = false;
+                            onProgress('🚀 [சமர்ப்பிப்பு உறுதி] ஆப்ரேட்டர் படிவத்தை சமர்ப்பித்தார்! ஆவணப் பதிவேற்றப் பக்கம் எட்டப்பட்டது ✅');
+                            continue;
                         }
                     }
                 }
@@ -683,39 +693,8 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
 
                     onProgress(`📋 [விண்ணப்ப எண் உறுதி] நேரலை அரசு விண்ணப்ப எண்: **${appNumber}** ✅`);
 
-                    // 6B. Step 1: Download Self-Declaration form & Pop Open in New Chrome Tab
-                    let downloadedDeclarationPath = null;
-                    const decLink = tnegaPage.locator('a[id="ss:decForm1"], #ss\\:decForm1, a:has-text("Download Self declaration form")').first();
-                    if (await decLink.count() > 0 && await decLink.isVisible()) {
-                        onProgress('📥 [சுய உறுதிமொழி பதிவிறக்கம்] விண்ணப்பதாரரின் சுய உறுதிமொழிப் படிவம் போர்ட்டலில் இருந்து பதிவிறக்கப்படுகிறது...');
-                        const userDownloadsDir = path.join(process.env.USERPROFILE || 'C:\\Users\\ADMIN', 'Downloads');
-                        
-                        try {
-                            const cdpClient = await tnegaPage.context().newCDPSession(tnegaPage);
-                            await cdpClient.send('Page.setDownloadBehavior', {
-                                behavior: 'allow',
-                                downloadPath: userDownloadsDir
-                            });
-                        } catch (_) {}
-
-                        await decLink.click().catch(() => {});
-                        await tnegaPage.waitForTimeout(3500);
-
-                        try {
-                            const files = fs.readdirSync(userDownloadsDir)
-                                .filter(f => f.toLowerCase().includes('selfdeclaration') || f.includes(appNumber))
-                                .map(f => ({ name: f, time: fs.statSync(path.join(userDownloadsDir, f)).mtimeMs }))
-                                .sort((a, b) => b.time - a.time);
-
-                            if (files.length > 0) {
-                                downloadedDeclarationPath = path.join(userDownloadsDir, files[0].name);
-                                const newPage = await tnegaPage.context().newPage();
-                                await newPage.goto('file:///' + downloadedDeclarationPath.replace(/\\/g, '/'));
-                                await newPage.bringToFront();
-                                onProgress('🌐 சுய உறுதிமொழிப் படிவம் Google Chrome புதிய Tab-ல் திறக்கப்பட்டது! ✅');
-                            }
-                        } catch (_) {}
-                    }
+                    // 6B. Step 1: Download Self-Declaration form & Pop Open in New Chrome Tab (NEVER auto-upload)
+                    const downloadedDeclarationPath = await downloadAndOpenSelfDeclaration(tnegaPage, appNumber, onProgress);
 
                     // 6C. Prepare compliant normalized documents
                     let photoPath = citizenProfile.headPhotoPath || citizenProfile.documents?.profilePhoto || citizenProfile.documents?.headPhoto;
@@ -815,17 +794,7 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         }
                     ];
 
-                    if (downloadedDeclarationPath && fs.existsSync(downloadedDeclarationPath)) {
-                        docUploadList.push({
-                            nameTamil: 'விண்ணப்பதாரர் சுய உறுதிமொழிப் படிவம் (Self-Declaration of Applicant)',
-                            nameEng: 'Self-Declaration of Applicant',
-                            searchTerms: ['self-declaration of applicant', 'self-declaration'],
-                            optionVal: '200',
-                            docNum: '1',
-                            filePath: downloadedDeclarationPath,
-                            maxKb: 200
-                        });
-                    }
+                    // NEVER auto-upload Self-Declaration of Applicant — operator must obtain citizen signature first!
 
                     for (const item of docUploadList) {
                         if (!item.filePath || !fs.existsSync(item.filePath)) continue;
@@ -892,12 +861,12 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                     // Pre-Submit Station Complete: Bring Chrome window front and center
                     await updateTnegaHud(tnegaPage, {
                         title: '🎉 Pre-Submit Human Gate (ஆப்ரேட்டர் அனுமதி நிலையம்)',
-                        desc: `விண்ணப்ப எண்: ${appNumber} — ஆவணங்கள் சரிபார்க்கப்பட்டு தயாராக உள்ளன. ஆப்ரேட்டர் உறுதிசெய்து சமர்ப்பிக்கவும் 🛡️`,
+                        desc: `விண்ணப்ப எண்: ${appNumber} — ஆதரவு ஆவணங்கள் பதிவேற்றப்பட்டன. புதிய Tab-ல் உள்ள சுய உறுதிமொழியில் கையொப்பம் பெற்றுப் பதிவேற்றிய பின் Make Payment செய்யவும் 🛡️`,
                         badge: 'Approval Station',
-                        type: 'attention'
+                        type: 'waiting'
                     });
 
-                    onProgress('🎉 [Pre-Submit Gate] முதல் பட்டதாரி சான்றிதழ் விவரங்கள் மற்றும் அனைத்து ஆவணங்களும் வெற்றிகரமாகப் பதிவேற்றப்பட்டுவிட்டன!');
+                    onProgress('🎉 [Pre-Submit Gate] முதல் பட்டதாரி சான்றிதழ் ஆதரவு ஆவணங்கள் பதிவேற்றப்பட்டன! சுய உறுதிமொழி Chrome புதிய Tab-ல் திறக்கப்பட்டுள்ளது — கையொப்பம் பெற்று ஆப்ரேட்டரே பதிவேற்றவும்!');
                     onProgress('🛑 ஆப்ரேட்டர் இறுதி சரிபார்ப்பிற்காக பணம் செலுத்தும் கட்டத்திற்கு (Payment Gate) முன்பாக பாதுகாப்பாக நிறுத்தி வைக்கப்பட்டுள்ளது 🛡️');
 
                     formCompleted = true;
@@ -906,13 +875,19 @@ async function startTnegaFirstGraduateFlow(citizenProfile = {}, onProgress = () 
                         isPreSubmitGate: true,
                         applicationNumber: appNumber,
                         canNumber: cleanCan,
-                        message: `🎉 முதல் பட்டதாரி சான்றிதழ் (REV-104) ஆவணங்கள் பதிவேற்றப்பட்டு தயார் நிலையில் உள்ளது (விண்ணப்ப எண்: ${appNumber})!`
+                        downloadedDeclarationPath,
+                        pendingDoc: 'Self-Declaration of Applicant',
+                        message: `🎉 முதல் பட்டதாரி சான்றிதழ் (REV-104) ஆதரவு ஆவணங்கள் பதிவேற்றப்பட்டு, சுய உறுதிமொழிப் படிவம் புதிய Tab-ல் திறக்கப்பட்டுள்ளது (விண்ணப்ப எண்: ${appNumber})!`
                     };
                 }
 
             } catch (stepErr) {
                 onProgress(`⚠️ படிநிலை பிழை: ${stepErr.message}`);
                 await new Promise(r => setTimeout(r, 2000));
+            }
+
+            if (waitingForOperatorSubmit) {
+                loopCounter = 0; // Keep alive indefinitely while operator reviews form details
             }
 
             if (loopCounter > 80) {
