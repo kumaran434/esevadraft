@@ -217,10 +217,31 @@
         }
     }
 
+    function syncHeaderAppVersionBadge() {
+        const applyVer = (rawVer) => {
+            if (!rawVer) return;
+            const vText = String(rawVer).startsWith('v') ? String(rawVer) : `v${rawVer}`;
+            const headerBadge = document.getElementById('headerAppVersionBadge');
+            if (headerBadge) headerBadge.textContent = vText;
+            document.querySelectorAll('.app-version-num').forEach((el) => { el.textContent = vText; });
+            document.querySelectorAll('.app-version-tag').forEach((el) => { el.textContent = `புதிய பதிப்பு ${vText}`; });
+        };
+        if (window.esevaDesktopBridge && window.esevaDesktopBridge.version) {
+            applyVer(window.esevaDesktopBridge.version);
+        }
+        if (typeof fetch === 'function') {
+            fetch('/api/download/version')
+                .then((r) => r.ok ? r.json() : null)
+                .then((d) => { if (d && d.latestVersion) applyVer(d.latestVersion); })
+                .catch(() => {});
+        }
+    }
+
     // Auto-init on page load
     function initHeaderNav() {
         initDesktopWindowControls();
         initWebDownloadTriggers();
+        syncHeaderAppVersionBadge();
         updateHeaderNavigationState();
 
         const authEl = document.getElementById('authScreen');

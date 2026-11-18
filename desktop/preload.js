@@ -3,11 +3,16 @@
 // =========================================================================
 const { contextBridge, ipcRenderer } = require('electron');
 
+let resolvedAppVersion = '1.1.24';
+try {
+    resolvedAppVersion = require('./package.json').version || '1.1.24';
+} catch (_) {}
+
 // Only expose strictly whitelisted and validated functions to renderer
 contextBridge.exposeInMainWorld('esevaDesktopBridge', {
     isDesktopApp: true,
     platform: process.platform,
-    version: '1.1.20',
+    version: resolvedAppVersion,
     
     // Window Controls for Frameless Desktop Experience
     minimizeWindow: () => ipcRenderer.send('window-minimize'),

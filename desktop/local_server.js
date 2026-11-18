@@ -545,6 +545,20 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 return handleOtpWebhook(req, res, getActiveAutomationModule);
             }
 
+            // 2.01 Live App Version Endpoint
+            if (urlPath === '/api/download/version') {
+                let latestVer = '1.1.24';
+                try {
+                    latestVer = (typeof app !== 'undefined' && app.getVersion && app.getVersion()) || require('./package.json').version || '1.1.24';
+                } catch (_) {}
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    success: true,
+                    latestVersion: latestVer,
+                    releaseName: `eSevaDraft Desktop Suite v${latestVer}`
+                }));
+            }
+
             // 2. Desktop Engine Server Info
             if (urlPath === '/api/desktop/server-info') {
                 res.writeHead(200, { 'Content-Type': 'application/json' });

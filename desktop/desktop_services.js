@@ -56,7 +56,7 @@ function reportOperatorTelemetry(errorData = {}) {
         const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
         const targetUrl = `${baseUrl}/api/telemetry/error`;
         const payload = {
-            appVersion: app.getVersion() || '1.1.12',
+            appVersion: app.getVersion() || '1.1.24',
             platform: process.platform,
             arch: process.arch,
             timestamp: new Date().toISOString(),
@@ -128,7 +128,7 @@ function checkRemoteVersionFallback(getMainWindow, getPromptShown, setPromptShow
     try {
         const https = require('https');
         const { shell } = require('electron');
-        const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.20';
+        const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.24';
         const currentNum = parseSemver(currentVer);
 
         const req = https.get('https://api.github.com/repos/kumaran434/esevadraft/releases/latest', {
@@ -177,6 +177,7 @@ function checkRemoteVersionFallback(getMainWindow, getPromptShown, setPromptShow
 
 function setupAutoUpdater(getMainWindow) {
     let promptShown = false;
+    let updateDownloading = false;
     const isLocalDev = process.env.USERNAME === 'ADMIN' && fs.existsSync('d:\\downloads\\ai assitant 2');
     if (!app.isPackaged && isLocalDev && process.env.NODE_ENV !== 'production') {
         console.log('[AutoUpdater] Development mode: skipping automatic update check.');
@@ -194,15 +195,29 @@ function setupAutoUpdater(getMainWindow) {
         autoUpdater.autoDownload = true;
         autoUpdater.autoInstallOnAppQuit = true;
 
+        autoUpdater.on('update-available', (info) => {
+            updateDownloading = true;
+            console.log('[AutoUpdater] New update found on GitHub, downloading silently:', info?.version);
+        });
+
+        autoUpdater.on('error', (err) => {
+            updateDownloading = false;
+            console.warn('[AutoUpdater] Updater error:', err?.message || err);
+            if (!promptShown) {
+                checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
+            }
+        });
+
         autoUpdater.on('update-downloaded', (info) => {
             console.log('[AutoUpdater] New update downloaded:', info.version);
+            updateDownloading = false;
             promptShown = true;
             const mainWindow = getMainWindow ? getMainWindow() : null;
             if (mainWindow && !mainWindow.isDestroyed()) {
                 dialog.showMessageBox(mainWindow, {
                     type: 'info',
                     title: 'புதிய பதிப்பு தயார் (Update Ready)',
-                    message: `eSevaDraft புதிய பதிப்பு (v${info.version}) தயார் நிலையில் உள்ளது.`,
+                    message: `eSevaDraft புதிய பதிப்பு (v${info.version}) பதிவிறக்கம் செய்யப்பட்டு தயார் நிலையில் உள்ளது.`,
                     detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பிற்கு மாறவா?',
                     buttons: ['இப்போதே Restart செய் (Restart Now)', 'பின்னர் (Later)'],
                     defaultId: 0,
@@ -218,7 +233,9 @@ function setupAutoUpdater(getMainWindow) {
         setTimeout(() => {
             autoUpdater.checkForUpdatesAndNotify().catch((err) => {
                 console.warn('[AutoUpdater] Check notice:', err.message);
-                checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
+                if (!updateDownloading) {
+                    checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
+                }
             });
         }, 3000);
 
@@ -229,12 +246,12 @@ function setupAutoUpdater(getMainWindow) {
         }, 60 * 60 * 1000);
     }
 
-    // Fallback GitHub release check after 12s in case electron-updater blockmap/yml check is slow or blocked
+    // Fallback GitHub release check after 18s ONLY if electron-updater is not actively downloading an update
     setTimeout(() => {
-        if (!promptShown) {
+        if (!promptShown && !updateDownloading) {
             checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
         }
-    }, 12000);
+    }, 18000);
 }
 
 module.exports = {

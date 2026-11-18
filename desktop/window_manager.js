@@ -126,7 +126,7 @@ function createMainWindow() {
     });
 
     try {
-        mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' eSevaDraft-Desktop/' + (app.getVersion() || '1.1.20'));
+        mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' eSevaDraft-Desktop/' + (app.getVersion() || '1.1.24'));
     } catch (_) {}
 
     const forceVisibleForeground = () => {
