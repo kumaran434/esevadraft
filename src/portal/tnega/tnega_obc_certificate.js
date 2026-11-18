@@ -620,15 +620,6 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                             await tnegaPage.waitForTimeout(2000);
                             return { success: true, isFormReviewGate: true, message: 'REV-115 form filled and waiting at Operator Submit Gate.' };
                         }
-                        if (options.autoClickFormSubmit) {
-                            await tnegaPage.waitForTimeout(3000);
-                            onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
-                            const subBtn = tnegaPage.locator('button:has-text("Submit"), input[type="submit"][value="Submit"], .gwt-Button:has-text("Submit")').first();
-                            if (await subBtn.count() > 0) {
-                                await subBtn.click().catch(() => {});
-                                await tnegaPage.waitForTimeout(2500);
-                            }
-                        }
                     }
 
                     // Auto-accept any confirmation dialog when user clicks Submit

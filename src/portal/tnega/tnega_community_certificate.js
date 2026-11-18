@@ -611,15 +611,6 @@ async function startTnegaCommunityCertificateFlow(citizenProfile = {}, onProgres
                                 await tnegaPage.waitForTimeout(2000);
                                 return { success: true, isFormReviewGate: true, message: 'REV-101 form filled and waiting at Operator Submit Gate.' };
                             }
-                            if (options.autoClickFormSubmit) {
-                                await tnegaPage.waitForTimeout(3000);
-                                onProgress('⚡ [நேரலை சரிபார்ப்பு] படிவ விவரங்கள் சரிபார்க்கப்பட்டு Submit பொத்தான் அழுத்தப்படுகிறது...');
-                                const subBtn = tnegaPage.locator('#community\\:submit, input[id="community:submit"], input[type="submit"][value="Submit"]').first();
-                                if (await subBtn.count() > 0) {
-                                    await subBtn.click().catch(() => {});
-                                    await tnegaPage.waitForTimeout(2500);
-                                }
-                            }
                         }
 
                         // Check if operator clicked Submit and page transitioned to uploadDocs.xhtml
