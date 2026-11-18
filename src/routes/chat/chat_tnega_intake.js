@@ -4,11 +4,60 @@ const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { validateUploadedDocument } = require('../../services/document_validator');
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { searchCitizenCan, registerNewCan } = require('../../../tnega_can_automation');
-const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow } = require('../../core/fsm/tnega_flow_engine');
+const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow } = require('../../core/fsm/tnega_flow_engine');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
 const { persistSessions } = storageService;
+
+function extractIncomeAndProfession(inputStr) {
+    if (!inputStr || typeof inputStr !== 'string') return null;
+    const clean = inputStr.trim();
+
+    // 1. Occupation Detection
+    let detectedProf = null;
+    if (/விவசாய|farmer|agri|பயிர்த்/i.test(clean)) {
+        detectedProf = 'விவசாயம்';
+    } else if (/கூலி|coolie|daily wage|labour|சுமை|தொழிலாளி/i.test(clean)) {
+        detectedProf = 'கூலி வேலை';
+    } else if (/வியாபார|வணிக|business|கடை|shop/i.test(clean)) {
+        detectedProf = 'சிறு வணிகம் / வியாபாரம்';
+    } else if (/தனியார்|private/i.test(clean)) {
+        detectedProf = 'தனியார் வேலை';
+    } else if (/அரசு|govt/i.test(clean)) {
+        detectedProf = 'அரசு ஊழியர்';
+    } else if (/ஓட்டுநர்|driver|டிரைவர்/i.test(clean)) {
+        detectedProf = 'ஓட்டுநர் (Driver)';
+    } else if (/தையல்|tailor/i.test(clean)) {
+        detectedProf = 'தையல் கலைஞர்';
+    } else if (/கட்டிட|mason|construction/i.test(clean)) {
+        detectedProf = 'கட்டிடத் தொழிலாளி';
+    } else if (/இல்லத்தரசி|குடும்பத் தலைவி|housewife|homemaker/i.test(clean)) {
+        detectedProf = 'இல்லத்தரசி / குடும்பத் தலைவி';
+    }
+
+    // 2. Income Number Detection (matches 4 to 7 digits like 5000, 6000, 7000, 8000, 10000, 60000, 72000, 120000)
+    const numMatch = clean.replace(/,/g, '').match(/\b\d{4,7}\b/);
+    let detectedMonthly = null;
+    let detectedAnnual = null;
+
+    if (numMatch) {
+        const val = parseInt(numMatch[0], 10);
+        if (val <= 25000) {
+            detectedMonthly = val;
+            detectedAnnual = val * 12;
+        } else {
+            detectedAnnual = val;
+            detectedMonthly = Math.round(val / 12);
+        }
+    }
+
+    return {
+        profession: detectedProf,
+        monthlyIncome: detectedMonthly,
+        annualIncome: detectedAnnual
+    };
+}
 
 async function handleTnegaIntake(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
@@ -32,13 +81,19 @@ async function handleTnegaIntake(ctx, req, res) {
         if (matchedCan) {
             sess.citizenProfile.canNumber = matchedCan[1];
             persistSessions();
-            const isCommunityFlow = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY'));
-            const isResidenceFlow = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE'));
-            const flowStep = isCommunityFlow
-                ? advanceTnegaCommunityFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
-                : (isResidenceFlow
-                    ? advanceTnegaResidenceFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
-                    : advanceTnegaIncomeFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`));
+            const isObcFlow = sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC'));
+            const isFirstGraduateFlow = !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
+            const isCommunityFlow = !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+            const isResidenceFlow = !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+            const flowStep = isObcFlow
+                ? advanceTnegaObcFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
+                : (isFirstGraduateFlow
+                ? advanceTnegaFirstGraduateFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
+                : (isCommunityFlow
+                    ? advanceTnegaCommunityFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
+                    : (isResidenceFlow
+                        ? advanceTnegaResidenceFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
+                        : advanceTnegaIncomeFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`))));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -116,10 +171,12 @@ async function handleTnegaIntake(ctx, req, res) {
                 ? `\n\n📋 **இந்த மொபைல் எண்ணில் உள்ள அனைத்து குடும்ப CAN எண்கள்:**\n` +
                   searchRes.records.map((r, idx) => `${idx + 1}. **${r.canNumber}** — ${r.name} (தந்தை/கணவர்: ${r.fatherName})`).join('\n')
                 : '';
-            const isCommunityFlow = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY'));
-            const isResidenceFlow = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE'));
-            const flowStep = isCommunityFlow
-                ? advanceTnegaCommunityFlow(
+            const isObcFlow = sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC'));
+            const isFirstGraduateFlow = !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
+            const isCommunityFlow = !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+            const isResidenceFlow = !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+            const flowStep = isObcFlow
+                ? advanceTnegaObcFlow(
                     sess,
                     `🎉 **வாடிக்கையாளரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
                     `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
@@ -128,8 +185,18 @@ async function handleTnegaIntake(ctx, req, res) {
                     `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
                     familyListText
                 )
-                : (isResidenceFlow
-                    ? advanceTnegaResidenceFlow(
+                : (isFirstGraduateFlow
+                ? advanceTnegaFirstGraduateFlow(
+                    sess,
+                    `🎉 **மாணவரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
+                    `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
+                    `• 👤 **பெயர்:** ${searchRes.citizenName || p.fullNameTam || '—'}\n` +
+                    `• 👨 **தந்தை/கணவர்:** ${searchRes.fatherName || p.fatherNameTam || '—'}\n` +
+                    `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
+                    familyListText
+                )
+                : (isCommunityFlow
+                    ? advanceTnegaCommunityFlow(
                         sess,
                         `🎉 **வாடிக்கையாளரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
                         `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
@@ -138,15 +205,25 @@ async function handleTnegaIntake(ctx, req, res) {
                         `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
                         familyListText
                     )
-                    : advanceTnegaIncomeFlow(
-                        sess,
-                        `🎉 **வாடிக்கையாளரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
-                        `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
-                        `• 👤 **பெயர்:** ${searchRes.citizenName || p.fullNameTam || '—'}\n` +
-                        `• 👨 **தந்தை/கணவர்:** ${searchRes.fatherName || p.fatherNameTam || '—'}\n` +
-                        `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
-                        familyListText
-                    ));
+                    : (isResidenceFlow
+                        ? advanceTnegaResidenceFlow(
+                            sess,
+                            `🎉 **வாடிக்கையாளரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
+                            `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
+                            `• 👤 **பெயர்:** ${searchRes.citizenName || p.fullNameTam || '—'}\n` +
+                            `• 👨 **தந்தை/கணவர்:** ${searchRes.fatherName || p.fatherNameTam || '—'}\n` +
+                            `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
+                            familyListText
+                        )
+                        : advanceTnegaIncomeFlow(
+                            sess,
+                            `🎉 **வாடிக்கையாளரின் CAN எண் கண்டறியப்பட்டது!**\n\n` +
+                            `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
+                            `• 👤 **பெயர்:** ${searchRes.citizenName || p.fullNameTam || '—'}\n` +
+                            `• 👨 **தந்தை/கணவர்:** ${searchRes.fatherName || p.fatherNameTam || '—'}\n` +
+                            `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
+                            familyListText
+                        ))));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -543,17 +620,134 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     // -------------------------------------------------------------------------
     // MOTHER'S NAME INTAKE GATE (TNeGA Mandatory Field)
     // -------------------------------------------------------------------------
-    if ((sess.intakeState === 'COMMUNITY_MOTHER_NAME_WAIT' || sess.intakeState === 'INCOME_MOTHER_NAME_WAIT') && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if ((sess.intakeState === 'COMMUNITY_MOTHER_NAME_WAIT' || sess.intakeState === 'INCOME_MOTHER_NAME_WAIT' || sess.intakeState === 'FIRST_GRADUATE_MOTHER_NAME_WAIT' || sess.intakeState === 'OBC_MOTHER_NAME_WAIT') && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         const { eng, tam } = ensureBilingualPair(text.trim(), text.trim());
         sess.citizenProfile.motherNameEng = eng;
         sess.citizenProfile.motherNameTam = tam;
         persistSessions();
 
         const p = sess.citizenProfile;
-        const isCommunityFlow = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY'));
-        const flowStep = isCommunityFlow
-            ? advanceTnegaCommunityFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`)
-            : advanceTnegaIncomeFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`);
+        const isObcFlow = sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC'));
+        const isFirstGraduateFlow = !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
+        const isCommunityFlow = !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+        const flowStep = isObcFlow
+            ? advanceTnegaObcFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`)
+            : (isFirstGraduateFlow
+                ? advanceTnegaFirstGraduateFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`)
+                : (isCommunityFlow
+                    ? advanceTnegaCommunityFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`)
+                    : advanceTnegaIncomeFlow(sess, `✅ தாயின் பெயர் **${p.motherNameTam || p.motherNameEng}** எனப் பதிவானது!`)));
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: CURRENT COURSE INTAKE GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_COURSE_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        sess.citizenProfile.currentCourse = text.trim();
+        sess.citizenProfile.degreeCourse = text.trim();
+        persistSessions();
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ படிப்பு **${text.trim()}** எனப் பதிவானது!`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: COLLEGE / INSTITUTION NAME INTAKE GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_COLLEGE_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        sess.citizenProfile.institutionName = text.trim();
+        sess.citizenProfile.collegeName = text.trim();
+        persistSessions();
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ கல்லூரி **${text.trim()}** எனப் பதிவானது!`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: PARENTS' EDUCATION QUALIFICATION INTAKE GATE
+    // -------------------------------------------------------------------------
+    if ((sess.intakeState === 'FIRST_GRADUATE_PARENT_EDU_WAIT' || (text && text.startsWith('PARENT_EDU:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        let fEdu = '10th Standard';
+        let mEdu = '8th Standard';
+        if (text.startsWith('PARENT_EDU:')) {
+            const parts = text.replace('PARENT_EDU:', '').split('|');
+            if (parts[0]) fEdu = parts[0].trim();
+            if (parts[1]) mEdu = parts[1].trim();
+        } else {
+            fEdu = text.trim();
+            mEdu = text.trim();
+        }
+        sess.citizenProfile.fatherEducation = fEdu;
+        sess.citizenProfile.motherEducation = mEdu;
+        persistSessions();
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ பெற்றோர் கல்வி: **தந்தை (${fEdu}) | தாய் (${mEdu})** எனப் பதிவானது!`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: YEAR OF PASSING 12TH INTAKE GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_YOP_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const yopMatch = text.match(/\b(19|20)\d{2}\b/);
+        const cleanYop = yopMatch ? yopMatch[0] : text.trim();
+        sess.citizenProfile.yearOfPassing = cleanYop;
+        sess.citizenProfile.passingYear = cleanYop;
+        persistSessions();
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ 12-ஆம் வகுப்பு தேர்ச்சி ஆண்டு **${cleanYop}** எனப் பதிவானது!`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: ELIGIBILITY CONFIRMATION GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_FAMILY_CHECK_GATE' || text === 'FIRST_GRADUATE_CONFIRMED' || text === 'FIRST_GRADUATE_INELIGIBLE') {
+        if (text === 'FIRST_GRADUATE_INELIGIBLE') {
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `⚠️ **அரசு விதிப்படி (TNeGA REV-104 Rule):**\n\nகுடும்பத்தில் ஏற்கனவே ஒருவர் பட்டப்படிப்பு முடித்திருந்தால் முதல் பட்டதாரி கல்விக் கட்டணச் சலுகை பெற இயலாது.\n\nவேறு ஏதேனும் சான்றிதழ் சேவை தேவைப்படுகிறதா?`,
+                options: [
+                    { label: "📜 சாதிச் சான்றிதழ்", value: "சாதிச் சான்றிதழ்" },
+                    { label: "💰 வருமானச் சான்றிதழ்", value: "வருமானச் சான்றிதழ்" },
+                    { label: "🏠 இருப்பிடச் சான்றிதழ்", value: "இருப்பிடச் சான்றிதழ்" },
+                    { label: "🔄 மீண்டும் சேவைகளைத் தேர்ந்தெடு", value: "reset" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        sess.citizenProfile.familyGraduateConfirmed = true;
+        persistSessions();
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ குடும்பத்தில் முதல் பட்டதாரி தகுதி உறுதிப்படுத்தப்பட்டது! 🛡️`);
         sess.chatHistory.push({
             sender: 'bot',
             text: flowStep.text,
@@ -778,8 +972,237 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         return true;
     }
 
+    // -------------------------------------------------------------------------
+    // INCOME PROOF DOCUMENT UPLOAD / SELF-DECLARATION GATE (TNeGA REV-103)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_PROOF_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('incomeProof', extracted);
+            if (!validation.valid) {
+                try {
+                    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+                } catch (_) {}
+
+                delete sess.citizenProfile.incomeProof;
+                delete sess.citizenProfile.salaryCertificatePath;
+                if (sess.tempUploads) delete sess.tempUploads.incomeProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.incomeProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "🌾 விவசாயி (Farmer - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_FARMER_6000" },
+                        { label: "🔨 கூலி வேலை (Daily Wage - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_COOLIE_6000" },
+                        { label: "📷 சம்பளச் சான்று / Pay Slip பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.incomeProof = compliantProof;
+            sess.citizenProfile.salaryCertificatePath = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.incomeProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.incomeProof = compliantProof;
+
+            persistSessions();
+
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **வருமான ஆதாரம் / சம்பளச் சான்று வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        if (text && !text.startsWith('TRIGGER_')) {
+            let prof = null;
+            let mInc = null;
+            let aInc = null;
+
+            if (text === 'INCOME_DECL_FARMER_6000') {
+                prof = 'விவசாயம்';
+                mInc = 6000;
+                aInc = 72000;
+            } else if (text === 'INCOME_DECL_COOLIE_6000') {
+                prof = 'கூலி வேலை';
+                mInc = 6000;
+                aInc = 72000;
+            } else if (text === 'INCOME_DECL_BIZ_7000') {
+                prof = 'சிறு வணிகம் / வியாபாரம்';
+                mInc = 7000;
+                aInc = 84000;
+            } else if (text === 'INCOME_DECL_PVT_8000') {
+                prof = 'தனியார் வேலை';
+                mInc = 8000;
+                aInc = 96000;
+            } else {
+                const parsed = extractIncomeAndProfession(text);
+                if (parsed) {
+                    prof = parsed.profession;
+                    mInc = parsed.monthlyIncome;
+                    aInc = parsed.annualIncome;
+                }
+            }
+
+            if (prof && aInc) {
+                sess.citizenProfile.profession = prof;
+                sess.citizenProfile.monthlyIncome = mInc;
+                sess.citizenProfile.annualIncome = String(aInc);
+                sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+                sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+                sess.citizenProfile.salaryCertificate = 'SELF_DECLARATION';
+                sess.citizenProfile.salaryCertificatePath = 'SELF_DECLARATION';
+                persistSessions();
+
+                const flowStep = advanceTnegaIncomeFlow(
+                    sess,
+                    `✅ தொழில்: **${prof}** | மாத வருமானம்: **₹${Number(mInc).toLocaleString('en-IN')}** (ஆண்டு வருமானம்: **₹${Number(aInc).toLocaleString('en-IN')}** - சுய அறிவிப்பு) வெற்றிகரமாகப் பதிவானது! 🛡️`
+                );
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: flowStep.text,
+                    options: flowStep.options
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            } else if (prof && !aInc) {
+                sess.citizenProfile.profession = prof;
+                sess.intakeState = 'INCOME_MONTHLY_WAIT';
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `🌾 தொழில்: **${prof}** எனப் பதிவானது!\n\n${prof} தொழிலில் தோராயமான **மாத வருமானம்** எவ்வளவு? கீழே தேர்ந்தெடுக்கவும் அல்லது தொகையை உள்ளிடவும்:`,
+                    options: [
+                        { label: "₹5,000 / மாதம் (ஆண்டுக்கு ₹60,000)", value: "INCOME_AMOUNT_5000" },
+                        { label: "🌾 ₹6,000 / மாதம் (ஆண்டுக்கு ₹72,000)", value: "INCOME_AMOUNT_6000" },
+                        { label: "₹7,000 / மாதம் (ஆண்டுக்கு ₹84,000)", value: "INCOME_AMOUNT_7000" },
+                        { label: "₹8,000 / மாதம் (ஆண்டுக்கு ₹96,000)", value: "INCOME_AMOUNT_8000" },
+                        { label: "₹10,000 / மாதம் (ஆண்டுக்கு ₹1,20,000)", value: "INCOME_AMOUNT_10000" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            } else if (!prof && aInc) {
+                sess.citizenProfile.monthlyIncome = mInc;
+                sess.citizenProfile.annualIncome = String(aInc);
+                sess.intakeState = 'INCOME_PROFESSION_WAIT';
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `💰 மாத வருமானம்: **₹${Number(mInc).toLocaleString('en-IN')}** (ஆண்டு: **₹${Number(aInc).toLocaleString('en-IN')}**) எனப் பதிவானது!\n\nவிண்ணப்பதாரரின் **தொழில் (Occupation)** என்ன? கீழே உள்ள தொழிலைத் தேர்ந்தெடுக்கவும்:`,
+                    options: [
+                        { label: "🌾 விவசாயி (Farmer / Agriculture)", value: "INCOME_PROF_FARMER" },
+                        { label: "🔨 கூலி வேலை (Daily Wage / Coolie)", value: "INCOME_PROF_COOLIE" },
+                        { label: "🏪 சிறு வணிகம் / வியாபாரம் (Small Business)", value: "INCOME_PROF_BIZ" },
+                        { label: "🏢 தனியார் வேலை (Private Sector)", value: "INCOME_PROF_PVT" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // INCOME MONTHLY SALARY WAIT GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_MONTHLY_WAIT' && text && !text.startsWith('TRIGGER_')) {
+        let mInc = null;
+        let aInc = null;
+
+        if (text === 'INCOME_AMOUNT_5000') { mInc = 5000; aInc = 60000; }
+        else if (text === 'INCOME_AMOUNT_6000') { mInc = 6000; aInc = 72000; }
+        else if (text === 'INCOME_AMOUNT_7000') { mInc = 7000; aInc = 84000; }
+        else if (text === 'INCOME_AMOUNT_8000') { mInc = 8000; aInc = 96000; }
+        else if (text === 'INCOME_AMOUNT_10000') { mInc = 10000; aInc = 120000; }
+        else {
+            const parsed = extractIncomeAndProfession(text);
+            if (parsed && parsed.annualIncome) {
+                mInc = parsed.monthlyIncome;
+                aInc = parsed.annualIncome;
+            }
+        }
+
+        if (aInc) {
+            sess.citizenProfile.monthlyIncome = mInc;
+            sess.citizenProfile.annualIncome = String(aInc);
+            sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+            sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+            sess.citizenProfile.salaryCertificate = 'SELF_DECLARATION';
+            sess.citizenProfile.salaryCertificatePath = 'SELF_DECLARATION';
+            persistSessions();
+
+            const prof = sess.citizenProfile.profession || 'விவசாயம்';
+            const flowStep = advanceTnegaIncomeFlow(
+                sess,
+                `✅ தொழில்: **${prof}** | மாத வருமானம்: **₹${Number(mInc).toLocaleString('en-IN')}** (ஆண்டு வருமானம்: **₹${Number(aInc).toLocaleString('en-IN')}** - சுய அறிவிப்பு) வெற்றிகரமாகப் பதிவானது! 🛡️`
+            );
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // INCOME PROFESSION WAIT GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_PROFESSION_WAIT' && text && !text.startsWith('TRIGGER_')) {
+        let prof = null;
+        if (text === 'INCOME_PROF_FARMER' || text.includes('விவசாய')) prof = 'விவசாயம்';
+        else if (text === 'INCOME_PROF_COOLIE' || text.includes('கூலி')) prof = 'கூலி வேலை';
+        else if (text === 'INCOME_PROF_BIZ' || text.includes('வியாபார')) prof = 'சிறு வணிகம் / வியாபாரம்';
+        else if (text === 'INCOME_PROF_PVT' || text.includes('தனியார்')) prof = 'தனியார் வேலை';
+        else {
+            const parsed = extractIncomeAndProfession(text);
+            prof = (parsed && parsed.profession) ? parsed.profession : text.trim();
+        }
+
+        if (prof) {
+            sess.citizenProfile.profession = prof;
+            sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+            sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+            sess.citizenProfile.salaryCertificate = 'SELF_DECLARATION';
+            sess.citizenProfile.salaryCertificatePath = 'SELF_DECLARATION';
+            persistSessions();
+
+            const mInc = sess.citizenProfile.monthlyIncome || 6000;
+            const aInc = sess.citizenProfile.annualIncome || 72000;
+            const flowStep = advanceTnegaIncomeFlow(
+                sess,
+                `✅ தொழில்: **${prof}** | மாத வருமானம்: **₹${Number(mInc).toLocaleString('en-IN')}** (ஆண்டு வருமானம்: **₹${Number(aInc).toLocaleString('en-IN')}** - சுய அறிவிப்பு) வெற்றிகரமாகப் பதிவானது! 🛡️`
+            );
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
     // STATE: INCOME_INTAKE, INCOME_AADHAAR_WAIT, or INCOME_AADHAAR_BACK_WAIT
-    if (sess.intakeState === 'INCOME_INTAKE' || sess.intakeState === 'INCOME_AADHAAR_WAIT' || sess.intakeState === 'INCOME_AADHAAR_BACK_WAIT' || (sess.subService === 'INCOME' && (text.startsWith('₹') || (text.replace(/[,₹\s]/g, '').match(/\d{4,7}/))))) {
+    if (sess.intakeState === 'INCOME_INTAKE' || sess.intakeState === 'INCOME_AADHAAR_WAIT' || sess.intakeState === 'INCOME_AADHAAR_BACK_WAIT') {
         if (uploadedFile || sess.intakeState === 'INCOME_AADHAAR_BACK_WAIT') {
             const handled = await handleTnegaAadhaarUploadHelper({
                 ctx,
@@ -795,10 +1218,21 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         const hasIncomeNum = cleanDigits.match(/\d{4,7}/);
 
         if (hasIncomeNum) {
-            sess.citizenProfile.annualIncome = hasIncomeNum[0];
+            const val = parseInt(hasIncomeNum[0], 10);
+            if (val <= 25000) {
+                sess.citizenProfile.monthlyIncome = val;
+                sess.citizenProfile.annualIncome = String(val * 12);
+            } else {
+                sess.citizenProfile.annualIncome = String(val);
+                sess.citizenProfile.monthlyIncome = Math.round(val / 12);
+            }
+            if (!sess.citizenProfile.incomeProof) {
+                sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+                sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+            }
             persistSessions();
 
-            const flowStep = advanceTnegaIncomeFlow(sess);
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ குடும்ப ஆண்டு வருமானம் **₹${Number(sess.citizenProfile.annualIncome).toLocaleString('en-IN')}** எனப் பதிவானது!`);
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -806,11 +1240,20 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             });
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
-        } else if (text && (text.includes('வேலை') || text.includes('தொழில்') || text.includes('விவசாயம்') || text.includes('வியாபாரம்') || text.includes('கூலி') || text.includes('Private') || text.includes('Business'))) {
-            sess.citizenProfile.profession = text;
+        } else if (text && (text.includes('வேலை') || text.includes('தொழில்') || text.includes('விவசாயம்') || text.includes('விவசாயி') || text.includes('வியாபாரம்') || text.includes('கூலி') || text.includes('Private') || text.includes('Business'))) {
+            let prof = text.trim();
+            if (prof.includes('விவசாய')) prof = 'விவசாயம்';
+            else if (prof.includes('கூலி')) prof = 'கூலி வேலை';
+            else if (prof.includes('வியாபார')) prof = 'சிறு வணிகம் / வியாபாரம்';
+            else if (prof.includes('தனியார்')) prof = 'தனியார் வேலை';
+            sess.citizenProfile.profession = prof;
+            if (!sess.citizenProfile.incomeProof) {
+                sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+                sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+            }
             persistSessions();
 
-            const flowStep = advanceTnegaIncomeFlow(sess);
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ தொழில்: **${prof}** எனப் பதிவானது!`);
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -914,6 +1357,430 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE CERTIFICATE INTAKE GATES (TNeGA REV-104)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_AADHAAR_WAIT' || sess.intakeState === 'FIRST_GRADUATE_AADHAAR_BACK_WAIT' || sess.intakeState === 'FIRST_GRADUATE_INTAKE') {
+        if (uploadedFile || sess.intakeState === 'FIRST_GRADUATE_AADHAAR_BACK_WAIT') {
+            const handled = await handleTnegaAadhaarUploadHelper({
+                ctx,
+                req,
+                res,
+                backWaitState: 'FIRST_GRADUATE_AADHAAR_BACK_WAIT',
+                advanceFlowFn: advanceTnegaFirstGraduateFlow
+            });
+            if (handled) return true;
+        }
+
+        if (text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+            persistSessions();
+            const flowStep = advanceTnegaFirstGraduateFlow(sess);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: APPLICANT 12TH TC / MARKSHEET UPLOAD GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('applicantEducationProof', extracted);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                delete sess.citizenProfile.applicantEducationProof;
+                delete sess.citizenProfile.studentTc;
+                if (sess.tempUploads) delete sess.tempUploads.applicantEducationProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.applicantEducationProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 மாணவர் 12th TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.applicantEducationProof = compliantProof;
+            sess.citizenProfile.studentTc = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.applicantEducationProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.applicantEducationProof = compliantProof;
+
+            let extraInfo = '';
+            if (extracted && (extracted.fullNameTam || extracted.fullNameEng)) {
+                if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
+                if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
+                if (extracted.fatherNameTam) sess.citizenProfile.fatherNameTam = extracted.fatherNameTam;
+                if (extracted.fatherNameEng) sess.citizenProfile.fatherNameEng = extracted.fatherNameEng;
+                if (extracted.dob) sess.citizenProfile.dob = extracted.dob;
+                if (extracted.community) sess.citizenProfile.community = extracted.community;
+                if (extracted.caste) sess.citizenProfile.caste = extracted.caste;
+                extraInfo = `\n\n📄 **மாற்றுச் சான்றிதழிலிருந்து (TC) விவரங்கள் தானாகப் பெறப்பட்டன:**\n• மாணவர்: **${extracted.fullNameTam || extracted.fullNameEng}** | பிறந்த தேதி: **${extracted.dob || '—'}**\n• தந்தை: **${extracted.fatherNameTam || extracted.fatherNameEng || '—'}** ✅`;
+            }
+
+            persistSessions();
+            const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ **மாணவரின் 12-ஆம் வகுப்பு மாற்றுச் சான்றிதழ் (TC) வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️${extraInfo}`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: FAMILY SMART CARD UPLOAD GATE
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_SMARTCARD_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('smartCard', extracted);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                delete sess.citizenProfile.smartCard;
+                delete sess.citizenProfile.rationCard;
+                if (sess.tempUploads) delete sess.tempUploads.smartCard;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.smartCard;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 குடும்ப அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.smartCard = compliantProof;
+            sess.citizenProfile.rationCard = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.smartCard = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.smartCard = compliantProof;
+
+            persistSessions();
+            const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ **குடும்ப ஸ்மார்ட் அட்டை வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // FIRST GRADUATE: FATHER & MOTHER EDUCATION PROOF UPLOAD GATES
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'FIRST_GRADUATE_FATHER_PROOF_WAIT' || sess.intakeState === 'FIRST_GRADUATE_PARENTS_PROOF_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('fatherEducationProof', extracted);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                delete sess.citizenProfile.fatherEducationProof;
+                if (sess.tempUploads) delete sess.tempUploads.fatherEducationProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.fatherEducationProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 தந்தையின் TC / ஆவணம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.fatherEducationProof = compliantProof;
+            sess.citizenProfile.fatherTc = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.fatherEducationProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.fatherEducationProof = compliantProof;
+            if (sess.intakeState === 'FIRST_GRADUATE_PARENTS_PROOF_WAIT') {
+                sess.citizenProfile.motherEducationProof = compliantProof;
+                sess.citizenProfile.documents.motherEducationProof = compliantProof;
+            }
+
+            persistSessions();
+            const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ **தந்தையின் கல்வி ஆவணம் (Father TC) வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    if (sess.intakeState === 'FIRST_GRADUATE_MOTHER_PROOF_WAIT') {
+        if (uploadedFile) {
+            let extracted = null;
+            try {
+                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+            } catch (_) {}
+
+            const validation = validateUploadedDocument('motherEducationProof', extracted);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                delete sess.citizenProfile.motherEducationProof;
+                if (sess.tempUploads) delete sess.tempUploads.motherEducationProof;
+                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.motherEducationProof;
+                persistSessions();
+
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 தாயாரின் TC / ஆவணம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            sess.citizenProfile.motherEducationProof = compliantProof;
+            sess.citizenProfile.motherTc = compliantProof;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.motherEducationProof = compliantProof;
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            sess.citizenProfile.documents.motherEducationProof = compliantProof;
+
+            persistSessions();
+            const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ **தாயாரின் கல்வி ஆவணம் (Mother TC) வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: flowStep.text,
+                options: flowStep.options
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // OBC CERTIFICATE INTAKE GATES (TNeGA REV-115 — Document-First + Delta)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'OBC_AADHAAR_WAIT' || sess.intakeState === 'OBC_AADHAAR_BACK_WAIT' || sess.intakeState === 'OBC_INTAKE') {
+        if (uploadedFile || sess.intakeState === 'OBC_AADHAAR_BACK_WAIT') {
+            const handled = await handleTnegaAadhaarUploadHelper({
+                ctx,
+                req,
+                res,
+                backWaitState: 'OBC_AADHAAR_BACK_WAIT',
+                advanceFlowFn: advanceTnegaObcFlow
+            });
+            if (handled) return true;
+        }
+    }
+
+    if (sess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT' && uploadedFile) {
+        let extracted = null;
+        try {
+            extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+        } catch (_) {}
+
+        const validation = validateUploadedDocument('communityProof', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: validation.errorTamil,
+                options: [
+                    { label: "📜 சாதிச் சான்றிதழ் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        sess.citizenProfile.communityProof = compliantProof;
+        sess.citizenProfile.communityCertificate = compliantProof;
+        sess.citizenProfile.communityCertificatePath = compliantProof;
+        if (!sess.tempUploads) sess.tempUploads = {};
+        sess.tempUploads.communityCertificate = compliantProof;
+        sess.tempUploads.communityProof = compliantProof;
+        if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+        sess.citizenProfile.documents.communityCertificate = compliantProof;
+        sess.citizenProfile.documents.communityProof = compliantProof;
+
+        let extraInfo = '';
+        if (extracted && (extracted.caste || extracted.subCaste)) {
+            const c = extracted.caste || extracted.subCaste;
+            sess.citizenProfile.caste = c;
+            if (extracted.community) sess.citizenProfile.community = extracted.community;
+            extraInfo = `\n• 🏷️ **சாதி:** **${c}** (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
+        }
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ **சாதிச் சான்றிதழ் (Community Certificate) வெற்றிகரமாகப் பெறப்பட்டது!**${extraInfo}`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if (sess.intakeState === 'OBC_INCOME_PROOF_WAIT' && uploadedFile) {
+        let extracted = null;
+        try {
+            extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
+        } catch (_) {}
+
+        const validation = validateUploadedDocument('incomeProof', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: validation.errorTamil,
+                options: [
+                    { label: "💰 வருமான / ITR சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        sess.citizenProfile.incomeTaxReturn = compliantProof;
+        sess.citizenProfile.incomeProof = compliantProof;
+        if (!sess.tempUploads) sess.tempUploads = {};
+        sess.tempUploads.incomeTaxReturn = compliantProof;
+        sess.tempUploads.incomeProof = compliantProof;
+        if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+        sess.citizenProfile.documents.incomeTaxReturn = compliantProof;
+        sess.citizenProfile.documents.incomeProof = compliantProof;
+
+        let extraInc = '';
+        if (extracted && extracted.annualIncome) {
+            const cleanInc = String(extracted.annualIncome).replace(/\D+/g, '');
+            if (cleanInc) {
+                sess.citizenProfile.annualIncome = cleanInc;
+                extraInc = `\n• 💰 **ஆண்டு வருமானம்:** ₹${cleanInc} (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
+            }
+        }
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ **வருமான வரி / வருமானச் சான்று வெற்றிகரமாகப் பெறப்பட்டது!**${extraInc}`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'OBC_CASTE_WAIT' || (text && text.startsWith('OBC_CASTE:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const val = text.startsWith('OBC_CASTE:') ? text.replace('OBC_CASTE:', '').trim() : text.trim();
+        sess.citizenProfile.caste = val;
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ OBC சாதி **${val}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'OBC_OCCUPATION_WAIT' || (text && text.startsWith('OBC_OCC:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const val = text.startsWith('OBC_OCC:') ? text.replace('OBC_OCC:', '').trim() : text.trim();
+        sess.citizenProfile.occupation = val;
+        sess.citizenProfile.applicantOccupation = val;
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ விண்ணப்பதாரர் பணி **${val}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'OBC_FATHER_OCC_WAIT' || (text && text.startsWith('OBC_FA_OCC:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const raw = text.startsWith('OBC_FA_OCC:') ? text.replace('OBC_FA_OCC:', '').trim() : text.trim();
+        if (/deceased|காலமான/i.test(raw)) {
+            sess.citizenProfile.fatherAlive = false;
+            sess.citizenProfile.fatherOccupation = 'Deceased';
+        } else if (raw.includes('|')) {
+            const [nat, occ] = raw.split('|');
+            sess.citizenProfile.fatherAlive = true;
+            sess.citizenProfile.fatherEmploymentNature = nat.trim();
+            sess.citizenProfile.fatherOccupation = occ.trim();
+        } else {
+            sess.citizenProfile.fatherAlive = true;
+            sess.citizenProfile.fatherOccupation = raw;
+        }
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ தந்தையின் பணி நிலை **${sess.citizenProfile.fatherOccupation}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'OBC_MOTHER_OCC_WAIT' || (text && text.startsWith('OBC_MO_OCC:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const raw = text.startsWith('OBC_MO_OCC:') ? text.replace('OBC_MO_OCC:', '').trim() : text.trim();
+        if (/deceased|காலமான/i.test(raw)) {
+            sess.citizenProfile.motherAlive = false;
+            sess.citizenProfile.motherOccupation = 'Deceased';
+        } else if (raw.includes('|')) {
+            const [nat, occ] = raw.split('|');
+            sess.citizenProfile.motherAlive = true;
+            sess.citizenProfile.motherEmploymentNature = nat.trim();
+            sess.citizenProfile.motherOccupation = occ.trim();
+        } else {
+            sess.citizenProfile.motherAlive = true;
+            sess.citizenProfile.motherOccupation = raw;
+        }
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ தாயின் பணி நிலை **${sess.citizenProfile.motherOccupation}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'OBC_INCOME_WAIT' || (text && text.startsWith('OBC_INCOME:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const cleanInc = text.replace('OBC_INCOME:', '').replace(/\D+/g, '') || text.trim();
+        sess.citizenProfile.annualIncome = cleanInc;
+        persistSessions();
+        const flowStep = advanceTnegaObcFlow(sess, `✅ குடும்ப ஆண்டு வருமானம் **₹${cleanInc}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -1036,61 +1903,6 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     }
 
     // -------------------------------------------------------------------------
-    // INCOME PROOF DOCUMENT UPLOAD GATE (TNeGA REV-103)
-    // -------------------------------------------------------------------------
-    if (sess.intakeState === 'INCOME_PROOF_WAIT') {
-        if (uploadedFile) {
-            let extracted = null;
-            try {
-                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
-            } catch (_) {}
-
-            const validation = validateUploadedDocument('incomeProof', extracted);
-            if (!validation.valid) {
-                try {
-                    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
-                } catch (_) {}
-
-                delete sess.citizenProfile.incomeProof;
-                delete sess.citizenProfile.salaryCertificatePath;
-                if (sess.tempUploads) delete sess.tempUploads.incomeProof;
-                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.incomeProof;
-                persistSessions();
-
-                sess.chatHistory.push({
-                    sender: 'bot',
-                    text: validation.errorTamil,
-                    options: [
-                        { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
-                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
-                    ]
-                });
-                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
-                return true;
-            }
-
-            const compliantProof = await produceCompliantDocument(uploadedFile.path);
-            sess.citizenProfile.incomeProof = compliantProof;
-            sess.citizenProfile.salaryCertificatePath = compliantProof;
-            if (!sess.tempUploads) sess.tempUploads = {};
-            sess.tempUploads.incomeProof = compliantProof;
-            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
-            sess.citizenProfile.documents.incomeProof = compliantProof;
-
-            persistSessions();
-
-            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **வருமான ஆதாரம் / சம்பளச் சான்று வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
-            sess.chatHistory.push({
-                sender: 'bot',
-                text: flowStep.text,
-                options: flowStep.options
-            });
-            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
-            return true;
-        }
-    }
-
-    // -------------------------------------------------------------------------
     // RESIDENCE PROOF DOCUMENT UPLOAD GATE (TNeGA REV-102)
     // -------------------------------------------------------------------------
     if (sess.intakeState === 'RESIDENCE_PROOF_WAIT' || sess.intakeState === 'RESIDENCE_PROOF_DOC') {
@@ -1146,7 +1958,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     // -------------------------------------------------------------------------
     // MANDATORY APPLICANT PASSPORT PHOTO GATE (TNeGA Revenue Services)
     // -------------------------------------------------------------------------
-    if (['COMMUNITY_PHOTO_WAIT', 'INCOME_PHOTO_WAIT', 'RESIDENCE_PHOTO_WAIT'].includes(sess.intakeState)) {
+    if (['COMMUNITY_PHOTO_WAIT', 'INCOME_PHOTO_WAIT', 'RESIDENCE_PHOTO_WAIT', 'FIRST_GRADUATE_PHOTO_WAIT', 'OBC_PHOTO_WAIT'].includes(sess.intakeState)) {
         if (text === 'TRIGGER_FILE_UPLOAD' || text?.includes('புகைப்படம் பதிவேற்றுக') || text === 'UPLOAD_PHOTO') {
             sess.chatHistory.push({
                 sender: 'bot',
@@ -1197,7 +2009,9 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
                 return true;
             }
 
-            const studioPhoto = await produceCompliantPassportPhoto(uploadedFile.path);
+            const studioPhoto = await produceCompliantPassportPhoto(uploadedFile.path, {
+                faceBoundingBox: extracted?.faceBoundingBox
+            });
             sess.citizenProfile.headPhotoPath = studioPhoto;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.profilePhoto = studioPhoto;
@@ -1222,11 +2036,15 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             }
             persistSessions();
 
-            const flowStep = sess.intakeState === 'COMMUNITY_PHOTO_WAIT'
-                ? advanceTnegaCommunityFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
-                : (sess.intakeState === 'INCOME_PHOTO_WAIT'
-                    ? advanceTnegaIncomeFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
-                    : advanceTnegaResidenceFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`));
+            const flowStep = sess.intakeState === 'OBC_PHOTO_WAIT'
+                ? advanceTnegaObcFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                : (sess.intakeState === 'COMMUNITY_PHOTO_WAIT'
+                    ? advanceTnegaCommunityFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                    : (sess.intakeState === 'FIRST_GRADUATE_PHOTO_WAIT'
+                        ? advanceTnegaFirstGraduateFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** மாணவர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                        : (sess.intakeState === 'INCOME_PHOTO_WAIT'
+                            ? advanceTnegaIncomeFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`)
+                            : advanceTnegaResidenceFlow(sess, `✨ **ஏஐ போட்டோ ஸ்டுடியோ:** விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் அரசு விதிகளுக்கு ஏற்ப (<50KB) தயார் செய்யப்பட்டு சேமிக்கப்பட்டது! 📸`))));
 
             sess.chatHistory.push({
                 sender: 'bot',

@@ -3,10 +3,22 @@
  * Handles Income, Residence, Voter ID, and general service fallback dialogs.
  */
 
-const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow } = require('./tnega_flow_engine');
+const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow } = require('./tnega_flow_engine');
 
 function handleNonRationServiceSelection(text, sess) {
-    if (text.includes('வருமான') || text.toLowerCase().includes('income')) {
+    if (text.includes('OBC') || text.includes('obc') || text.includes('இதர பிற்படுத்தப்பட்டோர்') || text.includes('REV-115')) {
+        sess.subService = 'OBC';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'OBC';
+        }
+        const flowStep = advanceTnegaObcFlow(sess);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        return true;
+    } else if (text.includes('வருமான') || text.toLowerCase().includes('income')) {
         sess.subService = 'INCOME';
         if (sess.citizenProfile) {
             sess.citizenProfile.subService = 'INCOME';
@@ -54,6 +66,28 @@ function handleNonRationServiceSelection(text, sess) {
         delete sess.communityProof;
         delete sess.communityProofSkipped;
         const flowStep = advanceTnegaCommunityFlow(sess);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        return true;
+    } else if (text.includes('முதல் பட்டதாரி') || text.toLowerCase().includes('first graduate')) {
+        sess.subService = 'FIRST_GRADUATE';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'FIRST_GRADUATE';
+            delete sess.citizenProfile.currentCourse;
+            delete sess.citizenProfile.institutionName;
+            delete sess.citizenProfile.fatherEducation;
+            delete sess.citizenProfile.motherEducation;
+            delete sess.citizenProfile.familyGraduateConfirmed;
+        }
+        delete sess.currentCourse;
+        delete sess.institutionName;
+        delete sess.fatherEducation;
+        delete sess.motherEducation;
+        delete sess.familyGraduateConfirmed;
+        const flowStep = advanceTnegaFirstGraduateFlow(sess);
         sess.chatHistory.push({
             sender: 'bot',
             text: flowStep.text,

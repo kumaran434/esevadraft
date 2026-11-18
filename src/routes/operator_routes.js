@@ -12,6 +12,7 @@ const {
 
 const {
     SERVICE_OPTIONS,
+    REVENUE_DEPARTMENT_SERVICE_OPTIONS,
     RATION_CARD_SERVICE_OPTIONS,
     MEMBER_COUNT_OPTIONS,
     handleServiceSelection
@@ -232,9 +233,12 @@ router.post('/api/operator/new-customer', async (req, res) => {
     const isChangeAddress = serviceName === 'முகவரி மாற்றம்' || serviceName === 'குடும்ப அட்டை முகவரி மாற்றம்' || serviceName === 'CHANGE_ADDRESS' || sLower.includes('change address') || sLower.includes('முகவரி');
     const isNewRation = !isAddMember && !isChangeAddress && (serviceName === 'புதிய ரேஷன் கார்டு' || serviceName === 'புதிய குடும்ப அட்டை' || sLower.includes('new ration') || (serviceName && serviceName.includes('புதிய ரேஷன்')));
     const isRationGeneric = !isAddMember && !isChangeAddress && !isNewRation && (serviceName === 'ரேஷன் கார்டு' || sLower === 'ration' || sLower === 'ration card' || (serviceName && serviceName.includes('ரேஷன்')));
-    const isIncome = serviceName === 'வருமானச் சான்றிதழ்' || sLower.includes('income') || (serviceName && serviceName.includes('வருமானம்'));
-    const isResidence = serviceName === 'இருப்பிடச் சான்றிதழ்' || sLower.includes('residence') || (serviceName && serviceName.includes('இருப்பிடம்'));
-    const isCommunity = serviceName === 'சாதிச் சான்றிதழ்' || sLower.includes('community') || (serviceName && serviceName.includes('சாதி'));
+    const isRevenueGeneric = serviceName === 'வருவாய்த் துறை' || serviceName === 'வருவாய்த் துறை சான்றிதழ்கள்' || serviceName === 'வருவாய் துறை' || serviceName === 'REVENUE_DEPARTMENT' || serviceName === 'REVENUE_DEPARTMENT_SERVICES' || sLower.includes('revenue') || (serviceName && serviceName.includes('வருவாய்த் துறை')) || (serviceName && serviceName.includes('வருவாய் துறை'));
+    const isIncome = !isRevenueGeneric && (serviceName === 'வருமானச் சான்றிதழ்' || sLower.includes('income') || (serviceName && serviceName.includes('வருமானம்')));
+    const isResidence = !isRevenueGeneric && (serviceName === 'இருப்பிடச் சான்றிதழ்' || sLower.includes('residence') || (serviceName && serviceName.includes('இருப்பிடம்')));
+    const isObc = !isRevenueGeneric && (serviceName === 'OBC சான்றிதழ்' || serviceName === 'OBC_CERTIFICATE' || serviceName === 'TNEGA_OBC' || serviceName === 'REV-115' || sLower.includes('obc') || (serviceName && serviceName.includes('இதர பிற்படுத்தப்பட்டோர்')));
+    const isCommunity = !isRevenueGeneric && !isObc && (serviceName === 'சாதிச் சான்றிதழ்' || sLower.includes('community') || (serviceName && serviceName.includes('சாதி')));
+    const isFirstGraduate = !isRevenueGeneric && !isObc && (serviceName === 'முதல் பட்டதாரி சான்றிதழ்' || serviceName === 'முதல் பட்டதாரி' || serviceName === 'FIRST_GRADUATE' || serviceName === 'FIRST_GRADUATE_CERTIFICATE' || sLower.includes('first graduate') || sLower.includes('first_graduate') || (serviceName && serviceName.includes('முதல் பட்டதாரி')));
     const isVoter = serviceName === 'புதிய வாக்காளர் அட்டை' || sLower.includes('voter') || (serviceName && serviceName.includes('வாக்காளர்'));
 
     const { isProfileDataComplete } = require('../services/profile_helpers');
@@ -278,6 +282,17 @@ router.post('/api/operator/new-customer', async (req, res) => {
                   `நீங்கள் குடும்ப அட்டையில் எந்த சேவையைச் செய்ய விரும்புகிறீர்கள்?\n\n` +
                   `கீழே உள்ள விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
             options: RATION_CARD_SERVICE_OPTIONS
+        }];
+    } else if (isRevenueGeneric) {
+        sess.intakeState = 'REVENUE_DEPARTMENT_SERVICES';
+        sess.step = 'REVENUE_DEPARTMENT_SERVICES';
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
+                  `🏛️ **வருவாய்த் துறை சான்றிதழ்கள் (Revenue Department - e-Sevai / TNeGA)**\n\n` +
+                  `நீங்கள் எந்த சான்றிதழுக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n\n` +
+                  `கீழே உள்ள சான்றிதழ்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
+            options: REVENUE_DEPARTMENT_SERVICE_OPTIONS
         }];
     } else if (isIncome) {
         sess.subService = 'INCOME';
@@ -333,6 +348,36 @@ router.post('/api/operator/new-customer', async (req, res) => {
         try { createApplication(cleanMobile, 'COMMUNITY_CERT', sess.citizenProfile); } catch (_) {}
         const { advanceTnegaCommunityFlow } = require('../core/fsm/tnega_flow_engine');
         const flowStep = advanceTnegaCommunityFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        }];
+    } else if (isObc) {
+        sess.subService = 'OBC';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'OBC';
+        }
+        sess.intakeState = 'OBC_INTAKE';
+        try { createApplication(cleanMobile, 'OBC_CERTIFICATE', sess.citizenProfile); } catch (_) {}
+        const { advanceTnegaObcFlow } = require('../core/fsm/tnega_flow_engine');
+        const flowStep = advanceTnegaObcFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+    } else if (isFirstGraduate) {
+        sess.subService = 'FIRST_GRADUATE';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'FIRST_GRADUATE';
+            delete sess.citizenProfile.familyGraduateConfirmed;
+        }
+        delete sess.familyGraduateConfirmed;
+        sess.intakeState = 'FIRST_GRADUATE_INTAKE';
+        try { createApplication(cleanMobile, 'FIRST_GRADUATE_CERTIFICATE', sess.citizenProfile); } catch (_) {}
+        const { advanceTnegaFirstGraduateFlow } = require('../core/fsm/tnega_flow_engine');
+        const flowStep = advanceTnegaFirstGraduateFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
         sess.chatHistory = [{
             sender: 'bot',
             text: flowStep.text,

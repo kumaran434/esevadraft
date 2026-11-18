@@ -23,7 +23,9 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
         }
 
         try {
-            optimizedPath = await produceCompliantPassportPhoto(uploadedFile.path);
+            optimizedPath = await produceCompliantPassportPhoto(uploadedFile.path, {
+                faceBoundingBox: extractedPhoto?.faceBoundingBox
+            });
         } catch (e) {
             optimizedPath = uploadedFile.path;
         }
@@ -467,14 +469,42 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
             }
             if (canonicalKey === 'communityProof' || canonicalKey === 'familyCommunityProof' || canonicalKey === 'communityCertificate') {
                 sess.citizenProfile.communityProof = optimizedPath;
+                sess.citizenProfile.communityCertificate = optimizedPath;
                 sess.citizenProfile.communityCertificatePath = optimizedPath;
                 sess.citizenProfile.familyCommunityProofPath = optimizedPath;
                 sess.citizenProfile.documents.communityProof = optimizedPath;
+                sess.citizenProfile.documents.communityCertificate = optimizedPath;
                 sess.base64Docs.communityProofBase64 = b64;
                 sess.base64Docs.communityProofName = bName;
                 sess.citizenProfile.base64Docs.communityProofBase64 = b64;
                 sess.citizenProfile.base64Docs.communityProofName = bName;
                 sess.citizenProfile.communityProofSkipped = false;
+            }
+            if (canonicalKey === 'incomeTaxReturn' || canonicalKey === 'incomeProof' || canonicalKey === 'salaryCertificate') {
+                sess.citizenProfile.incomeTaxReturn = optimizedPath;
+                sess.citizenProfile.incomeProof = optimizedPath;
+                sess.citizenProfile.salaryCertificatePath = optimizedPath;
+                sess.citizenProfile.documents.incomeTaxReturn = optimizedPath;
+                sess.citizenProfile.documents.incomeProof = optimizedPath;
+                sess.base64Docs.incomeTaxReturnBase64 = b64;
+                sess.base64Docs.incomeProofBase64 = b64;
+                sess.citizenProfile.base64Docs.incomeTaxReturnBase64 = b64;
+                sess.citizenProfile.base64Docs.incomeProofBase64 = b64;
+            }
+            if (canonicalKey === 'applicantEducationProof' || canonicalKey === 'studentTc') {
+                sess.citizenProfile.applicantEducationProof = optimizedPath;
+                sess.citizenProfile.studentTc = optimizedPath;
+                sess.citizenProfile.documents.applicantEducationProof = optimizedPath;
+            }
+            if (canonicalKey === 'fatherEducationProof' || canonicalKey === 'fatherTc') {
+                sess.citizenProfile.fatherEducationProof = optimizedPath;
+                sess.citizenProfile.fatherTc = optimizedPath;
+                sess.citizenProfile.documents.fatherEducationProof = optimizedPath;
+            }
+            if (canonicalKey === 'motherEducationProof' || canonicalKey === 'motherTc') {
+                sess.citizenProfile.motherEducationProof = optimizedPath;
+                sess.citizenProfile.motherTc = optimizedPath;
+                sess.citizenProfile.documents.motherEducationProof = optimizedPath;
             }
         }
     } catch (bErr) {}

@@ -21,6 +21,15 @@
         }
         window.isPdfPath = window.isPdfPath || isPdfPath;
 
+        window.applyIncomePreset = function(prof, monthly) {
+            const mInput = document.getElementById('editMonthlyIncome');
+            const aInput = document.getElementById('editAnnualIncome');
+            const oInput = document.getElementById('editOccupation');
+            if (mInput) mInput.value = monthly;
+            if (aInput) aInput.value = monthly * 12;
+            if (oInput) oInput.value = prof;
+        };
+
         function renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId = null, forcedIsPdf = false) {
             if (typeof window.renderDocPreview === 'function' && window.renderDocPreview !== renderDocPreview) {
                 return window.renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId, forcedIsPdf);
@@ -745,32 +754,44 @@
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isCommunityMode = !forceMasterProfile && (
+            const isObcMode = !forceMasterProfile && (
+                curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
+                curIntake.includes('OBC') || curIntake.includes('REV-115') ||
+                serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
+                sData?.targetService === 'OBC' || sData?.serviceType === 'OBC'
+            );
+            const isCommunityMode = !forceMasterProfile && !isObcMode && (
                 curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
                 curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
                 serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
                 sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
             );
-            const isResidenceMode = !forceMasterProfile && !isCommunityMode && (
+            const isResidenceMode = !forceMasterProfile && !isObcMode && !isCommunityMode && (
                 curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
                 curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
                 serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
                 sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
             );
-            const isIncomeMode = !forceMasterProfile && !isCommunityMode && !isResidenceMode && (
+            const isIncomeMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && (
                 curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
                 curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
                 serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
                 sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
             );
-            const isCanMode = !forceMasterProfile && !isCommunityMode && !isIncomeMode && !isResidenceMode && (
+            const isFirstGraduateMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
+                curSub === 'FIRST_GRADUATE' || curSub === 'FIRST_GRADUATE_CERTIFICATE' || curSub.includes('REV-104') || curSub.includes('REV_104') ||
+                curIntake.includes('FIRST_GRADUATE') || curIntake.includes('REV-104') ||
+                serviceStr.includes('FIRST_GRADUATE') || serviceStr.includes('முதல் பட்டதாரி') || serviceStr.includes('REV-104') || serviceStr.includes('REV_104') || serviceStr.includes('REV104') ||
+                sData?.targetService === 'FIRST_GRADUATE' || sData?.serviceType === 'FIRST_GRADUATE'
+            );
+            const isCanMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
                 curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
             );
 
-            const isAddMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
-            const hasActiveSub = Boolean(isCommunityMode || isResidenceMode || isIncomeMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
+            const isAddMember = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
+            const isRemoveMember = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isChangeAddress = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const hasActiveSub = Boolean(isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
 
             const titleEl = document.getElementById('editModalTitle');
             const subTitleEl = document.getElementById('editModalSubtitle');
@@ -784,6 +805,20 @@
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
                 } else if (isIncomeMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
+                } else if (isObcMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 OBC சான்றிதழ் விண்ணப்பிக்க (Start OBC Apply)';
+                } else if (isObcMode) {
+                if (titleEl) titleEl.innerHTML = '📜 OBC சான்றிதழ் விண்ணப்ப விவரங்கள் (Other Backward Classes - REV-115)';
+                if (subTitleEl) subTitleEl.innerText = 'OBC சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isObcMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (smartDocBox) smartDocBox.style.display = 'none';
+                if (gasDocBox) gasDocBox.style.display = 'none';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isFirstGraduateMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 முதல் பட்டதாரி விண்ணப்பிக்க (Start First Graduate Apply)';
                 } else if (isCanMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
                 } else if (isAddMember) {
@@ -1102,6 +1137,16 @@
                 if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isObcMode) {
+                if (titleEl) titleEl.innerHTML = '📜 OBC சான்றிதழ் விண்ணப்ப விவரங்கள் (Other Backward Classes - REV-115)';
+                if (subTitleEl) subTitleEl.innerText = 'OBC சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isFirstGraduateMode) {
+                if (titleEl) titleEl.innerHTML = '🎓 முதல் பட்டதாரி விண்ணப்ப விவரங்கள் (First Graduate Certificate - REV-104)';
+                if (subTitleEl) subTitleEl.innerText = 'முதல் பட்டதாரி விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
             } else if (isCanMode) {
                 if (titleEl) titleEl.innerHTML = '📝 புதிய CAN பதிவு விவரங்கள் (New CAN Registration)';
                 if (subTitleEl) subTitleEl.innerText = 'CAN பதிவிற்கான விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
@@ -1177,6 +1222,20 @@
                 if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isObcMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isFirstGraduateMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isResidenceMode) {
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
@@ -1205,6 +1264,8 @@
             const commFieldsWrap = document.getElementById('editCommunityFieldsWrap');
             const incFieldsWrap = document.getElementById('editIncomeFieldsWrap');
             const resFieldsWrap = document.getElementById('editResidenceFieldsWrap');
+            const firstGradFieldsWrap = document.getElementById('editFirstGraduateFieldsWrap');
+            const obcFieldsWrap = document.getElementById('editObcFieldsWrap');
             const rationFieldsWrap = document.getElementById('editRationFieldsWrap');
             const smartCardNoWrap = document.getElementById('editSmartCardNoWrap');
             const canNoWrap = document.getElementById('editCanNumberWrap');
@@ -1213,6 +1274,8 @@
                 if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1220,6 +1283,8 @@
                 if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'none';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1227,6 +1292,8 @@
                 if (commFieldsWrap) commFieldsWrap.style.display = 'none';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1234,13 +1301,35 @@
                 if (commFieldsWrap) commFieldsWrap.style.display = 'none';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'none';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isObcMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isFirstGraduateMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
             } else if (isCanMode) {
                 if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'none';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1249,6 +1338,8 @@
                 if (commFieldsWrap) commFieldsWrap.style.display = 'none';
                 if (incFieldsWrap) incFieldsWrap.style.display = 'none';
                 if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1309,6 +1400,49 @@
                         icon: 'fa-receipt',
                         defaultPrompt: 'வருமானச் சான்று அல்லது சம்பள ரசீது தேவை'
                     });
+                }
+                if (isObcMode) {
+                    dynamicDocTypesToShow.push(
+                        {
+                            type: 'communityCertificate',
+                            title: '📜 சாதிச் சான்றிதழ் (Community Certificate)',
+                            titleEng: 'Community Certificate',
+                            icon: 'fa-certificate',
+                            defaultPrompt: 'சாதிச் சான்றிதழ் தேவை'
+                        },
+                        {
+                            type: 'incomeTaxReturn',
+                            title: '💰 வருமான வரி / வருமானச் சான்று (ITR / Income Proof)',
+                            titleEng: 'Income Tax Return / Income Proof',
+                            icon: 'fa-file-invoice-dollar',
+                            defaultPrompt: 'வருமான / ITR சான்று தேவை'
+                        }
+                    );
+                }
+                if (isFirstGraduateMode) {
+                    dynamicDocTypesToShow.push(
+                        {
+                            type: 'applicantEducationProof',
+                            title: '🎓 மாணவர் 12-ஆம் வகுப்பு TC (Applicant 12th TC)',
+                            titleEng: 'Applicant Transfer Certificate',
+                            icon: 'fa-graduation-cap',
+                            defaultPrompt: 'மாணவர் 12th TC தேவை'
+                        },
+                        {
+                            type: 'fatherEducationProof',
+                            title: '👨 தந்தை பள்ளி மாற்றுச் சான்றிதழ் (Father TC)',
+                            titleEng: 'Father Transfer Certificate',
+                            icon: 'fa-file-lines',
+                            defaultPrompt: 'தந்தையின் TC அல்லது கல்வி ஆவணம் தேவை'
+                        },
+                        {
+                            type: 'motherEducationProof',
+                            title: '👩 தாய் பள்ளி மாற்றுச் சான்றிதழ் (Mother TC)',
+                            titleEng: 'Mother Transfer Certificate',
+                            icon: 'fa-file-lines',
+                            defaultPrompt: 'தாயின் TC அல்லது கல்வி ஆவணம் தேவை'
+                        }
+                    );
                 }
 
                 if (forceMasterProfile) {
@@ -1497,10 +1631,25 @@
                 safeSetVal('editCaste', data.caste || '');
                 safeSetVal('editFatherCaste', data.fatherCaste || data.caste || '');
                 safeSetVal('editMotherCaste', data.motherCaste || data.caste || '');
-                safeSetVal('editAnnualIncome', data.annualIncome || '');
+                const resolvedAnnInc = data.annualIncome || (data.monthlyIncome ? String(Number(data.monthlyIncome) * 12) : '');
+                const resolvedMonInc = data.monthlyIncome || (data.annualIncome ? String(Math.round(Number(data.annualIncome) / 12)) : '');
+                safeSetVal('editAnnualIncome', resolvedAnnInc);
+                safeSetVal('editMonthlyIncome', resolvedMonInc);
                 safeSetVal('editOccupation', data.profession || data.occupation || '');
+                safeSetVal('editFamilyMemberCount', data.familyMemberCount || '2');
                 safeSetVal('editResidenceYears', data.residenceYears || '10');
                 safeSetVal('editResidencePurpose', data.residencePurpose || 'கல்வி / வேலைவாய்ப்பு');
+                safeSetVal('editFirstGraduateCourse', data.currentCourse || data.degreeCourse || '');
+                safeSetVal('editFirstGraduateCollege', data.institutionName || data.collegeName || '');
+                safeSetVal('editFirstGraduateFatherEdu', data.fatherEducation || '10th Standard');
+                safeSetVal('editFirstGraduateMotherEdu', data.motherEducation || '8th Standard');
+                safeSetVal('editFirstGraduateYop', data.yearOfPassing || '2024');
+                safeSetVal('editFirstGraduateCollegeAdd', data.institutionAddress || 'Coimbatore Tamil Nadu');
+                safeSetVal('editObcCaste', data.caste || data.subCaste || '');
+                safeSetVal('editObcOccupation', data.occupation || data.applicantOccupation || 'Service');
+                safeSetVal('editObcFatherOccupation', data.fatherOccupation || '');
+                safeSetVal('editObcMotherOccupation', data.motherOccupation || '');
+                safeSetVal('editObcAnnualIncome', resolvedAnnInc);
                 
                 const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
                 const editHasGasEl = document.getElementById('editHasGas');
@@ -1650,7 +1799,7 @@
         }
         window.closeEditModal = closeEditModal;
 
-        async function submitDirectlyFromEditModal() {
+        async function submitDirectlyFromEditModal(mode = null) {
             const btn = document.getElementById('btnSubmitFromEditModal');
             if (btn) {
                 btn.disabled = true;
@@ -1669,8 +1818,9 @@
                     return;
                 }
 
-                // 2. Direct portal submit to physical visible Chrome
-                proceedConfirmedSubmit(true);
+                // 2. Direct portal submit to physical visible Chrome (ONLY allowed from Edit Modal!)
+                const runRealLive = mode === 'dryRun' ? 'dryRun' : true;
+                proceedConfirmedSubmit(runRealLive, { fromEditModal: true });
             } catch (e) {
                 alert('பிழை: ' + e.message);
             } finally {
@@ -1929,8 +2079,22 @@
                 const relVal = document.getElementById('editReligion')?.value || currentCitizenData?.religion || 'Hindu';
                 const incVal = document.getElementById('editAnnualIncome')?.value?.trim() || currentCitizenData?.annualIncome || '';
                 const occVal = document.getElementById('editOccupation')?.value?.trim() || currentCitizenData?.profession || '';
+                const famCountVal = document.getElementById('editFamilyMemberCount')?.value || currentCitizenData?.familyMemberCount || '2';
+                const monIncVal = document.getElementById('editMonthlyIncome')?.value?.trim() || (incVal ? String(Math.round(Number(incVal) / 12)) : '');
                 const resYearsVal = document.getElementById('editResidenceYears')?.value?.trim() || currentCitizenData?.residenceYears || '';
                 const resPurpVal = document.getElementById('editResidencePurpose')?.value?.trim() || currentCitizenData?.residencePurpose || '';
+                const courseVal = document.getElementById('editFirstGraduateCourse')?.value?.trim() || currentCitizenData?.currentCourse || '';
+                const collegeVal = document.getElementById('editFirstGraduateCollege')?.value?.trim() || currentCitizenData?.institutionName || '';
+                const fEduVal = document.getElementById('editFirstGraduateFatherEdu')?.value || currentCitizenData?.fatherEducation || '10th Standard';
+                const mEduVal = document.getElementById('editFirstGraduateMotherEdu')?.value || currentCitizenData?.motherEducation || '8th Standard';
+                const yopVal = document.getElementById('editFirstGraduateYop')?.value?.trim() || currentCitizenData?.yearOfPassing || '2024';
+                const collegeAddVal = document.getElementById('editFirstGraduateCollegeAdd')?.value?.trim() || currentCitizenData?.institutionAddress || 'Coimbatore Tamil Nadu';
+                const obcModeSave = (keepSub === 'OBC' || keepSub === 'OBC_CERTIFICATE');
+                const obcCasteVal = document.getElementById('editObcCaste')?.value?.trim() || casteVal;
+                const obcOccVal = document.getElementById('editObcOccupation')?.value || currentCitizenData?.occupation || 'Service';
+                const obcFaOccVal = document.getElementById('editObcFatherOccupation')?.value?.trim() || currentCitizenData?.fatherOccupation || '';
+                const obcMoOccVal = document.getElementById('editObcMotherOccupation')?.value?.trim() || currentCitizenData?.motherOccupation || '';
+                const obcIncVal = document.getElementById('editObcAnnualIncome')?.value?.trim() || incVal;
                 const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
 
                 if (keepSub === 'COMMUNITY' || keepSub === 'COMMUNITY_CERTIFICATE') {
@@ -1947,7 +2111,9 @@
                     keepSubData = {
                         ...(keepSubData || {}),
                         annualIncome: incVal,
+                        monthlyIncome: monIncVal,
                         profession: occVal,
+                        familyMemberCount: famCountVal,
                         canNumber: canVal
                     };
                 } else if (keepSub === 'RESIDENCE' || keepSub === 'RESIDENCE_CERTIFICATE' || keepSub === 'NATIVITY') {
@@ -1955,6 +2121,28 @@
                         ...(keepSubData || {}),
                         residenceYears: resYearsVal,
                         residencePurpose: resPurpVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'OBC' || keepSub === 'OBC_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        caste: obcCasteVal,
+                        occupation: obcOccVal,
+                        fatherOccupation: obcFaOccVal,
+                        motherOccupation: obcMoOccVal,
+                        annualIncome: obcIncVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'FIRST_GRADUATE' || keepSub === 'FIRST_GRADUATE_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        currentCourse: courseVal,
+                        institutionName: collegeVal,
+                        fatherEducation: fEduVal,
+                        motherEducation: mEduVal,
+                        yearOfPassing: yopVal,
+                        institutionAddress: collegeAddVal,
+                        familyGraduateConfirmed: true,
                         canNumber: canVal
                     };
                 }
@@ -1986,13 +2174,27 @@
                     canNumber: canVal,
                     religion: relVal,
                     community: commVal,
-                    caste: casteVal,
+                    caste: obcModeSave ? obcCasteVal : casteVal,
                     fatherCaste: fatCasteVal,
                     motherCaste: motCasteVal,
-                    annualIncome: incVal,
+                    annualIncome: obcModeSave ? obcIncVal : incVal,
+                    monthlyIncome: monIncVal,
                     profession: occVal,
+                    occupation: obcModeSave ? obcOccVal : (currentCitizenData?.occupation || occVal),
+                    fatherOccupation: obcFaOccVal,
+                    motherOccupation: obcMoOccVal,
+                    familyMemberCount: famCountVal,
                     residenceYears: resYearsVal,
                     residencePurpose: resPurpVal,
+                    currentCourse: courseVal,
+                    degreeCourse: courseVal,
+                    institutionName: collegeVal,
+                    collegeName: collegeVal,
+                    fatherEducation: fEduVal,
+                    motherEducation: mEduVal,
+                    yearOfPassing: yopVal,
+                    institutionAddress: collegeAddVal,
+                    familyGraduateConfirmed: true,
                     members: existingMembers,
                     gasDetails: {
                         ...(currentCitizenData ? currentCitizenData.gasDetails : {}),
@@ -2028,9 +2230,14 @@
                         ...updated, 
                         headPhotoPath: currentCitizenData?.headPhotoPath || null,
                         profilePhoto: currentCitizenData?.headPhotoPath || null,
-                        communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof) || null,
-                        communityCertificatePath: currentCitizenData?.communityCertificatePath || null,
+                        incomeProof: (currentCitizenData?.incomeProof || currentCitizenData?.salaryCertificatePath || (incVal ? 'SELF_DECLARATION' : null)),
+                        incomeProofType: (currentCitizenData?.incomeProofType || (incVal ? 'SELF_DECLARATION' : null)),
+                        salaryCertificatePath: currentCitizenData?.salaryCertificatePath || null,
+                        communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof || currentCitizenData?.communityCertificate) || null,
+                        communityCertificate: currentCitizenData?.communityCertificate || currentCitizenData?.communityCertificatePath || null,
+                        communityCertificatePath: currentCitizenData?.communityCertificatePath || currentCitizenData?.communityCertificate || null,
                         familyCommunityProofPath: currentCitizenData?.familyCommunityProofPath || null,
+                        incomeTaxReturn: currentCitizenData?.incomeTaxReturn || currentCitizenData?.incomeProof || null,
                         mobileNumber: targetMob, 
                         oldMobileNumber: isMobileChanged ? originalEditingMobile : undefined,
                         fromEditModal: true, 

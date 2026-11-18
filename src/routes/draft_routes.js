@@ -601,15 +601,19 @@ router.post('/api/drafts/delete-document', async (req, res) => {
         const storageService = require('../services/storage_service');
         const sess = storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : (storageService.sessions?.get(cleanMob) || null);
         if (sess) {
-            const isCommunityDoc = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
-            const isIncomeDoc = docType === 'incomeProof' || docType === 'salaryCertificate';
+            const isObcDoc = docType === 'incomeTaxReturn' || (docType === 'communityCertificate' && sess.subService === 'OBC');
+            const isCommunityDoc = !isObcDoc && (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof');
+            const isIncomeDoc = !isObcDoc && (docType === 'incomeProof' || docType === 'salaryCertificate');
             const isResidenceDoc = docType === 'residenceProof' || docType === 'gasBook';
+            const isFirstGraduateDoc = docType === 'applicantEducationProof' || docType === 'studentTc' || docType === 'fatherEducationProof' || docType === 'fatherTc' || docType === 'motherEducationProof' || docType === 'motherTc' || docType === 'smartCard' || docType === 'rationCard';
             const isPhotoDoc = docType === 'headPhoto' || docType === 'profilePhoto';
             const isAadhaarDoc = docType === 'headAadhaar';
 
-            const isCommunityService = isCommunityDoc || sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
-            const isIncomeService = !isCommunityDoc && (isIncomeDoc || sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
-            const isResidenceService = !isCommunityDoc && !isIncomeDoc && (isResidenceDoc || sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE')));
+            const isObcService = isObcDoc || sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.includes('OBC'));
+            const isCommunityService = !isObcService && (isCommunityDoc || sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY')));
+            const isIncomeService = !isObcService && !isCommunityDoc && (isIncomeDoc || sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
+            const isResidenceService = !isObcService && !isCommunityDoc && !isIncomeDoc && (isResidenceDoc || sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE')));
+            const isFirstGraduateService = !isObcService && !isCommunityService && !isIncomeService && !isResidenceService && (isFirstGraduateDoc || sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.includes('FIRST_GRADUATE')));
 
             // 🛡️ SANITIZE CHAT HISTORY: Purge any stale "100% Ready" or "Start Application" messages
             if (Array.isArray(sess.chatHistory)) {
@@ -696,10 +700,12 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                     sess.chatHistory.push({
                         sender: 'bot',
                         text: `🗑️ **வருமான ஆதாரம் / சம்பளச் சான்று நீக்கப்பட்டது!**\n\n` +
-                              `⚠️ **முக்கிய அரசு விதி (TNeGA Mandatory Rule):**\n` +
-                              `வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் கட்டாயம் தேவை.\n\n` +
-                              `தயவுசெய்து வருமான ஆதாரத்தைப் பதிவேற்றவும்:`,
+                              `💡 **அரசு நடைமுறை விதி (TNeGA REV-103 Rule):**\n` +
+                              `விவசாயிகள், கூலித் தொழிலாளர்கள் மற்றும் முறைசாரா தொழிலாளர்களுக்கு **சம்பள ரசீது (Pay Slip) கட்டாயமில்லை!** நேரடி சுய அறிவிப்பு (Self-Declaration) மூலம் தொழில் மற்றும் மாத வருமானத்தை உள்ளிட்டே விண்ணப்பிக்கலாம்.\n\n` +
+                              `தயவுசெய்து தொழில் மற்றும் மாத வருமானத்தைத் தேர்ந்தெடுக்கவும் (அல்லது புதிய ஆவணத்தைப் பதிவேற்றவும்):`,
                         options: [
+                            { label: "🌾 விவசாயி (Farmer - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_FARMER_6000" },
+                            { label: "🔨 கூலி வேலை (Daily Wage - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_COOLIE_6000" },
                             { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
                             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
                         ]
@@ -790,6 +796,48 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                     });
                     storageService.persistSessions();
                 }
+            } else if (isObcService) {
+                sess.subService = 'OBC';
+                if (sess.citizenProfile) {
+                    sess.citizenProfile.subService = 'OBC';
+                }
+                const { advanceTnegaObcFlow } = require('../core/fsm/tnega_flow_engine');
+                const flowStep = advanceTnegaObcFlow(sess, `🔄 ஆவண மாற்றங்களுக்கு ஏற்ப OBC சான்றிதழ் (REV-115) நிலை புதுப்பிக்கப்பட்டது.`);
+                if (sess.chatHistory) {
+                    sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+                }
+            } else if (isFirstGraduateService) {
+                sess.subService = 'FIRST_GRADUATE';
+                if (sess.citizenProfile) sess.citizenProfile.subService = 'FIRST_GRADUATE';
+                if (sess.citizenProfile) {
+                    if (docType === 'applicantEducationProof' || docType === 'studentTc') {
+                        delete sess.citizenProfile.applicantEducationProof;
+                        delete sess.citizenProfile.studentTc;
+                    } else if (docType === 'fatherEducationProof' || docType === 'fatherTc') {
+                        delete sess.citizenProfile.fatherEducationProof;
+                        delete sess.citizenProfile.fatherTc;
+                    } else if (docType === 'motherEducationProof' || docType === 'motherTc') {
+                        delete sess.citizenProfile.motherEducationProof;
+                        delete sess.citizenProfile.motherTc;
+                    } else if (docType === 'smartCard' || docType === 'rationCard') {
+                        delete sess.citizenProfile.smartCard;
+                        delete sess.citizenProfile.rationCard;
+                        delete sess.citizenProfile.smartCardDocPath;
+                    } else if (isPhotoDoc) {
+                        delete sess.citizenProfile.headPhotoPath;
+                        delete sess.citizenProfile.profilePhoto;
+                    } else if (isAadhaarDoc) {
+                        delete sess.citizenProfile.headAadhaarDocPath;
+                    }
+                }
+                const { advanceTnegaFirstGraduateFlow } = require('../core/fsm/tnega_flow_engine');
+                const flowStep = advanceTnegaFirstGraduateFlow(sess, `🗑️ **தேர்ந்தெடுக்கப்பட்ட ஆவணம் நீக்கப்பட்டது!**`);
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: flowStep.text,
+                    options: flowStep.options
+                });
+                storageService.persistSessions();
             } else if (isPhotoDoc) {
                 sess.intakeState = 'HEAD_PHOTO';
                 if (sess.citizenProfile) {

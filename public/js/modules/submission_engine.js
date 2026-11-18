@@ -1,6 +1,14 @@
 // eSevaDraft Domain Module: submission_engine.js
 
-        async function proceedConfirmedSubmit(isRealLive = null) {
+        async function proceedConfirmedSubmit(isRealLive = null, triggerOptions = {}) {
+            // Mandatory Universal Edit-Modal Pre-Submit Gate (ALL services current & future):
+            // Automation MUST NOT start until operator inspects Edit Page and clicks its Submit button!
+            if (!triggerOptions || triggerOptions.fromEditModal !== true) {
+                if (typeof openEditModal === 'function') {
+                    openEditModal();
+                    return;
+                }
+            }
             const activeMob = localStorage.getItem('eseva_active_customer_mobile') || '';
             if (activeMob && (!currentCitizenData || !currentCitizenData.subService || !currentCitizenData.headAadhaar)) {
                 try {
@@ -14,12 +22,14 @@
 
             const isTnegaActive = Boolean(
                 currentCitizenData && (
-                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
+                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
                     (currentCitizenData.intakeState && (
                         currentCitizenData.intakeState.includes('INCOME') ||
                         currentCitizenData.intakeState.includes('RESIDENCE') ||
                         currentCitizenData.intakeState.includes('NATIVITY') ||
                         currentCitizenData.intakeState.includes('COMMUNITY') ||
+                        currentCitizenData.intakeState.includes('FIRST_GRADUATE') ||
+                        currentCitizenData.intakeState.includes('OBC') ||
                         currentCitizenData.intakeState.includes('CAN')
                     ))
                 )
@@ -42,26 +52,89 @@
             if (isTnegaActive && currentCitizenData) {
                 const curSub = String(currentCitizenData.subService || currentCitizenData.intakeState || '').toUpperCase();
                 const docs = currentCitizenData.documents || {};
-                const hasPhoto = Boolean(currentCitizenData.headPhotoPath || docs.profilePhoto || docs.headPhoto);
+                const hasPhoto = Boolean(
+                    currentCitizenData.headPhotoPath || 
+                    docs.profilePhoto || 
+                    docs.headPhoto || 
+                    docs.photo || 
+                    currentCitizenData.profilePhoto || 
+                    currentCitizenData.photo
+                );
 
-                if (curSub.includes('COMMUNITY')) {
+                if (curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub.includes('OBC')) {
+                    if (!hasPhoto) {
+                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் (<250x250px, <50KB) கட்டாயம் தேவை.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                    const hasCommProof = Boolean(docs.communityCertificate || docs.communityProof || currentCitizenData.communityCertificate || currentCitizenData.communityCertificatePath || currentCitizenData.communityProof);
+                    if (!hasCommProof) {
+                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க சாதிச் சான்றிதழ் (Community Certificate) கட்டாயம் தேவை.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                    const hasItrProof = Boolean(docs.incomeTaxReturn || docs.incomeProof || docs.salarySlip || currentCitizenData.incomeTaxReturn || currentCitizenData.incomeProof);
+                    if (!hasItrProof) {
+                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க வருமான வரி (ITR) அல்லது வருமானச் சான்று கட்டாயம் தேவை.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                } else if (curSub.includes('COMMUNITY')) {
+                    if (!hasPhoto) {
+                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
                     const hasComm = Boolean(currentCitizenData.communityProof || currentCitizenData.communityCertificatePath || currentCitizenData.familyCommunityProofPath || docs.communityProof);
-                    if (!hasPhoto || !hasComm) {
-                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                    if (!hasComm) {
+                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க "குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC" ஆவணம் கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
                         if (typeof openEditModal === 'function') openEditModal(activeMob);
                         return;
                     }
                 } else if (curSub.includes('INCOME')) {
-                    const hasIncome = Boolean(currentCitizenData.incomeProof || currentCitizenData.salaryCertificatePath || docs.incomeProof);
-                    if (!hasPhoto || !hasIncome) {
-                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் வருமான ஆதாரம் / சம்பளச் சான்று கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                    if (!hasPhoto) {
+                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                    const hasIncome = Boolean(
+                        currentCitizenData.incomeProof || 
+                        currentCitizenData.salaryCertificatePath || 
+                        docs.incomeProof ||
+                        currentCitizenData.incomeProof === 'SELF_DECLARATION' ||
+                        currentCitizenData.incomeProofType === 'SELF_DECLARATION' ||
+                        currentCitizenData.salaryProofType === 'SELF_DECLARATION' ||
+                        (currentCitizenData.annualIncome && currentCitizenData.profession) ||
+                        (currentCitizenData.monthlyIncome && currentCitizenData.profession) ||
+                        currentCitizenData.annualIncome ||
+                        currentCitizenData.monthlyIncome
+                    );
+                    if (!hasIncome) {
+                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க வருமான விவரங்கள் (தொழில் மற்றும் மாத/ஆண்டு வருமானம்) அல்லது வருமான ஆதாரம் உள்ளிடப்பட வேண்டும்.\n\nதயவுசெய்து படிவத்தில் பூர்த்தி செய்யவும்.');
                         if (typeof openEditModal === 'function') openEditModal(activeMob);
                         return;
                     }
                 } else if (curSub.includes('RESIDENCE') || curSub.includes('NATIVITY')) {
+                    if (!hasPhoto) {
+                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
                     const hasRes = Boolean(currentCitizenData.residenceProof?.docPath || currentCitizenData.residenceProof || docs.residenceProof || docs.gasBook);
-                    if (!hasPhoto || !hasRes) {
-                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் மற்றும் இருப்பிட ஆதாரம் (மின் கட்டணம்/கேஸ்/வரி ரசீது) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                    if (!hasRes) {
+                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க இருப்பிட ஆதாரம் (மின் கட்டணம்/கேஸ்/வரி ரசீது) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                } else if (curSub.includes('FIRST_GRADUATE')) {
+                    if (!hasPhoto) {
+                        alert('⚠️ முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                    const hasApplicantProof = Boolean(currentCitizenData.applicantEducationProof || currentCitizenData.studentTc || docs.applicantEducationProof || docs.studentTc);
+                    if (!hasApplicantProof) {
+                        alert('⚠️ முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் 12-ஆம் வகுப்பு மாற்றுச் சான்றிதழ் (TC) அல்லது மதிப்பெண் பட்டியல் கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
                         if (typeof openEditModal === 'function') openEditModal(activeMob);
                         return;
                     }
@@ -156,6 +229,8 @@
                                 'INCOME', 'INCOME_CERTIFICATE',
                                 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE',
                                 'COMMUNITY', 'COMMUNITY_CERTIFICATE',
+                                'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE',
+                                'OBC', 'OBC_CERTIFICATE',
                                 'CAN_REGISTER', 'CAN_SEARCH',
                                 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
                             ];
@@ -170,15 +245,21 @@
 
                             let resolvedTargetService = draftData.targetService || dJson.draft?.targetService || prof.targetService || '';
 
-                            if (targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || prof.caste || draftData.caste) {
-                                effectiveSubService = 'COMMUNITY';
-                                resolvedTargetService = 'COMMUNITY';
-                            } else if (targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeHint.includes('RESIDENCE') || intakeHint.includes('NATIVITY')) {
+                            if (effectiveSubService === 'OBC' || effectiveSubService === 'OBC_CERTIFICATE' || targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeHint.includes('OBC')) {
+                                effectiveSubService = 'OBC';
+                                resolvedTargetService = 'OBC';
+                            } else if (effectiveSubService === 'FIRST_GRADUATE' || effectiveSubService === 'FIRST_GRADUATE_CERTIFICATE' || targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeHint.includes('FIRST_GRADUATE') || (!effectiveSubService && (prof.currentCourse || draftData.currentCourse))) {
+                                effectiveSubService = 'FIRST_GRADUATE';
+                                resolvedTargetService = 'FIRST_GRADUATE';
+                            } else if (effectiveSubService === 'RESIDENCE' || effectiveSubService === 'RESIDENCE_CERTIFICATE' || effectiveSubService === 'NATIVITY' || targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeHint.includes('RESIDENCE') || intakeHint.includes('NATIVITY')) {
                                 effectiveSubService = 'RESIDENCE';
                                 resolvedTargetService = 'RESIDENCE';
-                            } else if (targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
+                            } else if (effectiveSubService === 'INCOME' || effectiveSubService === 'INCOME_CERTIFICATE' || targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
                                 effectiveSubService = 'INCOME';
                                 resolvedTargetService = 'INCOME';
+                            } else if (effectiveSubService === 'COMMUNITY' || effectiveSubService === 'COMMUNITY_CERTIFICATE' || targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || (!effectiveSubService && (prof.caste || draftData.caste))) {
+                                effectiveSubService = 'COMMUNITY';
+                                resolvedTargetService = 'COMMUNITY';
                             }
 
                             const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
@@ -260,7 +341,9 @@
                 }
 
                 // 🛡️ CLIENT PRE-FLIGHT MANDATORY AUDIT (Golden Rule 6 & 14)
-                const isCommService = draftData.subService === 'COMMUNITY' || (draftData.intakeState && draftData.intakeState.includes('COMMUNITY'));
+                const isObcSvcCheck = draftData.subService === 'OBC' || draftData.subService === 'OBC_CERTIFICATE' || (draftData.intakeState && draftData.intakeState.includes('OBC'));
+                const isFgSvcCheck = !isObcSvcCheck && (draftData.subService === 'FIRST_GRADUATE' || draftData.subService === 'FIRST_GRADUATE_CERTIFICATE' || (draftData.intakeState && draftData.intakeState.includes('FIRST_GRADUATE')));
+                const isCommService = !isObcSvcCheck && !isFgSvcCheck && (draftData.subService === 'COMMUNITY' || (draftData.intakeState && draftData.intakeState.includes('COMMUNITY')));
                 if (isCommService) {
                     const hasCommDoc = Boolean(draftData.communityProof || draftData.communityCertificatePath || draftData.familyCommunityProofPath || draftData.documents?.communityProof || draftData.base64Docs?.communityProofBase64);
                     if (!hasCommDoc) {
@@ -302,8 +385,8 @@
                 const pBar = document.getElementById('automationProgressBar');
                 if (pBar) pBar.classList.add('active');
 
-                const isTnegaFlow = ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
-                                    (draftData.intakeState && (draftData.intakeState.includes('INCOME') || draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('COMMUNITY') || draftData.intakeState.includes('CAN')));
+                const isTnegaFlow = ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
+                                    (draftData.intakeState && (draftData.intakeState.includes('INCOME') || draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('COMMUNITY') || draftData.intakeState.includes('FIRST_GRADUATE') || draftData.intakeState.includes('OBC') || draftData.intakeState.includes('CAN')));
                 const portalLabel = isTnegaFlow ? 'TNeGA' : 'TNPDS';
 
                 appendLiveAutomationStep(`🚀 **நேரலை முறை** — Chrome சாளரம் திறக்கப்படுகிறது...\n\n${portalLabel} போர்ட்டல் தோன்றும்.`);
@@ -339,9 +422,20 @@
             const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
             const opUid = localStorage.getItem('eseva_operator_uid') || '';
 
+            const isCategoryNav = text === 'ரேஷன் கார்டு' || 
+                                  text === 'வருவாய்த் துறை' || 
+                                  text === 'வருவாய்த் துறை சான்றிதழ்கள்' || 
+                                  text === 'வருவாய் துறை' || 
+                                  text === 'RATION_CARD_SERVICES' || 
+                                  text === 'REVENUE_DEPARTMENT_SERVICES' ||
+                                  text === 'MAIN_MENU' ||
+                                  text === 'முதன்மைப் பட்டியல்' ||
+                                  text.includes('முதன்மைப் பட்டியல்');
+
             // If operator is active and NO valid customer mobile is set yet (or is an old walkin_ dummy),
-            // prompt for real 10-digit customer mobile number before proceeding!
-            if (isOp && (!activeCustMob || activeCustMob.startsWith('walkin_'))) {
+            // prompt for real 10-digit customer mobile number before proceeding to a concrete subservice!
+            // Category navigation (Ration Card menu, Revenue Dept menu) is permitted so the operator can pick the exact service first!
+            if (isOp && (!activeCustMob || activeCustMob.startsWith('walkin_')) && !isCategoryNav) {
                 window.pendingSelectedService = text;
                 if (!overrideText && userInput) userInput.value = '';
                 openNewCustomerModal();
@@ -357,6 +451,8 @@
             if (upperText === 'START_INCOME_APPLY') currentCitizenData.subService = 'INCOME';
             else if (upperText === 'START_RESIDENCE_APPLY' || upperText === 'APPLY_RESIDENCE_NOW') currentCitizenData.subService = 'RESIDENCE';
             else if (upperText === 'START_COMMUNITY_APPLY' || upperText === 'APPLY_COMMUNITY_NOW') currentCitizenData.subService = 'COMMUNITY';
+            else if (upperText === 'START_FIRST_GRADUATE_APPLY') currentCitizenData.subService = 'FIRST_GRADUATE';
+            else if (upperText === 'START_OBC_APPLY') currentCitizenData.subService = 'OBC';
             else if (upperText === 'LAUNCH_CAN_AUTOMATION') currentCitizenData.subService = 'CAN_REGISTER';
 
             const isTnegaStartCmd = [
@@ -365,8 +461,11 @@
                 'APPLY_RESIDENCE_NOW',
                 'START_COMMUNITY_APPLY',
                 'APPLY_COMMUNITY_NOW',
+                'START_FIRST_GRADUATE_APPLY',
+                'START_OBC_APPLY',
+                'APPLY_VOTER_NOW',
                 'LAUNCH_CAN_AUTOMATION'
-            ].includes(upperText);
+            ].includes(upperText) || /^(START_.*_(APPLY|NOW|AUTOMATION|SUBMIT)|APPLY_.*_NOW|LAUNCH_.*)$/i.test(upperText);
 
             const isSubmitCmd = isTnegaStartCmd ||
                                 lowerText === 'start' || 
@@ -380,10 +479,18 @@
                                 lowerText.includes('விண்ணப்பிக்கத் தொடங்கு') || 
                                 lowerText.includes('நேரலை விண்ணப்பம்');
             if (isSubmitCmd) {
+                // Universal Rule: Any submit/start from chat MUST open Edit Modal FIRST before automation starts!
+                if (!extraPayload || extraPayload.fromEditModal !== true) {
+                    if (!overrideText && userInput) userInput.value = '';
+                    if (typeof openEditModal === 'function') {
+                        openEditModal();
+                        return;
+                    }
+                }
                 if (window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp) {
                     if (!overrideText && userInput) userInput.value = '';
                     const isRealLive = isTnegaStartCmd || lowerText.includes('real') || lowerText.includes('நேரலை') || lowerText.includes('submit') || lowerText.includes('start') || !lowerText.includes('mock');
-                    await proceedConfirmedSubmit(isRealLive);
+                    await proceedConfirmedSubmit(isRealLive, extraPayload);
                     return;
                 }
                 if (!bypassConfirm && !isTnegaStartCmd) {
@@ -574,7 +681,7 @@
             if (!prof) return [];
             const docs = [];
             const cleanMob = mobile || prof.mobileNumber || 'active_session';
-            const cacheBust = prof._updatedAt ? new Date(prof._updatedAt).getTime() : Date.now();
+            const cacheBust = prof._updatedAt ? new Date(prof._updatedAt).getTime() : '1';
             const dMap = prof.documents || {};
             const b64Map = prof.base64Docs || {};
             const sData = prof.subServiceData || window.lastSubServiceData;
@@ -611,9 +718,9 @@
             }
 
             // 3. Smart Ration Card (if present on profile)
-            if (prof.smartCardDocPath || dMap.smartCard || dMap.rationCard || b64Map.smartCardBase64) {
+            if (prof.smartCard || prof.rationCard || prof.smartCardDocPath || dMap.smartCard || dMap.rationCard || b64Map.smartCardBase64) {
                 const cardNo = prof.smartCardNumber || prof.rationCardNumber || prof.rationCardNo || '';
-                const cardDocStr = String(prof.smartCardDocPath || dMap.smartCard || dMap.rationCard || '');
+                const cardDocStr = String(prof.smartCardDocPath || prof.smartCard || dMap.smartCard || dMap.rationCard || '');
                 docs.push({
                     type: 'smartCard',
                     title: cardNo ? `ஸ்மார்ட் ரேஷன் கார்டு (${cardNo})` : 'ஸ்மார்ட் ரேஷன் கார்டு',
@@ -675,15 +782,67 @@
                 });
             }
 
-            // 5.5 Community Proof (Family Community Certificate or School TC)
-            if (prof.communityCertificatePath || prof.familyCommunityProofPath || prof.communityProof || dMap.communityProof || b64Map.communityProofBase64) {
+            // 5.5 Community Proof & OBC Documents (Community Certificate, ITR / Income Proof)
+            if (prof.communityCertificate || prof.communityCertificatePath || prof.familyCommunityProofPath || prof.communityProof || dMap.communityCertificate || dMap.communityProof || b64Map.communityProofBase64 || b64Map.communityCertificateBase64) {
+                const isObcProfile = prof.subService === 'OBC' || prof.subService === 'OBC_CERTIFICATE';
+                const docKey = (dMap.communityCertificate || prof.communityCertificate || isObcProfile) ? 'communityCertificate' : 'communityProof';
                 docs.push({
-                    type: 'communityProof',
-                    title: 'குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC',
-                    titleEng: 'Family Community Certificate / TC',
-                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof?download=1&_t=${cacheBust}`,
-                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/communityProof?_t=${cacheBust}`,
+                    type: docKey,
+                    title: docKey === 'communityCertificate' ? 'சாதிச் சான்றிதழ் (Community Certificate)' : 'குடும்ப சாதிச் சான்றிதழ் / பள்ளி TC',
+                    titleEng: 'Community Certificate / TC',
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${docKey}?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${docKey}?_t=${cacheBust}`,
                     icon: 'fa-certificate'
+                });
+            }
+            if (prof.incomeTaxReturn || dMap.incomeTaxReturn || b64Map.incomeTaxReturnBase64) {
+                const itrStr = String(prof.incomeTaxReturn || dMap.incomeTaxReturn || '');
+                docs.push({
+                    type: 'incomeTaxReturn',
+                    title: 'வருமான வரி / வருமானச் சான்று (ITR / Income Proof)',
+                    titleEng: 'Income Tax Return / Income Proof',
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/incomeTaxReturn?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/incomeTaxReturn?_t=${cacheBust}`,
+                    icon: 'fa-file-invoice-dollar',
+                    isPdf: itrStr.toLowerCase().endsWith('.pdf')
+                });
+            }
+
+            // 5.6 First Graduate Proofs (Applicant 12th TC, Father TC, Mother TC)
+            if (prof.applicantEducationProof || prof.studentTc || dMap.applicantEducationProof || b64Map.applicantEducationProofBase64) {
+                const tcStr = String(prof.applicantEducationProof || prof.studentTc || dMap.applicantEducationProof || '');
+                docs.push({
+                    type: 'applicantEducationProof',
+                    title: 'மாணவர் 12-ஆம் வகுப்பு TC (Applicant 12th TC)',
+                    titleEng: 'Applicant Transfer Certificate',
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/applicantEducationProof?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/applicantEducationProof?_t=${cacheBust}`,
+                    icon: 'fa-graduation-cap',
+                    isPdf: tcStr.toLowerCase().endsWith('.pdf')
+                });
+            }
+            if (prof.fatherEducationProof || prof.fatherTc || dMap.fatherEducationProof || b64Map.fatherEducationProofBase64) {
+                const fStr = String(prof.fatherEducationProof || prof.fatherTc || dMap.fatherEducationProof || '');
+                docs.push({
+                    type: 'fatherEducationProof',
+                    title: 'தந்தையின் பள்ளி TC (Father TC)',
+                    titleEng: 'Father Transfer Certificate',
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/fatherEducationProof?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/fatherEducationProof?_t=${cacheBust}`,
+                    icon: 'fa-file-lines',
+                    isPdf: fStr.toLowerCase().endsWith('.pdf')
+                });
+            }
+            if (prof.motherEducationProof || prof.motherTc || dMap.motherEducationProof || b64Map.motherEducationProofBase64) {
+                const mStr = String(prof.motherEducationProof || prof.motherTc || dMap.motherEducationProof || '');
+                docs.push({
+                    type: 'motherEducationProof',
+                    title: 'தாயின் பள்ளி TC (Mother TC)',
+                    titleEng: 'Mother Transfer Certificate',
+                    downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/motherEducationProof?download=1&_t=${cacheBust}`,
+                    previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/motherEducationProof?_t=${cacheBust}`,
+                    icon: 'fa-file-lines',
+                    isPdf: mStr.toLowerCase().endsWith('.pdf')
                 });
             }
 

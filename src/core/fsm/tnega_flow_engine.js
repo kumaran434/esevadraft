@@ -95,6 +95,50 @@ const TNEGA_PORTAL_SCHEMAS = {
             { key: 'community', state: 'COMMUNITY_COMM_WAIT', label: 'வகுப்பு / பிரிவு (Community)' },
             { key: 'caste', state: 'COMMUNITY_CASTE_WAIT', label: 'சாதி / உட்பிரிவு (Caste / Sub-caste)' }
         ]
+    },
+    FIRST_GRADUATE_CERTIFICATE: {
+        serviceCode: 'REV-104',
+        bucketA_DocumentExtracted: [
+            'fullNameEng', 'fullNameTam', 'fatherNameEng', 'fatherNameTam',
+            'headAadhaar', 'headDob', 'headGender',
+            'doorNo', 'streetTam', 'village', 'taluk', 'district', 'pincode'
+        ],
+        bucketB_UserPrompted: [
+            { key: 'headAadhaarDocPath', state: 'FIRST_GRADUATE_AADHAAR_WAIT', label: 'மாணவர் ஆதார் அட்டை (Aadhaar Card)' },
+            { key: 'headPhotoPath', state: 'FIRST_GRADUATE_PHOTO_WAIT', label: 'மாணவர் பாஸ்போர்ட் புகைப்படம் (Photo <50KB)' },
+            { key: 'applicantEducationProof', state: 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT', label: 'மாணவரின் 12-ஆம் வகுப்பு TC / மதிப்பெண் பட்டியல்' },
+            { key: 'smartCard', state: 'FIRST_GRADUATE_SMARTCARD_WAIT', label: 'குடும்ப அட்டை (Smart Card)' },
+            { key: 'fatherEducationProof', state: 'FIRST_GRADUATE_FATHER_PROOF_WAIT', label: 'தந்தையின் பள்ளி மாற்றுச் சான்றிதழ் (Father TC)' },
+            { key: 'motherEducationProof', state: 'FIRST_GRADUATE_MOTHER_PROOF_WAIT', label: 'தாயாரின் பள்ளி மாற்றுச் சான்றிதழ் (Mother TC)' },
+            { key: 'canNumber', state: 'FIRST_GRADUATE_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
+            { key: 'motherNameTam', state: 'FIRST_GRADUATE_MOTHER_NAME_WAIT', label: 'தாயாரின் பெயர் (Mother Name)' },
+            { key: 'fatherEducation', state: 'FIRST_GRADUATE_PARENT_EDU_WAIT', label: 'தந்தை & தாய் கல்வித் தகுதி' },
+            { key: 'currentCourse', state: 'FIRST_GRADUATE_COURSE_WAIT', label: 'படிக்கும் படிப்பு / பட்டம் (Degree/Course)' },
+            { key: 'yearOfPassing', state: 'FIRST_GRADUATE_YOP_WAIT', label: '12-ஆம் வகுப்பு தேர்ச்சி ஆண்டு (Year of Passing)' },
+            { key: 'institutionName', state: 'FIRST_GRADUATE_COLLEGE_WAIT', label: 'கல்லூரி / கல்வி நிறுவனம் (College Name)' },
+            { key: 'familyGraduateConfirmed', state: 'FIRST_GRADUATE_FAMILY_CHECK_GATE', label: 'குடும்பத்தில் முதல் பட்டதாரி உறுதிப்படுத்தல்' }
+        ]
+    },
+    OBC_CERTIFICATE: {
+        serviceCode: 'REV-115',
+        bucketA_DocumentExtracted: [
+            'fullNameEng', 'fullNameTam', 'fatherNameEng', 'fatherNameTam',
+            'motherNameEng', 'motherNameTam', 'headAadhaar', 'headDob', 'headGender',
+            'doorNo', 'streetTam', 'village', 'taluk', 'district', 'pincode'
+        ],
+        bucketB_UserPrompted: [
+            { key: 'headPhotoPath', state: 'OBC_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <250px, <50KB)' },
+            { key: 'headAadhaarDocPath', state: 'OBC_AADHAAR_WAIT', label: 'முகவரி ஆதாரம் (ஆதார் அட்டை)' },
+            { key: 'communityProof', state: 'OBC_COMMUNITY_PROOF_WAIT', label: 'சாதிச் சான்றிதழ் (Community Certificate)' },
+            { key: 'incomeTaxReturn', state: 'OBC_INCOME_PROOF_WAIT', label: 'வருமான வரி / வருமானச் சான்று (ITR / Income Proof)' },
+            { key: 'canNumber', state: 'OBC_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
+            { key: 'motherNameTam', state: 'OBC_MOTHER_NAME_WAIT', label: 'தாயின் பெயர் (Mother Name)' },
+            { key: 'caste', state: 'OBC_CASTE_WAIT', label: 'OBC சாதி / உட்பிரிவு (Caste)' },
+            { key: 'occupation', state: 'OBC_OCCUPATION_WAIT', label: 'விண்ணப்பதாரர் பணி (Occupation)' },
+            { key: 'fatherOccupation', state: 'OBC_FATHER_OCC_WAIT', label: 'தந்தையின் தொழில் / நிலை' },
+            { key: 'motherOccupation', state: 'OBC_MOTHER_OCC_WAIT', label: 'தாயின் தொழில் / நிலை' },
+            { key: 'annualIncome', state: 'OBC_INCOME_WAIT', label: 'குடும்ப ஆண்டு வருமானம் (Annual Income)' }
+        ]
     }
 };
 
@@ -207,17 +251,22 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
     const hasIncomeProof = isPhysicalDocValid(
         p.incomeProof || p.salaryCertificatePath || p.salaryCertificate || p.documents?.incomeProof || p.documents?.salaryCertificate || sess.tempUploads?.incomeProof,
         sess.draftData?.base64Docs?.incomeProofBase64
-    );
+    ) || p.incomeProof === 'SELF_DECLARATION' || p.incomeProofType === 'SELF_DECLARATION' || p.salaryProofType === 'SELF_DECLARATION' || Boolean(p.annualIncome && p.profession);
+
     if (!hasIncomeProof) {
         sess.intakeState = 'INCOME_PROOF_WAIT';
         const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
-            `💼 **வருமான ஆதாரம் / சம்பளச் சான்று (Income Proof) தேவை:**\n\n` +
+            `💼 **வருமான விவரம் / சம்பளச் சான்று (Income Details / Proof):**\n\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
-            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-103 Portal Rule):**\n` +
-            `வருமானச் சான்றிதழ் விண்ணப்பிக்க **சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் (Self-Declaration)** போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
-            `தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும் (புகைப்படம் அல்லது PDF):`;
+            `💡 **அரசு நடைமுறை விதி (TNeGA REV-103 Rule):**\n` +
+            `விவசாயிகள், கூலித் தொழிலாளர்கள் மற்றும் முறைசாரா தொழிலாளர்களுக்கு **சம்பள ரசீது (Pay Slip) கட்டாயமில்லை!** நேரடி சுய அறிவிப்பு (Self-Declaration) மூலம் தொழில் மற்றும் மாத வருமானத்தை உள்ளிட்டே விண்ணப்பிக்கலாம்.\n\n` +
+            `👇 **தொழில் மற்றும் மாத வருமானத்தைத் தேர்ந்தெடுக்கவும் (அல்லது நேரடியாக தட்டச்சு செய்யவும்):**`;
         const options = [
-            { label: "📷 வருமான ஆதாரம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "🌾 விவசாயி (Farmer - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_FARMER_6000" },
+            { label: "🔨 கூலி வேலை (Daily Wage - மாதம் ₹6,000 / ஆண்டு ₹72,000)", value: "INCOME_DECL_COOLIE_6000" },
+            { label: "🏪 சிறு வியாபாரம் (மாதம் ₹7,000 / ஆண்டு ₹84,000)", value: "INCOME_DECL_BIZ_7000" },
+            { label: "🏢 தனியார் வேலை (மாதம் ₹8,000 / ஆண்டு ₹96,000)", value: "INCOME_DECL_PVT_8000" },
+            { label: "📷 சம்பளச் சான்று / Pay Slip பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
@@ -335,10 +384,11 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
             `💰 **குடும்ப மொத்த ஆண்டு வருமானம் எவ்வளவு?**\n\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
             `• 👨‍👩‍👧‍👦 **குடும்ப உறுப்பினர்கள்:** ${p.familyMemberCount || 1} நபர்\n\n` +
-            `வருமானச் சான்றிதழில் குறிப்பிட வேண்டிய ஆண்டு வருமானத்தைத் தேர்ந்தெடுக்கவும்:`;
+            `வருமானச் சான்றிதழில் குறிப்பிட வேண்டிய ஆண்டு வருமானத்தைத் தேர்ந்தெடுக்கவும் (மாதம் ₹6,000 என்றால் ஆண்டுக்கு ₹72,000):`;
         const options = [
-            { label: "₹60,000", value: "₹60,000" },
-            { label: "₹72,000", value: "₹72,000" },
+            { label: "₹60,000 (மாதம் ₹5,000)", value: "₹60,000" },
+            { label: "🌾 ₹72,000 (மாதம் ₹6,000)", value: "₹72,000" },
+            { label: "₹84,000 (மாதம் ₹7,000)", value: "₹84,000" },
             { label: "₹1,00,000", value: "₹1,00,000" },
             { label: "₹1,20,000", value: "₹1,20,000" }
         ];
@@ -352,12 +402,12 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
             `✅ குடும்ப ஆண்டு வருமானம் **₹${Number(p.annualIncome).toLocaleString('en-IN')}** எனப் பதிவானது!\n\n` +
             `💼 **விண்ணப்பதாரரின் தொழில் (Occupation) என்ன?**\n` +
-            `கீழே உள்ள தொழிலைத் தேர்ந்தெடுக்கவும்:`;
+            `கீழே உள்ள தொழிலைத் தேர்ந்தெடுக்கவும் (அல்லது தட்டச்சு செய்யவும்):`;
         const options = [
-            { label: "கூலி வேலை (Daily Wage / Coolie)", value: "கூலி வேலை" },
-            { label: "தனியார் துறை (Private Sector)", value: "தனியார் வேலை" },
-            { label: "விவசாயம் (Agriculture / Farmer)", value: "விவசாயம்" },
-            { label: "சிறு வணிகம் / வியாபாரம் (Small Business)", value: "வியாபாரம்" }
+            { label: "🌾 விவசாயம் (Agriculture / Farmer)", value: "விவசாயம்" },
+            { label: "🔨 கூலி வேலை (Daily Wage / Coolie)", value: "கூலி வேலை" },
+            { label: "🏪 சிறு வணிகம் / வியாபாரம் (Small Business)", value: "சிறு வணிகம் / வியாபாரம்" },
+            { label: "🏢 தனியார் துறை (Private Sector)", value: "தனியார் வேலை" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
     }
@@ -1006,10 +1056,557 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
     return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
 }
 
+/**
+ * Advances the TNeGA First Graduate Certificate (REV-104) Flow.
+ * Evaluates in strict sequential order:
+ * 1. Physical Document Gating (Aadhaar, Student Photo, 12th TC, Smart Card, Parents TC)
+ * 2. 13-digit CAN Gate
+ * 3. Mother's Name
+ * 4. Current Course Name
+ * 5. College / Institution Name
+ * 6. Family Graduate Eligibility Confirmation
+ * 7. 100% Ready Station (Pre-Submit Approval Gate)
+ */
+function advanceTnegaFirstGraduateFlow(sess, prefixMessage = '') {
+    sess.subService = 'FIRST_GRADUATE';
+    if (!sess.citizenProfile) sess.citizenProfile = {};
+    sess.citizenProfile.subService = 'FIRST_GRADUATE';
+
+    const p = sess.citizenProfile;
+
+    // =========================================================================
+    // PHASE 1: MANDATORY PHYSICAL DOCUMENT VERIFICATION GATE (BEFORE CAN!)
+    // =========================================================================
+
+    // 1.1 Aadhaar Card Verification
+    const hasAadhaarDoc = isPhysicalDocValid(
+        p.headAadhaarDocPath || p.documents?.headAadhaar || sess.tempUploads?.headAadhaar,
+        sess.draftData?.base64Docs?.headAadhaarBase64
+    );
+    const hasBasicDemographics = Boolean(p.headAadhaar || p.aadhaarNumber || p.fullNameTam || p.fullNameEng);
+
+    if (!hasAadhaarDoc || !hasBasicDemographics) {
+        sess.intakeState = 'FIRST_GRADUATE_AADHAAR_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🎓 **முதல் பட்டதாரி சான்றிதழ் (First Graduate Certificate - REV-104)**\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA Mandatory Document Gate):**\n` +
+            `முதல் பட்டதாரி சான்றிதழ் விண்ணப்பிக்க தேவையான ஆவணங்கள் முதலில் சரிபார்க்கப்பட வேண்டும்.\n\n` +
+            `📄 மாணவரின் பெயர், பிறந்த தேதி மற்றும் முகவரி விவரங்களைத் தானாகப் பெற **ஆதார் அட்டை (படம் அல்லது 2-in-1 PDF)** பதிவேற்றவும்:`;
+        const options = [
+            { label: "📷 மாணவர் ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    if (sess.tempUploads?.headAadhaarFront && !sess.tempUploads?.headAadhaarBack && !p.fatherNameTam && !p.fatherNameEng && !p.pincode) {
+        sess.intakeState = 'FIRST_GRADUATE_AADHAAR_BACK_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🔄 **ஆதார் முன்பக்கம் பெறப்பட்டது! தந்தை பெயர் மற்றும் முகவரி உள்ள பின்பக்கத்தை (Back Side) பதிவேற்றவும்:**`;
+        const options = [
+            { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.2 Student Passport Photo Gate (<50KB, direct photo)
+    const hasPhotoDoc = isPhysicalDocValid(
+        p.headPhotoPath || p.photoPath || p.documents?.profilePhoto || p.documents?.headPhoto || sess.tempUploads?.profilePhoto || sess.tempUploads?.headPhoto,
+        sess.draftData?.base64Docs?.profilePhotoBase64 || sess.draftData?.base64Docs?.headPhotoBase64
+    );
+    if (!hasPhotoDoc) {
+        sess.intakeState = 'FIRST_GRADUATE_PHOTO_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📷 **மாணவரின் பாஸ்போர்ட் புகைப்படம் தேவை:**\n\n` +
+            `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Portal Rule):**\n` +
+            `முதல் பட்டதாரி சான்றிதழ் விண்ணப்பத்திற்கு மாணவரின் நேரடி பாஸ்போர்ட் புகைப்படம் (<50KB) போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து நேரடி பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும் (ஆதார் அட்டையிலிருந்து படம் வெட்டப்பட மாட்டாது):`;
+        const options = [
+            { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.3 Applicant 12th Transfer Certificate (TC) / Marksheet Gate
+    const hasApplicantProof = isPhysicalDocValid(
+        p.applicantEducationProof || p.studentTc || p.twelfthMarksheet || p.documents?.applicantEducationProof || p.documents?.studentTc || sess.tempUploads?.applicantEducationProof,
+        sess.draftData?.base64Docs?.applicantEducationProofBase64
+    );
+    if (!hasApplicantProof) {
+        sess.intakeState = 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📜 **மாணவரின் 12-ஆம் வகுப்பு பள்ளி மாற்றுச் சான்றிதழ் (TC) தேவை:**\n\n` +
+            `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Portal Rule):**\n` +
+            `முதல் பட்டதாரி சான்றிதழுக்கு விண்ணப்பதாரரின் **12-ஆம் வகுப்பு பள்ளி மாற்றுச் சான்றிதழ் (School TC)** அல்லது **மதிப்பெண் பட்டியல் (Marksheet)** போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து மாணவரின் 12-ஆம் வகுப்பு TC அல்லது மதிப்பெண் பட்டியலைப் பதிவேற்றவும் (புகைப்படம் அல்லது PDF):`;
+        const options = [
+            { label: "📷 மாணவர் 12th TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.4 Family Smart Card Gate
+    const hasSmartCard = isPhysicalDocValid(
+        p.smartCard || p.rationCard || p.smartCardDocPath || p.documents?.smartCard || p.documents?.rationCard || sess.tempUploads?.smartCard,
+        sess.draftData?.base64Docs?.smartCardBase64
+    );
+    if (!hasSmartCard) {
+        sess.intakeState = 'FIRST_GRADUATE_SMARTCARD_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📑 **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) தேவை:**\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Portal Rule):**\n` +
+            `குடும்ப உறுப்பினர்களின் விவரங்களைச் சரிபார்க்க **குடும்ப ஸ்மார்ட் அட்டை (Smart Card)** போர்ட்டலில் கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து குடும்ப ஸ்மார்ட் அட்டையைப் பதிவேற்றவும்:`;
+        const options = [
+            { label: "📷 குடும்ப அட்டை (Smart Card) பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.5 Father Transfer Certificate (TC) Gate — mandatory on TNeGA portal (Code 180)
+    const hasFatherProof = isPhysicalDocValid(
+        p.fatherEducationProof || p.fatherTc || p.fatherEducationProofPath || p.documents?.fatherEducationProof || p.documents?.fatherTc || sess.tempUploads?.fatherEducationProof,
+        sess.draftData?.base64Docs?.fatherEducationProofBase64
+    );
+    if (!hasFatherProof) {
+        sess.intakeState = 'FIRST_GRADUATE_FATHER_PROOF_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👨 **தந்தையின் பள்ளி மாற்றுச் சான்றிதழ் (Father TC / Educational Proof) தேவை:**\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Portal Rule):**\n` +
+            `அரசு போர்ட்டலில் **Father Transfer Certificate** கட்டாயமாகப் பதிவேற்றப்பட வேண்டும்.\n\n` +
+            `தயவுசெய்து **தந்தையின் பள்ளி TC அல்லது கல்வி ஆவணத்தைப்** பதிவேற்றவும்:`;
+        const options = [
+            { label: "📷 தந்தையின் TC / ஆவணம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.6 Mother Transfer Certificate (TC) Gate — mandatory on TNeGA portal (Code 181)
+    const hasMotherProof = isPhysicalDocValid(
+        p.motherEducationProof || p.motherTc || p.motherEducationProofPath || p.documents?.motherEducationProof || p.documents?.motherTc || sess.tempUploads?.motherEducationProof,
+        sess.draftData?.base64Docs?.motherEducationProofBase64
+    );
+    if (!hasMotherProof) {
+        sess.intakeState = 'FIRST_GRADUATE_MOTHER_PROOF_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👩 **தாயாரின் பள்ளி மாற்றுச் சான்றிதழ் (Mother TC / Educational Proof) தேவை:**\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Portal Rule):**\n` +
+            `அரசு போர்ட்டலில் **Mother Transfer Certificate** கட்டாயமாகப் பதிவேற்றப்பட வேண்டும் (பள்ளிக்குச் செல்லாதவரெனில் சுய அறிவிப்பு ஆவணம் பதிவேற்றலாம்).\n\n` +
+            `தயவுசெய்து **தாயாரின் பள்ளி TC அல்லது கல்வி ஆவணத்தைப்** பதிவேற்றவும்:`;
+        const options = [
+            { label: "📷 தாயாரின் TC / ஆவணம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // =========================================================================
+    // PHASE 2: CAN VERIFICATION GATE
+    // =========================================================================
+    const resolvedCan = String(p.canNumber || sess.canNumber || p.can || '').replace(/\D+/g, '');
+    if (resolvedCan && !p.canNumber) p.canNumber = resolvedCan;
+    if (resolvedCan && !sess.canNumber) sess.canNumber = resolvedCan;
+    const hasCan = Boolean(resolvedCan && resolvedCan.length >= 11);
+
+    if (!hasCan) {
+        sess.intakeState = 'FIRST_GRADUATE_CAN_GATE';
+        const aadhDisp = (p.headAadhaar || p.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim();
+        const nameDisp = p.fullNameTam || p.fullNameEng || '';
+        let welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ **தேவையான அனைத்து ஆவணங்களும் பெறப்பட்டன!** 🛡️\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA Portal Rule):**\n` +
+            `முதல் பட்டதாரி சான்றிதழ் போர்ட்டலில் விண்ணப்பிக்க **13-இலக்க CAN எண் (Citizen Access Number)** தேவை.\n\n`;
+        if (nameDisp || aadhDisp) {
+            welcomeText += (nameDisp ? `• 👤 **மாணவர்:** ${nameDisp}\n` : '') +
+                           (aadhDisp ? `• 🪪 **ஆதார் எண்:** ${aadhDisp}\n\n` : '\n');
+        }
+        welcomeText += `உங்களிடம் ஏற்கெனவே CAN எண் உள்ளதா அல்லது போர்ட்டலில் தேட / புதிதாகப் பதிவு செய்ய வேண்டுமா?`;
+        const options = [
+            { label: "🔍 CAN எண் தேடு (Search CAN)", value: "CAN_SEARCH_PROMPT" },
+            { label: "📝 புதிய CAN பதிவு செய் (Register New CAN)", value: "CAN_REGISTER_PROMPT" },
+            { label: "🔢 என்னிடம் CAN எண் உள்ளது (Direct Input)", value: "CAN_DIRECT_INPUT" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // =========================================================================
+    // PHASE 3: SERVICE-SPECIFIC APPLICATION QUESTIONS (Bucket B)
+    // =========================================================================
+
+    // 3.1 Mother's Name Gate
+    const hasMother = Boolean(p.motherNameTam || p.motherNameEng || p.motherName);
+    if (!hasMother) {
+        sess.intakeState = 'FIRST_GRADUATE_MOTHER_NAME_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ **TNeGA CAN எண்:** **${p.canNumber}** 🛡️\n` +
+            `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `⚠️ **கட்டாய அரசு விவரம் (Mandatory Detail):**\n` +
+            `முதல் பட்டதாரி சான்றிதழ் படிவத்தில் தாயின் பெயர் கட்டாயமாகும்.\n\n` +
+            `தயவுசெய்து **தாயாரின் பெயரை** உள்ளிடவும் (எ.கா: தேவகி அல்லது Devaki):`;
+        return { text: welcomeText, options: [], step: sess.intakeState };
+    }
+
+    // 3.2 Current Course Gate
+    const hasCourse = Boolean(p.currentCourse || p.degreeCourse || p.courseName);
+    if (!hasCourse) {
+        sess.intakeState = 'FIRST_GRADUATE_COURSE_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ **TNeGA CAN எண்:** **${p.canNumber}** 🛡️\n` +
+            `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n\n` +
+            `🎓 **மாணவர் கல்லூரியில் படிக்கும் அல்லது சேரவுள்ள படிப்பு (Degree / Course) எது?**\n\n` +
+            `கீழே உள்ள விருப்பத்தைத் தேர்ந்தெடுக்கவும் அல்லது படிப்பின் பெயரை நேரடியாக தட்டச்சு செய்யவும்:`;
+        const options = [
+            { label: "💻 B.E. / B.Tech (பொறியியல்)", value: "B.E. Computer Science and Engineering" },
+            { label: "🩺 M.B.B.S / B.D.S (மருத்துவம்)", value: "M.B.B.S (Medicine)" },
+            { label: "🧪 B.Sc (அறிவியல்)", value: "B.Sc Computer Science" },
+            { label: "💼 B.Com (வணிகவியல்)", value: "B.Com" },
+            { label: "📚 B.A (கலை)", value: "B.A English" },
+            { label: "🌾 B.Sc Agriculture (விவசாயம்)", value: "B.Sc Agriculture" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 3.3 College / Institution Name Gate
+    const hasCollege = Boolean(p.institutionName || p.collegeName || p.schoolCollegeName);
+    if (!hasCollege) {
+        sess.intakeState = 'FIRST_GRADUATE_COLLEGE_WAIT';
+        const cCourse = p.currentCourse || p.degreeCourse || 'B.E.';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ படிப்பு: **${cCourse}** எனப் பதிவானது!\n\n` +
+            `🏛️ **மாணவர் படிக்கும் அல்லது சேர்க்கை பெறவுள்ள கல்லூரி / கல்வி நிறுவனத்தின் பெயர் என்ன?**\n\n` +
+            `தயவுசெய்து கல்லூரியின் பெயரைத் தட்டச்சு செய்யவும் (எ.கா: Government College of Technology, Coimbatore / அண்ணா பல்கலைக்கழகம்):`;
+        const options = [
+            { label: "🏛️ அரசு பொறியியல் கல்லூரி (GCT)", value: "Government College of Technology" },
+            { label: "🏛️ அண்ணா பல்கலைக்கழகம் (Anna University)", value: "Anna University Chennai" },
+            { label: "🏛️ தந்தை பெரியார் அரசு பொறியியல் கல்லூரி", value: "Thanthai Periyar Govt Institute of Technology, Vellore" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 3.4 Parents' Educational Qualification Gate
+    if (!p.fatherEducation || !p.motherEducation) {
+        sess.intakeState = 'FIRST_GRADUATE_PARENT_EDU_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👨‍👩‍👦 **பெற்றோரின் கல்வித் தகுதி (Parents' Education Qualification) என்ன?**\n\n` +
+            `• 👨 **தந்தை:** ${p.fatherNameTam || p.fatherNameEng || 'தந்தை'}\n` +
+            `• 👩 **தாய்:** ${p.motherNameTam || p.motherNameEng || 'தாய்'}\n\n` +
+            `TNeGA போர்ட்டலில் குடும்ப உறுப்பினர் அட்டவணையில் சேர்க்க, பெற்றோரின் கல்வித் தகுதியைத் தேர்ந்தெடுக்கவும்:`;
+        const options = [
+            { label: "📘 தந்தை: 10th | தாய்: 8th வகுப்பு", value: "PARENT_EDU:10th Standard|8th Standard" },
+            { label: "📕 தந்தை: <10th | தாய்: படிக்காதவர்", value: "PARENT_EDU:Less than 10th standard|Non literate" },
+            { label: "📗 இருவரும் 10th / 12th வகுப்பு", value: "PARENT_EDU:10th or 12th Standard|10th or 12th Standard" },
+            { label: "📙 இருவரும் பள்ளிக்குச் செல்லாதவர் (Non literate)", value: "PARENT_EDU:Non literate|Non literate" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 3.5 Year of Passing 12th / Qualifying Exam Gate
+    if (!p.yearOfPassing && !p.passingYear) {
+        sess.intakeState = 'FIRST_GRADUATE_YOP_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📅 **மாணவர் 12-ஆம் வகுப்பு (Higher Secondary) தேர்ச்சி பெற்ற ஆண்டு எது?**\n\n` +
+            `தேர்ச்சி ஆண்டைத் தேர்ந்தெடுக்கவும் அல்லது 4 இலக்க ஆண்டை உள்ளிடவும்:`;
+        const options = [
+            { label: "📅 2026", value: "2026" },
+            { label: "📅 2025", value: "2025" },
+            { label: "📅 2024", value: "2024" },
+            { label: "📅 2023", value: "2023" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 3.6 Family Graduate Eligibility Confirmation Gate
+    const isGraduateConfirmed = Boolean(p.familyGraduateConfirmed);
+    if (!isGraduateConfirmed) {
+        sess.intakeState = 'FIRST_GRADUATE_FAMILY_CHECK_GATE';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🛡️ **முதல் பட்டதாரி தகுதி உறுதிப்படுத்தல் (Eligibility Confirmation):**\n\n` +
+            `⚠️ **முக்கிய அரசு விதி (TNeGA REV-104 Mandatory Rule):**\n` +
+            `குடும்பத்தில் தந்தை, தாய், உடன்பிறந்தோர் உள்ளிட்ட எவரும் இதுவரை பட்டப்படிப்பு (Degree) படித்திருக்கக் கூடாது.\n\n` +
+            `குடும்பத்தில் வேறு யாரும் பட்டப்படிப்பு முடிக்கவில்லை என்பதையும், மாணவரே குடும்பத்தின் முதல் பட்டதாரி என்பதையும் உறுதி செய்கிறீர்களா?`;
+        const options = [
+            { label: "✅ ஆம், குடும்பத்தில் முதல் பட்டதாரி இவரே", value: "FIRST_GRADUATE_CONFIRMED" },
+            { label: "❌ இல்லை, குடும்பத்தில் பட்டதாரி உள்ளார்", value: "FIRST_GRADUATE_INELIGIBLE" }
+        ];
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // =========================================================================
+    // PHASE 4: 100% READY STATION (Pre-Submit Approval Gate)
+    // =========================================================================
+    sess.intakeState = 'READY_TO_APPLY_FIRST_GRADUATE';
+    const chk = evaluateServiceChecklist('FIRST_GRADUATE_CERTIFICATE', sess.citizenProfile, sess.draftData?.base64Docs || {});
+    const yopDisp = p.yearOfPassing || p.passingYear || '2024';
+    const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+        `🎉 **முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பத்திற்கான விவரங்கள் 100% தயாராக உள்ளன!** 🛡️\n\n` +
+        `📋 **விவரங்கள் சுருக்கம்:**\n` +
+        `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
+        `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng}\n` +
+        `• 👨‍👧 **தந்தை பெயர்:** ${p.fatherNameTam || p.fatherNameEng || '—'} (கல்வி: ${p.fatherEducation || '10th'})\n` +
+        `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'} (கல்வி: ${p.motherEducation || '8th'})\n` +
+        `• 🎓 **படிப்பு:** ${p.currentCourse || p.degreeCourse || 'B.E.'} (12th தேர்ச்சி: ${yopDisp}) ✅\n` +
+        `• 🏛️ **கல்வி நிறுவனம்:** ${p.institutionName || p.collegeName || '—'} ✅\n` +
+        `• 📜 **மாணவர் 12th TC:** ${hasApplicantProof ? 'பதிவேற்றப்பட்டது ✅' : 'விடுபட்டுள்ளது ❌'}\n` +
+        `• 📑 **குடும்ப ஸ்மார்ட் கார்டு:** ${hasSmartCard ? 'பதிவேற்றப்பட்டது ✅' : 'விடுபட்டுள்ளது ❌'}\n` +
+        `• 👨 **தந்தை TC:** ${hasFatherProof ? 'பதிவேற்றப்பட்டது ✅' : 'விடுபட்டுள்ளது ❌'}\n` +
+        `• 👩 **தாய் TC:** ${hasMotherProof ? 'பதிவேற்றப்பட்டது ✅' : 'விடுபட்டுள்ளது ❌'}\n` +
+        `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
+        (chk && chk.summaryTamil ? `${chk.summaryTamil}\n\n` : '') +
+        `இப்போது இ-சேவை (TNeGA REV-104) போர்ட்டல் மூலம் விண்ணப்பிக்கத் தொடங்கலாம்!`;
+    const options = [
+        { label: "🚀 இ-சேவை போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கு", value: "START_FIRST_GRADUATE_APPLY" },
+        { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Details)", value: "TRIGGER_EDIT_MODAL" },
+        { label: "🔄 புதிய விண்ணப்பம் தொடங்க (Reset)", value: "reset" }
+    ];
+    return { text: welcomeText, options, step: sess.intakeState, actionRequired: 'open_edit_modal' };
+}
+
+// ============================================================================
+// DECLARATION-FIRST + UNIVERSAL DELTA: OBC CERTIFICATE FLOW ENGINE (REV-115)
+// ============================================================================
+function advanceTnegaObcFlow(sess, prefixMessage = '') {
+    sess.subService = 'OBC';
+    if (!sess.citizenProfile) sess.citizenProfile = {};
+    sess.citizenProfile.subService = 'OBC';
+
+    const p = sess.citizenProfile;
+    const docs = p.documents || {};
+    const tu = sess.tempUploads || {};
+    const b64 = sess.draftData?.base64Docs || {};
+
+    // PHASE 1: MANDATORY PHYSICAL DOCUMENTS FIRST (Auto-skipping already saved documents!)
+    // 1.1 Passport Photo (<250x250 px, <50KB)
+    const hasPhoto = isPhysicalDocValid(p.headPhotoPath || docs.profilePhoto || tu.profilePhoto, b64.profilePhotoBase64 || b64.photoBase64);
+    if (!hasPhoto) {
+        sess.intakeState = 'OBC_PHOTO_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📜 **OBC சான்றிதழ் (REV-115 Other Backward Classes Certificate)**\n\n` +
+            `📸 முதலில் விண்ணப்பதாரரின் **பாஸ்போர்ட் புகைப்படத்தை** (Photo <250x250px, <50KB) பதிவேற்றவும்:`;
+        return {
+            text,
+            options: [
+                { label: "📸 புகைப்படம் பதிவேற்றுக (Upload Photo)", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // 1.2 Address Proof / Aadhaar Card (Extracts Bucket A automatically)
+    const hasAadhaarDoc = isPhysicalDocValid(p.headAadhaarDocPath || docs.headAadhaar || tu.headAadhaar, b64.headAadhaarBase64);
+    const hasBasicDemographics = Boolean(p.headAadhaar || p.aadhaarNumber || p.fullNameTam || p.fullNameEng);
+    if (!hasAadhaarDoc || !hasBasicDemographics) {
+        sess.intakeState = 'OBC_AADHAAR_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📜 **OBC சான்றிதழ் (REV-115) — ஆவணச் சரிபார்ப்பு**\n\n` +
+            `📄 பெயர் மற்றும் முகவரி விவரங்களைத் தானாகப் பெற விண்ணப்பதாரரின் **ஆதார் அட்டை (படம் அல்லது 2-in-1 PDF)** பதிவேற்றவும்:`;
+        return {
+            text,
+            options: [
+                { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // 1.3 Community Certificate (Extracts OBC Caste automatically)
+    const hasCommDoc = isPhysicalDocValid(
+        p.communityCertificate || p.communityCertificatePath || p.communityProof || p.familyCommunityProofPath || docs.communityCertificate || docs.communityProof || tu.communityCertificate || tu.communityProof,
+        b64.communityCertificateBase64 || b64.communityProofBase64
+    );
+    if (!hasCommDoc) {
+        sess.intakeState = 'OBC_COMMUNITY_PROOF_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📜 **கட்டாய ஆவணம் 3/4: சாதிச் சான்றிதழ் (Community Certificate)**\n\n` +
+            `REV-115 OBC சான்றிதழுக்கு விண்ணப்பதாரரின் (அல்லது தந்தை/உடன்பிறந்தோரின்) **சாதிச் சான்றிதழை** பதிவேற்றவும்.\n` +
+            `*(சாதிப் பெயர் தானாகப் பிரித்தெடுக்கப்படும் ✨)*`;
+        return {
+            text,
+            options: [
+                { label: "📜 சாதிச் சான்றிதழ் பதிவேற்றுக (Upload Community Cert)", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // 1.4 Income Tax Return / Income Proof (Portal Slot 358 Mandatory)
+    const hasIncomeDoc = isPhysicalDocValid(
+        p.incomeTaxReturn || p.incomeProof || p.salarySlip || p.incomeCertificate || docs.incomeTaxReturn || docs.incomeProof || docs.salarySlip || docs.incomeCertificate || tu.incomeTaxReturn || tu.incomeProof,
+        b64.incomeTaxReturnBase64 || b64.incomeProofBase64 || b64.salarySlipBase64
+    );
+    if (!hasIncomeDoc) {
+        sess.intakeState = 'OBC_INCOME_PROOF_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📜 **கட்டாய ஆவணம் 4/4: வருமான வரி / வருமானச் சான்று (ITR / Income Proof)**\n\n` +
+            `TNeGA OBC போர்ட்டலில் பதிவேற்ற **வருமான வரி படிவம் (ITR) அல்லது வருமானச் சான்றிதழ் / சம்பளச் சான்று** பதிவேற்றவும்:`;
+        return {
+            text,
+            options: [
+                { label: "💰 வருமான / ITR சான்று பதிவேற்றுக (Upload ITR / Income Proof)", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // PHASE 2: CAN NUMBER CHECK (Auto-skipped for Existing Customers with saved CAN)
+    const hasValidCan = Boolean(p.canNumber && /^\d{11,15}$/.test(String(p.canNumber).trim()));
+    if (!hasValidCan) {
+        sess.intakeState = 'OBC_CAN_GATE';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ தேவையான ஆவணங்கள் அனைத்தும் பெறப்பட்டன!\n\n` +
+            `🔢 **அடுத்த படி: CAN எண் சரிபார்ப்பு (REV-115)**\n` +
+            `விண்ணப்பதாரருக்கு ஏற்கனவே 13-இலக்க CAN எண் உள்ளதா, அல்லது மொபைல்/ஆதார் மூலம் போர்ட்டலில் தேடவா?`;
+        return {
+            text,
+            options: [
+                { label: "🔍 போர்ட்டலில் CAN எண் தேடு (Auto CAN Search)", value: "TRIGGER_CAN_SEARCH" },
+                { label: "🔢 என்னிடம் CAN எண் உள்ளது (Enter CAN)", value: "CAN_DIRECT_INPUT" },
+                { label: "📝 புதிய CAN பதிவு செய் (Register New CAN)", value: "CAN_REGISTER_PROMPT" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // PHASE 3: UNIVERSAL DELTA — ASK ONLY MISSING BUCKET-B PORTAL FIELDS SEQUENTIALLY
+    if (!p.motherNameTam && !p.motherNameEng) {
+        sess.intakeState = 'OBC_MOTHER_NAME_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `✅ **CAN எண் (${p.canNumber}) & ஆவணங்கள் தயார்!**\n\n` +
+            `👩 தயவுசெய்து **தாயாரின் பெயரை (Mother's Name)** உள்ளிடவும்:`;
+        return {
+            text,
+            options: [{ label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }],
+            step: sess.intakeState
+        };
+    }
+
+    if (!p.caste && !p.subCaste) {
+        sess.intakeState = 'OBC_CASTE_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `🏷️ **விண்ணப்பதாரரின் OBC சாதிப் பெயர் (Caste / Sub-Caste)** என்ன?\n` +
+            `கீழே தேர்ந்தெடுக்கவும் அல்லது தட்டச்சு செய்யவும்:`;
+        return {
+            text,
+            options: [
+                { label: "வன்னியர் (Vanniyar)", value: "OBC_CASTE:Vanniyar" },
+                { label: "அகமுடையார் (Agamudayar)", value: "OBC_CASTE:Agamudayar" },
+                { label: "கவுண்டர் (Gounder)", value: "OBC_CASTE:Gounder" },
+                { label: "முதலியார் (Mudaliyar)", value: "OBC_CASTE:Mudaliyar" },
+                { label: "யாதவர் (Yadav)", value: "OBC_CASTE:Yadav" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    if (!p.occupation && !p.applicantOccupation && !p.profession) {
+        sess.intakeState = 'OBC_OCCUPATION_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `💼 **விண்ணப்பதாரரின் தற்போதைய பணி / நிலை (Occupational Group)** எது?`;
+        return {
+            text,
+            options: [
+                { label: "🎓 மாணவர் (Student)", value: "OBC_OCC:Student" },
+                { label: "💼 பணி / வேலை (Service)", value: "OBC_OCC:Service" },
+                { label: "🏪 வியாபாரம் / சுயதொழில் (Business)", value: "OBC_OCC:Business" },
+                { label: "🌾 விவசாயம் (Agriculture)", value: "OBC_OCC:Agriculture" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    if (!p.fatherOccupation && p.fatherAlive === undefined) {
+        sess.intakeState = 'OBC_FATHER_OCC_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👨‍👧 **தந்தையின் (${p.fatherNameTam || p.fatherNameEng || 'தந்தை'}) தொழில் / பணி நிலை** என்ன?`;
+        return {
+            text,
+            options: [
+                { label: "🌾 விவசாயம் (Self Employed - Agriculture)", value: "OBC_FA_OCC:Self Employed|Farmer" },
+                { label: "🏪 சுயதொழில் / வியாபாரம் (Self Employed)", value: "OBC_FA_OCC:Self Employed|Business" },
+                { label: "💼 தனியார் பணி (Employed - Private)", value: "OBC_FA_OCC:Employed|Private Service" },
+                { label: "🏛️ அரசுப் பணி (Employed - Govt)", value: "OBC_FA_OCC:Employed|Government Service" },
+                { label: "🕊️ காலமானார் (Deceased / No)", value: "OBC_FA_OCC:Deceased" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    if (!p.motherOccupation && p.motherAlive === undefined) {
+        sess.intakeState = 'OBC_MOTHER_OCC_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👩 **தாயின் (${p.motherNameTam || p.motherNameEng || 'தாய்'}) தொழில் / பணி நிலை** என்ன?`;
+        return {
+            text,
+            options: [
+                { label: "🏠 இல்லத்தரசி (Homemaker / Unemployed)", value: "OBC_MO_OCC:Unemployed|Homemaker" },
+                { label: "🌾 விவசாயம் (Self Employed - Agriculture)", value: "OBC_MO_OCC:Self Employed|Farmer" },
+                { label: "💼 தனியார் / அரசுப் பணி (Employed)", value: "OBC_MO_OCC:Employed|Service" },
+                { label: "🕊️ காலமானார் (Deceased / No)", value: "OBC_MO_OCC:Deceased" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    if (!p.annualIncome && !p.familyAnnualIncome) {
+        sess.intakeState = 'OBC_INCOME_WAIT';
+        const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `💰 **குடும்பத்தின் மொத்த ஆண்டு வருமானம் (Annual Income)** எவ்வளவு?`;
+        return {
+            text,
+            options: [
+                { label: "₹72,000 / ஆண்டு", value: "OBC_INCOME:72000" },
+                { label: "₹96,000 / ஆண்டு", value: "OBC_INCOME:96000" },
+                { label: "₹1,20,000 / ஆண்டு", value: "OBC_INCOME:120000" },
+                { label: "₹2,40,000 / ஆண்டு", value: "OBC_INCOME:240000" }
+            ],
+            step: sess.intakeState
+        };
+    }
+
+    // ALL READY -> READY_TO_SUBMIT_OBC
+    sess.intakeState = 'READY_TO_SUBMIT_OBC';
+    const occDisp = p.occupation || p.applicantOccupation || p.profession || 'Service';
+    const incDisp = p.annualIncome || p.familyAnnualIncome || '72000';
+    const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
+        `🎉 **OBC சான்றிதழ் (REV-115) விண்ணப்பத்திற்கான விவரங்கள் 100% தயாராக உள்ளன!** 🛡️\n\n` +
+        `📋 **விவரங்கள் சுருக்கம்:**\n` +
+        `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
+        `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng}\n` +
+        `• 🏷️ **OBC சாதி:** **${p.caste || p.subCaste}** ✅\n` +
+        `• 💼 **பணி நிலை:** ${occDisp} | 👨 தந்தை: ${p.fatherOccupation || (p.fatherAlive === false ? 'காலமானார்' : '—')} | 👩 தாய்: ${p.motherOccupation || (p.motherAlive === false ? 'காலமானார்' : '—')} ✅\n` +
+        `• 💰 **குடும்ப ஆண்டு வருமானம்:** ₹${incDisp} ✅\n` +
+        `• 📁 **ஆவணங்கள் (4/4 தயார்):** புகைப்படம் ✅ | ஆதார் ✅ | சாதிச் சான்றிதழ் ✅ | வருமான/ITR சான்று ✅\n` +
+        `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
+        `இப்போது இ-சேவை (TNeGA REV-115) போர்ட்டலில் நேரடி ஆட்டோமேஷன் தொடங்கலாம்!`;
+
+    return {
+        text,
+        options: [
+            { label: "🚀 இ-சேவை போர்ட்டலில் விண்ணப்பிக்கத் தொடங்கு (REV-115)", value: "START_OBC_APPLY" },
+            { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Edit Details)", value: "TRIGGER_EDIT_MODAL" },
+            { label: "🔄 புதிய விண்ணப்பம் தொடங்க (Reset)", value: "reset" }
+        ],
+        step: sess.intakeState,
+        actionRequired: 'open_edit_modal'
+    };
+}
+
 module.exports = {
     TNEGA_PORTAL_SCHEMAS,
     advanceTnegaIncomeFlow,
     advanceTnegaCanRegisterFlow,
     advanceTnegaResidenceFlow,
-    advanceTnegaCommunityFlow
+    advanceTnegaCommunityFlow,
+    advanceTnegaFirstGraduateFlow,
+    advanceTnegaObcFlow
 };

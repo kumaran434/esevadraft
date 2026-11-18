@@ -16,11 +16,18 @@ function getProfileValue(profile, key) {
     if (key === 'motherNameEng') return profile.motherNameEng || profile.motherName || profile.motherNameTam || null;
     if (key === 'fatherNameEng') return profile.fatherNameEng || profile.fatherName || profile.fatherNameTam || null;
     if (key === 'fatherNameTam') return profile.fatherNameTam || profile.fatherName || profile.fatherNameEng || null;
+    if (key === 'streetEng') return profile.streetEng || profile.street || profile.streetTam || null;
+    if (key === 'streetTam') return profile.streetTam || profile.street || profile.streetEng || null;
     if (key === 'canNumber') return profile.canNumber || profile.can || null;
     if (key === 'community') return profile.community || profile.caste || profile.socialCategory || null;
     if (key === 'headAadhaar') return profile.headAadhaar || profile.aadhaarNumber || profile.aadhaar || null;
     if (key === 'fullNameEng') return profile.fullNameEng || profile.fullName || profile.headNameEng || null;
     if (key === 'fullNameTam') return profile.fullNameTam || profile.fullName || profile.headNameTam || null;
+    if (key === 'currentCourse') return profile.currentCourse || profile.degreeCourse || profile.courseName || null;
+    if (key === 'institutionName') return profile.institutionName || profile.collegeName || profile.schoolCollegeName || null;
+    if (key === 'fatherEducation') return profile.fatherEducation || profile.fatherQualification || null;
+    if (key === 'motherEducation') return profile.motherEducation || profile.motherQualification || null;
+    if (key === 'yearOfPassing') return profile.yearOfPassing || profile.passingYear || null;
     if (key.includes('.')) {
         const parts = key.split('.');
         let val = profile;
@@ -115,9 +122,27 @@ function evaluateServiceChecklist(serviceId, profile = {}, base64Docs = {}) {
             } else if (doc.key === 'incomeProof') {
                 candidatePaths.push(profile.incomeProof, profile.salaryCertificate, profile.salaryCertificatePath, profile.documents?.incomeProof, profile.documents?.salaryCertificate);
                 candidateB64.push(base64Docs.incomeProofBase64, base64Docs.salaryCertificateBase64);
+                if (profile.incomeProof === 'SELF_DECLARATION' || profile.incomeProofType === 'SELF_DECLARATION' || profile.salaryProofType === 'SELF_DECLARATION' || Boolean(profile.annualIncome && profile.profession)) {
+                    isPresent = true;
+                }
             } else if (doc.key === 'residenceProof') {
                 candidatePaths.push(profile.residenceProof?.docPath, profile.residenceProof, profile.gasDetails?.gasBookPath, profile.gasBook, profile.documents?.residenceProof, profile.documents?.gasBook);
                 candidateB64.push(base64Docs.residenceProofBase64, base64Docs.gasBookBase64);
+            } else if (doc.key === 'applicantEducationProof') {
+                candidatePaths.push(profile.applicantEducationProof, profile.studentTc, profile.twelfthMarksheet, profile.bonafideCertificate, profile.documents?.applicantEducationProof, profile.documents?.studentTc);
+                candidateB64.push(base64Docs.applicantEducationProofBase64, base64Docs.studentTcBase64);
+            } else if (doc.key === 'smartCard') {
+                candidatePaths.push(profile.smartCard, profile.rationCard, profile.smartCardDocPath, profile.documents?.smartCard, profile.documents?.rationCard);
+                candidateB64.push(base64Docs.smartCardBase64, base64Docs.rationCardBase64);
+            } else if (doc.key === 'fatherEducationProof') {
+                candidatePaths.push(profile.fatherEducationProof, profile.fatherTc, profile.fatherEducationProofPath, profile.documents?.fatherEducationProof, profile.documents?.fatherTc);
+                candidateB64.push(base64Docs.fatherEducationProofBase64, base64Docs.fatherTcBase64);
+            } else if (doc.key === 'motherEducationProof') {
+                candidatePaths.push(profile.motherEducationProof, profile.motherTc, profile.motherEducationProofPath, profile.documents?.motherEducationProof, profile.documents?.motherTc);
+                candidateB64.push(base64Docs.motherEducationProofBase64, base64Docs.motherTcBase64);
+            } else if (doc.key === 'selfDeclaration') {
+                candidatePaths.push(profile.selfDeclaration, profile.selfDeclarationPath, profile.documents?.selfDeclaration);
+                candidateB64.push(base64Docs.selfDeclarationBase64);
             }
 
             const hasValidPath = candidatePaths.some(p => Boolean(p && typeof p === 'string' && fs.existsSync(p)));

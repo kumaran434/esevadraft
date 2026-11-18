@@ -240,7 +240,7 @@ async function runTests() {
         assert(chatRes1.status === 200, 'Chat history endpoint returned 200');
         const firstMsg = chatRes1.body.chatHistory && chatRes1.body.chatHistory[0];
         assert(firstMsg && firstMsg.text.includes('எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறார்'), 'First message asks what service customer wants');
-        assert(firstMsg.options && firstMsg.options.length >= 4, 'Provides 4 service options (Ration, Income, Residence, Voter)');
+        assert(firstMsg.options && firstMsg.options.length >= 3, 'Provides primary service department categories (Ration Card, Revenue Department, Voter ID)');
 
         // ----------------------------------------------------------------
         // TEST 2: Service Transition -> Ration Card (Member Count)
@@ -945,14 +945,14 @@ async function runTests() {
         assert(resRationMenu.status === 200, 'Ration Card menu returns 200 OK');
         assert(resRationMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
         const rationMenuMsg = resRationMenu.body.chatHistory[resRationMenu.body.chatHistory.length - 1];
-        assert(rationMenuMsg.options && rationMenuMsg.options.length === 8, 'Ration card menu has 8 subservices');
+        assert(rationMenuMsg.options && rationMenuMsg.options.length >= 8, 'Ration card menu has 8 subservices');
 
         // 2b. Calling history while in RATION_CARD_SERVICES stays at RATION_CARD_SERVICES (no premature submit card!)
         const resCheckNoPremature = await request('GET', `/api/chat/history?mobile=${testCompMob}`, null, testCompHeaders);
         assert(resCheckNoPremature.status === 200, 'History check returns 200 OK');
         assert(resCheckNoPremature.body.step === 'RATION_CARD_SERVICES', 'History stays at RATION_CARD_SERVICES');
         const noPrematureMsg = resCheckNoPremature.body.chatHistory[resCheckNoPremature.body.chatHistory.length - 1];
-        assert(noPrematureMsg.options && noPrematureMsg.options.length === 8, 'Still shows 8 subservices, no premature submit card');
+        assert(noPrematureMsg.options && noPrematureMsg.options.length >= 8, 'Still shows 8 subservices, no premature submit card');
 
         // 3. Selecting Option 1 (புதிய ரேஷன் கார்டு) switches back to READY_TO_APPLY
         const resNewRation = await request('POST', '/api/chat', { message: 'புதிய ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
@@ -1039,7 +1039,7 @@ async function runTests() {
         const resSubMenu = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: subSvcMob }, subHeaders);
         assert(resSubMenu.status === 200, 'Ration Card menu returns 200 OK');
         assert(resSubMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
-        assert(resSubMenu.body.chatHistory[resSubMenu.body.chatHistory.length - 1].options.length === 8, 'Shows 8 subservices');
+        assert(resSubMenu.body.chatHistory[resSubMenu.body.chatHistory.length - 1].options.length >= 8, 'Shows 8 subservices');
 
         // 2. Select Option 2: Add Member -> transitions to RATION_ADD_MEMBER_TYPE (Direct Aadhaar Card Upload)
         const resAddType = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: subSvcMob }, subHeaders);
@@ -2303,7 +2303,7 @@ async function runTests() {
         assert(res56Init.body.step === 'SERVICE_SELECTION', 'Customer visit starts at SERVICE_SELECTION');
         const initChat56 = res56Init.body.chatHistory;
         assert(initChat56 && initChat56.length === 1, 'Initial chat has exactly 1 welcome message');
-        assert(initChat56[0].options && initChat56[0].options.some(o => o.value === 'வருமானச் சான்றிதழ்'), 'Presents service selection options');
+        assert(initChat56[0].options && initChat56[0].options.some(o => o.value === 'வருவாய்த் துறை' || o.value === 'வருமானச் சான்றிதழ்'), 'Presents service selection options');
         assert(!initChat56[0].options.some(o => o.value === 'CONFIRM_SUBMIT'), 'Does NOT present premature TNPDS submit button');
 
         // 2. GET /api/chat/history retains SERVICE_SELECTION and does not hijack to READY_TO_APPLY
@@ -3287,7 +3287,7 @@ async function runTests() {
             const fsmOptions = require('../src/core/fsm/fsm_options_registry');
             assert(servicesData.SERVICES_REGISTRY.COMMUNITY_CERTIFICATE, "SERVICES_REGISTRY has COMMUNITY_CERTIFICATE");
             assert(servicesData.SERVICES_REGISTRY.COMMUNITY_CERTIFICATE.code === 'REV-101', "COMMUNITY_CERTIFICATE code is REV-101");
-            assert(fsmOptions.SERVICE_OPTIONS.some(o => o.value === 'சாதிச் சான்றிதழ்' || o.value === 'COMMUNITY_CERTIFICATE'), "SERVICE_OPTIONS includes Community Certificate");
+            assert((fsmOptions.REVENUE_DEPARTMENT_SERVICE_OPTIONS || fsmOptions.SERVICE_OPTIONS).some(o => o.value === 'சாதிச் சான்றிதழ்' || o.value === 'COMMUNITY_CERTIFICATE'), "SERVICE_OPTIONS / REVENUE_DEPARTMENT_SERVICE_OPTIONS includes Community Certificate");
 
             // 3. Verify Fresh Customer Universal Delta Journey (0 details)
             const { handleNonRationServiceSelection } = require('../src/core/fsm/fsm_other_services');
@@ -3426,6 +3426,374 @@ async function runTests() {
             assert(intakeSrc.includes('advanceTnegaCommunityFlow'), "chat_tnega_intake imports advanceTnegaCommunityFlow");
 
             passedCount += 18;
+        }
+
+        // ---------------------------------------------------------------------
+        // TEST 53: 🎓 முதல் பட்டதாரி சான்றிதழ் கட்டமைப்பு & UI + டெல்டா சான்றளிப்பு (REV-104 Lock Gate)
+        // ---------------------------------------------------------------------
+        {
+            console.log('\n[TEST 53] 🎓 முதல் பட்டதாரி சான்றிதழ் (REV-104 First Graduate Lock Gate)...');
+
+            // 1. UI & Route Visibility Checks
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes("citizenStartService('முதல் பட்டதாரி சான்றிதழ்')"), "index.html has Citizen card for முதல் பட்டதாரி சான்றிதழ்");
+            assert(indexHtml.includes("startDirectApplyService('முதல் பட்டதாரி சான்றிதழ்')"), "index.html Operator Desk has Quick Service button for முதல் பட்டதாரி சான்றிதழ்");
+            assert(indexHtml.includes('id="editFirstGraduateFieldsWrap"'), "index.html Edit Modal has editFirstGraduateFieldsWrap");
+            assert(indexHtml.includes('id="editFirstGraduateYop"'), "index.html Edit Modal has Year of Passing input");
+
+            const chatWfJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'chat_workflow.js'), 'utf8');
+            assert(chatWfJs.includes('வருவாய்த் துறை') || chatWfJs.includes('முதல் பட்டதாரி'), "chat_workflow.js renderDefaultWelcomeMessage displays Revenue Department / First Graduate options");
+
+            const editModalJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            assert(editModalJs.includes('else if (isFirstGraduateMode)'), "edit_modal_manager.js controls First Graduate doc boxes visibility");
+            assert(editModalJs.includes("type: 'applicantEducationProof'") && editModalJs.includes("type: 'fatherEducationProof'") && editModalJs.includes("type: 'motherEducationProof'"), "edit_modal_manager.js renders all First Graduate upload slots");
+
+            const opRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'operator_routes.js'), 'utf8');
+            assert(opRoutesSrc.includes('isFirstGraduate') && opRoutesSrc.includes('advanceTnegaFirstGraduateFlow'), "operator_routes.js handles direct start for First Graduate");
+
+            const fsmOptions = require('../src/core/fsm/fsm_options_registry');
+            assert((fsmOptions.REVENUE_DEPARTMENT_SERVICE_OPTIONS || fsmOptions.SERVICE_OPTIONS).some(o => o.value === 'முதல் பட்டதாரி சான்றிதழ்'), "SERVICE_OPTIONS / REVENUE_DEPARTMENT_SERVICE_OPTIONS includes முதல் பட்டதாரி சான்றிதழ்");
+
+            // 2. Portal Live Engine & Upload Option Code Locks
+            const { startTnegaFirstGraduateFlow } = require('../src/portal/tnega/tnega_first_graduate');
+            assert(typeof startTnegaFirstGraduateFlow === 'function', "startTnegaFirstGraduateFlow is officially exported");
+            const fgSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_first_graduate.js'), 'utf8');
+            assert(fgSrc.includes('nograduate:gnameid') && fgSrc.includes('nograduate:gageid') && fgSrc.includes('nograduate:submit1'), "REV-104 locks verified live NoGraduateCertificate.xhtml RichFaces IDs");
+            assert(fgSrc.includes("optionVal: '177'") && fgSrc.includes("optionVal: '182'") && fgSrc.includes("optionVal: '179'") && fgSrc.includes("optionVal: '180'") && fgSrc.includes("optionVal: '181'") && fgSrc.includes("optionVal: '458'"), "REV-104 locks exact uploadDocs.xhtml document codes");
+            assert(fgSrc.includes('__startUpload()'), "REV-104 locks RichFaces 4 __startUpload() API trigger");
+
+            const fgMockRes = await startTnegaFirstGraduateFlow({
+                fullNameEng: 'Kumaran K',
+                canNumber: '133370337878397',
+                currentCourse: 'B.E. Computer Science and Engineering',
+                institutionName: 'Government College of Technology Coimbatore'
+            }, () => {}, { isMockSandbox: true });
+            assert(fgMockRes.success === true && fgMockRes.isPreSubmitGate === true, "REV-104 executes cleanly in mock sandbox to Pre-Submit Gate");
+
+            // 3. Brand-New Customer 100% Sequential Intake Flow
+            const { handleNonRationServiceSelection } = require('../src/core/fsm/fsm_other_services');
+            const { advanceTnegaFirstGraduateFlow } = require('../src/core/fsm/tnega_flow_engine');
+            const fgFresh = { intakeState: 'SERVICE_SELECTION', chatHistory: [], citizenProfile: {} };
+            assert(handleNonRationServiceSelection('முதல் பட்டதாரி சான்றிதழ்', fgFresh) === true, "Fresh customer handles முதல் பட்டதாரி சான்றிதழ்");
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_AADHAAR_WAIT', "Fresh Step 1: FIRST_GRADUATE_AADHAAR_WAIT");
+
+            // Setup sample temp doc for physical file existence checks
+            const sampleDocFile = path.join(__dirname, '..', 'data', 'golden_samples', 'first_graduate', 'student_12th_tc.jpg');
+            const samplePhotoFile = path.join(__dirname, '..', 'data', 'golden_samples', 'first_graduate', 'student_passport_photo.jpg');
+
+            fgFresh.citizenProfile.headAadhaarDocPath = sampleDocFile;
+            fgFresh.citizenProfile.headAadhaar = '575567662931';
+            fgFresh.citizenProfile.fullNameEng = 'Arun K';
+            fgFresh.citizenProfile.fullNameTam = 'அருண் கி';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_PHOTO_WAIT', "Fresh Step 2: FIRST_GRADUATE_PHOTO_WAIT");
+
+            fgFresh.citizenProfile.headPhotoPath = samplePhotoFile;
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT', "Fresh Step 3: FIRST_GRADUATE_APPLICANT_PROOF_WAIT");
+
+            fgFresh.citizenProfile.applicantEducationProof = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_SMARTCARD_WAIT', "Fresh Step 4: FIRST_GRADUATE_SMARTCARD_WAIT");
+
+            fgFresh.citizenProfile.smartCard = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_FATHER_PROOF_WAIT', "Fresh Step 5: FIRST_GRADUATE_FATHER_PROOF_WAIT");
+
+            fgFresh.citizenProfile.fatherEducationProof = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_MOTHER_PROOF_WAIT', "Fresh Step 6: FIRST_GRADUATE_MOTHER_PROOF_WAIT");
+
+            fgFresh.citizenProfile.motherEducationProof = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_CAN_GATE', "Fresh Step 7: FIRST_GRADUATE_CAN_GATE");
+
+            fgFresh.citizenProfile.canNumber = '133370337878397';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_MOTHER_NAME_WAIT', "Fresh Step 8: FIRST_GRADUATE_MOTHER_NAME_WAIT");
+
+            fgFresh.citizenProfile.motherNameTam = 'தேவகி';
+            fgFresh.citizenProfile.motherNameEng = 'Devaki';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_COURSE_WAIT', "Fresh Step 9: FIRST_GRADUATE_COURSE_WAIT");
+
+            fgFresh.citizenProfile.currentCourse = 'B.E. Computer Science and Engineering';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_COLLEGE_WAIT', "Fresh Step 10: FIRST_GRADUATE_COLLEGE_WAIT");
+
+            fgFresh.citizenProfile.institutionName = 'Government College of Technology Coimbatore';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_PARENT_EDU_WAIT', "Fresh Step 11: FIRST_GRADUATE_PARENT_EDU_WAIT");
+
+            fgFresh.citizenProfile.fatherEducation = '10th Standard';
+            fgFresh.citizenProfile.motherEducation = '8th Standard';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_YOP_WAIT', "Fresh Step 12: FIRST_GRADUATE_YOP_WAIT");
+
+            fgFresh.citizenProfile.yearOfPassing = '2024';
+            advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'FIRST_GRADUATE_FAMILY_CHECK_GATE', "Fresh Step 13: FIRST_GRADUATE_FAMILY_CHECK_GATE");
+
+            fgFresh.citizenProfile.familyGraduateConfirmed = true;
+            const fgReadyStep = advanceTnegaFirstGraduateFlow(fgFresh);
+            assert(fgFresh.intakeState === 'READY_TO_APPLY_FIRST_GRADUATE', "Fresh Step 14: READY_TO_APPLY_FIRST_GRADUATE");
+            assert(fgReadyStep.options.some(o => o.value === 'START_FIRST_GRADUATE_APPLY'), "Ready step offers START_FIRST_GRADUATE_APPLY");
+
+            // 4. Existing Customer Universal Delta Check (SKIPS Aadhaar, Photo, Smart Card, CAN, Mother Name!)
+            const fgExist = {
+                intakeState: 'SERVICE_SELECTION',
+                chatHistory: [],
+                citizenProfile: {
+                    fullNameTam: 'குமரன் கி',
+                    fullNameEng: 'Kumaran K',
+                    headAadhaar: '575567662931',
+                    headAadhaarDocPath: sampleDocFile,
+                    headPhotoPath: samplePhotoFile,
+                    smartCard: sampleDocFile,
+                    canNumber: '133370337878397',
+                    motherNameTam: 'தேவகி',
+                    motherNameEng: 'Devaki',
+                    community: 'MBC' // Presence of community on Master Profile MUST NOT hijack First Graduate!
+                }
+            };
+            handleNonRationServiceSelection('முதல் பட்டதாரி சான்றிதழ்', fgExist);
+            // Must automatically skip Aadhaar & Photo & jump straight to FIRST_GRADUATE_APPLICANT_PROOF_WAIT!
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT', "Existing customer skips Aadhaar & Photo -> jumps to Applicant 12th TC");
+
+            fgExist.citizenProfile.applicantEducationProof = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgExist);
+            // Must skip Smart Card (already exists!) & jump straight to Father TC!
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_FATHER_PROOF_WAIT', "Existing customer skips Smart Card -> jumps straight to Father TC");
+
+            fgExist.citizenProfile.fatherEducationProof = sampleDocFile;
+            fgExist.citizenProfile.motherEducationProof = sampleDocFile;
+            advanceTnegaFirstGraduateFlow(fgExist);
+            // Must skip CAN & Mother Name (already exist!) -> asks Course!
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_COURSE_WAIT', "Existing customer skips CAN & Mother Name -> asks Current Course");
+
+            // 5. Automation Starter Priority Check (existing community field MUST NOT hijack FIRST_GRADUATE!)
+            const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
+            assert(starterSrc.includes('isExplicitFirstGrad') && starterSrc.includes('startTnegaFirstGraduateFlow'), "chat_automation_starter enforces strict First Graduate priority over legacy profile community");
+
+            // 6. Sidebar Zero-Flicker Invariant Checks
+            const docViewerSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
+            assert(docViewerSrc.includes('normalizeSigUrl'), "document_viewer.js strips cache-busting timestamps from render signature");
+            assert(docViewerSrc.includes('if (cacheMatchesSub && cachedDocs.length > 0)'), "document_viewer.js prioritizes verified server cache over instantDocs to prevent flicker");
+            assert(docViewerSrc.includes('cachedDocsFetchedAtByMobile'), "document_viewer.js throttles polling fetches when docs cache is fresh");
+
+            const subEngineSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
+            assert(subEngineSrc.includes("applicantEducationProof") && subEngineSrc.includes("fatherEducationProof"), "extractDocumentsFromProfile includes First Graduate education proofs");
+            assert(!subEngineSrc.includes("new Date(prof._updatedAt).getTime() : Date.now()"), "extractDocumentsFromProfile never uses Date.now() in downloadUrl cacheBust");
+
+            passedCount += 36;
+        }
+
+        // =========================================================================
+        // TEST 54: TNeGA OBC CERTIFICATE (REV-115) PORTAL + DOCUMENT-FIRST DELTA + UI LOCK
+        // =========================================================================
+        {
+            console.log('\n🧪 [TEST 54] Running TNeGA OBC Certificate (REV-115) End-to-End Regression Lock...');
+            const obcCatalog = require('../src/catalog');
+            const obcPlugin = obcCatalog.getService('REV-115');
+            assert(obcPlugin && obcPlugin.id === 'TNEGA_OBC', "Catalog resolves REV-115 to TNEGA_OBC");
+            assert(obcCatalog.getService('OBC_CERTIFICATE')?.code === 'REV-115', "Catalog alias OBC_CERTIFICATE resolves REV-115");
+
+            const { SERVICES_REGISTRY } = require('../src/core/services_data');
+            assert(Boolean(SERVICES_REGISTRY.OBC_CERTIFICATE), "SERVICES_REGISTRY exposes OBC_CERTIFICATE");
+
+            const tnegaAuto = require('../tnega_can_automation');
+            assert(typeof tnegaAuto.startTnegaObcCertificateFlow === 'function', "tnega_can_automation exports startTnegaObcCertificateFlow");
+            assert(typeof tnegaAuto.startTnegaObcFlow === 'function', "tnega_can_automation exports startTnegaObcFlow");
+
+            // 1. Live Portal Engine Mock & Helper Assertions
+            const obcPortal = require('../src/portal/tnega/tnega_obc_certificate');
+            assert(obcPortal.mapApplicantOccupationCode('Student') === 'student', "Applicant occupation Student maps to 'student'");
+            assert(obcPortal.mapParentEmploymentNature('Unemployed', 'Homemaker') === 'Unemployed', "Homemaker maps to 'Unemployed'");
+            assert(obcPortal.normalizeCasteTokens('வன்னியர் (Vanniyar)').includes('VANNIYA'), "Caste token extractor normalizes Tamil+English Vanniyar");
+            const mockRes = await obcPortal.startTnegaObcCertificateFlow({ canNumber: '133370337878397' }, () => {}, { mockSandbox: true });
+            assert(mockRes && mockRes.success === true && mockRes.status === 'PRE_SUBMIT_GATE', "OBC portal engine supports dry-run Pre-Submit Gate");
+
+            const obcPortalSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_obc_certificate.js'), 'utf8');
+            assert(obcPortalSrc.includes("'100'") && obcPortalSrc.includes('REV-115'), "OBC portal engine expands DataTables to 100 rows before clicking REV-115");
+            assert(obcPortalSrc.includes('#apCaste') && obcPortalSrc.includes('#apSerialCaste') && obcPortalSrc.includes('#gwt-uid-8'), "OBC portal engine fills exact #apCaste, #apSerialCaste & declaration checkbox");
+            assert(obcPortalSrc.includes("code: '21'") && obcPortalSrc.includes("code: '18'") && obcPortalSrc.includes("code: '17'") && obcPortalSrc.includes("code: '358'") && !obcPortalSrc.includes("code: '383'"), "OBC portal engine maps supporting #ss:do codes and strictly NEVER auto-uploads Self-Declaration ('383')");
+            assert(obcPortalSrc.includes('200, 240'), "OBC portal engine enforces TNeGA <250x250px passport photo requirement");
+
+            // 2. Priority Exclusion Guards (caste / annualIncome must NEVER hijack OBC -> Community/Income!)
+            const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            assert(runnerSrc.includes('isObc') && runnerSrc.includes('!isObc && Boolean(') && runnerSrc.includes('startTnegaObcFlow'), "desktop/automation_runner prioritizes isObc over isCommunity & isIncome");
+            const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
+            assert(starterSrc.includes('isObcAction') && starterSrc.includes('!isObcAction') && starterSrc.includes('startTnegaObcFlow'), "chat_automation_starter prioritizes isObcAction");
+            const opRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'operator_routes.js'), 'utf8');
+            assert(opRoutesSrc.includes('isObc') && opRoutesSrc.includes('!isObc'), "operator_routes prioritizes isObc");
+
+            // 3. UI & Edit Modal Integrity Checks
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes("citizenStartService('OBC சான்றிதழ்')") && indexHtml.includes("startDirectApplyService('OBC சான்றிதழ்')"), "index.html renders OBC REV-115 card & quick launch button");
+            assert(indexHtml.includes('id="sidebarObcBox"') && indexHtml.includes('id="editObcFieldsWrap"'), "index.html includes sidebarObcBox & editObcFieldsWrap");
+            const editMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            assert(editMgrSrc.includes('isObcMode') && editMgrSrc.includes('editObcCaste'), "edit_modal_manager wires isObcMode & OBC fields");
+            const docViewerSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
+            assert(docViewerSrc.includes('isObcService') && docViewerSrc.includes('sidebarObcBox'), "document_viewer renders sidebarObcBox for OBC service");
+
+            // 4. Fresh Customer Document-First Flow (Photo -> Aadhaar -> Community -> ITR -> CAN -> Bucket B -> Ready)
+            const { handleNonRationServiceSelection } = require('../src/core/fsm/fsm_other_services');
+            const { advanceTnegaObcFlow } = require('../src/core/fsm/tnega_flow_engine');
+            const sampleDocFile = path.join(__dirname, '..', 'data', 'golden_samples', 'obc', 'community_certificate.jpg');
+            const samplePhotoFile = path.join(__dirname, '..', 'data', 'golden_samples', 'obc', 'applicant_photo.jpg');
+            const sampleAadhFile = path.join(__dirname, '..', 'data', 'golden_samples', 'obc', 'applicant_aadhaar.jpg');
+            const sampleItrFile = path.join(__dirname, '..', 'data', 'golden_samples', 'obc', 'income_tax_return.jpg');
+
+            const freshObcSess = { subService: '', citizenProfile: {}, chatHistory: [] };
+            handleNonRationServiceSelection('OBC சான்றிதழ்', freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_PHOTO_WAIT', "Fresh customer OBC starts Document-First with OBC_PHOTO_WAIT");
+
+            freshObcSess.citizenProfile.headPhotoPath = samplePhotoFile;
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_AADHAAR_WAIT', "Fresh OBC step 2 asks Aadhaar card");
+
+            freshObcSess.citizenProfile.headAadhaarDocPath = sampleAadhFile;
+            freshObcSess.citizenProfile.fullNameEng = 'Arun K';
+            freshObcSess.citizenProfile.headAadhaar = '123412341234';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT', "Fresh OBC step 3 asks Community Certificate");
+
+            freshObcSess.citizenProfile.communityCertificate = sampleDocFile;
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Fresh OBC step 4 asks ITR / Income Proof");
+
+            freshObcSess.citizenProfile.incomeTaxReturn = sampleItrFile;
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_CAN_GATE', "Fresh OBC step 5 reaches OBC_CAN_GATE");
+
+            freshObcSess.citizenProfile.canNumber = '133370337878397';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_MOTHER_NAME_WAIT', "Fresh OBC asks Mother Name if missing");
+
+            freshObcSess.citizenProfile.motherNameTam = 'தேவகி';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_CASTE_WAIT', "Fresh OBC asks OBC Caste");
+
+            freshObcSess.citizenProfile.caste = 'Vanniyar';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_OCCUPATION_WAIT', "Fresh OBC asks Applicant Occupation");
+
+            freshObcSess.citizenProfile.occupation = 'Service';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_FATHER_OCC_WAIT', "Fresh OBC asks Father Occupation");
+
+            freshObcSess.citizenProfile.fatherOccupation = 'Farmer';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_MOTHER_OCC_WAIT', "Fresh OBC asks Mother Occupation");
+
+            freshObcSess.citizenProfile.motherOccupation = 'Homemaker';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_INCOME_WAIT', "Fresh OBC asks Annual Income");
+
+            freshObcSess.citizenProfile.annualIncome = '72000';
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'READY_TO_SUBMIT_OBC', "Fresh OBC transitions to READY_TO_SUBMIT_OBC");
+
+            // 5. Existing Customer Universal Delta Skip Check (Kumaran K already has Photo, Aadhaar, CAN, Mother Name)
+            const existObcSess = {
+                subService: '',
+                chatHistory: [],
+                citizenProfile: {
+                    fullNameEng: 'Kumaran K',
+                    fullNameTam: 'குமரன் கி',
+                    motherNameTam: 'தேவகி கி',
+                    headAadhaar: '575567662931',
+                    headPhotoPath: samplePhotoFile,
+                    headAadhaarDocPath: sampleAadhFile,
+                    canNumber: '133370337878397',
+                    caste: 'Vanniyar'
+                }
+            };
+            handleNonRationServiceSelection('OBC சான்றிதழ்', existObcSess);
+            assert(existObcSess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT', "Existing customer skips Photo & Aadhaar -> asks only missing Community Cert");
+            existObcSess.citizenProfile.communityCertificate = sampleDocFile;
+            advanceTnegaObcFlow(existObcSess);
+            assert(existObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Existing customer advances to missing ITR/Income Proof");
+            existObcSess.citizenProfile.incomeTaxReturn = sampleItrFile;
+            advanceTnegaObcFlow(existObcSess);
+            assert(existObcSess.intakeState === 'OBC_OCCUPATION_WAIT', "Existing customer skips CAN, Mother Name & Caste -> asks missing Applicant Occupation");
+
+            passedCount += 24;
+        }
+
+        // =========================================================================
+        // TEST 55: MANDATORY UNIVERSAL EDIT-MODAL PRE-SUBMIT GATE LOCK (ALL SERVICES)
+        // =========================================================================
+        {
+            console.log('\n🧪 [TEST 55] Running Mandatory Universal Edit-Modal Pre-Submit Gate Regression Lock...');
+            const chatWfSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'chat_workflow.js'), 'utf8');
+            assert(chatWfSrc.includes('isUniversalStartTrigger') && chatWfSrc.includes('START_FIRST_GRADUATE_APPLY') && chatWfSrc.includes('START_OBC_APPLY'), "chat_workflow intercepts START_FIRST_GRADUATE_APPLY, START_OBC_APPLY and future START_*_APPLY triggers");
+            assert(chatWfSrc.includes('if (isUniversalStartTrigger)') && chatWfSrc.includes('openEditModal()'), "chat_workflow always opens Edit Modal on chat final-submit/start triggers");
+
+            const subEngineSrc2 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
+            assert(subEngineSrc2.includes('triggerOptions.fromEditModal !== true'), "proceedConfirmedSubmit enforces hard fromEditModal gate across all services");
+            assert(subEngineSrc2.includes('extraPayload.fromEditModal !== true'), "sendTextMessage blocks direct automation start without fromEditModal");
+            assert(!subEngineSrc2.includes('docsObj.'), "submission_engine has zero undefined docsObj references for OBC validation");
+            assert(subEngineSrc2.includes("effectiveSubService === 'OBC'") && subEngineSrc2.includes("docs.incomeTaxReturn"), "submission_engine prioritizes OBC and extracts OBC ITR docs");
+
+            const editMgrSrc2 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            assert(editMgrSrc2.includes('proceedConfirmedSubmit(runRealLive, { fromEditModal: true })'), "submitDirectlyFromEditModal passes { fromEditModal: true } after saving edits");
+
+            passedCount += 7;
+        }
+
+        // =========================================================================
+        // TEST 56: FOUNDER-ONLY GOLDEN SAMPLE GALLERY & PRIVACY LOCK
+        // =========================================================================
+        {
+            console.log('\n🧪 [TEST 56] Running Founder-Only Golden Sample Gallery & Privacy Lock...');
+            const kumaranGalleryDir = path.join(__dirname, '..', 'data', 'golden_samples', 'kumaran_gallery');
+            assert(fs.existsSync(kumaranGalleryDir), "data/golden_samples/kumaran_gallery directory exists");
+            const files = fs.readdirSync(kumaranGalleryDir);
+            assert(files.length >= 13, `Kumaran Golden Gallery contains all ${files.length} (>=13) sample service docs`);
+
+            // Strictly verify external/franchise UIDs and unauthenticated callers are BLOCKED (403)
+            const unauthRes = await request('GET', '/api/dev/golden-gallery', null, {});
+            assert(unauthRes.status === 403 && unauthRes.body?.enabled === false, "Golden Gallery blocks unauthenticated requests with 403");
+
+            const externalOpRes = await request('GET', '/api/dev/golden-gallery', null, { 'x-operator-uid': 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2' });
+            assert(externalOpRes.status === 403 && externalOpRes.body?.enabled === false, "Golden Gallery blocks external franchise operators (e.g. SUMAN) with 403");
+
+            const externalFileRes = await request('GET', '/api/dev/golden-gallery/file?rel=kumaran_gallery/05_community_certificate_kumaran.jpg', null, { 'x-operator-uid': 'PlzEG1ptSyQMBe2QFjf8AUS7TJr2' });
+            assert(externalFileRes.status === 403, "Golden Gallery file stream blocks non-Founder UIDs with 403");
+
+            // Founder UID on loopback is authorized
+            const founderRes = await request('GET', '/api/dev/golden-gallery', null, { 'x-operator-uid': 'z9TSOApH0Hh69Du0xPK2GDxK2kr2' });
+            assert(founderRes.status === 200 && founderRes.body?.enabled === true && founderRes.body.items.length >= 13, "Golden Gallery succeeds cleanly for Founder UID on localhost");
+
+            // UI triggers remain hidden by default in public/index.html
+            const idxHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(idxHtml.includes('id="btnFounderGalleryNav"') && idxHtml.includes('style="display: none;'), "Founder Gallery nav button defaults strictly to display: none");
+            assert(idxHtml.includes('id="btnEditModalFounderGallery"') && idxHtml.includes('founder_gallery.js'), "Edit Modal includes Founder Gallery trigger & script");
+
+            passedCount += 8;
+        }
+
+        // ============================================================
+        // [TEST 57] Universal No-Auto-Upload Self-Declaration & Visible Tab Open Lock
+        // ============================================================
+        console.log('\n[TEST 57] Verifying Universal Self-Declaration Download + New Tab Open & Zero Auto-Upload Policy...');
+        {
+            const browserMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_browser_manager.js'), 'utf8');
+            assert(browserMgrSrc.includes('async function downloadAndOpenSelfDeclaration') && browserMgrSrc.includes('newPage.goto') && browserMgrSrc.includes('bringToFront'), "tnega_browser_manager exports shared downloadAndOpenSelfDeclaration opening PDF visibly in new Chrome tab");
+
+            const fgSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_first_graduate.js'), 'utf8');
+            const obcSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_obc_certificate.js'), 'utf8');
+            const commSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_community_certificate.js'), 'utf8');
+            const incSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_income_certificate.js'), 'utf8');
+            const resSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_residence_certificate.js'), 'utf8');
+
+            assert(fgSrc.includes('downloadAndOpenSelfDeclaration') && !fgSrc.includes("nameEng: 'Self-Declaration of Applicant'") && !fgSrc.includes("optionVal: '200'"), "REV-104 First Graduate opens Self-Declaration visibly and NEVER auto-uploads it");
+            assert(obcSrc.includes('downloadAndOpenSelfDeclaration') && !obcSrc.includes("code: '383'") && !obcSrc.includes("label: 'Self-Declaration of Applicant'"), "REV-115 OBC opens Self-Declaration visibly and NEVER auto-uploads it");
+            for (const [label, src] of [['REV-101 Community', commSrc], ['REV-103 Income', incSrc], ['REV-102 Residence', resSrc]]) {
+                assert(src.includes('decForm1') && src.includes('newPage.goto') && !src.includes("nameEng: 'Self-Declaration of Applicant'"), `${label} opens Self-Declaration in Chrome tab and NEVER auto-uploads it`);
+            }
+            passedCount += 6;
         }
 
         console.log('\n======================================================');

@@ -208,7 +208,8 @@ router.post('/api/profile/update', async (req, res) => {
                 }
 
                 const incPath = sess.citizenProfile?.incomeProof || sess.citizenProfile?.salaryCertificatePath || sess.citizenProfile?.salaryCertificate || sess.tempUploads?.incomeProof;
-                const hasIncProof = Boolean(incPath && typeof incPath === 'string' && fs.existsSync(incPath));
+                const isSelfDecl = (sess.citizenProfile?.incomeProof === 'SELF_DECLARATION' || sess.citizenProfile?.incomeProofType === 'SELF_DECLARATION' || sess.citizenProfile?.salaryProofType === 'SELF_DECLARATION' || Boolean(sess.citizenProfile?.annualIncome && sess.citizenProfile?.profession));
+                const hasIncProof = isSelfDecl || Boolean(incPath && typeof incPath === 'string' && fs.existsSync(incPath));
                 if (!hasIncProof) {
                     delete docsToSave.incomeProof;
                     delete docsToSave.salaryCertificate;
@@ -218,6 +219,13 @@ router.post('/api/profile/update', async (req, res) => {
                         delete sess.citizenProfile.salaryCertificate;
                         delete sess.citizenProfile.salaryCertificatePath;
                     }
+                } else if (isSelfDecl && !Boolean(incPath && fs.existsSync(incPath))) {
+                    if (sess.citizenProfile) {
+                        sess.citizenProfile.incomeProof = 'SELF_DECLARATION';
+                        sess.citizenProfile.incomeProofType = 'SELF_DECLARATION';
+                    }
+                    docsToSave.incomeProof = 'SELF_DECLARATION';
+                    docsToSave.incomeProofType = 'SELF_DECLARATION';
                 }
 
                 const resPath = sess.citizenProfile?.residenceProof?.docPath || sess.citizenProfile?.gasDetails?.gasBookPath || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook;

@@ -36,6 +36,14 @@ const {
 } = require('./src/portal/tnega/tnega_community_certificate');
 
 const {
+    startTnegaFirstGraduateFlow
+} = require('./src/portal/tnega/tnega_first_graduate');
+
+const {
+    startTnegaObcCertificateFlow
+} = require('./src/portal/tnega/tnega_obc_certificate');
+
+const {
     generateCanReceiptPdf
 } = require('./src/services/tnega_receipt_generator');
 
@@ -50,6 +58,9 @@ module.exports = {
     startTnegaResidenceFlow: startTnegaResidenceCertificateFlow,
     startTnegaCommunityFlow: startTnegaCommunityCertificateFlow,
     startTnegaCommunityCertificateFlow,
+    startTnegaFirstGraduateFlow,
+    startTnegaObcFlow: startTnegaObcCertificateFlow,
+    startTnegaObcCertificateFlow,
     startTnegaCanSearchFlow: searchCitizenCan,
     generateCanReceiptPdf,
     stopTnegaAutomation,

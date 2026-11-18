@@ -7,6 +7,7 @@
 
 const {
     SERVICE_OPTIONS,
+    REVENUE_DEPARTMENT_SERVICE_OPTIONS,
     RATION_CARD_SERVICE_OPTIONS,
     MEMBER_COUNT_OPTIONS,
     RESIDENCE_PROOF_OPTIONS,
@@ -57,6 +58,51 @@ function cleanupAddMemberUploads(sess) {
  */
 function handleServiceSelection(text, sess) {
     const isAlreadyInRationMenu = sess.intakeState === 'RATION_CARD_SERVICES';
+    const isAlreadyInRevenueMenu = sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES';
+
+    const isMainMenuNav = text === 'MAIN_MENU' || text === 'முதன்மைப் பட்டியல்' || text.includes('முதன்மைப் பட்டியல்');
+    if (isMainMenuNav) {
+        sess.intakeState = 'SERVICE_SELECTION';
+        sess.step = 'SERVICE_SELECTION';
+        sess.service = null;
+        sess.subService = null;
+        if (sess.citizenProfile) sess.citizenProfile.subService = null;
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `வணக்கம்! 🙏 **eSevaDraft (https://esevadraft.in/)** தமிழ்நாடு அரசு சேவைகள் ஏஐ உதவி மையம்!\n\n` +
+                  `நீங்கள் இன்று எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n\n` +
+                  `கீழே உள்ள விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
+            options: SERVICE_OPTIONS
+        });
+        return true;
+    }
+
+    const isRevenueCategory = !isAlreadyInRevenueMenu && (
+        text === 'வருவாய்த் துறை' || 
+        text === 'வருவாய்த் துறை சான்றிதழ்கள்' || 
+        text === 'வருவாய் துறை' || 
+        text === 'REVENUE_DEPARTMENT' || 
+        text === 'REVENUE_DEPARTMENT_SERVICES' || 
+        text.toLowerCase() === 'revenue department' ||
+        text.includes('வருவாய்த் துறை') ||
+        text.includes('வருவாய் துறை')
+    );
+
+    if (isRevenueCategory) {
+        sess.intakeState = 'REVENUE_DEPARTMENT_SERVICES';
+        sess.step = 'REVENUE_DEPARTMENT_SERVICES';
+        sess.service = 'வருவாய்த் துறை';
+        sess.subService = null;
+        if (sess.citizenProfile) sess.citizenProfile.subService = null;
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `🏛️ **வருவாய்த் துறை சான்றிதழ்கள் (Revenue Department - e-Sevai / TNeGA)**\n\n` +
+                  `நீங்கள் எந்த சான்றிதழுக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n\n` +
+                  `கீழே உள்ள சான்றிதழ்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
+            options: REVENUE_DEPARTMENT_SERVICE_OPTIONS
+        });
+        return true;
+    }
 
     const isNewRationCard = text === 'புதிய ரேஷன் கார்டு' || 
                            text === 'புதிய குடும்ப அட்டை' || 
@@ -361,6 +407,7 @@ async function handleRationSubserviceWorkflow(text, sess, uploadedDoc = null, ex
 
 module.exports = {
     SERVICE_OPTIONS,
+    REVENUE_DEPARTMENT_SERVICE_OPTIONS,
     RATION_CARD_SERVICE_OPTIONS,
     MEMBER_COUNT_OPTIONS,
     RESIDENCE_PROOF_OPTIONS,

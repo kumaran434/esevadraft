@@ -21,6 +21,12 @@ async function handleServiceSelector(ctx, req, res) {
                         text === 'START_INCOME_APPLY' ||
                         text === 'START_RESIDENCE_APPLY' ||
                         text === 'START_COMMUNITY_APPLY' ||
+                        text === 'START_FIRST_GRADUATE_APPLY' ||
+                        text === 'START_OBC_APPLY' ||
+                        text === 'FIRST_GRADUATE_CONFIRMED' ||
+                        text === 'FIRST_GRADUATE_INELIGIBLE' ||
+                        (text && text.startsWith('FIRST_GRADUATE_')) ||
+                        (text && text.startsWith('OBC_')) ||
                         (text && text.startsWith('SELECT_MEMBER_')) ||
                         (text && text.startsWith('COMMUNITY_')) ||
                         (text && text.startsWith('RELIGION_')) ||
@@ -32,24 +38,41 @@ async function handleServiceSelector(ctx, req, res) {
     }
 
     // STATE 1: SERVICE_SELECTION OR EXPLICIT SERVICE SWITCH
-    const isExplicitServiceSwitch = text === 'வருமானச் சான்றிதழ்' || 
+    const isExplicitServiceSwitch = text === 'வருவாய்த் துறை' ||
+                                    text === 'வருவாய்த் துறை சான்றிதழ்கள்' ||
+                                    text === 'வருவாய் துறை' ||
+                                    text === 'REVENUE_DEPARTMENT' ||
+                                    text === 'REVENUE_DEPARTMENT_SERVICES' ||
+                                    text === 'MAIN_MENU' ||
+                                    text === 'முதன்மைப் பட்டியல்' ||
+                                    text.includes('முதன்மைப் பட்டியல்') ||
+                                    text === 'வருமானச் சான்றிதழ்' || 
                                     text === 'இருப்பிடச் சான்றிதழ்' || 
                                     text === 'புதிய ரேஷன் கார்டு' || 
                                     text === 'புதிய குடும்ப அட்டை' ||
                                     text === 'ரேஷன் கார்டு' ||
                                     text === 'புதிய வாக்காளர் அட்டை' || 
                                     text === 'சாதிச் சான்றிதழ்' || 
+                                    text === 'முதல் பட்டதாரி சான்றிதழ்' ||
+                                    text === 'முதல் பட்டதாரி' ||
                                     text.includes('வருமானச் சான்றிதழ்') || 
                                     text.includes('இருப்பிடச் சான்றிதழ்') || 
                                     text.includes('புதிய ரேஷன் கார்டு') || 
                                     text.includes('ரேஷன் கார்டு') ||
                                     text.includes('புதிய வாக்காளர் அட்டை') || 
                                     text.includes('சாதிச் சான்றிதழ்') ||
+                                    text.includes('முதல் பட்டதாரி') ||
+                                    text.toLowerCase().includes('first graduate') ||
                                     (text.toLowerCase() === 'community' || text.toLowerCase() === 'community certificate') ||
                                     text === 'NEW_RATION_CARD' || 
                                     text === 'INCOME_CERTIFICATE' || 
                                     text === 'RESIDENCE_CERTIFICATE' || 
                                     text === 'COMMUNITY_CERTIFICATE' || 
+                                    text === 'FIRST_GRADUATE_CERTIFICATE' ||
+                                    text === 'FIRST_GRADUATE' ||
+                                    text === 'OBC_CERTIFICATE' ||
+                                    text === 'OBC' ||
+                                    text === 'OBC சான்றிதழ்' ||
                                     text === 'VOTER_ID' ||
                                     text === 'குடும்ப உறுப்பினர் சேர்க்க' ||
                                     text === 'குடும்ப உறுப்பினர் நீக்க' ||
@@ -62,7 +85,7 @@ async function handleServiceSelector(ctx, req, res) {
                                     text.startsWith('4.') || text.startsWith('5.') || text.startsWith('6.') ||
                                     text.startsWith('7.') || text.startsWith('8.');
 
-    if (sess.intakeState === 'SERVICE_SELECTION' || sess.intakeState === 'RATION_CARD_SERVICES' || isExplicitServiceSwitch) {
+    if (sess.intakeState === 'SERVICE_SELECTION' || sess.intakeState === 'RATION_CARD_SERVICES' || sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES' || isExplicitServiceSwitch) {
         handleServiceSelection(text, sess);
         persistSessions();
         const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];

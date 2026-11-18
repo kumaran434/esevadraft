@@ -21,6 +21,8 @@ const SERVICE_TITLES_TAMIL = {
     'COMMUNITY_CERT': 'சாதிச் சான்றிதழ்',
     'RESIDENCE_CERT': 'இருப்பிடச் சான்றிதழ்',
     'FIRST_GRADUATE': 'முதல் பட்டதாரி சான்றிதழ்',
+    'OBC_CERTIFICATE': 'OBC சான்றிதழ் (REV-115)',
+    'OBC_CERT': 'OBC சான்றிதழ் (REV-115)',
     'REMOVE_MEMBER': 'குடும்ப உறுப்பினர் நீக்கம்',
     'ADD_MEMBER': 'குடும்ப உறுப்பினர் சேர்க்கை',
     'CHANGE_ADDRESS': 'குடும்ப அட்டை முகவரி மாற்றம்',

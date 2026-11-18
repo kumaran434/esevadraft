@@ -274,9 +274,25 @@
         // If a specific service is chosen (pill click), it is stored as pendingSelectedService
         // so startCustomerSessionFromModal() can route directly to that service after number entry.
         function startDirectApplyService(serviceName) {
+            const isCategory = serviceName === 'ரேஷன் கார்டு' || 
+                               serviceName === 'வருவாய்த் துறை' || 
+                               serviceName === 'வருவாய்த் துறை சான்றிதழ்கள்' || 
+                               serviceName === 'வருவாய் துறை' ||
+                               serviceName === 'RATION_CARD_SERVICES' ||
+                               serviceName === 'REVENUE_DEPARTMENT_SERVICES' ||
+                               serviceName === 'MAIN_MENU';
+            if (isCategory) {
+                switchTab('citizen');
+                if (typeof citizenStartService === 'function') {
+                    citizenStartService(serviceName);
+                } else if (typeof sendTextMessage === 'function') {
+                    sendTextMessage(serviceName);
+                }
+                return;
+            }
             // Store which service was chosen (or null for generic SERVICE_SELECTION)
             window.pendingSelectedService = serviceName || null;
-            // Always open the phone number modal — no walkin_ dummy sessions ever
+            // Open the phone number modal so intake is bound directly to the chosen subservice
             openNewCustomerModal();
         }
 

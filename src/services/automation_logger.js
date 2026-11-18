@@ -11,7 +11,7 @@ const SERVICE_NAME_MAP = {
     add_member: 'add_member', addmember: 'add_member', 'add-member': 'add_member', ration_add_member: 'add_member', 'உறுப்பினர் சேர்க்கை': 'add_member',
     change_address: 'change_address', changeaddress: 'change_address', 'change-address': 'change_address', ration_change_address: 'change_address', 'முகவரி மாற்றம்': 'change_address',
     tnega_income: 'tnega_income', 'வருமானச் சான்றிதழ்': 'tnega_income', tnega_community: 'tnega_community', 'சாதிச் சான்றிதழ்': 'tnega_community',
-    tnega_nativity: 'tnega_nativity', 'இருப்பிடச் சான்றிதழ்': 'tnega_nativity', tnega_first_graduate: 'tnega_first_graduate', nvsp_voter: 'nvsp_voter', patta_chitta: 'patta_chitta'
+    tnega_nativity: 'tnega_nativity', 'இருப்பிடச் சான்றிதழ்': 'tnega_nativity', tnega_first_graduate: 'tnega_first_graduate', tnega_obc: 'tnega_obc', obc: 'tnega_obc', 'obc சான்றிதழ்': 'tnega_obc', nvsp_voter: 'nvsp_voter', patta_chitta: 'patta_chitta'
 };
 
 function sanitizeLogKey(key, fallback = 'general') {

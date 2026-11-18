@@ -6,7 +6,7 @@ const {
     startTnpdsAddMemberFlow, 
     startTnpdsAddressChangeFlow 
 } = require('../../../tnpds_automation');
-const { startTnegaCanRegisterFlow, startTnegaIncomeFlow, startTnegaResidenceFlow, startTnegaCommunityFlow } = require('../../../tnega_can_automation');
+const { startTnegaCanRegisterFlow, startTnegaIncomeFlow, startTnegaResidenceFlow, startTnegaCommunityFlow, startTnegaFirstGraduateFlow, startTnegaObcFlow } = require('../../../tnega_can_automation');
 const { runAutomationTask } = require('./chat_automation_runner');
 
 const { persistSessions } = storageService;
@@ -25,7 +25,7 @@ async function handleAutomationStarter(ctx, req, res) {
     const recognizedStartTokens = [
         'start', 'தொடங்கு', 'fill', '🚀 தொடங்கு', 'சமர்ப்பிக்கவும்',
         'start_income_apply', 'launch_can_automation', 'start_residence_apply', 'apply_residence_now',
-        'start_community_apply', 'apply_community_now'
+        'start_community_apply', 'apply_community_now', 'start_first_graduate_apply', 'start_obc_apply'
     ];
     const isStartToken = recognizedStartTokens.some(tok => text.toLowerCase() === tok || (tok.length > 5 && text.includes(tok)));
 
@@ -60,59 +60,154 @@ async function handleAutomationStarter(ctx, req, res) {
     const hasCan = Boolean(sess.canNumber || pProfile.canNumber || pProfile.can);
     const targetServiceHint = String(sess.targetService || pProfile.targetService || sess.service || pProfile.service || sess.serviceId || pProfile.serviceId || '').toUpperCase();
     const intakeStateHint = String(sess.intakeState || pProfile.intakeState || '').toUpperCase();
+    const explicitSub = String(sess.subService || pProfile.subService || '').toUpperCase();
 
-    const isCommunityService = targetServiceHint.includes('COMMUNITY') || 
-                               targetServiceHint.includes('சாதி') || 
-                               intakeStateHint.includes('COMMUNITY') || 
-                               sess.subService === 'COMMUNITY' || 
-                               sess.subService === 'COMMUNITY_CERTIFICATE' || 
-                               pProfile.subService === 'COMMUNITY' || 
-                               Boolean(pProfile.caste || pProfile.community);
+    const isExplicitObc = targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeStateHint.includes('OBC') || explicitSub === 'OBC' || explicitSub === 'OBC_CERTIFICATE';
+    const isExplicitFirstGrad = !isExplicitObc && (targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeStateHint.includes('FIRST_GRADUATE') || explicitSub === 'FIRST_GRADUATE' || explicitSub === 'FIRST_GRADUATE_CERTIFICATE');
+    const isExplicitIncome = !isExplicitObc && !isExplicitFirstGrad && (targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeStateHint.includes('INCOME') || explicitSub === 'INCOME' || explicitSub === 'INCOME_CERTIFICATE');
+    const isExplicitResidence = targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeStateHint.includes('RESIDENCE') || intakeStateHint.includes('NATIVITY') || explicitSub === 'RESIDENCE' || explicitSub === 'RESIDENCE_CERTIFICATE';
+    const isExplicitCommunity = targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeStateHint.includes('COMMUNITY') || explicitSub === 'COMMUNITY' || explicitSub === 'COMMUNITY_CERTIFICATE';
 
-    const isResidenceService = !isCommunityService && (
-                               targetServiceHint.includes('RESIDENCE') || 
-                               targetServiceHint.includes('NATIVITY') || 
-                               targetServiceHint.includes('இருப்பிடம்') || 
-                               intakeStateHint.includes('RESIDENCE') || 
-                               intakeStateHint.includes('NATIVITY') || 
-                               sess.subService === 'RESIDENCE' || 
-                               sess.subService === 'RESIDENCE_CERTIFICATE' || 
-                               pProfile.subService === 'RESIDENCE');
+    const isObcService = isExplicitObc;
 
-    const isIncomeService = !isCommunityService && !isResidenceService && (
-                            targetServiceHint.includes('INCOME') || 
-                            targetServiceHint.includes('வருமானம்') || 
-                            intakeStateHint.includes('INCOME') || 
-                            sess.subService === 'INCOME' || 
-                            sess.subService === 'INCOME_CERTIFICATE' || 
-                            pProfile.subService === 'INCOME');
+    const isCommunityService = !isObcService && (isExplicitCommunity || (
+                               !isExplicitFirstGrad && !isExplicitIncome && !isExplicitResidence && !explicitSub &&
+                               Boolean(pProfile.caste || pProfile.community)
+                               ));
 
-    const isCommunityAction = text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
-        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
-        (isCommunityService || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
+    const isResidenceService = !isObcService && !isCommunityService && isExplicitResidence;
+
+    const isIncomeService = !isObcService && !isCommunityService && !isResidenceService && isExplicitIncome;
+
+    const isFirstGraduateService = !isObcService && !isCommunityService && !isResidenceService && !isIncomeService && (
+                                   isExplicitFirstGrad ||
+                                   (!explicitSub && Boolean(pProfile.currentCourse || pProfile.institutionName))
+                                   );
+
+    const isObcAction = text === 'START_OBC_APPLY' || (
+        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') &&
+        (isObcService || sess.intakeState === 'READY_TO_SUBMIT_OBC')
     );
 
-    const isResidenceAction = !isCommunityAction && (
+    const isCommunityAction = !isObcAction && (text === 'START_COMMUNITY_APPLY' || text === 'APPLY_COMMUNITY_NOW' || (
+        (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
+        (isCommunityService || sess.intakeState === 'READY_TO_APPLY_COMMUNITY')
+    ));
+
+    const isResidenceAction = !isObcAction && !isCommunityAction && (
         text === 'START_RESIDENCE_APPLY' || text === 'APPLY_RESIDENCE_NOW' || (
             (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
             (isResidenceService || sess.intakeState === 'READY_TO_APPLY_RESIDENCE')
         )
     );
 
-    const isIncomeAction = !isCommunityAction && !isResidenceAction && (
+    const isIncomeAction = !isObcAction && !isCommunityAction && !isResidenceAction && (
         text === 'START_INCOME_APPLY' || (
             (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
             (isIncomeService || sess.intakeState === 'READY_TO_APPLY_INCOME')
         )
     );
 
-    const isCanRegisterAction = !isCommunityAction && !isResidenceAction && !isIncomeAction && (
+    const isFirstGraduateAction = !isObcAction && !isCommunityAction && !isResidenceAction && !isIncomeAction && (
+        text === 'START_FIRST_GRADUATE_APPLY' || (
+            (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
+            (isFirstGraduateService || sess.intakeState === 'READY_TO_APPLY_FIRST_GRADUATE')
+        )
+    );
+
+    const isCanRegisterAction = !isObcAction && !isCommunityAction && !isResidenceAction && !isIncomeAction && !isFirstGraduateAction && (
         text === 'LAUNCH_CAN_AUTOMATION' || (
             (text.toLowerCase() === 'start' || text === 'தொடங்கு' || text === '🚀 தொடங்கு') && 
             !hasCan &&
             (sess.subService === 'CAN_REGISTER' || pProfile.subService === 'CAN_REGISTER' || sess.intakeState === 'READY_TO_APPLY_CAN')
         )
     );
+
+    if (isObcAction) {
+        sess.subService = 'OBC';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'OBC';
+        const p = sess.citizenProfile || {};
+        const fs = require('fs');
+
+        const photoDoc = p.headPhotoPath || p.documents?.profilePhoto || sess.tempUploads?.profilePhoto;
+        const hasPhoto = Boolean((photoDoc && fs.existsSync(photoDoc)) || sess.draftData?.base64Docs?.profilePhotoBase64);
+        if (!hasPhoto) {
+            sess.intakeState = 'OBC_PHOTO_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `📸 **OBC சான்றிதழ் (REV-115) — புகைப்படம் தேவை:**\n\nதயவுசெய்து விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படத்தை (<250x250px, <50KB) பதிவேற்றவும்:`,
+                options: [{ label: "📸 புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const commDoc = p.communityCertificate || p.communityCertificatePath || p.communityProof || p.documents?.communityCertificate || p.documents?.communityProof || sess.tempUploads?.communityProof;
+        const hasComm = Boolean((commDoc && fs.existsSync(commDoc)) || sess.draftData?.base64Docs?.communityProofBase64 || sess.draftData?.base64Docs?.communityCertificateBase64);
+        if (!hasComm) {
+            sess.intakeState = 'OBC_COMMUNITY_PROOF_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `📜 **OBC சான்றிதழ் (REV-115) — சாதிச் சான்றிதழ் தேவை:**\n\nதயவுசெய்து சாதிச் சான்றிதழை (Community Certificate) பதிவேற்றவும்:`,
+                options: [{ label: "📜 சாதிச் சான்றிதழ் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const incDoc = p.incomeTaxReturn || p.incomeProof || p.salarySlip || p.documents?.incomeTaxReturn || p.documents?.incomeProof || sess.tempUploads?.incomeTaxReturn || sess.tempUploads?.incomeProof;
+        const hasInc = Boolean((incDoc && fs.existsSync(incDoc)) || sess.draftData?.base64Docs?.incomeTaxReturnBase64 || sess.draftData?.base64Docs?.incomeProofBase64);
+        if (!hasInc) {
+            sess.intakeState = 'OBC_INCOME_PROOF_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `💰 **OBC சான்றிதழ் (REV-115) — வருமான / ITR சான்று தேவை:**\n\nதயவுசெய்து வருமான வரி (ITR) அல்லது வருமானச் சான்றைப் பதிவேற்றவும்:`,
+                options: [{ label: "💰 வருமான / ITR சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `${modeText}யில் தமிழ்நாடு அரசு **TNeGA OBC சான்றிதழ் (REV-115)** ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
+                  `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
+                  `• 🏷️ **OBC சாதி:** ${p.caste || p.subCaste || '—'}\n` +
+                  `• 💰 **ஆண்டு வருமானம்:** ₹${p.annualIncome || '72000'}\n\n` +
+                  `Chrome உலாவியில் TNeGA REV-115 படிவம் திறக்கப்பட்டு, அனைத்து 5 ஆவணங்களும் பதிவேற்றப்பட்டு **Pre-Submit Gate** வரை தானாக இயங்கும்...`
+        });
+        sess.isAutomating = true;
+        sess.isAutomationRunning = true;
+        sess.automationStep = 1;
+        persistSessions();
+
+        runAutomationTask(
+            startTnegaObcFlow,
+            p,
+            sess,
+            p.mobileNumber || targetMobile || activeMobile,
+            isMockTest,
+            false,
+            false,
+            req
+        );
+
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            isAutomating: true,
+            subService: 'OBC',
+            serviceId: 'OBC_CERTIFICATE',
+            targetService: 'OBC'
+        });
+        return true;
+    }
 
     if (isCommunityAction) {
         sess.subService = 'COMMUNITY';
@@ -403,6 +498,122 @@ async function handleAutomationStarter(ctx, req, res) {
 
         runAutomationTask(
             startTnegaIncomeFlow,
+            p,
+            sess,
+            p.mobileNumber || targetMobile || activeMobile,
+            isMockTest,
+            false,
+            false,
+            req
+        );
+
+        res.json({
+            chatHistory: sess.chatHistory,
+            citizenProfile: sess.citizenProfile,
+            step: sess.intakeState,
+            isAutomating: true
+        });
+        return true;
+    }
+
+    if (isFirstGraduateAction) {
+        sess.subService = 'FIRST_GRADUATE';
+        if (sess.citizenProfile) sess.citizenProfile.subService = 'FIRST_GRADUATE';
+        const p = sess.citizenProfile || {};
+
+        // 🛡️ PRE-FLIGHT MANDATORY DOCUMENT AUDIT (Golden Rule 6, 14 & 19)
+        const fs = require('fs');
+        const tcDocPath = p.applicantEducationProof || p.studentTc || p.twelfthMarksheet || p.documents?.applicantEducationProof || p.documents?.studentTc || sess.tempUploads?.applicantEducationProof;
+        const hasTcDoc = Boolean(tcDocPath && fs.existsSync(tcDocPath));
+        const photoDocPath = p.headPhotoPath || p.documents?.profilePhoto || sess.tempUploads?.profilePhoto;
+        const hasPhotoDoc = Boolean(photoDocPath && fs.existsSync(photoDocPath));
+        const aadhaarDocPath = p.headAadhaarDocPath || p.documents?.headAadhaar || sess.tempUploads?.headAadhaar;
+        const hasAadhaarDoc = Boolean(aadhaarDocPath && fs.existsSync(aadhaarDocPath));
+
+        if (!hasTcDoc) {
+            sess.intakeState = 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (கட்டாய ஆவணம் விடுபட்டுள்ளது)**\n\n` +
+                      `அரசு விதிகளின்படி முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் **12-ஆம் வகுப்பு பள்ளி மாற்றுச் சான்றிதழ் (School TC)** அல்லது **மதிப்பெண் பட்டியல் (Marksheet)** கட்டாயம் பதிவேற்றப்பட வேண்டும்.\n\n` +
+                      `தயவுசெய்து சான்றிதழைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 மாணவர் 12th TC பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({
+                chatHistory: sess.chatHistory,
+                citizenProfile: sess.citizenProfile,
+                step: sess.intakeState,
+                isAutomating: false
+            });
+            return true;
+        }
+
+        if (!hasPhotoDoc) {
+            sess.intakeState = 'FIRST_GRADUATE_PHOTO_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (நேரடி பாஸ்போர்ட் புகைப்படம் விடுபட்டுள்ளது)**\n\n` +
+                      `முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் நேரடி பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து மாணவரின் பாஸ்போர்ட் புகைப்படத்தைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 பாஸ்போர்ட் புகைப்படம் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({
+                chatHistory: sess.chatHistory,
+                citizenProfile: sess.citizenProfile,
+                step: sess.intakeState,
+                isAutomating: false
+            });
+            return true;
+        }
+
+        if (!hasAadhaarDoc && !p.headAadhaar && !p.aadhaarNumber) {
+            sess.intakeState = 'FIRST_GRADUATE_AADHAAR_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🛑 **விண்ணப்பிக்க முடியாது! (ஆதார் அட்டை விடுபட்டுள்ளது)**\n\n` +
+                      `முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் ஆதார் அட்டை கட்டாயம் தேவை.\n\n` +
+                      `தயவுசெய்து மாணவரின் ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                options: [
+                    { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({
+                chatHistory: sess.chatHistory,
+                citizenProfile: sess.citizenProfile,
+                step: sess.intakeState,
+                isAutomating: false
+            });
+            return true;
+        }
+
+        const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை உற்பத்தி முறை (Live Production)';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `${modeText}யில் தமிழ்நாடு அரசு TNeGA முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
+                  `• 🔢 **CAN எண்:** **${p.canNumber || '—'}** ✅\n` +
+                  `• 👤 **மாணவர்:** ${p.fullNameTam || p.fullNameEng || 'மாணவர்'}\n` +
+                  `• 🎓 **படிப்பு:** ${p.currentCourse || p.degreeCourse || 'B.E.'}\n` +
+                  `• 🏛️ **கல்வி நிறுவனம்:** ${p.institutionName || p.collegeName || '—'}\n` +
+                  `• 👨‍👩‍👦 **பெற்றோர் கல்வி:** [தந்தை: ${p.fatherEducation || '10th'}] [தாய்: ${p.motherEducation || '8th'}]\n\n` +
+                  `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் விண்ணப்பப் படிவம் திறக்கப்படுகிறது...`
+        });
+        sess.isAutomating = true;
+        sess.isAutomationRunning = true;
+        sess.automationStep = 1;
+        persistSessions();
+
+        runAutomationTask(
+            startTnegaFirstGraduateFlow,
             p,
             sess,
             p.mobileNumber || targetMobile || activeMobile,

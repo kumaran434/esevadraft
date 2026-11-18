@@ -164,4 +164,221 @@ router.get('/api/telemetry/errors', async (req, res) => {
     }
 });
 
+// =========================================================================
+// FOUNDER-ONLY GOLDEN SAMPLE GALLERY (STRICTLY LOCKED TO FOUNDER PC & UID)
+// Never exposed to external franchise operators, citizens, or production hosts.
+// =========================================================================
+const FOUNDER_UIDS = new Set(['z9tsoaph0hh69du0xpk2gdxk2kr2', 'local_op_dev']);
+const FOUNDER_GOLDEN_ROOT = path.resolve('d:\\downloads\\ai assitant 2\\data\\golden_samples');
+const KUMARAN_GALLERY_DIR = path.join(FOUNDER_GOLDEN_ROOT, 'kumaran_gallery');
+
+const GALLERY_ITEM_METADATA = {
+    '01_kumaran_passport_photo.jpg': {
+        title: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<250px)',
+        titleEng: 'Kumaran Passport Photo (<250x250px)',
+        category: 'IDENTITY',
+        badge: 'Photo (All Services)',
+        docType: 'profilePhoto'
+    },
+    '02_kumaran_aadhaar_front.jpg': {
+        title: 'ஆதார் அட்டை (முன்பக்கம்)',
+        titleEng: 'Kumaran Aadhaar Front',
+        category: 'IDENTITY',
+        badge: 'Aadhaar Front',
+        docType: 'headAadhaarFront'
+    },
+    '03_kumaran_aadhaar_back.jpg': {
+        title: 'ஆதார் அட்டை (பின்பக்கம்)',
+        titleEng: 'Kumaran Aadhaar Back',
+        category: 'IDENTITY',
+        badge: 'Aadhaar Back',
+        docType: 'headAadhaarBack'
+    },
+    '04_kumaran_aadhaar_2in1.jpg': {
+        title: 'ஆதார் அட்டை (2-in-1 முழு நகல்)',
+        titleEng: 'Kumaran Aadhaar 2-in-1',
+        category: 'IDENTITY',
+        badge: 'Address / Aadhaar',
+        docType: 'headAadhaar'
+    },
+    '05_community_certificate_kumaran.jpg': {
+        title: 'சாதிச் சான்றிதழ் (வன்னியர் / MBC)',
+        titleEng: 'Community Certificate (REV-101 / OBC)',
+        category: 'COMMUNITY',
+        badge: 'Community / OBC',
+        docType: 'communityCertificate'
+    },
+    '06_income_payslip_kumaran.jpg': {
+        title: 'சம்பளச் சான்று / வருமான ஆதாரம்',
+        titleEng: 'Payslip / Income Proof (REV-103)',
+        category: 'INCOME',
+        badge: 'Income REV-103',
+        docType: 'incomeProof'
+    },
+    '07_obc_income_tax_return_kumaran.jpg': {
+        title: 'வருமான வரி / ITR சான்று (Non-Creamy Layer)',
+        titleEng: 'ITR / Income Statement (OBC REV-115)',
+        category: 'OBC',
+        badge: 'OBC REV-115',
+        docType: 'incomeTaxReturn'
+    },
+    '08_residence_eb_bill_kumaran.jpg': {
+        title: 'மின் கட்டண ரசீது / இருப்பிட ஆதாரம்',
+        titleEng: 'TANGEDCO EB Bill (Residence REV-102)',
+        category: 'RESIDENCE',
+        badge: 'Residence / Ration',
+        docType: 'residenceProof'
+    },
+    '09_family_smart_ration_card_kumaran.jpg': {
+        title: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு',
+        titleEng: 'Family Smart Ration Card (REV-104)',
+        category: 'FIRST_GRADUATE',
+        badge: 'Smart Card REV-104',
+        docType: 'smartCard'
+    },
+    '10_fg_student_12th_tc_kumaran.jpg': {
+        title: 'மாணவர் 12-ஆம் வகுப்பு TC',
+        titleEng: 'Student 12th TC (First Grad REV-104)',
+        category: 'FIRST_GRADUATE',
+        badge: 'First Grad REV-104',
+        docType: 'applicantEducationProof'
+    },
+    '11_fg_father_tc_kirubakaran.jpg': {
+        title: 'தந்தை பள்ளி மாற்றுச் சான்றிதழ் (10th TC)',
+        titleEng: 'Father School TC (First Grad REV-104)',
+        category: 'FIRST_GRADUATE',
+        badge: 'First Grad REV-104',
+        docType: 'fatherEducationProof'
+    },
+    '12_fg_mother_tc_devaki.jpg': {
+        title: 'தாய் பள்ளி மாற்றுச் சான்றிதழ் (8th TC)',
+        titleEng: 'Mother School TC (First Grad REV-104)',
+        category: 'FIRST_GRADUATE',
+        badge: 'First Grad REV-104',
+        docType: 'motherEducationProof'
+    },
+    '13_gas_book_indane_kumaran.jpg': {
+        title: 'Indane எரிவாயு நுகர்வோர் புத்தகம்',
+        titleEng: 'Indane Gas Book (New Ration Card)',
+        category: 'RATION',
+        badge: 'Ration Card',
+        docType: 'gasBook'
+    }
+};
+
+function isFounderGalleryAuthorized(req) {
+    try {
+        const ip = String(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '').toLowerCase();
+        const host = String(req.headers?.host || '').toLowerCase();
+        const isLoopback = ip.includes('127.0.0.1') || ip === '::1' || ip === '' || host.startsWith('127.0.0.1:') || host.startsWith('localhost:');
+        if (!isLoopback) return false;
+
+        const opUid = String(req.headers['x-operator-uid'] || req.query?.uid || '').trim().toLowerCase();
+        if (!FOUNDER_UIDS.has(opUid)) return false;
+
+        if (!fs.existsSync(FOUNDER_GOLDEN_ROOT)) return false;
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function scanGoldenGalleryItems(opUid) {
+    const items = [];
+    const seenRel = new Set();
+    const scanDir = (dirPath, folderLabel) => {
+        if (!fs.existsSync(dirPath)) return;
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const ent of entries) {
+            const full = path.join(dirPath, ent.name);
+            if (ent.isDirectory()) {
+                scanDir(full, ent.name);
+                continue;
+            }
+            if (!/\.(jpg|jpeg|png|webp|pdf)$/i.test(ent.name)) continue;
+            const rel = path.relative(FOUNDER_GOLDEN_ROOT, full).replace(/\\/g, '/');
+            if (seenRel.has(rel)) continue;
+            seenRel.add(rel);
+            const stat = fs.statSync(full);
+            const meta = GALLERY_ITEM_METADATA[ent.name] || {
+                title: ent.name.replace(/[_-]+/g, ' ').replace(/\.\w+$/, ''),
+                titleEng: ent.name,
+                category: String(folderLabel || 'OTHER').toUpperCase(),
+                badge: folderLabel || 'Sample',
+                docType: ent.name.toLowerCase().includes('photo') ? 'profilePhoto' :
+                         (ent.name.toLowerCase().includes('aadhaar') ? 'headAadhaar' :
+                         (ent.name.toLowerCase().includes('community') ? 'communityCertificate' :
+                         (ent.name.toLowerCase().includes('income_tax') || ent.name.toLowerCase().includes('itr') ? 'incomeTaxReturn' :
+                         (ent.name.toLowerCase().includes('income') || ent.name.toLowerCase().includes('salary') ? 'incomeProof' : 'other'))))
+            };
+            items.push({
+                id: rel,
+                fileName: ent.name,
+                relPath: rel,
+                folder: folderLabel,
+                sizeKB: Math.max(1, Math.round(stat.size / 1024)),
+                isPdf: ent.name.toLowerCase().endsWith('.pdf'),
+                title: meta.title,
+                titleEng: meta.titleEng,
+                category: meta.category,
+                badge: meta.badge,
+                docType: meta.docType,
+                previewUrl: `/api/dev/golden-gallery/file?rel=${encodeURIComponent(rel)}&uid=${encodeURIComponent(opUid)}`
+            });
+        }
+    };
+
+    scanDir(KUMARAN_GALLERY_DIR, 'kumaran_gallery');
+    const topEntries = fs.readdirSync(FOUNDER_GOLDEN_ROOT, { withFileTypes: true });
+    for (const ent of topEntries) {
+        if (ent.isDirectory() && ent.name !== 'kumaran_gallery') {
+            scanDir(path.join(FOUNDER_GOLDEN_ROOT, ent.name), ent.name);
+        }
+    }
+    return items;
+}
+
+// 9. GET /api/dev/golden-gallery
+router.get('/api/dev/golden-gallery', (req, res) => {
+    if (!isFounderGalleryAuthorized(req)) {
+        return res.status(403).json({ success: false, enabled: false, items: [] });
+    }
+    const opUid = String(req.headers['x-operator-uid'] || req.query?.uid || '').trim();
+    const items = scanGoldenGalleryItems(opUid);
+    res.json({
+        success: true,
+        enabled: true,
+        folderPath: KUMARAN_GALLERY_DIR,
+        rootPath: FOUNDER_GOLDEN_ROOT,
+        items
+    });
+});
+
+// 10. GET /api/dev/golden-gallery/file
+router.get('/api/dev/golden-gallery/file', (req, res) => {
+    if (!isFounderGalleryAuthorized(req)) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    const rel = String(req.query.rel || '');
+    const resolved = path.resolve(FOUNDER_GOLDEN_ROOT, rel);
+    if (!resolved.startsWith(FOUNDER_GOLDEN_ROOT) || !fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
+        return res.status(404).json({ error: 'Sample file not found' });
+    }
+    return res.sendFile(resolved);
+});
+
+// 11. POST /api/dev/golden-gallery/open-folder
+router.post('/api/dev/golden-gallery/open-folder', (req, res) => {
+    if (!isFounderGalleryAuthorized(req)) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    try {
+        const target = fs.existsSync(KUMARAN_GALLERY_DIR) ? KUMARAN_GALLERY_DIR : FOUNDER_GOLDEN_ROOT;
+        require('child_process').spawn('explorer.exe', [target], { detached: true, stdio: 'ignore' }).unref();
+        return res.json({ success: true, folderPath: target });
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 module.exports = router;

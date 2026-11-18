@@ -78,7 +78,8 @@
                 });
             }
 
-            const signature = `${curSub}::` + filteredDocs.map(d => `${d.type || ''}|${d.title || ''}|${d.downloadUrl || ''}`).join(';;');
+            const normalizeSigUrl = (u) => String(u || '').replace(/([?&])_t=\d+/g, '$1').replace(/[?&]$/, '');
+            const signature = `${curSub}::` + filteredDocs.map(d => `${d.type || ''}|${d.title || ''}|${Boolean(d.isPdf)}|${normalizeSigUrl(d.downloadUrl)}`).join(';;');
             if (signature === lastRenderedDocsSignature && docsList.children.length > 0) {
                 return; // ZERO FLICKER: Prevents unnecessary DOM thrashing & scroll jumps!
             }
@@ -149,6 +150,8 @@
         }
 
         let cachedServerDocsByMobile = {};
+        let cachedDocsFetchedAtByMobile = {};
+        let cachedDocsSubByMobile = {};
 
         function downloadDocumentFile(url, suggestedName, isPdf) {
             let filename = suggestedName || 'document';
@@ -172,6 +175,8 @@
 
         function resetSidebarDocsCache() {
             cachedServerDocsByMobile = {};
+            cachedDocsFetchedAtByMobile = {};
+            cachedDocsSubByMobile = {};
             lastRenderedDocsSignature = '';
         }
         window.resetSidebarDocsCache = resetSidebarDocsCache;
@@ -180,8 +185,16 @@
             if (!mobile) return;
             const raw = String(mobile).trim();
             const clean = raw.replace(/\D/g, '').slice(-10);
-            if (raw) delete cachedServerDocsByMobile[raw];
-            if (clean) delete cachedServerDocsByMobile[clean];
+            if (raw) {
+                delete cachedServerDocsByMobile[raw];
+                delete cachedDocsFetchedAtByMobile[raw];
+                delete cachedDocsSubByMobile[raw];
+            }
+            if (clean) {
+                delete cachedServerDocsByMobile[clean];
+                delete cachedDocsFetchedAtByMobile[clean];
+                delete cachedDocsSubByMobile[clean];
+            }
             lastRenderedDocsSignature = '';
         }
         window.clearCustomerDocCache = clearCustomerDocCache;
@@ -190,6 +203,8 @@
             const cleanMob = mobile || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session';
             const curSub = currentCitizenData?.subService || window.lastSubService || '';
             const subQuery = curSub ? `?subService=${encodeURIComponent(curSub)}` : '';
+            cachedDocsFetchedAtByMobile[cleanMob] = Date.now();
+            cachedDocsSubByMobile[cleanMob] = curSub;
             try {
                 const res = await fetch(`/api/drafts/${encodeURIComponent(cleanMob)}/documents-list${subQuery}`);
                 const data = await res.json();
@@ -208,8 +223,10 @@
                 }
             } catch (err) {
                 console.error('Failed to fetch sidebar documents:', err);
-                cachedServerDocsByMobile[cleanMob] = [];
-                renderSidebarDocuments([]);
+                if (!cachedServerDocsByMobile[cleanMob]) {
+                    cachedServerDocsByMobile[cleanMob] = [];
+                    renderSidebarDocuments([]);
+                }
             }
         }
 
@@ -287,6 +304,15 @@
             const appNo = data.applicationNumber || (a && a.applicationNumber);
             const pdfUrl = data.applicationPdfUrl || (a && a.applicationPdfUrl);
 
+            if (a) {
+                if (data?.subService) a.subService = data.subService;
+                if (data?.subServiceData) a.subServiceData = data.subServiceData;
+                if (data?.documents) a.documents = { ...(a.documents || {}), ...data.documents };
+                window.lastSubService = a.subService || window.lastSubService || null;
+                window.lastSubServiceData = a.subServiceData || null;
+                currentCitizenData = a;
+            }
+
             // Reveal customer profile and hide empty operator desk card
             const opCard = document.getElementById('sidebarOperatorDeskCard');
             const custBox = document.getElementById('sidebarCustomerDetailsBox');
@@ -295,7 +321,7 @@
             const sidebarTitle = document.getElementById('sidebarTitleText');
             if (sidebarTitle) sidebarTitle.innerText = '📋 சரிபார்க்கப்பட்ட விவரங்கள்';
 
-            // 1. Immediately render documents without bouncing counts:
+            // 1. Immediately render documents without bouncing counts (Server Cache First = ZERO FLICKER):
             // If we are at SERVICE_SELECTION (no service selected yet), hide documents box entirely!
             const curStateEarly = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
             const isServiceSelectionOnlyEarly = (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
@@ -305,17 +331,24 @@
                 if (docsBoxEarly) docsBoxEarly.style.display = 'none';
             } else {
                 if (docsBoxEarly) docsBoxEarly.style.display = 'block';
+                const activeSubNow = (a && a.subService) || window.lastSubService || '';
                 const cachedDocs = cachedServerDocsByMobile[targetMobile];
-                const instantDocs = extractDocumentsFromProfile(a, targetMobile, appNo, pdfUrl);
+                const cachedSub = cachedDocsSubByMobile[targetMobile] || '';
+                const fetchedAt = cachedDocsFetchedAtByMobile[targetMobile] || 0;
+                const cacheMatchesSub = Array.isArray(cachedDocs) && cachedSub === activeSubNow;
+                const cacheIsFresh = cacheMatchesSub && cachedDocs.length > 0 && (Date.now() - fetchedAt < 8000);
 
-                if (instantDocs.length > 0) {
-                    renderSidebarDocuments(instantDocs);
-                } else if (cachedDocs && cachedDocs.length > 0) {
+                if (cacheMatchesSub && cachedDocs.length > 0) {
                     renderSidebarDocuments(cachedDocs);
+                } else {
+                    const instantDocs = extractDocumentsFromProfile(a, targetMobile, appNo, pdfUrl);
+                    if (instantDocs.length > 0) {
+                        renderSidebarDocuments(instantDocs);
+                    }
                 }
 
-                // 2. Refresh in parallel from server
-                if (targetMobile) {
+                // 2. Refresh from server only when cache is missing, service switched, or stale (> 8s)
+                if (targetMobile && !cacheIsFresh) {
                     fetchSidebarDocuments(targetMobile);
                 }
             }
@@ -339,13 +372,6 @@
             }
 
             if (a) {
-                if (data?.subService) a.subService = data.subService;
-                if (data?.subServiceData) a.subServiceData = data.subServiceData;
-                if (data?.documents) a.documents = { ...(a.documents || {}), ...data.documents };
-                window.lastSubService = a.subService || null;
-                window.lastSubServiceData = a.subServiceData || null;
-
-                currentCitizenData = a;
                 const subData = a.subServiceData || null;
                 const isSubserviceAddMember = a.subService === 'ADD_MEMBER';
                 const isSubserviceRemoveMember = a.subService === 'REMOVE_MEMBER';
@@ -402,13 +428,15 @@
                                           a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' ||
                                           window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
                                           svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card');
-                const isIncomeService = !isServiceSelectionOnly && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'));
-                const isResidenceService = !isServiceSelectionOnly && (curState.includes('RESIDENCE') || svcName.includes('இருப்பிடம்') || svcName.includes('residence'));
-                const isCommunityService = !isServiceSelectionOnly && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'));
+                const isObcService = !isServiceSelectionOnly && (curState.includes('OBC') || svcName.includes('obc') || svcName.includes('இதர பிற்படுத்தப்பட்டோர்') || svcName.includes('rev-115') || a.subService === 'OBC');
+                const isIncomeService = !isServiceSelectionOnly && !isObcService && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'));
+                const isResidenceService = !isServiceSelectionOnly && !isObcService && (curState.includes('RESIDENCE') || svcName.includes('இருப்பிடம்') || svcName.includes('residence'));
+                const isCommunityService = !isServiceSelectionOnly && !isObcService && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'));
+                const isFirstGraduateService = !isServiceSelectionOnly && !isObcService && (curState.includes('FIRST_GRADUATE') || svcName.includes('பட்டதாரி') || svcName.includes('first_graduate') || svcName.includes('first graduate') || a.subService === 'FIRST_GRADUATE');
                 const isRemoveMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceRemoveMember;
                 const isAddMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceAddMember;
                 const isAddressChangeService = !isServiceSelectionOnly && !isExplicitNewCard && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
-                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isIncomeService && !isResidenceService && !isCommunityService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
+                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isIncomeService && !isResidenceService && !isCommunityService && !isFirstGraduateService && !isObcService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
                     curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE'
                 )));
 
@@ -421,7 +449,9 @@
                 if (headTitleEl) {
                     if (isIncomeService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள்';
                     else if (isResidenceService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (இருப்பிடம்)';
+                    else if (isObcService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (OBC சான்றிதழ்)';
                     else if (isCommunityService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (சாதிச் சான்றிதழ்)';
+                    else if (isFirstGraduateService) headTitleEl.innerHTML = '👤 மாணவர் / விண்ணப்பதாரர் விவரங்கள்';
                     else if (isRemoveMemberService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் / அட்டை விவரங்கள்';
                     else if (isAddressChangeService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் / அட்டை விவரங்கள்';
                     else if (isAddMemberService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் விவரங்கள்';
@@ -467,6 +497,35 @@
                         setVal('infoCommunityCaste', a.caste || a.subCaste || a.casteName || '—');
                     } else {
                         communityBox.style.display = 'none';
+                    }
+                }
+
+                // 2.4 First Graduate Certificate Box
+                const firstGraduateBox = document.getElementById('sidebarFirstGraduateBox');
+                if (firstGraduateBox) {
+                    if (isFirstGraduateService) {
+                        firstGraduateBox.style.display = 'block';
+                        setVal('infoFirstGraduateCanNo', a.canNumber || '—');
+                        setVal('infoFirstGraduateCourse', a.currentCourse || a.degreeCourse || a.courseName || '—');
+                        setVal('infoFirstGraduateCollege', a.institutionName || a.collegeName || '—');
+                        setVal('infoFirstGraduateFatherEdu', a.fatherEducation || '—');
+                        setVal('infoFirstGraduateMotherEdu', a.motherEducation || '—');
+                    } else {
+                        firstGraduateBox.style.display = 'none';
+                    }
+                }
+
+                // 2.45 OBC Certificate Box (REV-115)
+                const obcBox = document.getElementById('sidebarObcBox');
+                if (obcBox) {
+                    if (isObcService) {
+                        obcBox.style.display = 'block';
+                        setVal('infoObcCanNo', a.canNumber || '—');
+                        setVal('infoObcCaste', a.caste || a.subCaste || '—');
+                        setVal('infoObcOccupation', a.occupation || a.applicantOccupation || '—');
+                        setVal('infoObcIncome', a.annualIncome ? `₹${a.annualIncome}` : '—');
+                    } else {
+                        obcBox.style.display = 'none';
                     }
                 }
 

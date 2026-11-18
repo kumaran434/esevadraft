@@ -58,8 +58,17 @@
             const isOp = localStorage.getItem('eseva_user_role') === 'operator';
             const userMob = isOp ? (localStorage.getItem('eseva_active_customer_mobile') || '') : (localStorage.getItem('eseva_user_mobile') || '');
 
-            // RULE: If operator has no active customer selected, always prompt for customer mobile first!
-            if (isOp && (!userMob || userMob.startsWith('walkin_'))) {
+            const isCategory = serviceName === 'ரேஷன் கார்டு' || 
+                               serviceName === 'வருவாய்த் துறை' || 
+                               serviceName === 'வருவாய்த் துறை சான்றிதழ்கள்' || 
+                               serviceName === 'வருவாய் துறை' ||
+                               serviceName === 'RATION_CARD_SERVICES' ||
+                               serviceName === 'REVENUE_DEPARTMENT_SERVICES' ||
+                               serviceName === 'MAIN_MENU';
+
+            // RULE: If operator has no active customer selected AND clicked a concrete subservice, prompt for customer mobile first!
+            // If it's a category (Ration Card or Revenue Department), allow them to view and select the subservice in chat!
+            if (isOp && (!userMob || userMob.startsWith('walkin_')) && !isCategory) {
                 if (typeof startDirectApplyService === 'function') {
                     startDirectApplyService(serviceName);
                 } else if (typeof openNewCustomerModal === 'function') {

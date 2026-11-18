@@ -149,7 +149,7 @@ const SERVICES_REGISTRY = {
         requiredDocuments: [
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை', format: 'pdf' },
-            { key: 'incomeProof', label: 'சம்பளச் சான்று அல்லது சுய அறிவிப்புப் படிவம் (Self-declaration)', format: 'pdf', optional: false },
+            { key: 'incomeProof', label: 'சம்பளச் சான்று அல்லது சுய அறிவிப்புப் படிவம் (Self-declaration)', format: 'pdf', optional: true },
             { key: 'rationCard', label: 'குடும்ப ரேஷன் கார்டு', format: 'pdf', optional: true }
         ]
     },
@@ -245,6 +245,73 @@ const SERVICES_REGISTRY = {
         requiredDocuments: [
             { key: 'profilePhoto', label: 'பாஸ்போர்ட் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை (வயது மற்றும் இருப்பிடச் சான்று)', format: 'pdf' }
+        ]
+    },
+
+    FIRST_GRADUATE_CERTIFICATE: {
+        id: 'FIRST_GRADUATE_CERTIFICATE',
+        code: 'REV-104',
+        nameTamil: 'முதல் பட்டதாரி சான்றிதழ்',
+        nameEnglish: 'First Graduate Certificate',
+        portal: 'TNeGA Revenue Department (e-Sevai)',
+        portalUrl: 'https://www.tnesevai.tn.gov.in',
+        totalSteps: 22,
+        requiresFamilyMembers: false,
+        commonFields: [
+            { key: 'canNumber', label: '13-இலக்க CAN எண்' },
+            { key: 'fullNameEng', label: 'விண்ணப்பதாரர் பெயர் (ஆங்கிலம்)' },
+            { key: 'fullNameTam', label: 'விண்ணப்பதாரர் பெயர் (தமிழ்)' },
+            { key: 'fatherNameEng', label: 'தந்தை பெயர்' },
+            { key: 'motherNameTam', label: 'தாயின் பெயர் (Mother Name)' },
+            { key: 'doorNo', label: 'கதவு எண்' },
+            { key: 'streetEng', label: 'தெருப் பெயர்' },
+            { key: 'district', label: 'மாவட்டம்' },
+            { key: 'taluk', label: 'வட்டம்' },
+            { key: 'village', label: 'வருவாய் கிராமம்' },
+            { key: 'pincode', label: 'பின்கோடு' },
+            { key: 'headAadhaar', label: 'ஆதார் எண்' }
+        ],
+        specificFields: [
+            { key: 'currentCourse', label: 'படிக்கும் படிப்பு / பட்டம் (Degree/Course)', mandatory: true },
+            { key: 'institutionName', label: 'கல்லூரி / கல்வி நிறுவனம் (College Name)', mandatory: true },
+            { key: 'fatherEducation', label: 'தந்தையின் கல்வித் தகுதி', mandatory: true },
+            { key: 'motherEducation', label: 'தாயின் கல்வித் தகுதி', mandatory: true },
+            { key: 'yearOfPassing', label: '12-ஆம் வகுப்பு தேர்ச்சி ஆண்டு', mandatory: true }
+        ],
+        requiredDocuments: [
+            { key: 'profilePhoto', label: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம்', format: 'image' },
+            { key: 'headAadhaar', label: 'ஆதார் அட்டை (Any Address Proof)', format: 'pdf' },
+            { key: 'applicantEducationProof', label: 'மாணவரின் 12-ஆம் வகுப்பு மாற்றுச் சான்றிதழ் (Applicant TC)', format: 'pdf' },
+            { key: 'smartCard', label: 'குடும்ப அட்டை (Family or Smart Card)', format: 'pdf' },
+            { key: 'fatherEducationProof', label: 'தந்தையின் பள்ளி மாற்றுச் சான்றிதழ் (Father TC)', format: 'pdf' },
+            { key: 'motherEducationProof', label: 'தாயின் பள்ளி மாற்றுச் சான்றிதழ் (Mother TC)', format: 'pdf' },
+            { key: 'selfDeclaration', label: 'சுய உறுதிமொழிப் படிவம் (Self-Declaration Form)', format: 'pdf', optional: true }
+        ]
+    },
+    OBC_CERTIFICATE: {
+        id: 'OBC_CERTIFICATE',
+        nameTamil: 'OBC சான்றிதழ் (REV-115)',
+        nameEnglish: 'OBC Certificate (Other Backward Classes)',
+        portal: 'TNeGA (Revenue Department)',
+        portalUrl: 'https://www.tnesevai.tn.gov.in/',
+        totalSteps: 14,
+        requiresFamilyMembers: false,
+        requiredDocs: [
+            { id: 'profilePhoto', nameTamil: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<250x250px, <50KB)', mandatory: true },
+            { id: 'headAadhaar', nameTamil: 'முகவரி ஆதாரம் (ஆதார் அட்டை / ஸ்மார்ட் கார்டு)', mandatory: true },
+            { id: 'communityCertificate', nameTamil: 'சாதிச் சான்றிதழ் (Community Certificate)', mandatory: true },
+            { id: 'incomeTaxReturn', nameTamil: 'வருமான வரி / வருமானச் சான்று (ITR / Income Proof)', mandatory: true }
+        ],
+        requiredFields: [
+            { key: 'canNumber', labelTamil: '13-இலக்க CAN எண்' },
+            { key: 'fullNameTam', labelTamil: 'விண்ணப்பதாரர் பெயர் (தமிழ்)' },
+            { key: 'fatherNameTam', labelTamil: 'தந்தை பெயர் (தமிழ்)' },
+            { key: 'motherNameTam', labelTamil: 'தாயின் பெயர் (தமிழ்)' },
+            { key: 'caste', labelTamil: 'OBC சாதி / உட்பிரிவு (Caste)' },
+            { key: 'occupation', labelTamil: 'விண்ணப்பதாரர் பணி (Occupation)' },
+            { key: 'fatherOccupation', labelTamil: 'தந்தையின் தொழில் / நிலை' },
+            { key: 'motherOccupation', labelTamil: 'தாயின் தொழில் / நிலை' },
+            { key: 'annualIncome', labelTamil: 'குடும்ப ஆண்டு வருமானம் (ரூ)' }
         ]
     }
 };

@@ -157,7 +157,7 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     }
 
     // 3. Smart Ration Card (if present on Master Profile)
-    const cardPath = dMap.smartCard || dMap.rationCard || prof.smartCardDocPath || prof.rationCardDocPath;
+    const cardPath = dMap.smartCard || dMap.rationCard || prof.smartCard || prof.rationCard || prof.smartCardDocPath || prof.rationCardDocPath;
     if (fileOrDataExists(cardPath, b64Map.smartCardBase64, storageUrls.smartCard)) {
         const cardNo = prof.smartCardNumber || prof.rationCardNumber || prof.rationCardNo || '';
         docs.push({
@@ -196,7 +196,7 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
 
     // 4. Gas Book (Strict real-file check: NEVER add dummy gas book if file doesn't exist!)
     const hasGasDoc = hasGas;
-    const skipGasForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService === 'RESIDENCE');
+    const skipGasForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService === 'RESIDENCE' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
     if (!skipGasForSubservice && hasGasDoc) {
         docs.push({
             type: 'gasBook',
@@ -210,7 +210,7 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     }
 
     // 5. Residence Proof (Strict real-file check)
-    const skipResForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY');
+    const skipResForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
     if (!skipResForSubservice && hasRes) {
         const proofName = prof.residenceProof?.typeTam || 'குடியிருப்புச் சான்று';
         docs.push({
@@ -320,6 +320,8 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
 
     // 6.5 Master Profile Accumulating Documents (PAN Card, Voter ID, Income Proof, TC, Bank Passbook, etc.)
     const KNOWN_DOC_METADATA = {
+        incomeTaxReturn: { title: 'வருமான வரி / வருமானச் சான்று (ITR / Income Proof)', titleEng: 'Income Tax Return / Income Proof', icon: 'fa-file-invoice-dollar' },
+        communityCertificate: { title: 'சாதிச் சான்றிதழ் (Community Certificate)', titleEng: 'Community Certificate', icon: 'fa-certificate' },
         panCard: { title: 'பான் கார்டு (PAN Card)', titleEng: 'PAN Card', icon: 'fa-id-card' },
         panCardFront: { title: 'பான் கார்டு முன்பக்கம் (PAN Card Front)', titleEng: 'PAN Card Front', icon: 'fa-id-card' },
         panCardBack: { title: 'பான் கார்டு பின்பக்கம் (PAN Card Back)', titleEng: 'PAN Card Back', icon: 'fa-id-card' },
@@ -339,6 +341,10 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
         marriageCertificate: { title: 'திருமணச் சான்றிதழ் (Marriage Certificate)', titleEng: 'Marriage Certificate', icon: 'fa-certificate' },
         communityCertificate: { title: 'சாதிச் சான்றிதழ் (Community Certificate)', titleEng: 'Community Certificate', icon: 'fa-award' },
         schoolTc: { title: 'பள்ளி மாற்றுச் சான்றிதழ் (Transfer Certificate - TC)', titleEng: 'School TC', icon: 'fa-graduation-cap' },
+        applicantEducationProof: { title: 'மாணவர் 12-ஆம் வகுப்பு TC (Applicant 12th TC)', titleEng: 'Applicant Transfer Certificate', icon: 'fa-graduation-cap' },
+        fatherEducationProof: { title: 'தந்தையின் பள்ளி TC (Father TC)', titleEng: 'Father Transfer Certificate', icon: 'fa-file-lines' },
+        motherEducationProof: { title: 'தாயின் பள்ளி TC (Mother TC)', titleEng: 'Mother Transfer Certificate', icon: 'fa-file-lines' },
+        selfDeclaration: { title: 'சுய உறுதிமொழிப் படிவம் (Self-Declaration)', titleEng: 'Self-Declaration Form', icon: 'fa-file-signature' },
         deathCertificate: { title: 'இறப்புச் சான்றிதழ் (Death Certificate)', titleEng: 'Death Certificate', icon: 'fa-file-medical' },
         canReceipt: { title: 'TNeGA CAN பதிவு ரசீது', titleEng: 'TNeGA CAN Receipt', icon: 'fa-receipt' }
     };

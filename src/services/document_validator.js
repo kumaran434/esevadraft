@@ -46,8 +46,8 @@ function validateUploadedDocument(slotName, extracted) {
     const docType = String(extracted.documentType || 'UNKNOWN').trim();
     const detectedNameTamil = getDocNameTamil(docType);
 
-    // 1. COMMUNITY PROOF (TNeGA REV-101 / Community Certificate / TC)
-    if (slotName === 'communityProof' || slotName === 'COMMUNITY_PROOF_WAIT') {
+    // 1. COMMUNITY PROOF (TNeGA REV-101 / REV-115 OBC Community Certificate / TC)
+    if (slotName === 'communityProof' || slotName === 'communityCertificate' || slotName === 'COMMUNITY_PROOF_WAIT' || slotName === 'OBC_COMMUNITY_PROOF_WAIT') {
         const isAadhaar = docType.startsWith('AADHAAR_') || extracted.isFullAadhaar || (extracted.aadhaarNumber && !extracted.caste);
         const isPhoto = docType === 'PASSPORT_PHOTO';
         const isUtility = docType === 'EB_BILL' || docType === 'GAS_BOOK' || docType === 'PROPERTY_TAX' || docType === 'WATER_TAX';
@@ -145,8 +145,8 @@ function validateUploadedDocument(slotName, extracted) {
         return { valid: true, detectedType: docType, detectedNameTamil };
     }
 
-    // 6. INCOME PROOF (TNeGA REV-103)
-    if (slotName === 'incomeProof' || slotName === 'salaryCertificate' || slotName === 'INCOME_PROOF_WAIT') {
+    // 6. INCOME PROOF (TNeGA REV-103 / REV-115 OBC ITR & Income Proof)
+    if (slotName === 'incomeProof' || slotName === 'incomeTaxReturn' || slotName === 'salaryCertificate' || slotName === 'INCOME_PROOF_WAIT' || slotName === 'OBC_INCOME_PROOF_WAIT') {
         const isDisallowed = docType.startsWith('AADHAAR_') || docType === 'PASSPORT_PHOTO' || docType === 'COMMUNITY_CERTIFICATE';
         if (isDisallowed) {
             return {
@@ -157,6 +157,54 @@ function validateUploadedDocument(slotName, extracted) {
                             `நீங்கள் பதிவேற்றியது **${detectedNameTamil}** ஆகும்.\n\n` +
                             `⚠️ இங்கு **சம்பளச் சான்று (Salary Certificate), ஊதிய ரசீது (Pay Slip / Bank Statement), அல்லது சுய அறிவிப்புப் படிவம் (Self-Declaration)** மட்டுமே பதிவேற்றப்பட வேண்டும்.\n\n` +
                             `தயவுசெய்து சரியான வருமான ஆதார ஆவணத்தைப் பதிவேற்றவும்.`
+            };
+        }
+        return { valid: true, detectedType: docType, detectedNameTamil };
+    }
+
+    // 7. APPLICANT 12TH TC / MARKSHEET (TNeGA REV-104 First Graduate)
+    if (slotName === 'applicantEducationProof' || slotName === 'studentTc' || slotName === 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT') {
+        const isPhoto = docType === 'PASSPORT_PHOTO';
+        const isAadhaar = docType.startsWith('AADHAAR_') || extracted.isFullAadhaar;
+        if (isPhoto || isAadhaar) {
+            return {
+                valid: false,
+                detectedType: docType,
+                detectedNameTamil,
+                errorTamil: `❌ **தவறான ஆவணம்! (${detectedNameTamil} நிராகரிக்கப்பட்டது)**\n\n` +
+                            `நீங்கள் பதிவேற்றியது **${detectedNameTamil}** ஆகும்.\n\n` +
+                            `⚠️ இங்கு மாணவரின் **12-ஆம் வகுப்பு பள்ளி மாற்றுச் சான்றிதழ் (12th Transfer Certificate - TC)** அல்லது **மதிப்பெண் பட்டியல் (Marksheet)** மட்டுமே பதிவேற்றப்பட வேண்டும்.\n\n` +
+                            `தயவுசெய்து சரியான கல்வி ஆவணத்தைப் பதிவேற்றவும்.`
+            };
+        }
+        return { valid: true, detectedType: docType, detectedNameTamil };
+    }
+
+    // 8. FAMILY SMART CARD (TNeGA REV-104 First Graduate)
+    if (slotName === 'smartCard' || slotName === 'rationCard' || slotName === 'FIRST_GRADUATE_SMARTCARD_WAIT') {
+        const isPhoto = docType === 'PASSPORT_PHOTO';
+        if (isPhoto) {
+            return {
+                valid: false,
+                detectedType: docType,
+                detectedNameTamil,
+                errorTamil: `❌ **தவறான ஆவணம்!** குடும்ப அட்டைக்கு பதிலாக **${detectedNameTamil}** பதிவேற்றப்பட்டுள்ளது.\n\n` +
+                            `தயவுசெய்து குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) ஆவணத்தைப் பதிவேற்றவும்.`
+            };
+        }
+        return { valid: true, detectedType: docType, detectedNameTamil };
+    }
+
+    // 9. PARENTS EDUCATION PROOF (Father / Mother TC or Declaration - TNeGA REV-104)
+    if (slotName === 'fatherEducationProof' || slotName === 'motherEducationProof' || slotName === 'fatherTc' || slotName === 'motherTc' || slotName === 'FIRST_GRADUATE_PARENTS_PROOF_WAIT') {
+        const isPhoto = docType === 'PASSPORT_PHOTO';
+        if (isPhoto) {
+            return {
+                valid: false,
+                detectedType: docType,
+                detectedNameTamil,
+                errorTamil: `❌ **தவறான ஆவணம்!** பெற்றோர் கல்வி ஆவணத்திற்கு பதிலாக **${detectedNameTamil}** பதிவேற்றப்பட்டுள்ளது.\n\n` +
+                            `தயவுசெய்து பெற்றோரின் பள்ளி மாற்றுச் சான்றிதழ் (TC) அல்லது கல்வி ஆவணத்தைப் பதிவேற்றவும்.`
             };
         }
         return { valid: true, detectedType: docType, detectedNameTamil };

@@ -3,11 +3,18 @@
  */
 
 const SERVICE_OPTIONS = [
-    { label: "🏛️ ரேஷன் கார்டு (Ration Card)", value: "ரேஷன் கார்டு" },
-    { label: "📜 வருமானச் சான்றிதழ் (Income Certificate)", value: "வருமானச் சான்றிதழ்" },
-    { label: "🏠 இருப்பிடச் சான்றிதழ் (Residence Certificate)", value: "இருப்பிடச் சான்றிதழ்" },
-    { label: "📜 சாதிச் சான்றிதழ் (Community Certificate)", value: "சாதிச் சான்றிதழ்" },
+    { label: "🏛️ ரேஷன் கார்டு (Ration Card - TNPDS)", value: "ரேஷன் கார்டு" },
+    { label: "🏛️ வருவாய்த் துறை சான்றிதழ்கள் (Revenue Department - e-Sevai / TNeGA)", value: "வருவாய்த் துறை" },
     { label: "🗳️ புதிய வாக்காளர் அட்டை (New Voter ID)", value: "புதிய வாக்காளர் அட்டை" }
+];
+
+const REVENUE_DEPARTMENT_SERVICE_OPTIONS = [
+    { label: "📜 1. சாதிச் சான்றிதழ் (Community Certificate REV-101)", value: "சாதிச் சான்றிதழ்" },
+    { label: "🏠 2. இருப்பிடச் சான்றிதழ் (Residence Certificate REV-102)", value: "இருப்பிடச் சான்றிதழ்" },
+    { label: "💰 3. வருமானச் சான்றிதழ் (Income Certificate REV-103)", value: "வருமானச் சான்றிதழ்" },
+    { label: "🎓 4. முதல் பட்டதாரி சான்றிதழ் (First Graduate REV-104)", value: "முதல் பட்டதாரி சான்றிதழ்" },
+    { label: "📜 5. OBC சான்றிதழ் (OBC Certificate REV-115)", value: "OBC சான்றிதழ்" },
+    { label: "🔙 முதன்மைப் பட்டியல் (Back to Main Menu)", value: "MAIN_MENU" }
 ];
 
 const RATION_CARD_SERVICE_OPTIONS = [
@@ -18,7 +25,8 @@ const RATION_CARD_SERVICE_OPTIONS = [
     { label: "📍 5. முகவரி மாற்றம் (Change Address)", value: "முகவரி மாற்றம்" },
     { label: "📇 6. குடும்ப அட்டை வகை மாற்றம் (Change Card Type)", value: "குடும்ப அட்டை வகை மாற்றம்" },
     { label: "📱 7. கைபேசி எண் மாற்றம் / பதிவு (Update Mobile)", value: "கைபேசி எண் மாற்றம்" },
-    { label: "⛽ 8. எரிவாயு (LPG) விவரங்கள் திருத்தம் (LPG Details)", value: "எரிவாயு விவரங்கள் திருத்தம்" }
+    { label: "⛽ 8. எரிவாயு (LPG) விவரங்கள் திருத்தம் (LPG Details)", value: "எரிவாயு விவரங்கள் திருத்தம்" },
+    { label: "🔙 முதன்மைப் பட்டியல் (Back to Main Menu)", value: "MAIN_MENU" }
 ];
 
 const MEMBER_COUNT_OPTIONS = [
@@ -136,6 +144,7 @@ function getInitialWelcomeMessage(citizenProfile = null, phone = '') {
 
 module.exports = {
     SERVICE_OPTIONS,
+    REVENUE_DEPARTMENT_SERVICE_OPTIONS,
     RATION_CARD_SERVICE_OPTIONS,
     MEMBER_COUNT_OPTIONS,
     RESIDENCE_PROOF_OPTIONS,

@@ -148,6 +148,7 @@
         }
 
 
+        // Supported Revenue Department subservices: சாதிச் சான்றிதழ், இருப்பிடச் சான்றிதழ், வருமானச் சான்றிதழ், முதல் பட்டதாரி சான்றிதழ், OBC சான்றிதழ்
         function renderDefaultWelcomeMessage() {
             lastRenderedChatHistoryJson = '';
             lastRenderedChatHistoryLength = 0;
@@ -158,10 +159,8 @@
                           `நீங்கள் இன்று எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n` +
                           `கீழே உள்ள விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
                     options: [
-                        { label: "🏛️ ரேஷன் கார்டு (Ration Card)", value: "ரேஷன் கார்டு" },
-                        { label: "📜 வருமானச் சான்றிதழ் (Income Certificate)", value: "வருமானச் சான்றிதழ்" },
-                        { label: "🏠 இருப்பிடச் சான்றிதழ் (Residence Certificate)", value: "இருப்பிடச் சான்றிதழ்" },
-                        { label: "📜 சாதிச் சான்றிதழ் (Community Certificate)", value: "சாதிச் சான்றிதழ்" },
+                        { label: "🏛️ ரேஷன் கார்டு (Ration Card - TNPDS)", value: "ரேஷன் கார்டு" },
+                        { label: "🏛️ வருவாய்த் துறை சான்றிதழ்கள் (Revenue Department - e-Sevai / TNeGA)", value: "வருவாய்த் துறை" },
                         { label: "🗳️ புதிய வாக்காளர் அட்டை (New Voter ID)", value: "புதிய வாக்காளர் அட்டை" }
                     ]
                 }
@@ -310,6 +309,13 @@
                                 openOfficialPortal();
                                 return;
                             }
+                            if (val === 'START_NEW_CUSTOMER' || val === 'RESET_SCREEN') {
+                                if (typeof clearAutomationScreenSession === 'function') {
+                                    clearAutomationScreenSession();
+                                    return;
+                                }
+                            }
+                            // Mandatory Universal Edit-Modal Pre-Submit Gate (ALL services current & future)
                             const preSubmitGateValues = [
                                 'TRIGGER_EDIT_MODAL',
                                 'START_CAN_REGISTER',
@@ -317,18 +323,20 @@
                                 'START_INCOME_APPLY',
                                 'START_RESIDENCE_APPLY',
                                 'START_COMMUNITY_APPLY',
+                                'START_FIRST_GRADUATE_APPLY',
+                                'START_OBC_APPLY',
+                                'APPLY_COMMUNITY_NOW',
+                                'APPLY_RESIDENCE_NOW',
+                                'APPLY_VOTER_NOW',
                                 'CONFIRM_SUBMIT',
-                                'Start'
+                                'Start',
+                                'start'
                             ];
-                            if (preSubmitGateValues.includes(val)) {
+                            const isUniversalStartTrigger = preSubmitGateValues.includes(val) ||
+                                /^(START_.*_(APPLY|NOW|AUTOMATION|SUBMIT)|APPLY_.*_NOW|LAUNCH_.*)$/i.test(String(val || '').trim());
+                            if (isUniversalStartTrigger) {
                                 if (typeof openEditModal === 'function') {
                                     openEditModal();
-                                    return;
-                                }
-                            }
-                            if (val === 'START_NEW_CUSTOMER' || val === 'RESET_SCREEN') {
-                                if (typeof clearAutomationScreenSession === 'function') {
-                                    clearAutomationScreenSession();
                                     return;
                                 }
                             }
@@ -842,12 +850,16 @@
         }
 
         function handlePreSubmitClick() {
+            if (typeof openEditModal === 'function') {
+                openEditModal();
+                return;
+            }
             if (isDevMockModeActive()) {
                 // In developer mode, submit safely runs Mock Test (Zero OTP dispatched)
-                proceedConfirmedSubmit(false);
+                proceedConfirmedSubmit(false, { fromEditModal: true });
             } else {
                 // In regular operator mode, submit directly triggers real government OTP
-                proceedConfirmedSubmit(true);
+                proceedConfirmedSubmit(true, { fromEditModal: true });
             }
         }
 

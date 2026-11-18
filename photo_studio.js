@@ -18,7 +18,7 @@ const {
 
 const studioDir = getSafeStudioDir();
 
-async function produceCompliantPassportPhoto(inputPath) {
+async function produceCompliantPassportPhoto(inputPath, options = {}) {
     if (!fs.existsSync(inputPath)) {
         console.warn(`File not found for photo studio: ${inputPath}`);
         return inputPath;
@@ -31,12 +31,89 @@ async function produceCompliantPassportPhoto(inputPath) {
     const outputPath = path.join(studioDir, `studio_passport_${Date.now()}.jpeg`);
 
     try {
-        // Universal Government Standard (TNeGA: <50KB, 200x230 | TNPDS: <100KB)
-        await sharp(inputPath)
+        // 1. Inspect image dimensions with EXIF rotation
+        const rotMeta = await sharp(inputPath).rotate().metadata();
+        const imgW = rotMeta.width || 600;
+        const imgH = rotMeta.height || 800;
+
+        // 2. Discover Face Bounding Box if not provided
+        let faceBox = options.faceBoundingBox || options.boundingBox || null;
+        if (!faceBox) {
+            try {
+                const { inspectAndExtractDocument } = require('./ai_document_extractor');
+                const extracted = await inspectAndExtractDocument(inputPath);
+                if (extracted && extracted.faceDetected && Array.isArray(extracted.faceBoundingBox)) {
+                    faceBox = extracted.faceBoundingBox;
+                }
+            } catch (_) {}
+        }
+
+        let extractLeft = 0;
+        let extractTop = 0;
+        let extractW = imgW;
+        let extractH = imgH;
+        let hasFaceCrop = false;
+
+        if (Array.isArray(faceBox) && faceBox.length === 4) {
+            const [ymin, xmin, ymax, xmax] = faceBox;
+            const faceTop = (ymin / 1000) * imgH;
+            const faceBottom = (ymax / 1000) * imgH;
+            const faceLeft = (xmin / 1000) * imgW;
+            const faceRight = (xmax / 1000) * imgW;
+            const faceW = faceRight - faceLeft;
+            const faceH = faceBottom - faceTop;
+            const faceCenterX = faceLeft + faceW / 2;
+            const faceCenterY = faceTop + faceH / 2;
+
+            if (faceW > 30 && faceH > 30) {
+                // Indian Passport Standard (200x230 ratio = 0.8696):
+                // Face height occupies ~65% of the frame height
+                let targetH = faceH / 0.65;
+                let targetW = targetH * (200 / 230);
+
+                // Side margin: ensure width fits ears and hair comfortably (at least 1.35x face width)
+                if (targetW < faceW * 1.35) {
+                    targetW = faceW * 1.35;
+                    targetH = targetW * (230 / 200);
+                }
+
+                // Vertical positioning: 42% above face center, 58% below (leaves ~12-15% above hair top, and includes shoulders)
+                let cropTop = faceCenterY - (targetH * 0.42);
+                let cropLeft = faceCenterX - (targetW / 2);
+
+                // Boundary clamping
+                if (cropTop < 0) cropTop = 0;
+                if (cropLeft < 0) cropLeft = 0;
+                if (cropTop + targetH > imgH) cropTop = Math.max(0, imgH - targetH);
+                if (cropLeft + targetW > imgW) cropLeft = Math.max(0, imgW - targetW);
+
+                extractLeft = Math.max(0, Math.round(cropLeft));
+                extractTop = Math.max(0, Math.round(cropTop));
+                extractW = Math.min(imgW - extractLeft, Math.max(40, Math.round(targetW)));
+                extractH = Math.min(imgH - extractTop, Math.max(40, Math.round(targetH)));
+                hasFaceCrop = true;
+            }
+        }
+
+        // 3. Build Sharp pipeline with proper rotation and crop
+        let pipeline = sharp(inputPath).rotate();
+
+        if (hasFaceCrop && extractW > 40 && extractH > 40 && (extractW < imgW || extractH < imgH)) {
+            pipeline = pipeline.extract({
+                left: extractLeft,
+                top: extractTop,
+                width: extractW,
+                height: extractH
+            });
+        }
+
+        const resizeStrategy = hasFaceCrop ? 'center' : (sharp.strategy ? sharp.strategy.attention : 'attention');
+
+        await pipeline
             .flatten({ background: { r: 255, g: 255, b: 255 } })
             .resize(200, 230, {
                 fit: 'cover',
-                position: 'top'
+                position: resizeStrategy
             })
             .modulate({
                 brightness: 1.04,
@@ -56,16 +133,25 @@ async function produceCompliantPassportPhoto(inputPath) {
         let fileSizeBytes = fs.statSync(outputPath).size;
         // Strict Universal Ceiling: Must be strictly < 45 KB to safely pass TNeGA (<50KB) and TNPDS (<100KB)
         if (fileSizeBytes > 45 * 1024) {
-            await sharp(inputPath)
+            let rePipeline = sharp(inputPath).rotate();
+            if (hasFaceCrop && extractW > 40 && extractH > 40 && (extractW < imgW || extractH < imgH)) {
+                rePipeline = rePipeline.extract({
+                    left: extractLeft,
+                    top: extractTop,
+                    width: extractW,
+                    height: extractH
+                });
+            }
+            await rePipeline
                 .flatten({ background: { r: 255, g: 255, b: 255 } })
-                .resize(200, 230, { fit: 'cover', position: 'top' })
+                .resize(200, 230, { fit: 'cover', position: resizeStrategy })
                 .jpeg({ quality: 74, chromaSubsampling: '4:2:0' })
                 .toFile(outputPath);
             fileSizeBytes = fs.statSync(outputPath).size;
         }
 
         const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
-        console.log(`✨ AI Passport Studio Photo generated: ${outputPath} (${fileSizeKB} KB - Universal <45KB compliant)`);
+        console.log(`✨ AI Passport Studio Photo generated: ${outputPath} (${fileSizeKB} KB - Universal <45KB compliant, faceCropped: ${hasFaceCrop})`);
         return outputPath;
     } catch (e) {
         console.error('Photo Studio notice:', e.message);

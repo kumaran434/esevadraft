@@ -332,6 +332,11 @@
                     <i class="fa-solid fa-key" style="color: #38bdf8;"></i>
                 </button>
 
+                <!-- 4B2. Founder-Only Sample Gallery Quick Button (Strictly hidden for all other users/PCs) -->
+                <button id="btnFounderGalleryNav" class="nav-icon-btn" onclick="openFounderGalleryModal()" data-tooltip="Founder Dev Sample Gallery (மாதிரி ஆவணங்கள்)" title="Founder Sample Gallery (மாதிரி ஆவணங்கள்)" style="display: none; background: rgba(245, 158, 11, 0.22); border: 1.5px solid rgba(251, 191, 36, 0.55); color: #fde68a;">
+                    <i class="fa-solid fa-images" style="color: #fde68a;"></i>
+                </button>
+
                 <!-- 4C. e-Seva Operator Utility Tools Quick Icon Button (PDF Compress/Split, JPG<->PDF, Photo Crop, Digital Sign) -->
                 <button id="btnHeaderTools" class="nav-icon-btn btn-tools" onclick="openEsevaToolsPage()" data-tooltip="இ-சேவை டூல்ஸ் (PDF சுருக்கி / ஸ்பிளிட்டர், JPG⇄PDF, போட்டோ கிராப், கையொப்பம்)" title="இ-சேவை டூல்ஸ் (e-Seva Tools)" style="display: none; background: rgba(168, 85, 247, 0.22); border: 1.5px solid rgba(192, 132, 252, 0.55); color: #f3e8ff;">
                     <i class="fa-solid fa-screwdriver-wrench" style="color: #e9d5ff;"></i>
@@ -744,7 +749,45 @@
                             </button>
                         </div>
 
-                        <!-- Card 4: Voter ID -->
+                        <!-- Card 5: First Graduate Certificate -->
+                        <div class="c-service-card" onclick="citizenStartService('முதல் பட்டதாரி சான்றிதழ்')">
+                            <div>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <div style="width: 38px; height: 38px; border-radius: 10px; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                        🎓
+                                    </div>
+                                    <span style="background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px;">REV-104</span>
+                                </div>
+                                <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #0f172a;">முதல் பட்டதாரி சான்றிதழ்</h4>
+                                <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.4;">
+                                    கல்லூரி படிப்பிற்கான அரசுக் கட்டணச் சலுகை மற்றும் உதவித்தொகைக்கான முதல் பட்டதாரி சான்று.
+                                </p>
+                            </div>
+                            <button style="margin-top: 12px; height: 34px; width: 100%; background: #0284c7; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                <i class="fa-solid fa-bolt"></i> விண்ணப்பிக்கத் தொடங்கு 🚀
+                            </button>
+                        </div>
+
+                        <!-- Card 6: OBC Certificate (REV-115) -->
+                        <div class="c-service-card" onclick="citizenStartService('OBC சான்றிதழ்')">
+                            <div>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <div style="width: 38px; height: 38px; border-radius: 10px; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                        📜
+                                    </div>
+                                    <span style="background: #fef3c7; color: #b45309; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px;">REV-115</span>
+                                </div>
+                                <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #0f172a;">OBC சான்றிதழ் (இதர பிற்படுத்தப்பட்டோர்)</h4>
+                                <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.4;">
+                                    மத்திய அரசு கல்வி மற்றும் வேலைவாய்ப்பு இடஒதுக்கீட்டிற்கான Non-Creamy Layer OBC சான்றிதழ்.
+                                </p>
+                            </div>
+                            <button style="margin-top: 12px; height: 34px; width: 100%; background: #d97706; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                <i class="fa-solid fa-bolt"></i> விண்ணப்பிக்கத் தொடங்கு 🚀
+                            </button>
+                        </div>
+
+                        <!-- Card 6: Voter ID -->
                         <div class="c-service-card" onclick="citizenStartService('புதிய வாக்காளர் அட்டை')">
                             <div>
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -1094,6 +1137,25 @@
                             <div class="card-row">சாதி / உட்பிரிவு: <strong id="infoCommunityCaste" class="badge-empty">—</strong></div>
                         </div>
 
+                        <!-- Dynamic First Graduate Certificate Details Box -->
+                        <div class="card-box" id="sidebarFirstGraduateBox" style="display: none; border-left: 4px solid #0284c7; background: #f0f9ff;">
+                            <h4 style="color: #0369a1;"><i class="fa-solid fa-graduation-cap"></i> முதல் பட்டதாரி விவரங்கள் (REV-104)</h4>
+                            <div class="card-row">CAN எண்: <strong id="infoFirstGraduateCanNo" class="badge-empty">—</strong></div>
+                            <div class="card-row">படிப்பு: <strong id="infoFirstGraduateCourse" class="badge-green">—</strong></div>
+                            <div class="card-row">கல்வி நிறுவனம்: <strong id="infoFirstGraduateCollege" class="badge-green">—</strong></div>
+                            <div class="card-row">தந்தை கல்வி: <strong id="infoFirstGraduateFatherEdu" class="badge-empty">—</strong></div>
+                            <div class="card-row">தாய் கல்வி: <strong id="infoFirstGraduateMotherEdu" class="badge-empty">—</strong></div>
+                        </div>
+
+                        <!-- Dynamic OBC Certificate Details Box -->
+                        <div class="card-box" id="sidebarObcBox" style="display: none; border-left: 4px solid #d97706; background: #fffbeb;">
+                            <h4 style="color: #92400e;"><i class="fa-solid fa-scroll"></i> OBC சான்றிதழ் விவரங்கள் (REV-115)</h4>
+                            <div class="card-row">CAN எண்: <strong id="infoObcCanNo" class="badge-empty">—</strong></div>
+                            <div class="card-row">OBC சாதி: <strong id="infoObcCaste" class="badge-green">—</strong></div>
+                            <div class="card-row">விண்ணப்பதாரர் பணி: <strong id="infoObcOccupation" class="badge-green">—</strong></div>
+                            <div class="card-row">ஆண்டு வருமானம்: <strong id="infoObcIncome" class="badge-green">—</strong></div>
+                        </div>
+
                         <!-- Dynamic Add Member Details Box -->
                         <div class="card-box" id="sidebarAddMemberBox" style="display: none; border-left: 4px solid #16a34a; background: #f0fdf4;">
                             <h4 style="color: #166534;"><i class="fa-solid fa-user-plus"></i> சேர்க்கப்படும் புதிய உறுப்பினர்</h4>
@@ -1263,6 +1325,38 @@
                         </div>
                     </div>
 
+
+                    <!-- Quick Service Launch Bar (TNPDS & TNeGA 1-Click Start) -->
+                    <div id="operatorQuickServiceBar" style="background: white; border-radius: 12px; padding: 10px 14px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 11.5px; font-weight: 800; color: #475569; display: flex; align-items: center; gap: 5px; margin-right: 4px;">
+                            <i class="fa-solid fa-layer-group" style="color: #0284c7;"></i> அரசுத் துறைகள்:
+                        </span>
+                        <button type="button" onclick="startDirectApplyService('ரேஷன் கார்டு')" style="height: 32px; padding: 0 13px; background: #ecfdf5; border: 1.5px solid #a7f3d0; border-radius: 999px; font-size: 11.5px; font-weight: 800; color: #065f46; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(6,95,70,0.08);">
+                            🏛️ ரேஷன் கார்டு (8 சேவைகள்)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('வருவாய்த் துறை')" style="height: 32px; padding: 0 13px; background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 999px; font-size: 11.5px; font-weight: 800; color: #1d4ed8; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(29,78,216,0.08);">
+                            🏛️ வருவாய்த் துறை (5 சான்றிதழ்கள்)
+                        </button>
+                        <span style="font-size: 11px; font-weight: 700; color: #94a3b8; margin: 0 2px;">|</span>
+                        <button type="button" onclick="startDirectApplyService('புதிய ரேஷன் கார்டு')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            🏛️ புதிய ரேஷன் அட்டை
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('வருமானச் சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            💰 வருமானம் (REV-103)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('இருப்பிடச் சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            🏠 இருப்பிடம் (REV-102)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('சாதிச் சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            📜 சாதி (REV-101)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('முதல் பட்டதாரி சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            🎓 முதல் பட்டதாரி (REV-104)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('OBC சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            📜 OBC (REV-115)
+                        </button>
+                    </div>
 
                     <!-- Search and Status Filters -->
                     <div style="margin-bottom: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -2409,17 +2503,35 @@
                 </div>
 
                 <!-- INCOME Certificate Form Fields (Service-Scoped) -->
-                <div id="editIncomeFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #ecfdf5; border: 1.5px solid #a7f3d0; padding: 12px; border-radius: 10px; margin-top: 4px;">
-                    <div style="grid-column: span 2; font-weight: 700; color: #065f46; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-                        💰 வருமானம் & தொழில் விவரங்கள் (Income & Occupation Details)
+                <div id="editIncomeFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; background: #ecfdf5; border: 1.5px solid #a7f3d0; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 4; font-weight: 700; color: #065f46; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <span>💰 வருமானம் & குடும்ப உறுப்பினர்கள் விவரங்கள் (சுய அறிவிப்பு / Self-Declaration)</span>
+                        <div style="display: flex; gap: 4px; font-weight: normal; font-size: 11px;">
+                            <button type="button" class="btn-chip" onclick="applyIncomePreset('விவசாயம்', 6000)" style="background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #065f46; font-weight: 600;">🌾 விவசாயி (₹6,000)</button>
+                            <button type="button" class="btn-chip" onclick="applyIncomePreset('கூலி வேலை', 6000)" style="background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #065f46; font-weight: 600;">🔨 கூலி (₹6,000)</button>
+                            <button type="button" class="btn-chip" onclick="applyIncomePreset('தனியார் வேலை', 8000)" style="background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #065f46; font-weight: 600;">🏢 தனியார் (₹8,000)</button>
+                        </div>
                     </div>
                     <div>
-                        <label>குடும்ப ஆண்டு வருமானம் (Annual Income - ரூ.):</label>
-                        <input type="number" id="editAnnualIncome" placeholder="எ.கா: 72000" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #047857;">
+                        <label>மாத வருமானம் (Monthly - ரூ.):</label>
+                        <input type="number" id="editMonthlyIncome" placeholder="எ.கா: 6000" oninput="if(this.value) { document.getElementById('editAnnualIncome').value = Number(this.value)*12; }" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #047857;">
                     </div>
                     <div>
-                        <label>தொழில் / வேலை (Occupation / Profession):</label>
-                        <input type="text" id="editOccupation" placeholder="எ.கா: கூலி / விவசாயம் / தனியார் பணி" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        <label>குடும்ப ஆண்டு வருமானம் (Annual - ரூ.):</label>
+                        <input type="number" id="editAnnualIncome" placeholder="எ.கா: 72000" oninput="if(this.value) { document.getElementById('editMonthlyIncome').value = Math.round(Number(this.value)/12); }" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #047857;">
+                    </div>
+                    <div>
+                        <label>தொழில் / வேலை (Occupation):</label>
+                        <input type="text" id="editOccupation" placeholder="எ.கா: விவசாயம் / கூலி வேலை" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <div>
+                        <label>உறுப்பினர்கள் எண்ணிக்கை:</label>
+                        <select id="editFamilyMemberCount" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                            <option value="1">1 நபர் (விண்ணப்பதாரர் மட்டும்)</option>
+                            <option value="2" selected>2 நபர்கள் (விண்ணப்பதாரர் + குடும்ப நபர்)</option>
+                            <option value="3">3 நபர்கள்</option>
+                            <option value="4">4 நபர்கள்</option>
+                        </select>
                     </div>
                 </div>
 
@@ -2435,6 +2547,93 @@
                     <div>
                         <label>சான்றிதழ் தேவைப்படும் நோக்கம் (Purpose of Certificate):</label>
                         <input type="text" id="editResidencePurpose" placeholder="எ.கா: பள்ளி / கல்லூரி சேர்க்கை / வேலைவாய்ப்பு" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <!-- FIRST GRADUATE Certificate Form Fields (Service-Scoped) -->
+                <div id="editFirstGraduateFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #eff6ff; border: 1.5px solid #93c5fd; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #1e40af; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <span>🎓 முதல் பட்டதாரி விவரங்கள் (First Graduate Course & Family Details - REV-104)</span>
+                        <div style="display: flex; gap: 4px; font-weight: normal; font-size: 11px;">
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editFirstGraduateCourse')) document.getElementById('editFirstGraduateCourse').value='B.E. Computer Science and Engineering'" style="background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #1e40af; font-weight: 600;">💻 B.E. CS</button>
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editFirstGraduateCourse')) document.getElementById('editFirstGraduateCourse').value='M.B.B.S (Medicine)'" style="background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #1e40af; font-weight: 600;">🩺 M.B.B.S</button>
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editFirstGraduateCourse')) document.getElementById('editFirstGraduateCourse').value='B.Sc Computer Science'" style="background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #1e40af; font-weight: 600;">🧪 B.Sc CS</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label>படிக்கும் படிப்பு / பட்டம் (Degree / Course):</label>
+                        <input type="text" id="editFirstGraduateCourse" placeholder="எ.கா: B.E. Computer Science and Engineering" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #1d4ed8;">
+                    </div>
+                    <div>
+                        <label>கல்லூரி / கல்வி நிறுவனம் (College Name):</label>
+                        <input type="text" id="editFirstGraduateCollege" placeholder="எ.கா: Government College of Technology / அண்ணா பல்கலைக்கழகம்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label>தந்தையின் கல்வித் தகுதி (Father's Qualification):</label>
+                        <select id="editFirstGraduateFatherEdu" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                            <option value="10th Standard">10-ஆம் வகுப்பு (10th Passed)</option>
+                            <option value="8th Standard">8-ஆம் வகுப்பு (8th Passed)</option>
+                            <option value="Below 10th">பத்தாம் வகுப்புக்குக் கீழ் (Below 10th)</option>
+                            <option value="Illiterate">எழுதப் படிக்கத் தெரியாதவர் (Illiterate)</option>
+                            <option value="12th Standard">12-ஆம் வகுப்பு (12th Passed - Non Graduate)</option>
+                            <option value="Diploma">பட்டயப் படிப்பு (Diploma - Non Graduate)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>தாயின் கல்வித் தகுதி (Mother's Qualification):</label>
+                        <select id="editFirstGraduateMotherEdu" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                            <option value="8th Standard">8-ஆம் வகுப்பு (8th Passed)</option>
+                            <option value="10th Standard">10-ஆம் வகுப்பு (10th Passed)</option>
+                            <option value="Below 10th">பத்தாம் வகுப்புக்குக் கீழ் (Below 10th)</option>
+                            <option value="Illiterate">எழுதப் படிக்கத் தெரியாதவர் (Illiterate)</option>
+                            <option value="12th Standard">12-ஆம் வகுப்பு (12th Passed - Non Graduate)</option>
+                            <option value="Diploma">பட்டயப் படிப்பு (Diploma - Non Graduate)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>12-ஆம் வகுப்பு தேர்ச்சி ஆண்டு (Passing Year):</label>
+                        <input type="text" id="editFirstGraduateYop" placeholder="எ.கா: 2024" maxlength="4" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                    <div>
+                        <label>கல்லூரி முகவரி / நகரம் (College City/Address):</label>
+                        <input type="text" id="editFirstGraduateCollegeAdd" placeholder="எ.கா: Coimbatore Tamil Nadu" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <!-- OBC Certificate Form Fields (Service-Scoped REV-115) -->
+                <div id="editObcFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #fffbeb; border: 1.5px solid #fcd34d; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #92400e; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <span>📜 OBC சான்றிதழ் விவரங்கள் (Other Backward Classes - REV-115)</span>
+                        <div style="display: flex; gap: 4px; font-weight: normal; font-size: 11px;">
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editObcCaste')) document.getElementById('editObcCaste').value='Vanniyar'" style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #92400e; font-weight: 600;">வன்னியர்</button>
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editObcCaste')) document.getElementById('editObcCaste').value='Agamudayar'" style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #92400e; font-weight: 600;">அகமுடையார்</button>
+                            <button type="button" class="btn-chip" onclick="if(document.getElementById('editObcCaste')) document.getElementById('editObcCaste').value='Gounder'" style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 8px; cursor: pointer; color: #92400e; font-weight: 600;">கவுண்டர்</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label>OBC சாதி / உட்பிரிவு (Caste):</label>
+                        <input type="text" id="editObcCaste" placeholder="எ.கா: Vanniyar / Agamudayar / Yadav" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #b45309;">
+                    </div>
+                    <div>
+                        <label>விண்ணப்பதாரர் பணி (Applicant Occupation):</label>
+                        <select id="editObcOccupation" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                            <option value="Service">பணி / வேலை (Service)</option>
+                            <option value="Student">மாணவர் (Student)</option>
+                            <option value="Business">வியாபாரம் (Business)</option>
+                            <option value="Agriculture">விவசாயம் (Agriculture)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>தந்தையின் பணி நிலை (Father's Occupation):</label>
+                        <input type="text" id="editObcFatherOccupation" placeholder="எ.கா: Farmer / Private Service / Deceased" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label>தாயின் பணி நிலை (Mother's Occupation):</label>
+                        <input type="text" id="editObcMotherOccupation" placeholder="எ.கா: Homemaker / Farmer / Deceased" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <label>குடும்ப ஆண்டு வருமானம் (Annual Income Rs.):</label>
+                        <input type="number" id="editObcAnnualIncome" placeholder="எ.கா: 72000" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
                     </div>
                 </div>
 
@@ -2478,6 +2677,9 @@
                     </button>
                     <button type="button" id="btnSwitchToSubService" onclick="openEditModal(null, false)" style="display: none; height: 34px; padding: 0 14px; background: #eff6ff; border: 1.5px solid #93c5fd; color: #1d4ed8; border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px;">
                         <i class="fa-solid fa-arrow-left"></i> ↩️ தற்போதைய சேவைக்குத் திரும்பு (Back to Service)
+                    </button>
+                    <button type="button" id="btnEditModalFounderGallery" onclick="openFounderGalleryModal()" style="display: none; height: 34px; padding: 0 12px; background: #fef3c7; border: 1.5px solid #f59e0b; color: #92400e; border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px;">
+                        🖼️ Sample Gallery
                     </button>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
@@ -3124,6 +3326,7 @@
     <script src="js/modules/tnega_and_forms.js"></script>
     <script src="js/modules/portal_vault_manager.js"></script>
     <script src="js/modules/edit_modal_manager.js"></script>
+    <script src="js/modules/founder_gallery.js"></script>
     <script defer src="vendor/pdf-lib.min.js"></script>
     <script defer src="vendor/pdf.min.js"></script>
     <script src="js/modules/eseva_tools.js"></script>

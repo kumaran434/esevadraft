@@ -14,6 +14,8 @@ const tnegaCanRegister = require('./services/tnega_can_register');
 const tnegaIncome = require('./services/tnega_income');
 const tnegaResidence = require('./services/tnega_residence');
 const tnegaCommunity = require('./services/tnega_community');
+const tnegaFirstGraduate = require('./services/tnega_first_graduate');
+const tnegaObc = require('./services/tnega_obc');
 
 const { evaluateServiceDelta } = require('./universal_delta_engine');
 
@@ -25,7 +27,9 @@ const ALL_SERVICES = [
     tnegaCanRegister,
     tnegaIncome,
     tnegaResidence,
-    tnegaCommunity
+    tnegaCommunity,
+    tnegaFirstGraduate,
+    tnegaObc
 ];
 
 // Build Fast Map by ID and by Alias (case-insensitive)

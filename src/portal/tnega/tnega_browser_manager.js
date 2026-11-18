@@ -209,6 +209,79 @@ async function stopTnegaAutomation() {
     return { success: true };
 }
 
+/**
+ * Clicks #ss:decForm1 on TNeGA uploadDocs.xhtml, saves the Self-Declaration PDF
+ * into the user's Downloads + data/downloads folder, and opens it visibly in a new Chrome tab.
+ * NEVER auto-uploads the unsigned Self-Declaration form (operator must obtain citizen signature).
+ */
+async function downloadAndOpenSelfDeclaration(tnegaPage, appNumber = '', onProgress = () => {}) {
+    const path = require('path');
+    const fs = require('fs');
+    const decLink = tnegaPage.locator('a[id="ss:decForm1"], #ss\\:decForm1, [id*="decForm"], a:has-text("Download Self declaration form")').first();
+    if (await decLink.count() === 0 || !(await decLink.isVisible().catch(() => false))) {
+        return null;
+    }
+
+    onProgress('📥 [சுய உறுதிமொழி பதிவிறக்கம்] விண்ணப்பதாரரின் சுய உறுதிமொழிப் படிவம் போர்ட்டலில் இருந்து பதிவிறக்கப்படுகிறது...');
+    const userDownloadsDir = path.join(process.env.USERPROFILE || 'C:\\Users\\ADMIN', 'Downloads');
+    fs.mkdirSync(userDownloadsDir, { recursive: true });
+    const clickStartMs = Date.now() - 2500;
+
+    try {
+        const cdpClient = await tnegaPage.context().newCDPSession(tnegaPage);
+        await cdpClient.send('Page.setDownloadBehavior', {
+            behavior: 'allow',
+            downloadPath: userDownloadsDir
+        });
+    } catch (_) {}
+
+    const [dlEvent] = await Promise.all([
+        tnegaPage.waitForEvent('download', { timeout: 7000 }).catch(() => null),
+        decLink.click().catch(() => {})
+    ]);
+    await tnegaPage.waitForTimeout(2500);
+
+    let downloadedFile = null;
+    const cleanApp = String(appNumber || '').trim();
+    if (dlEvent) {
+        const suggested = dlEvent.suggestedFilename() || `SelfDeclarationForm_${cleanApp || Date.now()}.pdf`;
+        const targetDlPath = path.join(userDownloadsDir, suggested);
+        await dlEvent.saveAs(targetDlPath).catch(() => {});
+        if (fs.existsSync(targetDlPath)) downloadedFile = targetDlPath;
+    }
+
+    if (!downloadedFile) {
+        try {
+            const candidates = fs.readdirSync(userDownloadsDir)
+                .filter(f => f.toLowerCase().endsWith('.pdf') && (f.toLowerCase().includes('selfdeclaration') || (cleanApp && f.includes(cleanApp))))
+                .map(f => ({ name: f, full: path.join(userDownloadsDir, f), time: fs.statSync(path.join(userDownloadsDir, f)).mtimeMs }))
+                .sort((a, b) => b.time - a.time);
+            const fresh = candidates.find(c => c.time >= clickStartMs) || candidates[0];
+            if (fresh) downloadedFile = fresh.full;
+        } catch (_) {}
+    }
+
+    if (!downloadedFile || !fs.existsSync(downloadedFile)) {
+        onProgress('⚠️ சுய உறுதிமொழிப் படிவப் பதிவிறக்கம் கண்டறியப்படவில்லை; ஆப்ரேட்டர் Download இணைப்பைக் கிளிக் செய்யவும்.');
+        return null;
+    }
+
+    const dlDir = path.join(process.cwd(), 'data', 'downloads');
+    fs.mkdirSync(dlDir, { recursive: true });
+    const savedCopy = path.join(dlDir, `self_declaration_${cleanApp || 'latest'}.pdf`);
+    try { fs.copyFileSync(downloadedFile, savedCopy); } catch (_) {}
+
+    onProgress(`✅ [சுய உறுதிமொழி தயார்] படிவம் பதிவிறக்கப்பட்டது: ${path.basename(downloadedFile)}`);
+    try {
+        const newPage = await tnegaPage.context().newPage();
+        await newPage.goto('file:///' + downloadedFile.replace(/\\/g, '/'));
+        await newPage.bringToFront().catch(() => {});
+        onProgress('🌐 சுய உறுதிமொழிப் படிவம் Google Chrome புதிய Tab-ல் திறக்கப்பட்டது! (கையொப்பம் பெற்று ஆப்ரேட்டரே பதிவேற்றவும்) ✅');
+    } catch (_) {}
+
+    return savedCopy;
+}
+
 module.exports = {
     getTnegaState,
     getLiveTnegaStatus,
@@ -216,5 +289,6 @@ module.exports = {
     maximizeTnegaWindow,
     provideCanOtp,
     stopTnegaAutomation,
-    setTnegaChromiumInstance
+    setTnegaChromiumInstance,
+    downloadAndOpenSelfDeclaration
 };
