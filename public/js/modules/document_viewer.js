@@ -286,21 +286,27 @@
 
         function updateSidebar(data) {
             const isOp = localStorage.getItem('eseva_user_role') === 'operator';
-            const activeCustMob = localStorage.getItem('eseva_active_customer_mobile');
+            const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
+            const rawProfMob = String(data?.citizenProfile?.mobileNumber || data?.applicantData?.mobileNumber || '');
+            const hasRealActiveMob = Boolean(activeCustMob && !/^walkin_/i.test(activeCustMob));
+            const cleanProfMob = rawProfMob.replace(/\D/g, '').slice(-10);
+            const hasRealProfileMob = Boolean(rawProfMob && !/^walkin_/i.test(rawProfMob) && /^[6-9]\d{9}$/.test(cleanProfMob));
 
-            // CRITICAL: If operator is logged in and has NO customer selected, keep sidebar blank!
-            if (isOp && !activeCustMob && !data?.citizenProfile && !currentCitizenData) {
+            // CRITICAL: Keep right sidebar in Operator Ready view until an exact service + real phone number is chosen!
+            if (isOp && !hasRealActiveMob && !hasRealProfileMob) {
+                currentCitizenData = null;
                 resetSidebarToOperatorView();
                 return;
             }
 
             const a = data ? (data.citizenProfile || data.applicantData) : null;
             if (!a) {
-                if (isOp && !activeCustMob) resetSidebarToOperatorView();
+                if (isOp && !hasRealActiveMob) resetSidebarToOperatorView();
                 return;
             }
 
-            const targetMobile = activeCustMob || (a && a.mobileNumber) || localStorage.getItem('eseva_user_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session';
+            const rawTargetMob = (hasRealActiveMob ? activeCustMob : '') || (!/^walkin_/i.test(String(a.mobileNumber || '')) ? a.mobileNumber : '') || localStorage.getItem('eseva_user_mobile') || (!/^walkin_/i.test(String(currentCitizenData?.mobileNumber || '')) ? currentCitizenData?.mobileNumber : '') || '';
+            const targetMobile = rawTargetMob || 'active_session';
             const appNo = data.applicationNumber || (a && a.applicationNumber);
             const pdfUrl = data.applicationPdfUrl || (a && a.applicationPdfUrl);
 
@@ -324,7 +330,7 @@
             // 1. Immediately render documents without bouncing counts (Server Cache First = ZERO FLICKER):
             // If we are at SERVICE_SELECTION (no service selected yet), hide documents box entirely!
             const curStateEarly = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
-            const isServiceSelectionOnlyEarly = (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
+            const isServiceSelectionOnlyEarly = (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || curStateEarly === 'REVENUE_DEPARTMENT_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
             const docsBoxEarly = document.getElementById('sidebarDocumentsBox');
 
             if (isServiceSelectionOnlyEarly) {
@@ -391,7 +397,7 @@
                 }
                 
                 // Dynamically sync active customer title & localStorage with extracted official name
-                if (activeCustMob) {
+                if (activeCustMob && !/^walkin_/i.test(activeCustMob)) {
                     const resolvedName = resolveCustomerDisplayName(a, localStorage.getItem('eseva_active_customer_name'));
                     if (resolvedName && resolvedName !== 'வாடிக்கையாளர்') {
                         localStorage.setItem('eseva_active_customer_name', resolvedName);
@@ -409,7 +415,8 @@
                 setVal('infoHeadDob', a.headDob);
                 setVal('infoHeadGender', a.headGenderTam || a.headGender);
                 setVal('infoHeadAadhaar', a.headAadhaar ? a.headAadhaar.replace(/(\d{4})/g, '$1 ').trim() : '');
-                setVal('infoHeadMobile', (a.mobileNumber || activeCustMob) ? `+91 ${a.mobileNumber || activeCustMob}` : '');
+                const cleanHeadMob = (a.mobileNumber && !/^walkin_/i.test(String(a.mobileNumber))) ? a.mobileNumber : ((activeCustMob && !/^walkin_/i.test(String(activeCustMob))) ? activeCustMob : '');
+                setVal('infoHeadMobile', cleanHeadMob ? `+91 ${cleanHeadMob}` : '');
                 const addrParts = [a.doorNo, a.streetTam || a.streetEng, a.areaTam || a.areaEng].filter(Boolean);
                 const addr = addrParts.join(', ');
                 setVal('infoAddress', addr);
@@ -422,21 +429,23 @@
                 // Active Service Identification for Context-Adaptive Sidebar
                 const curState = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
                 const svcName = (window.pendingSelectedService || a.serviceName || data?.serviceName || '').toLowerCase();
-                const isServiceSelectionOnly = (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || (!curState && !window.pendingSelectedService));
+                const isServiceSelectionOnly = (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || curState === 'REVENUE_DEPARTMENT_SERVICES' || (!curState && !window.pendingSelectedService));
                 const isExplicitNewCard = a.subService === 'NEW_CARD' || a.subService === 'NEW_RATION_CARD' ||
                                           a.service === 'new_smart_card' || a.service === 'ration' || 
                                           a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' ||
                                           window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
                                           svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card');
-                const isObcService = !isServiceSelectionOnly && (curState.includes('OBC') || svcName.includes('obc') || svcName.includes('இதர பிற்படுத்தப்பட்டோர்') || svcName.includes('rev-115') || a.subService === 'OBC');
-                const isIncomeService = !isServiceSelectionOnly && !isObcService && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'));
-                const isResidenceService = !isServiceSelectionOnly && !isObcService && (curState.includes('RESIDENCE') || svcName.includes('இருப்பிடம்') || svcName.includes('residence'));
-                const isCommunityService = !isServiceSelectionOnly && !isObcService && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'));
-                const isFirstGraduateService = !isServiceSelectionOnly && !isObcService && (curState.includes('FIRST_GRADUATE') || svcName.includes('பட்டதாரி') || svcName.includes('first_graduate') || svcName.includes('first graduate') || a.subService === 'FIRST_GRADUATE');
+                const isWidowService = !isServiceSelectionOnly && (curState.includes('WIDOW') || svcName.includes('widow') || svcName.includes('விதவை') || svcName.includes('rev-109') || a.subService === 'WIDOW' || a.subService === 'WIDOW_CERTIFICATE');
+                const isLegalHeirService = !isServiceSelectionOnly && !isWidowService && (curState.includes('LEGAL_HEIR') || svcName.includes('legal heir') || svcName.includes('வாரிசு') || svcName.includes('rev-114') || a.subService === 'LEGAL_HEIR' || a.subService === 'LEGAL_HEIR_CERTIFICATE');
+                const isObcService = !isServiceSelectionOnly && !isWidowService && !isLegalHeirService && (curState.includes('OBC') || svcName.includes('obc') || svcName.includes('இதர பிற்படுத்தப்பட்டோர்') || svcName.includes('rev-115') || a.subService === 'OBC');
+                const isIncomeService = !isServiceSelectionOnly && !isWidowService && !isLegalHeirService && !isObcService && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'));
+                const isResidenceService = !isServiceSelectionOnly && !isWidowService && !isLegalHeirService && !isObcService && (curState.includes('RESIDENCE') || svcName.includes('இருப்பிடம்') || svcName.includes('residence'));
+                const isCommunityService = !isServiceSelectionOnly && !isWidowService && !isLegalHeirService && !isObcService && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'));
+                const isFirstGraduateService = !isServiceSelectionOnly && !isWidowService && !isLegalHeirService && !isObcService && (curState.includes('FIRST_GRADUATE') || svcName.includes('பட்டதாரி') || svcName.includes('first_graduate') || svcName.includes('first graduate') || a.subService === 'FIRST_GRADUATE');
                 const isRemoveMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceRemoveMember;
                 const isAddMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceAddMember;
                 const isAddressChangeService = !isServiceSelectionOnly && !isExplicitNewCard && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
-                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isIncomeService && !isResidenceService && !isCommunityService && !isFirstGraduateService && !isObcService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
+                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isWidowService && !isLegalHeirService && !isIncomeService && !isResidenceService && !isCommunityService && !isFirstGraduateService && !isObcService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
                     curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE'
                 )));
 
@@ -447,7 +456,9 @@
                 }
                 const headTitleEl = document.getElementById('sidebarHeadTitle');
                 if (headTitleEl) {
-                    if (isIncomeService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள்';
+                    if (isWidowService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (விதவைச் சான்றிதழ்)';
+                    else if (isLegalHeirService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (வாரிசு சான்றிதழ்)';
+                    else if (isIncomeService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள்';
                     else if (isResidenceService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (இருப்பிடம்)';
                     else if (isObcService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (OBC சான்றிதழ்)';
                     else if (isCommunityService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (சாதிச் சான்றிதழ்)';
@@ -529,6 +540,21 @@
                     }
                 }
 
+                // 2.46 Widow Certificate Box (REV-109)
+                const widowBox = document.getElementById('sidebarWidowBox');
+                if (widowBox) {
+                    if (isWidowService) {
+                        widowBox.style.display = 'block';
+                        setVal('infoWidowCanNo', a.canNumber || '—');
+                        setVal('infoWidowSpouse', a.spouseNameTam || a.spouseNameEng || a.husbandNameTam || a.husbandNameEng || '—');
+                        setVal('infoWidowDod', a.dateOfDeath || '—');
+                        setVal('infoWidowDcNo', a.deathCertificateNo || '—');
+                        setVal('infoWidowMarDate', a.dateOfMarriage || '—');
+                    } else {
+                        widowBox.style.display = 'none';
+                    }
+                }
+
                 // 2.8 Add Member Box
                 const addMemberBox = document.getElementById('sidebarAddMemberBox');
                 if (addMemberBox) {
@@ -539,7 +565,8 @@
                         const addDob = subData.dob || '—';
                         const addGender = subData.genderTam || subData.gender || '—';
                         const addAadhaar = subData.aadhaarNo ? subData.aadhaarNo.replace(/(\d{4})/g, '$1 ').trim() : '—';
-                        const addMob = (a.mobileNumber || activeCustMob) ? `+91 ${a.mobileNumber || activeCustMob}` : '—';
+                        const cleanAddMob = (a.mobileNumber && !/^walkin_/i.test(String(a.mobileNumber))) ? a.mobileNumber : ((activeCustMob && !/^walkin_/i.test(String(activeCustMob))) ? activeCustMob : '');
+                        const addMob = cleanAddMob ? `+91 ${cleanAddMob}` : '—';
                         const addDoc = subData.isChild ? 'பிறப்புச் சான்றிதழ் (Birth Certificate)' : 'ஆதார் அட்டை (Aadhaar Card)';
                         setVal('infoAddMemberName', addName);
                         setVal('infoAddMemberRel', addRel);

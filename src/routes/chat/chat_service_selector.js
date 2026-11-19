@@ -24,12 +24,15 @@ async function handleServiceSelector(ctx, req, res) {
                         text === 'START_FIRST_GRADUATE_APPLY' ||
                         text === 'START_OBC_APPLY' ||
                         text === 'START_LEGAL_HEIR_APPLY' ||
+                        text === 'START_WIDOW_APPLY' ||
                         text === 'FIRST_GRADUATE_CONFIRMED' ||
                         text === 'FIRST_GRADUATE_INELIGIBLE' ||
                         (text && text.startsWith('FIRST_GRADUATE_')) ||
                         (text && text.startsWith('OBC_')) ||
                         (text && text.startsWith('LH_')) ||
                         (text && text.startsWith('LEGAL_HEIR_')) ||
+                        (text && text.startsWith('WD_')) ||
+                        (text && text.startsWith('WIDOW_')) ||
                         (text && text.startsWith('SELECT_MEMBER_')) ||
                         (text && text.startsWith('COMMUNITY_')) ||
                         (text && text.startsWith('RELIGION_')) ||
@@ -81,6 +84,13 @@ async function handleServiceSelector(ctx, req, res) {
                                     text === 'வாரிசு சான்றிதழ்' ||
                                     text.includes('வாரிசு சான்றிதழ்') ||
                                     text.toLowerCase().includes('legal heir') ||
+                                    text === 'WIDOW_CERTIFICATE' ||
+                                    text === 'WIDOW' ||
+                                    text === 'விதவைச் சான்றிதழ்' ||
+                                    text === 'விதவை சான்றிதழ்' ||
+                                    text.includes('விதவை') ||
+                                    text.includes('REV-109') ||
+                                    text.toLowerCase().includes('widow') ||
                                     text === 'VOTER_ID' ||
                                     text === 'குடும்ப உறுப்பினர் சேர்க்க' ||
                                     text === 'குடும்ப உறுப்பினர் நீக்க' ||
@@ -97,9 +107,11 @@ async function handleServiceSelector(ctx, req, res) {
         handleServiceSelection(text, sess);
         persistSessions();
         const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
+        const isWalkinMenuOnly = (!ctx.targetMobile || /^walkin_/i.test(String(ctx.targetMobile))) &&
+            (sess.intakeState === 'SERVICE_SELECTION' || sess.intakeState === 'RATION_CARD_SERVICES' || sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES');
         res.json({
             chatHistory: sess.chatHistory,
-            citizenProfile: sess.citizenProfile,
+            citizenProfile: isWalkinMenuOnly ? null : sess.citizenProfile,
             step: sess.intakeState,
             intakeState: sess.intakeState,
             subService: sess.subService || sess.citizenProfile?.subService,

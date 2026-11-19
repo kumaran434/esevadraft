@@ -48,6 +48,10 @@ const {
 } = require('./src/portal/tnega/tnega_legal_heir');
 
 const {
+    startTnegaWidowFlow
+} = require('./src/portal/tnega/tnega_widow_certificate');
+
+const {
     generateCanReceiptPdf
 } = require('./src/services/tnega_receipt_generator');
 
@@ -67,6 +71,8 @@ module.exports = {
     startTnegaObcCertificateFlow,
     startTnegaLegalHeirFlow,
     startTnegaLegalHeirCertificateFlow: startTnegaLegalHeirFlow,
+    startTnegaWidowFlow,
+    startTnegaWidowCertificateFlow: startTnegaWidowFlow,
     startTnegaCanSearchFlow: searchCitizenCan,
     generateCanReceiptPdf,
     stopTnegaAutomation,

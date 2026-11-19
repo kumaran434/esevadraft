@@ -771,50 +771,56 @@
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isLegalHeirMode = !forceMasterProfile && (
+            const isWidowMode = !forceMasterProfile && (
+                curSub === 'WIDOW' || curSub === 'WIDOW_CERTIFICATE' || curSub === 'TNEGA_WIDOW' || curSub.includes('REV-109') || curSub.includes('REV_109') ||
+                curIntake.includes('WIDOW') || curIntake.includes('REV-109') ||
+                serviceStr.includes('WIDOW') || serviceStr.includes('விதவை') || serviceStr.includes('REV-109') ||
+                sData?.targetService === 'WIDOW' || sData?.serviceType === 'WIDOW'
+            );
+            const isLegalHeirMode = !forceMasterProfile && !isWidowMode && (
                 curSub === 'LEGAL_HEIR' || curSub === 'LEGAL_HEIR_CERTIFICATE' || curSub.includes('REV-114') || curSub.includes('REV_114') ||
                 curIntake.includes('LEGAL_HEIR') || curIntake.includes('REV-114') ||
                 serviceStr.includes('LEGAL_HEIR') || serviceStr.includes('வாரிசு') || serviceStr.includes('REV-114') ||
                 sData?.targetService === 'LEGAL_HEIR' || sData?.serviceType === 'LEGAL_HEIR'
             );
-            const isObcMode = !forceMasterProfile && !isLegalHeirMode && (
+            const isObcMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && (
                 curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
                 curIntake.includes('OBC') || curIntake.includes('REV-115') ||
                 serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
                 sData?.targetService === 'OBC' || sData?.serviceType === 'OBC'
             );
-            const isCommunityMode = !forceMasterProfile && !isObcMode && (
+            const isCommunityMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && (
                 curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
                 curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
                 serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
                 sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
             );
-            const isResidenceMode = !forceMasterProfile && !isObcMode && !isCommunityMode && (
+            const isResidenceMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (
                 curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
                 curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
                 serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
                 sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
             );
-            const isIncomeMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && (
+            const isIncomeMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (
                 curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
                 curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
                 serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
                 sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
             );
-            const isFirstGraduateMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
+            const isFirstGraduateMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
                 curSub === 'FIRST_GRADUATE' || curSub === 'FIRST_GRADUATE_CERTIFICATE' || curSub.includes('REV-104') || curSub.includes('REV_104') ||
                 curIntake.includes('FIRST_GRADUATE') || curIntake.includes('REV-104') ||
                 serviceStr.includes('FIRST_GRADUATE') || serviceStr.includes('முதல் பட்டதாரி') || serviceStr.includes('REV-104') || serviceStr.includes('REV_104') || serviceStr.includes('REV104') ||
                 sData?.targetService === 'FIRST_GRADUATE' || sData?.serviceType === 'FIRST_GRADUATE'
             );
-            const isCanMode = !forceMasterProfile && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
+            const isCanMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
                 curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
             );
 
-            const isAddMember = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
-            const hasActiveSub = Boolean(isLegalHeirMode || isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
+            const isAddMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
+            const isRemoveMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isChangeAddress = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const hasActiveSub = Boolean(isWidowMode || isLegalHeirMode || isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
 
             const titleEl = document.getElementById('editModalTitle');
             const subTitleEl = document.getElementById('editModalSubtitle');
@@ -822,7 +828,9 @@
             const btnSubSvc = document.getElementById('btnSwitchToSubService');
             const submitBtn = document.getElementById('btnSubmitFromEditModal');
             if (submitBtn) {
-                if (isLegalHeirMode) {
+                if (isWidowMode) {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 விதவைச் சான்றிதழ் விண்ணப்பிக்க (Start Widow Apply)';
+                } else if (isLegalHeirMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வாரிசு சான்றிதழ் விண்ணப்பிக்க (Start Legal Heir Apply)';
                 } else if (isCommunityMode) {
                     submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)';
@@ -1152,6 +1160,11 @@
                 if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
                 if (btnMaster) btnMaster.style.display = 'inline-flex';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
+            } else if (isWidowMode) {
+                if (titleEl) titleEl.innerHTML = '🕊️ விதவைச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Widow Certificate - REV-109)';
+                if (subTitleEl) subTitleEl.innerText = 'கணவர் விவரங்கள், இறப்புச் சான்றிதழ் & 4 கட்டாய ஆவணங்களைச் சரிபார்க்கவும்';
+                if (btnMaster) btnMaster.style.display = 'inline-flex';
+                if (btnSubSvc) btnSubSvc.style.display = 'none';
             } else if (isLegalHeirMode) {
                 if (titleEl) titleEl.innerHTML = '👨‍👩‍👧‍👦 சட்ட வாரிசு சான்றிதழ் விண்ணப்ப விவரங்கள் (Legal Heir Certificate - REV-114)';
                 if (subTitleEl) subTitleEl.innerText = 'இறந்தவர் விவரங்கள், வாரிசுதாரர்கள் மற்றும் 4 ஆவணங்களைச் சரிபார்க்கவும்';
@@ -1242,6 +1255,13 @@
                 if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
+            } else if (isWidowMode) {
+                if (photoDocBox) photoDocBox.style.display = 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isLegalHeirMode) {
                 if (photoDocBox) photoDocBox.style.display = 'none';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
@@ -1294,6 +1314,7 @@
             const firstGradFieldsWrap = document.getElementById('editFirstGraduateFieldsWrap');
             const obcFieldsWrap = document.getElementById('editObcFieldsWrap');
             const legalHeirFieldsWrap = document.getElementById('editLegalHeirFieldsWrap');
+            const widowFieldsWrap = document.getElementById('editWidowFieldsWrap');
             const rationFieldsWrap = document.getElementById('editRationFieldsWrap');
             const smartCardNoWrap = document.getElementById('editSmartCardNoWrap');
             const canNoWrap = document.getElementById('editCanNumberWrap');
@@ -1305,6 +1326,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'grid';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1315,6 +1337,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1325,6 +1348,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1335,6 +1359,18 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
+                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
+                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
+                if (canNoWrap) canNoWrap.style.display = 'block';
+            } else if (isWidowMode) {
+                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
+                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
+                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
+                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
+                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
+                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'grid';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1345,6 +1381,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1355,6 +1392,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1365,6 +1403,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
                 if (canNoWrap) canNoWrap.style.display = 'block';
@@ -1375,6 +1414,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1386,6 +1426,7 @@
                 if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
                 if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
                 if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
+                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
                 if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
                 if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
                 if (canNoWrap) canNoWrap.style.display = 'none';
@@ -1446,6 +1487,24 @@
                         icon: 'fa-receipt',
                         defaultPrompt: 'வருமானச் சான்று அல்லது சம்பள ரசீது தேவை'
                     });
+                }
+                if (isWidowMode) {
+                    dynamicDocTypesToShow.push(
+                        {
+                            type: 'deathCertificate',
+                            title: '📜 கணவரின் இறப்புச் சான்றிதழ் (Death Certificate of Husband)',
+                            titleEng: 'Death Certificate of Husband',
+                            icon: 'fa-file-medical',
+                            defaultPrompt: 'கணவரின் இறப்புச் சான்றிதழ் தேவை'
+                        },
+                        {
+                            type: 'marriageProof',
+                            title: '💍 திருமண ஆதாரம் (Marriage Proof / Smart Card)',
+                            titleEng: 'Marriage Registration Certificate / Proof',
+                            icon: 'fa-ring',
+                            defaultPrompt: 'திருமணச் சான்றிதழ் அல்லது ஸ்மார்ட் கார்டு தேவை'
+                        }
+                    );
                 }
                 if (isLegalHeirMode) {
                     dynamicDocTypesToShow.push(
@@ -1734,6 +1793,11 @@
                 safeSetVal('editLhDateOfDeath', data.dateOfDeath || '');
                 safeSetVal('editLhPlaceOfDeath', data.placeOfDeath || data.taluk || '');
                 safeSetVal('editLhDeathCertNo', data.deathCertificateNo || '');
+            safeSetVal('editWidowSpouseNameEng', data.spouseNameEng || data.husbandNameEng || data.fatherNameEng || '');
+            safeSetVal('editWidowSpouseNameTam', data.spouseNameTam || data.husbandNameTam || data.fatherNameTam || '');
+            safeSetVal('editWidowDateOfDeath', data.dateOfDeath || '');
+            safeSetVal('editWidowDeathCertNo', data.deathCertificateNo || '');
+            safeSetVal('editWidowDateOfMarriage', data.dateOfMarriage || '');
                 const parentsPair = (data.deceasedFatherNameEng || data.deceasedMotherNameEng)
                     ? `${data.deceasedFatherNameEng || 'Ramasamy'} / ${data.deceasedMotherNameEng || 'Lakshmi'}`
                     : '';
@@ -2197,6 +2261,12 @@
                 const lhParentsSplit = lhParentsRaw.split('/').map(s => s.trim()).filter(Boolean);
                 const lhDecFaEng = lhParentsSplit[0] || currentCitizenData?.deceasedFatherNameEng || 'Ramasamy';
                 const lhDecMoEng = lhParentsSplit[1] || currentCitizenData?.deceasedMotherNameEng || 'Lakshmi';
+                const widowModeSave = (keepSub === 'WIDOW' || keepSub === 'WIDOW_CERTIFICATE');
+                const widowSpouseEngVal = document.getElementById('editWidowSpouseNameEng')?.value?.trim() || currentCitizenData?.spouseNameEng || '';
+                const widowSpouseTamVal = document.getElementById('editWidowSpouseNameTam')?.value?.trim() || currentCitizenData?.spouseNameTam || widowSpouseEngVal;
+                const widowDodVal = document.getElementById('editWidowDateOfDeath')?.value?.trim() || currentCitizenData?.dateOfDeath || '';
+                const widowDcNoVal = document.getElementById('editWidowDeathCertNo')?.value?.trim() || currentCitizenData?.deathCertificateNo || '';
+                const widowMarDateVal = document.getElementById('editWidowDateOfMarriage')?.value?.trim() || currentCitizenData?.dateOfMarriage || '';
                 const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
 
                 if (keepSub === 'COMMUNITY' || keepSub === 'COMMUNITY_CERTIFICATE') {
@@ -2233,6 +2303,16 @@
                         fatherOccupation: obcFaOccVal,
                         motherOccupation: obcMoOccVal,
                         annualIncome: obcIncVal,
+                        canNumber: canVal
+                    };
+                } else if (keepSub === 'WIDOW' || keepSub === 'WIDOW_CERTIFICATE') {
+                    keepSubData = {
+                        ...(keepSubData || {}),
+                        spouseNameEng: widowSpouseEngVal,
+                        spouseNameTam: widowSpouseTamVal,
+                        dateOfDeath: widowDodVal,
+                        deathCertificateNo: widowDcNoVal,
+                        dateOfMarriage: widowMarDateVal,
                         canNumber: canVal
                     };
                 } else if (keepSub === 'LEGAL_HEIR' || keepSub === 'LEGAL_HEIR_CERTIFICATE') {
@@ -2311,9 +2391,12 @@
                     familyGraduateConfirmed: true,
                     deceasedNameEng: lhDecEngVal,
                     deceasedNameTam: lhDecTamVal,
-                    dateOfDeath: lhDodVal,
+                    spouseNameEng: widowSpouseEngVal,
+                    spouseNameTam: widowSpouseTamVal,
+                    dateOfDeath: widowModeSave ? widowDodVal : lhDodVal,
                     placeOfDeath: lhPodVal,
-                    deathCertificateNo: lhDcNoVal,
+                    deathCertificateNo: widowModeSave ? widowDcNoVal : lhDcNoVal,
+                    dateOfMarriage: widowMarDateVal,
                     deceasedFatherNameEng: lhDecFaEng,
                     deceasedMotherNameEng: lhDecMoEng,
                     members: existingMembers,

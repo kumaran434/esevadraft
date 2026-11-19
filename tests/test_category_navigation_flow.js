@@ -62,7 +62,7 @@ assert(handledRation === true, 'handleServiceSelection handles ரேஷன் �
 assert.strictEqual(sessRation.intakeState, 'RATION_CARD_SERVICES', 'intakeState set to RATION_CARD_SERVICES');
 assert.strictEqual(sessRation.subService, null, 'subService remains null at category stage');
 const lastMsgRation = sessRation.chatHistory[sessRation.chatHistory.length - 1];
-assert.strictEqual(lastMsgRation.options.length, RATION_CARD_SERVICE_OPTIONS.length, '8 subservices + Back present');
+assert.strictEqual(lastMsgRation.options.length, RATION_CARD_SERVICE_OPTIONS.length, '4 completed subservices + Back present');
 console.log('  ✅ Ration Card expansion verified.');
 
 // 6. Chat FSM: Selecting Add Member from Ration Menu

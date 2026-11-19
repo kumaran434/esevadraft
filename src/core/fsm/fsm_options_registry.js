@@ -15,18 +15,15 @@ const REVENUE_DEPARTMENT_SERVICE_OPTIONS = [
     { label: "🎓 4. முதல் பட்டதாரி சான்றிதழ் (First Graduate REV-104)", value: "முதல் பட்டதாரி சான்றிதழ்" },
     { label: "📜 5. OBC சான்றிதழ் (OBC Certificate REV-115)", value: "OBC சான்றிதழ்" },
     { label: "👨‍👩‍👧‍👦 6. வாரிசு சான்றிதழ் (Legal Heir Certificate REV-114)", value: "வாரிசு சான்றிதழ்" },
+    { label: "🕊️ 7. விதவைச் சான்றிதழ் (Widow Certificate REV-109)", value: "விதவைச் சான்றிதழ்" },
     { label: "🔙 முதன்மைப் பட்டியல் (Back to Main Menu)", value: "MAIN_MENU" }
 ];
 
 const RATION_CARD_SERVICE_OPTIONS = [
     { label: "🏛️ 1. புதிய குடும்ப அட்டை (Apply New Smart Card)", value: "புதிய ரேஷன் கார்டு" },
     { label: "➕ 2. குடும்ப உறுப்பினர் சேர்க்க (Add Member)", value: "குடும்ப உறுப்பினர் சேர்க்க" },
-    { label: "➖ 3. குடும்ப உறுப்பினர் நீக்க (Remove Member)", value: "குடும்ப உறுப்பினர் நீக்க" },
-    { label: "👤 4. குடும்பத் தலைவர் மாற்றம் (Change Head)", value: "குடும்பத் தலைவர் மாற்றம்" },
-    { label: "📍 5. முகவரி மாற்றம் (Change Address)", value: "முகவரி மாற்றம்" },
-    { label: "📇 6. குடும்ப அட்டை வகை மாற்றம் (Change Card Type)", value: "குடும்ப அட்டை வகை மாற்றம்" },
-    { label: "📱 7. கைபேசி எண் மாற்றம் / பதிவு (Update Mobile)", value: "கைபேசி எண் மாற்றம்" },
-    { label: "⛽ 8. எரிவாயு (LPG) விவரங்கள் திருத்தம் (LPG Details)", value: "எரிவாயு விவரங்கள் திருத்தம்" },
+    { label: "📍 3. முகவரி மாற்றம் (Change Address)", value: "முகவரி மாற்றம்" },
+    { label: "📱 4. கைபேசி எண் மாற்றம் / பதிவு (Update Mobile)", value: "கைபேசி எண் மாற்றம்" },
     { label: "🔙 முதன்மைப் பட்டியல் (Back to Main Menu)", value: "MAIN_MENU" }
 ];
 

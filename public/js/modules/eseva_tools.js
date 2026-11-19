@@ -12,8 +12,87 @@
 
     function ensurePdfJsWorker() {
         if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
-            if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-                window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+            if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc || window.pdfjsLib.GlobalWorkerOptions.workerSrc === 'vendor/pdf.worker.min.js') {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
+            }
+        }
+    }
+
+    async function ensurePdfJsReady() {
+        if (!window.pdfjsLib) {
+            await new Promise((resolve, reject) => {
+                const existing = Array.from(document.scripts || []).find(s => /vendor\/pdf\.min\.js/i.test(s.src || ''));
+                if (existing && window.pdfjsLib) return resolve();
+                const sc = document.createElement('script');
+                sc.src = '/vendor/pdf.min.js';
+                sc.onload = resolve;
+                sc.onerror = () => reject(new Error('PDF.js நூலகத்தை ஏற்ற முடியவில்லை.'));
+                document.head.appendChild(sc);
+            });
+        }
+        ensurePdfJsWorker();
+        if (!window.pdfjsLib) throw new Error('PDF.js தயாராகவில்லை.');
+        return window.pdfjsLib;
+    }
+
+    function inspectBinaryDocBytes(uint8, file) {
+        const len = Math.min(uint8.length, 2048);
+        // Check image magic bytes first (handles JPEG/PNG saved with .pdf extension!)
+        if (uint8.length >= 3 && uint8[0] === 0xFF && uint8[1] === 0xD8 && uint8[2] === 0xFF) {
+            return { kind: 'image', mime: 'image/jpeg' };
+        }
+        if (uint8.length >= 4 && uint8[0] === 0x89 && uint8[1] === 0x50 && uint8[2] === 0x4E && uint8[3] === 0x47) {
+            return { kind: 'image', mime: 'image/png' };
+        }
+        if (uint8.length >= 12 && uint8[0] === 0x52 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x46 &&
+            uint8[8] === 0x57 && uint8[9] === 0x45 && uint8[10] === 0x42 && uint8[11] === 0x50) {
+            return { kind: 'image', mime: 'image/webp' };
+        }
+        if (uint8.length >= 4 && uint8[0] === 0x47 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x38) {
+            return { kind: 'image', mime: 'image/gif' };
+        }
+        // Scan first 2KB for %PDF- header (tolerates leading BOM/whitespace)
+        for (let i = 0; i <= len - 5; i++) {
+            if (uint8[i] === 0x25 && uint8[i + 1] === 0x50 && uint8[i + 2] === 0x44 && uint8[i + 3] === 0x46 && uint8[i + 4] === 0x2D) {
+                return { kind: 'pdf', bytes: i === 0 ? uint8 : uint8.slice(i) };
+            }
+        }
+        const looksPdf = (file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)));
+        return looksPdf ? { kind: 'pdf', bytes: uint8 } : { kind: 'image', mime: (file && file.type) || 'image/jpeg' };
+    }
+
+    async function loadPdfDocumentWithFallback(pdfBytes) {
+        const pdfjsLib = await ensurePdfJsReady();
+        const tryOpen = async (bytesCopy, extraOpts = {}) => {
+            const task = pdfjsLib.getDocument({ data: new Uint8Array(bytesCopy), ...extraOpts });
+            return await task.promise;
+        };
+
+        try {
+            return await tryOpen(pdfBytes);
+        } catch (firstErr) {
+            if (firstErr && firstErr.name === 'PasswordException') {
+                const pwd = window.prompt('🔒 இந்த PDF கோப்பு கடவுச்சொல் (Password) பாதுகாக்கப்பட்டுள்ளது. கடவுச்சொல்லை உள்ளிடவும்:');
+                if (pwd === null) throw new Error('கடவுச்சொல் உள்ளிடப்படவில்லை.');
+                try {
+                    return await tryOpen(pdfBytes, { password: pwd });
+                } catch (_) {
+                    return await tryOpen(pdfBytes, { password: pwd, disableWorker: true });
+                }
+            }
+            // Retry with worker disabled (protects against Electron/CSP/relative-worker failures)
+            try {
+                return await tryOpen(pdfBytes, { disableWorker: true, isEvalSupported: false });
+            } catch (secondErr) {
+                // Attempt pdf-lib structural normalization for slightly malformed/xref PDFs
+                if (window.PDFLib && window.PDFLib.PDFDocument) {
+                    try {
+                        const repairedDoc = await window.PDFLib.PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+                        const repairedBytes = await repairedDoc.save();
+                        return await tryOpen(repairedBytes, { disableWorker: true });
+                    } catch (_) {}
+                }
+                throw secondErr || firstErr;
             }
         }
     }
@@ -2140,9 +2219,34 @@
         if (slider) slider.value = defaultW;
     }
 
+    function loadHtmlImage(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('படத்தைத் திரையில் ஏற்ற முடியவில்லை.'));
+            img.src = src;
+        });
+    }
+
+    function setTool4DocStatus(html, isError = false) {
+        const el = document.getElementById('tool4DocLoadStatus');
+        if (!el) return;
+        if (!html) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+            return;
+        }
+        el.style.display = 'block';
+        el.innerHTML = `<div style="padding:10px 12px; border-radius:8px; font-size:12px; font-weight:700; ${isError
+            ? 'background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;'
+            : 'background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;'}">${html}</div>`;
+    }
+
     window.handleTool4DocSignSelected = async function (inputOrFile) {
         ensurePdfJsWorker();
-        const file = inputOrFile instanceof File ? inputOrFile : (inputOrFile && inputOrFile.files && inputOrFile.files[0]);
+        const file = inputOrFile instanceof File
+            ? inputOrFile
+            : (inputOrFile instanceof FileList ? inputOrFile[0] : (inputOrFile && inputOrFile.files && inputOrFile.files[0]));
         if (!file) return;
 
         const emptyPrompt = document.getElementById('tool4DocEmptyPrompt');
@@ -2152,10 +2256,11 @@
         const copyAllBtn = document.getElementById('btnTool4CopySigAllPages');
         const resBox = document.getElementById('tool4SignedDocResult');
 
-        tool4State.docFileName = file.name.replace(/\.(pdf|jpg|jpeg|png|webp)$/i, '') || 'Document';
+        tool4State.docFileName = file.name.replace(/\.(pdf|jpg|jpeg|png|webp|gif|bmp)$/i, '') || 'Document';
         tool4State.docPages = [];
         tool4State.activePageIndex = 0;
         if (resBox) resBox.innerHTML = '';
+        setTool4DocStatus(`<i class="fa-solid fa-spinner fa-spin"></i> ஆவணம் ஏற்றப்படுகிறது: ${file.name}...`);
 
         // If user hasn't created a signature yet in Step 1, auto-generate a default typed signature or prompt gently
         if (!tool4State.activeSignatureDataUrl) {
@@ -2169,26 +2274,29 @@
             }
         }
 
-        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-
         try {
-            if (isPdf) {
-                if (!window.pdfjsLib) throw new Error('PDF.js தயாராகவில்லை.');
-                const arrayBuf = await file.arrayBuffer();
-                const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+            const arrayBuf = await file.arrayBuffer();
+            const rawBytes = new Uint8Array(arrayBuf);
+            const detected = inspectBinaryDocBytes(rawBytes, file);
+
+            if (detected.kind === 'pdf') {
+                const pdf = await loadPdfDocumentWithFallback(detected.bytes);
                 for (let p = 1; p <= pdf.numPages; p++) {
+                    setTool4DocStatus(`<i class="fa-solid fa-spinner fa-spin"></i> PDF பக்கம் ${p} / ${pdf.numPages} தயாராகிறது...`);
                     const page = await pdf.getPage(p);
-                    const vp = page.getViewport({ scale: 2.0 });
+                    const baseVp = page.getViewport({ scale: 1.0 });
+                    const maxDim = Math.max(baseVp.width || 600, baseVp.height || 800);
+                    const renderScale = Math.min(2.0, Math.max(1.0, 2200 / maxDim));
+                    const vp = page.getViewport({ scale: renderScale });
                     const c = document.createElement('canvas');
-                    c.width = Math.round(vp.width);
-                    c.height = Math.round(vp.height);
+                    c.width = Math.max(1, Math.round(vp.width));
+                    c.height = Math.max(1, Math.round(vp.height));
                     const ctx = c.getContext('2d');
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, c.width, c.height);
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
                     const dataUrl = c.toDataURL('image/jpeg', 0.92);
-                    const pImg = new Image();
-                    await new Promise((r) => { pImg.onload = r; pImg.src = dataUrl; });
+                    const pImg = await loadHtmlImage(dataUrl);
                     tool4State.docPages.push({
                         pageNum: p,
                         imgElement: pImg,
@@ -2200,25 +2308,38 @@
                     });
                 }
             } else {
-                const dataUrl = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-                const pImg = new Image();
-                await new Promise((r) => { pImg.onload = r; pImg.src = dataUrl; });
+                const blobUrl = URL.createObjectURL(new Blob([rawBytes], { type: detected.mime || file.type || 'image/jpeg' }));
+                let dataUrl;
+                let width = 800;
+                let height = 1000;
+                try {
+                    const rawImg = await loadHtmlImage(blobUrl);
+                    const c = document.createElement('canvas');
+                    width = rawImg.naturalWidth || rawImg.width || 800;
+                    height = rawImg.naturalHeight || rawImg.height || 1000;
+                    c.width = width;
+                    c.height = height;
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(rawImg, 0, 0, width, height);
+                    dataUrl = c.toDataURL('image/jpeg', 0.92);
+                } finally {
+                    URL.revokeObjectURL(blobUrl);
+                }
+                const pImg = await loadHtmlImage(dataUrl);
                 tool4State.docPages.push({
                     pageNum: 1,
                     imgElement: pImg,
                     dataUrl,
-                    width: pImg.width,
-                    height: pImg.height,
+                    width,
+                    height,
                     placements: [],
                     selectedPlacementIdx: -1
                 });
             }
 
+            setTool4DocStatus('');
             if (emptyPrompt) emptyPrompt.style.display = 'none';
             if (stageWrap) stageWrap.style.display = 'flex';
             if (changeBtn) changeBtn.style.display = 'inline-flex';
@@ -2233,9 +2354,11 @@
             selectTool4DocPage(0);
         } catch (err) {
             console.error('Document sign load error:', err);
-            if (typeof showInAppToast === 'function') showInAppToast('⚠️ ஆவணத்தை ஏற்றுவதில் பிழை: ' + err.message, 'error');
+            const msg = '⚠️ ஆவணத்தை ஏற்றுவதில் பிழை: ' + (err && err.message ? err.message : 'PDF/படம் பழுதடைந்திருக்கலாம்.');
+            setTool4DocStatus(msg, true);
+            if (typeof showInAppToast === 'function') showInAppToast(msg, 'error');
         }
-        if (inputOrFile && !(inputOrFile instanceof File)) {
+        if (inputOrFile && !(inputOrFile instanceof File) && !(inputOrFile instanceof FileList)) {
             inputOrFile.value = '';
         }
     };

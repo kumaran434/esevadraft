@@ -4,7 +4,7 @@
  */
 
 function handleRationSubserviceMenuPrompts(text, sess, isAlreadyInRationMenu) {
-    if (text.includes('உறுப்பினர் நீக்க') || text === 'குடும்ப உறுப்பினர் நீக்க' || text.startsWith('3.') || (isAlreadyInRationMenu && text === '3')) {
+    if (text.includes('உறுப்பினர் நீக்க') || text === 'குடும்ப உறுப்பினர் நீக்க') {
         sess.intakeState = 'RATION_REMOVE_MEMBER_REASON';
         sess.subService = 'REMOVE_MEMBER';
         sess.chatHistory.push({
@@ -20,7 +20,7 @@ function handleRationSubserviceMenuPrompts(text, sess, isAlreadyInRationMenu) {
             ]
         });
         return true;
-    } else if (text.includes('தலைவர் மாற்றம்') || text === 'குடும்பத் தலைவர் மாற்றம்' || text === 'RATION_CHANGE_HEAD' || text === 'CHANGE_HEAD' || text.startsWith('4.') || (isAlreadyInRationMenu && text === '4')) {
+    } else if (text.includes('தலைவர் மாற்றம்') || text === 'குடும்பத் தலைவர் மாற்றம்' || text === 'RATION_CHANGE_HEAD' || text === 'CHANGE_HEAD') {
         sess.intakeState = 'RATION_CHANGE_HEAD_REASON';
         sess.subService = 'CHANGE_HEAD';
         sess.chatHistory.push({
@@ -51,7 +51,7 @@ function handleRationSubserviceMenuPrompts(text, sess, isAlreadyInRationMenu) {
             ]
         });
         return true;
-    } else if (text.includes('கைபேசி') || text === 'கைபேசி எண் மாற்றம்' || text === 'RATION_CHANGE_MOBILE' || text === 'UPDATE_MOBILE' || text.startsWith('7.') || (isAlreadyInRationMenu && text === '7')) {
+    } else if (text.includes('கைபேசி') || text === 'கைபேசி எண் மாற்றம்' || text === 'RATION_CHANGE_MOBILE' || text === 'UPDATE_MOBILE' || text.startsWith('4.') || (isAlreadyInRationMenu && text === '4') || text.startsWith('7.') || (isAlreadyInRationMenu && text === '7')) {
         sess.intakeState = 'RATION_CHANGE_MOBILE';
         sess.subService = 'UPDATE_MOBILE';
         sess.chatHistory.push({

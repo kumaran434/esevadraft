@@ -347,6 +347,40 @@ const SERVICES_REGISTRY = {
             { key: 'headAadhaar', label: 'வாரிசு உறவுமுறைச் சான்று (ஆதார் / ஸ்மார்ட் கார்டு)', format: 'pdf' },
             { key: 'birthCertificate', label: 'வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC', format: 'pdf' }
         ]
+    },
+    WIDOW_CERTIFICATE: {
+        id: 'WIDOW_CERTIFICATE',
+        code: 'REV-109',
+        nameTamil: 'விதவைச் சான்றிதழ் (REV-109)',
+        nameEnglish: 'Widow Certificate',
+        portal: 'TNeGA Revenue Department (e-Sevai)',
+        portalUrl: 'https://www.tnesevai.tn.gov.in',
+        totalSteps: 14,
+        requiresFamilyMembers: false,
+        commonFields: [
+            { key: 'canNumber', label: '13-இலக்க CAN எண்' },
+            { key: 'fullNameEng', label: 'விண்ணப்பதாரர் பெயர் (ஆங்கிலம்)' },
+            { key: 'fullNameTam', label: 'விண்ணப்பதாரர் பெயர் (தமிழ்)' },
+            { key: 'doorNo', label: 'கதவு எண்' },
+            { key: 'streetEng', label: 'தெருப் பெயர்' },
+            { key: 'district', label: 'மாவட்டம்' },
+            { key: 'taluk', label: 'வட்டம்' },
+            { key: 'village', label: 'வருவாய் கிராமம்' },
+            { key: 'pincode', label: 'பின்கோடு' },
+            { key: 'headAadhaar', label: 'ஆதார் எண்' }
+        ],
+        specificFields: [
+            { key: 'spouseNameEng', label: 'கணவரின் பெயர் (Spouse Name)', mandatory: true },
+            { key: 'dateOfDeath', label: 'கணவர் இறந்த தேதி (Date of Death)', mandatory: true },
+            { key: 'deathCertificateNo', label: 'இறப்புச் சான்றிதழ் எண் (Death Certificate No.)', mandatory: true },
+            { key: 'dateOfMarriage', label: 'திருமணத் தேதி (Date of Marriage - விருப்பம்)', mandatory: false }
+        ],
+        requiredDocuments: [
+            { key: 'profilePhoto', label: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<50KB)', format: 'image' },
+            { key: 'headAadhaar', label: 'முகவரி ஆதாரம் (ஆதார் / ஸ்மார்ட் கார்டு)', format: 'pdf' },
+            { key: 'deathCertificate', label: 'கணவரின் இறப்புச் சான்றிதழ் (Death Certificate of Husband)', format: 'pdf' },
+            { key: 'marriageProof', label: 'திருமண ஆதாரம் (திருமண சான்றிதழ் / ஸ்மார்ட் கார்டு)', format: 'pdf' }
+        ]
     }
 };
 

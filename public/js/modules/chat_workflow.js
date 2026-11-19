@@ -148,7 +148,7 @@
         }
 
 
-        // Supported Revenue Department subservices: சாதிச் சான்றிதழ், இருப்பிடச் சான்றிதழ், வருமானச் சான்றிதழ், முதல் பட்டதாரி சான்றிதழ், OBC சான்றிதழ்
+        // Supported Revenue Department subservices: சாதிச் சான்றிதழ், இருப்பிடச் சான்றிதழ், வருமானச் சான்றிதழ், முதல் பட்டதாரி சான்றிதழ், OBC சான்றிதழ், வாரிசு சான்றிதழ், விதவைச் சான்றிதழ்
         function renderDefaultWelcomeMessage() {
             lastRenderedChatHistoryJson = '';
             lastRenderedChatHistoryLength = 0;
@@ -233,6 +233,7 @@
             const wasNearBottom = distFromBottom <= 45;
             const prevScrollTop = chatBox.scrollTop;
             const isNewMessageAdded = (history.length > lastRenderedChatHistoryLength) && lastRenderedChatHistoryLength > 0;
+            const isRewound = lastRenderedChatHistoryLength > 0 && history.length < lastRenderedChatHistoryLength;
 
             lastRenderedChatHistoryJson = historyJson;
             lastRenderedChatHistoryLength = history.length;
@@ -325,6 +326,8 @@
                                 'START_COMMUNITY_APPLY',
                                 'START_FIRST_GRADUATE_APPLY',
                                 'START_OBC_APPLY',
+                                'START_LEGAL_HEIR_APPLY',
+                                'START_WIDOW_APPLY',
                                 'APPLY_COMMUNITY_NOW',
                                 'APPLY_RESIDENCE_NOW',
                                 'APPLY_VOTER_NOW',
@@ -483,7 +486,14 @@
                 stopOtpTimer();
             }
 
-            if (forceScroll || wasNearBottom || lastRenderedChatHistoryLength <= 1) {
+            if (history.length <= 1) {
+                chatBox.scrollTop = 0;
+                const btn = document.getElementById('chatScrollBottomBtn');
+                if (btn) {
+                    btn.style.display = 'none';
+                    btn.classList.remove('has-new-msg');
+                }
+            } else if (forceScroll || wasNearBottom || isRewound) {
                 chatBox.scrollTop = chatBox.scrollHeight;
                 const btn = document.getElementById('chatScrollBottomBtn');
                 if (btn) {

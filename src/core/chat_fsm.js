@@ -53,6 +53,32 @@ function cleanupAddMemberUploads(sess) {
     }
 }
 
+function rewindChatToCategoryMenu(sess, categoryMarker, userLabel, botMenuPayload) {
+    if (!Array.isArray(sess.chatHistory)) sess.chatHistory = [];
+    // If a trailing user message for this Back click was just pushed by chat_context, find prior category menu first
+    const existingCatIdx = sess.chatHistory.findIndex(
+        m => m && m.sender === 'bot' && typeof m.text === 'string' && m.text.includes(categoryMarker) && Array.isArray(m.options)
+    );
+    if (existingCatIdx >= 0) {
+        sess.chatHistory = sess.chatHistory.slice(0, existingCatIdx + 1);
+        sess.chatHistory[existingCatIdx] = botMenuPayload;
+        return;
+    }
+    // Otherwise anchor directly right after the top Step-1 Welcome message so abandoned branches don't stack downward
+    const welcomeIdx = sess.chatHistory.findIndex(
+        m => m && m.sender === 'bot' && Array.isArray(m.options) && m.options.some(o => o && o.value === 'ரேஷன் கார்டு')
+    );
+    if (welcomeIdx >= 0) {
+        sess.chatHistory = sess.chatHistory.slice(0, welcomeIdx + 1);
+        if (userLabel) {
+            sess.chatHistory.push({ sender: 'user', text: userLabel });
+        }
+        sess.chatHistory.push(botMenuPayload);
+        return;
+    }
+    sess.chatHistory.push(botMenuPayload);
+}
+
 /**
  * Evaluates user input when state is SERVICE_SELECTION and transitions accordingly.
  */
@@ -66,18 +92,16 @@ function handleServiceSelection(text, sess) {
         sess.step = 'SERVICE_SELECTION';
         sess.service = null;
         sess.subService = null;
+        sess.subServiceData = null;
         if (sess.citizenProfile) sess.citizenProfile.subService = null;
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `வணக்கம்! 🙏 **eSevaDraft (https://esevadraft.in/)** தமிழ்நாடு அரசு சேவைகள் ஏஐ உதவி மையம்!\n\n` +
-                  `நீங்கள் இன்று எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n\n` +
-                  `கீழே உள்ள விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
-            options: SERVICE_OPTIONS
-        });
+        const mob = sess.mobileNumber || sess.citizenProfile?.mobileNumber || '';
+        const cleanMob = /^walkin_/i.test(String(mob)) ? '' : mob;
+        // Rewind cleanly back to Step 1 at the top instead of piling duplicate menus downward
+        sess.chatHistory = [getInitialWelcomeMessage(sess.citizenProfile, cleanMob)];
         return true;
     }
 
-    const isRevenueCategory = !isAlreadyInRevenueMenu && (
+    const isRevenueCategory = (
         text === 'வருவாய்த் துறை' || 
         text === 'வருவாய்த் துறை சான்றிதழ்கள்' || 
         text === 'வருவாய் துறை' || 
@@ -94,7 +118,7 @@ function handleServiceSelection(text, sess) {
         sess.service = 'வருவாய்த் துறை';
         sess.subService = null;
         if (sess.citizenProfile) sess.citizenProfile.subService = null;
-        sess.chatHistory.push({
+        rewindChatToCategoryMenu(sess, 'வருவாய்த் துறை சான்றிதழ்கள்', text, {
             sender: 'bot',
             text: `🏛️ **வருவாய்த் துறை சான்றிதழ்கள் (Revenue Department - e-Sevai / TNeGA)**\n\n` +
                   `நீங்கள் எந்த சான்றிதழுக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்?\n\n` +
@@ -111,7 +135,7 @@ function handleServiceSelection(text, sess) {
                            text.includes('New Ration Card') ||
                            (isAlreadyInRationMenu && (text === '1' || text.startsWith('1.') || text.includes('1. புதிய')));
 
-    const isRationCardCategory = !isNewRationCard && !isAlreadyInRationMenu && (
+    const isRationCardCategory = !isNewRationCard && (
         text === 'ரேஷன் கார்டு' || 
         text === 'ரேஷன்' || 
         text.toLowerCase() === 'ration' || 
@@ -126,7 +150,7 @@ function handleServiceSelection(text, sess) {
         sess.service = 'ரேஷன் கார்டு';
         sess.subService = null;
         if (sess.citizenProfile) sess.citizenProfile.subService = null;
-        sess.chatHistory.push({
+        rewindChatToCategoryMenu(sess, 'குடும்ப அட்டை (Ration Card) சேவைகள்', text, {
             sender: 'bot',
             text: `🏛️ **குடும்ப அட்டை (Ration Card) சேவைகள்**\n\n` +
                   `நீங்கள் குடும்ப அட்டையில் எந்த சேவையைச் செய்ய விரும்புகிறீர்கள்?\n\n` +
@@ -253,7 +277,7 @@ function handleServiceSelection(text, sess) {
             ]
         });
         return true;
-    } else if (text.includes('முகவரி மாற்றம்') || text === 'முகவரி மாற்றம்' || text.startsWith('5.') || (isAlreadyInRationMenu && text === '5')) {
+    } else if (text.includes('முகவரி மாற்றம்') || text === 'முகவரி மாற்றம்' || text.startsWith('3.') || (isAlreadyInRationMenu && text === '3') || text.startsWith('5.') || (isAlreadyInRationMenu && text === '5')) {
         sess.service = 'ரேஷன் கார்டு';
         sess.subService = 'CHANGE_ADDRESS';
         if (sess.citizenProfile) sess.citizenProfile.subService = 'CHANGE_ADDRESS';

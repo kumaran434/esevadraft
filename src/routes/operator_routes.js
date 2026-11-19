@@ -237,7 +237,9 @@ router.post('/api/operator/new-customer', async (req, res) => {
     const isIncome = !isRevenueGeneric && (serviceName === 'வருமானச் சான்றிதழ்' || sLower.includes('income') || (serviceName && serviceName.includes('வருமானம்')));
     const isResidence = !isRevenueGeneric && (serviceName === 'இருப்பிடச் சான்றிதழ்' || sLower.includes('residence') || (serviceName && serviceName.includes('இருப்பிடம்')));
     const isObc = !isRevenueGeneric && (serviceName === 'OBC சான்றிதழ்' || serviceName === 'OBC_CERTIFICATE' || serviceName === 'TNEGA_OBC' || serviceName === 'REV-115' || sLower.includes('obc') || (serviceName && serviceName.includes('இதர பிற்படுத்தப்பட்டோர்')));
-    const isCommunity = !isRevenueGeneric && !isObc && (serviceName === 'சாதிச் சான்றிதழ்' || sLower.includes('community') || (serviceName && serviceName.includes('சாதி')));
+    const isLegalHeir = !isRevenueGeneric && (serviceName === 'வாரிசு சான்றிதழ்' || serviceName === 'LEGAL_HEIR_CERTIFICATE' || serviceName === 'LEGAL_HEIR' || serviceName === 'REV-114' || sLower.includes('legal heir') || (serviceName && serviceName.includes('வாரிசு')));
+    const isWidow = !isRevenueGeneric && (serviceName === 'விதவைச் சான்றிதழ்' || serviceName === 'விதவை சான்றிதழ்' || serviceName === 'WIDOW_CERTIFICATE' || serviceName === 'WIDOW' || serviceName === 'REV-109' || sLower.includes('widow') || (serviceName && serviceName.includes('விதவை')));
+    const isCommunity = !isRevenueGeneric && !isObc && !isLegalHeir && !isWidow && (serviceName === 'சாதிச் சான்றிதழ்' || sLower.includes('community') || (serviceName && serviceName.includes('சாதி')));
     const isFirstGraduate = !isRevenueGeneric && !isObc && (serviceName === 'முதல் பட்டதாரி சான்றிதழ்' || serviceName === 'முதல் பட்டதாரி' || serviceName === 'FIRST_GRADUATE' || serviceName === 'FIRST_GRADUATE_CERTIFICATE' || sLower.includes('first graduate') || sLower.includes('first_graduate') || (serviceName && serviceName.includes('முதல் பட்டதாரி')));
     const isVoter = serviceName === 'புதிய வாக்காளர் அட்டை' || sLower.includes('voter') || (serviceName && serviceName.includes('வாக்காளர்'));
 
@@ -367,6 +369,34 @@ router.post('/api/operator/new-customer', async (req, res) => {
             text: flowStep.text,
             options: flowStep.options
         });
+    } else if (isLegalHeir) {
+        sess.subService = 'LEGAL_HEIR';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'LEGAL_HEIR';
+        }
+        sess.intakeState = 'LEGAL_HEIR_INTAKE';
+        try { createApplication(cleanMobile, 'LEGAL_HEIR_CERTIFICATE', sess.citizenProfile); } catch (_) {}
+        const { advanceTnegaLegalHeirFlow } = require('../core/fsm/tnega_flow_engine');
+        const flowStep = advanceTnegaLegalHeirFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        }];
+    } else if (isWidow) {
+        sess.subService = 'WIDOW';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'WIDOW';
+        }
+        sess.intakeState = 'WIDOW_INTAKE';
+        try { createApplication(cleanMobile, 'WIDOW_CERTIFICATE', sess.citizenProfile); } catch (_) {}
+        const { advanceTnegaWidowFlow } = require('../core/fsm/tnega_flow_engine');
+        const flowStep = advanceTnegaWidowFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
+        sess.chatHistory = [{
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        }];
     } else if (isFirstGraduate) {
         sess.subService = 'FIRST_GRADUATE';
         if (sess.citizenProfile) {

@@ -1,0 +1,716 @@
+/* ==========================================================================
+   eSevaDraft — Studio UI (v3.0 — Apple / Stripe / Linear Light-Glass Edition)
+   100% Non-Destructive Scoped Layer: Active ONLY when body.eseva-studio-ui is set.
+   Does NOT modify Classic or Pro UI in any way!
+   Zero JS logic changes, zero HTML ID changes, 34px header ergonomics preserved.
+   ========================================================================== */
+
+body.eseva-studio-ui {
+    --st-bg: #f9fafb;
+    --st-surface: #ffffff;
+    --st-surface-subtle: #f3f4f6;
+    --st-border: #e5e7eb;
+    --st-border-strong: #d1d5db;
+    --st-ink: #0f172a;
+    --st-ink-soft: #475569;
+    --st-muted: #64748b;
+    --st-indigo: #4f46e5;
+    --st-indigo-hover: #4338ca;
+    --st-indigo-soft: #eef2ff;
+    --st-teal: #0d9488;
+    --st-emerald: #059669;
+    --st-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --st-shadow-sm: 0 2px 8px -2px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+    --st-shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.09), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+    --st-shadow-lg: 0 24px 60px -16px rgba(15, 23, 42, 0.14), 0 4px 12px -4px rgba(15, 23, 42, 0.06);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+body.eseva-studio-ui .viewport-wrapper,
+body.eseva-studio-ui .app-body {
+    background: var(--st-bg) !important;
+}
+
+/* Feather-Light Scrollbars */
+body.eseva-studio-ui ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+body.eseva-studio-ui ::-webkit-scrollbar-track {
+    background: transparent;
+}
+body.eseva-studio-ui ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.32);
+    border-radius: 999px;
+}
+body.eseva-studio-ui ::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.52);
+}
+
+/* ==========================================================================
+   1. LUMINOUS PEARL-WHITE STUDIO HEADER (macOS / Linear / Notion / Stripe)
+   ========================================================================== */
+body.eseva-studio-ui .navbar {
+    background: rgba(255, 255, 255, 0.96) !important;
+    backdrop-filter: blur(14px) !important;
+    border-bottom: 1px solid var(--st-border) !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03) !important;
+    color: var(--st-ink) !important;
+    padding: 9px 20px !important;
+    min-height: 56px !important;
+}
+
+body.eseva-studio-ui .brand-box {
+    display: flex !important;
+    align-items: center !important;
+    gap: 11px !important;
+}
+
+/* Jewel Indigo -> Teal Signature App Icon Mark */
+body.eseva-studio-ui .brand-logo-mark {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 55%, #10b981 100%) !important;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.28), 0 1px 0 rgba(255, 255, 255, 0.35) inset !important;
+    flex-shrink: 0 !important;
+}
+
+body.eseva-studio-ui .brand-title h1 {
+    font-size: 19.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.5px !important;
+    color: var(--st-ink) !important;
+    gap: 0 !important;
+}
+
+body.eseva-studio-ui .brand-title h1 span.brand-word-eseva {
+    font-size: 19.5px !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    letter-spacing: -0.5px !important;
+}
+
+body.eseva-studio-ui .brand-title h1 span.brand-word-draft {
+    font-size: 19.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.5px !important;
+    background: linear-gradient(135deg, #4f46e5 0%, #0d9488 100%) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    filter: none !important;
+}
+
+body.eseva-studio-ui #headerAppVersionBadge {
+    font-size: 9.5px !important;
+    font-weight: 700 !important;
+    padding: 2px 7px !important;
+    border-radius: 999px !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #475569 !important;
+    letter-spacing: 0.3px !important;
+}
+
+body.eseva-studio-ui .brand-subtitle-text {
+    font-size: 10px !important;
+    color: #64748b !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.1px !important;
+    margin-top: 2px !important;
+}
+
+body.eseva-studio-ui .live-status-pill {
+    background: #ecfdf5 !important;
+    border: 1px solid #bbf7d0 !important;
+    color: #047857 !important;
+    padding: 4px 10px !important;
+    border-radius: 999px !important;
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+}
+
+/* Whisper-Quiet Ghost Header Icon Buttons (macOS / Linear Light Style) */
+body.eseva-studio-ui .nav-actions {
+    gap: 4px !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn {
+    width: 34px !important;
+    min-width: 34px !important;
+    max-width: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: #475569 !important;
+    box-shadow: none !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn i {
+    color: #475569 !important;
+    font-size: 14px !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn:hover {
+    background: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06) !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn:hover i {
+    color: #0f172a !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn.btn-desk-active:hover {
+    background: #fef3c7 !important;
+    border-color: #fde68a !important;
+}
+body.eseva-studio-ui .nav-icon-btn.btn-desk-active:hover i {
+    color: #b45309 !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn.btn-save-draft:hover {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+}
+body.eseva-studio-ui .nav-icon-btn.btn-save-draft:hover i {
+    color: #059669 !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn.btn-vault:hover {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+}
+body.eseva-studio-ui .nav-icon-btn.btn-vault:hover i {
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn.btn-tools:hover {
+    background: #f5f3ff !important;
+    border-color: #ddd6fe !important;
+}
+body.eseva-studio-ui .nav-icon-btn.btn-tools:hover i {
+    color: #7c3aed !important;
+}
+
+body.eseva-studio-ui .nav-icon-btn.nav-btn-logout:hover,
+body.eseva-studio-ui .nav-icon-btn.btn-reset:hover {
+    background: #fef2f2 !important;
+    border-color: #fecaca !important;
+}
+body.eseva-studio-ui .nav-icon-btn.nav-btn-logout:hover i,
+body.eseva-studio-ui .nav-icon-btn.btn-reset:hover i {
+    color: #dc2626 !important;
+}
+
+/* Studio Theme Switcher Pill */
+body.eseva-studio-ui #btnToggleUiTheme {
+    background: #eef2ff !important;
+    border: 1px solid #c7d2fe !important;
+    color: #3730a3 !important;
+    margin-right: 6px !important;
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.08) !important;
+}
+
+body.eseva-studio-ui #btnToggleUiTheme:hover {
+    background: #e0e7ff !important;
+    border-color: #818cf8 !important;
+    color: #312e81 !important;
+}
+
+body.eseva-studio-ui #btnToggleUiTheme .theme-pill-dot {
+    background: #4f46e5 !important;
+    box-shadow: 0 0 8px rgba(79, 70, 229, 0.55) !important;
+}
+
+/* Crisp Light Tooltips in Studio Mode */
+body.eseva-studio-ui [data-tooltip]::after {
+    background: #0f172a !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 7px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 10px 24px -4px rgba(15, 23, 42, 0.28) !important;
+}
+
+/* ==========================================================================
+   2. LUMINOUS STRIPE-STYLE AUTH PORTAL (SIGN-IN / SIGN-UP)
+   ========================================================================== */
+body.eseva-studio-ui .auth-screen {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background:
+        radial-gradient(ellipse 60% 50% at 14% 18%, rgba(79, 70, 229, 0.11) 0%, transparent 62%),
+        radial-gradient(ellipse 55% 48% at 88% 82%, rgba(16, 185, 129, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 75% 15%, rgba(14, 165, 233, 0.09) 0%, transparent 55%),
+        linear-gradient(180deg, #fafbfe 0%, #f3f5f9 100%) !important;
+}
+
+body.eseva-studio-ui .auth-portal-container {
+    max-width: 1040px !important;
+    gap: 48px !important;
+}
+
+body.eseva-studio-ui .auth-hero-pane {
+    color: #0f172a !important;
+}
+
+body.eseva-studio-ui .auth-hero-badge {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #334155 !important;
+    box-shadow: var(--st-shadow-xs) !important;
+    padding: 6px 14px !important;
+    font-size: 11.5px !important;
+}
+
+body.eseva-studio-ui .auth-hero-badge strong {
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .auth-hero-title {
+    font-size: 32px !important;
+    font-weight: 800 !important;
+    line-height: 1.26 !important;
+    letter-spacing: -0.7px !important;
+    background: linear-gradient(135deg, #0f172a 35%, #4f46e5 82%, #0d9488 100%) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+body.eseva-studio-ui .auth-hero-desc {
+    color: #475569 !important;
+    font-size: 13.5px !important;
+    line-height: 1.65 !important;
+}
+
+body.eseva-studio-ui .auth-feat-item {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 14px !important;
+    padding: 13px 16px !important;
+    box-shadow: var(--st-shadow-xs) !important;
+}
+
+body.eseva-studio-ui .auth-feat-item:hover {
+    background: #ffffff !important;
+    border-color: #c7d2fe !important;
+    box-shadow: var(--st-shadow-sm) !important;
+    transform: translateY(-1px) !important;
+}
+
+body.eseva-studio-ui .auth-feat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px !important;
+    background: #eef2ff !important;
+    border: 1px solid #e0e7ff !important;
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .auth-feat-text h4 {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+}
+
+body.eseva-studio-ui .auth-feat-text p {
+    color: #64748b !important;
+}
+
+body.eseva-studio-ui .auth-hero-trust {
+    border-top: 1px solid #e2e8f0 !important;
+    padding-top: 12px !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+}
+
+body.eseva-studio-ui .auth-hero-trust i {
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .auth-card {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 22px !important;
+    padding: 30px 28px 24px !important;
+    box-shadow: var(--st-shadow-lg) !important;
+    max-width: 432px !important;
+}
+
+body.eseva-studio-ui .auth-card h2 span {
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .auth-tabs {
+    background: #f3f4f6 !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 11px !important;
+    padding: 4px !important;
+}
+
+body.eseva-studio-ui .auth-input-group input[type="text"],
+body.eseva-studio-ui .auth-input-group input[type="email"],
+body.eseva-studio-ui .auth-input-group input[type="tel"],
+body.eseva-studio-ui .auth-input-group input[type="password"] {
+    background: #f9fafb !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 10px !important;
+    padding: 10.5px 13px !important;
+    font-size: 13px !important;
+    color: #0f172a !important;
+}
+
+body.eseva-studio-ui .auth-input-group input:focus {
+    background: #ffffff !important;
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14) !important;
+}
+
+body.eseva-studio-ui .btn-auth-submit {
+    border-radius: 10px !important;
+    height: 43px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+    box-shadow: 0 6px 18px -4px rgba(15, 23, 42, 0.35) !important;
+}
+
+body.eseva-studio-ui .btn-auth-submit:hover {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+    box-shadow: 0 10px 24px -6px rgba(79, 70, 229, 0.45) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ==========================================================================
+   3. EDITORIAL AI COPILOT CHAT WORKSPACE (CLAUDE / LINEAR STUDIO)
+   ========================================================================== */
+body.eseva-studio-ui .citizen-chat-area {
+    background: var(--st-bg) !important;
+    border-right: 1px solid var(--st-border) !important;
+}
+
+body.eseva-studio-ui .chat-header {
+    background: #ffffff !important;
+    border-bottom: 1px solid var(--st-border) !important;
+    padding: 11px 20px !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+}
+
+body.eseva-studio-ui .chat-header i {
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .chat-messages {
+    background: var(--st-bg) !important;
+    padding: 20px 24px !important;
+    gap: 14px !important;
+}
+
+body.eseva-studio-ui .msg-bubble {
+    border-radius: 16px !important;
+    padding: 14px 18px !important;
+    font-size: 13.4px !important;
+    line-height: 1.65 !important;
+    max-width: 82% !important;
+}
+
+body.eseva-studio-ui .msg-bot {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #e6e8ee !important;
+    border-left: 1px solid #e6e8ee !important;
+    box-shadow: var(--st-shadow-sm) !important;
+    border-radius: 16px 16px 16px 4px !important;
+}
+
+/* Editorial Obsidian User Message Bubble (Vercel / Claude Pro Style) */
+body.eseva-studio-ui .msg-user {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: 0 4px 14px -3px rgba(15, 23, 42, 0.28) !important;
+    border-radius: 16px 16px 4px 16px !important;
+    font-weight: 600 !important;
+}
+
+/* Tactile Editorial Service Action Cards */
+body.eseva-studio-ui .chat-options-container {
+    gap: 8px !important;
+    margin-top: 13px !important;
+}
+
+body.eseva-studio-ui .chat-option-chip {
+    background: #fafbfc !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+    padding: 10px 15px !important;
+    border-radius: 11px !important;
+    font-size: 12.4px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+body.eseva-studio-ui .chat-option-chip:hover {
+    background: #eef2ff !important;
+    border-color: #818cf8 !important;
+    color: #312e81 !important;
+    transform: translateY(-1.5px) !important;
+    box-shadow: 0 6px 16px -4px rgba(79, 70, 229, 0.18) !important;
+}
+
+/* Floating Modern Studio Composer */
+body.eseva-studio-ui .chat-input-box {
+    background: #ffffff !important;
+    border-top: 1px solid var(--st-border) !important;
+    padding: 13px 18px !important;
+    gap: 10px !important;
+}
+
+body.eseva-studio-ui .chat-input-box input[type="text"] {
+    background: #f8fafc !important;
+    border: 1px solid #dbe2ec !important;
+    border-radius: 12px !important;
+    padding: 10.5px 15px !important;
+    font-size: 13px !important;
+    color: #0f172a !important;
+}
+
+body.eseva-studio-ui .chat-input-box input[type="text"]:focus {
+    background: #ffffff !important;
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13) !important;
+}
+
+body.eseva-studio-ui .btn-icon {
+    background: #f8fafc !important;
+    border: 1px solid #dbe2ec !important;
+    border-radius: 11px !important;
+    width: 39px !important;
+    height: 39px !important;
+    color: #475569 !important;
+}
+
+body.eseva-studio-ui .btn-icon:hover {
+    background: #eef2ff !important;
+    border-color: #818cf8 !important;
+    color: #4f46e5 !important;
+}
+
+body.eseva-studio-ui .btn-send {
+    background: #0f172a !important;
+    color: #ffffff !important;
+    border-radius: 11px !important;
+    height: 39px !important;
+    padding: 0 22px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px -3px rgba(15, 23, 42, 0.28) !important;
+    transition: all 0.18s ease !important;
+}
+
+body.eseva-studio-ui .btn-send:hover {
+    background: #4f46e5 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 16px -3px rgba(79, 70, 229, 0.4) !important;
+}
+
+/* ==========================================================================
+   4. RIGHT INSPECTOR SIDEBAR (APPLE / STRIPE STUDIO PRECISION)
+   ========================================================================== */
+body.eseva-studio-ui .citizen-sidebar {
+    background: #ffffff !important;
+    padding: 16px 18px !important;
+    gap: 12px !important;
+}
+
+body.eseva-studio-ui .sidebar-header {
+    color: #0f172a !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.2px !important;
+    padding-bottom: 10px !important;
+    border-bottom: 1px solid #eef0f4 !important;
+}
+
+body.eseva-studio-ui .card-box,
+body.eseva-studio-ui #sidebarOperatorDeskCard {
+    background: #fafbfc !important;
+    border: 1px solid #e6e8ee !important;
+    border-radius: 14px !important;
+    padding: 14px 16px !important;
+    box-shadow: none !important;
+}
+
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openNewCustomerModal"] {
+    background: #0f172a !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 12px -3px rgba(15, 23, 42, 0.25) !important;
+    transition: all 0.18s ease !important;
+}
+
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openNewCustomerModal"]:hover {
+    background: #4f46e5 !important;
+    transform: translateY(-1px) !important;
+}
+
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openOperatorDraftsModal"],
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openPortalVaultModal"] {
+    background: #ffffff !important;
+    border: 1px solid #dbe2ec !important;
+    color: #1e293b !important;
+    border-radius: 10px !important;
+    transition: all 0.18s ease !important;
+}
+
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openOperatorDraftsModal"]:hover,
+body.eseva-studio-ui #sidebarOperatorDeskCard button[onclick*="openPortalVaultModal"]:hover {
+    border-color: #818cf8 !important;
+    background: #eef2ff !important;
+    color: #312e81 !important;
+}
+
+body.eseva-studio-ui .card-box h4 {
+    font-size: 12.2px !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    margin-bottom: 9px !important;
+}
+
+body.eseva-studio-ui .card-row {
+    font-size: 12px !important;
+    line-height: 1.55 !important;
+    padding: 2.5px 0 !important;
+    color: #64748b !important;
+}
+
+body.eseva-studio-ui .card-row strong {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+}
+
+/* ==========================================================================
+   5. OPERATOR DESK HOME & MODALS (STUDIO EDITION)
+   ========================================================================== */
+body.eseva-studio-ui #panel-operator {
+    background: var(--st-bg) !important;
+}
+
+body.eseva-studio-ui #operatorDesktopWorkArea > div:first-of-type,
+body.eseva-studio-ui #operatorQuickServiceBar {
+    background: #ffffff !important;
+    border: 1px solid var(--st-border) !important;
+    border-radius: 14px !important;
+    box-shadow: var(--st-shadow-xs) !important;
+}
+
+body.eseva-studio-ui #operatorQuickServiceBar button:hover {
+    transform: translateY(-1px) !important;
+    border-color: #818cf8 !important;
+    box-shadow: 0 4px 12px -3px rgba(79, 70, 229, 0.16) !important;
+}
+
+body.eseva-studio-ui #operatorSearchInput {
+    background: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 10px !important;
+    padding: 9px 14px 9px 36px !important;
+}
+
+body.eseva-studio-ui #operatorSearchInput:focus {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13) !important;
+}
+
+body.eseva-studio-ui .filter-pill {
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+}
+
+body.eseva-studio-ui .filter-pill.active {
+    background: #0f172a !important;
+    border-color: #0f172a !important;
+    color: #ffffff !important;
+    box-shadow: 0 3px 10px -2px rgba(15, 23, 42, 0.25) !important;
+}
+
+body.eseva-studio-ui .draft-card,
+body.eseva-studio-ui .c-service-card {
+    background: #ffffff !important;
+    border: 1px solid var(--st-border) !important;
+    border-radius: 14px !important;
+    box-shadow: var(--st-shadow-xs) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+body.eseva-studio-ui .draft-card:hover,
+body.eseva-studio-ui .c-service-card:hover {
+    transform: translateY(-2px) !important;
+    border-color: #c7d2fe !important;
+    box-shadow: var(--st-shadow-md) !important;
+}
+
+body.eseva-studio-ui .modal-overlay {
+    backdrop-filter: blur(6px) !important;
+    background: rgba(15, 23, 42, 0.48) !important;
+}
+
+body.eseva-studio-ui .modal-content {
+    border-radius: 18px !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: var(--st-shadow-lg) !important;
+}
+
+/* ==========================================================================
+   6. E-SEVA OPERATOR UTILITY TOOLS SUITE (#panel-tools — STUDIO POLISH)
+   ========================================================================== */
+body.eseva-studio-ui #panel-tools {
+    background: var(--st-bg) !important;
+}
+
+body.eseva-studio-ui #panel-tools > div > div {
+    border-radius: 14px !important;
+}
+
+body.eseva-studio-ui #panel-tools button[id^="toolTabBtn-"] {
+    border-radius: 9px !important;
+    font-weight: 700 !important;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+body.eseva-studio-ui #panel-tools button[id^="toolTabBtn-"]:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px -3px rgba(15, 23, 42, 0.12) !important;
+}
+
+body.eseva-studio-ui #panel-tools input[type="text"],
+body.eseva-studio-ui #panel-tools input[type="number"],
+body.eseva-studio-ui #panel-tools select {
+    border-radius: 9px !important;
+    border-color: #d1d5db !important;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+body.eseva-studio-ui #panel-tools input:focus,
+body.eseva-studio-ui #panel-tools select:focus {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13) !important;
+}

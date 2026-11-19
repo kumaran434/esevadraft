@@ -940,19 +940,19 @@ async function runTests() {
         assert(lastBhavanaMsg.options.some(o => o.value === 'TRIGGER_EDIT_MODAL'), 'Complete customer has Review/Edit option');
         assert(!lastBhavanaMsg.actionRequired, 'Complete customer does NOT have dangling upload prompt');
 
-        // 2. Selecting Ration Card category switches to RATION_CARD_SERVICES and shows 8 subservices
+        // 2. Selecting Ration Card category switches to RATION_CARD_SERVICES and shows 4 certified subservices (+ Back)
         const resRationMenu = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
         assert(resRationMenu.status === 200, 'Ration Card menu returns 200 OK');
         assert(resRationMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
         const rationMenuMsg = resRationMenu.body.chatHistory[resRationMenu.body.chatHistory.length - 1];
-        assert(rationMenuMsg.options && rationMenuMsg.options.length >= 8, 'Ration card menu has 8 subservices');
+        assert(rationMenuMsg.options && rationMenuMsg.options.length === 5, 'Ration card menu has 4 certified subservices + Back');
 
         // 2b. Calling history while in RATION_CARD_SERVICES stays at RATION_CARD_SERVICES (no premature submit card!)
         const resCheckNoPremature = await request('GET', `/api/chat/history?mobile=${testCompMob}`, null, testCompHeaders);
         assert(resCheckNoPremature.status === 200, 'History check returns 200 OK');
         assert(resCheckNoPremature.body.step === 'RATION_CARD_SERVICES', 'History stays at RATION_CARD_SERVICES');
         const noPrematureMsg = resCheckNoPremature.body.chatHistory[resCheckNoPremature.body.chatHistory.length - 1];
-        assert(noPrematureMsg.options && noPrematureMsg.options.length >= 8, 'Still shows 8 subservices, no premature submit card');
+        assert(noPrematureMsg.options && noPrematureMsg.options.length === 5, 'Still shows 4 certified subservices + Back, no premature submit card');
 
         // 3. Selecting Option 1 (புதிய ரேஷன் கார்டு) switches back to READY_TO_APPLY
         const resNewRation = await request('POST', '/api/chat', { message: 'புதிய ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
@@ -1039,7 +1039,7 @@ async function runTests() {
         const resSubMenu = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: subSvcMob }, subHeaders);
         assert(resSubMenu.status === 200, 'Ration Card menu returns 200 OK');
         assert(resSubMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
-        assert(resSubMenu.body.chatHistory[resSubMenu.body.chatHistory.length - 1].options.length >= 8, 'Shows 8 subservices');
+        assert(resSubMenu.body.chatHistory[resSubMenu.body.chatHistory.length - 1].options.length === 5, 'Shows 4 certified subservices + Back');
 
         // 2. Select Option 2: Add Member -> transitions to RATION_ADD_MEMBER_TYPE (Direct Aadhaar Card Upload)
         const resAddType = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: subSvcMob }, subHeaders);
@@ -3857,9 +3857,9 @@ async function runTests() {
         }
 
         // =========================================================================
-        // TEST 59: 🔒 6 TNeGA REVENUE SERVICES PERMANENT SHA-256 CODE FREEZE & TAMPER LOCK
+        // TEST 59: 🔒 7 TNeGA REVENUE SERVICES PERMANENT SHA-256 CODE FREEZE & TAMPER LOCK
         // =========================================================================
-        console.log('\n[TEST 59] 🔒 Verifying 6 TNeGA Revenue Services Permanent SHA-256 Code Freeze...');
+        console.log('\n[TEST 59] 🔒 Verifying 7 TNeGA Revenue Services Permanent SHA-256 Code Freeze...');
         {
             const crypto = require('crypto');
             const frozenEngines = {
@@ -3868,7 +3868,8 @@ async function runTests() {
                 'src/portal/tnega/tnega_residence_certificate.js': '09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272',
                 'src/portal/tnega/tnega_income_certificate.js': '7e3380d9db969ab4e38be5064b37980ef1e5bf7a0f4d1b1deb42a28c220b6f42',
                 'src/portal/tnega/tnega_first_graduate.js': '1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b',
-                'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7'
+                'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7',
+                'src/portal/tnega/tnega_widow_certificate.js': '9a33ea17a896d790b0b590738a27405ca684d2cabf4c0f649cab1dbd11cd2b1d'
             };
             for (const [relPath, expectedSha] of Object.entries(frozenEngines)) {
                 const fullP = path.join(__dirname, '..', relPath);
@@ -3880,17 +3881,21 @@ async function runTests() {
 
             const featLock = fs.readFileSync(path.join(__dirname, '..', 'FEATURE_LOCK.md'), 'utf8');
             assert(featLock.includes('22. TNeGA 6 வருவாய்த் துறை சான்றிதழ்கள் நிரந்தர குறியீட்டு முடக்கம்'), 'FEATURE_LOCK.md documents Section 22 Permanent Code Freeze');
+            assert(featLock.includes('23. REV-109 விதவைச் சான்றிதழ் நிரந்தர குறியீட்டு முடக்கம்'), 'FEATURE_LOCK.md documents Section 23 REV-109 Widow Certificate Permanent Code Freeze');
 
             const chatIntakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_tnega_intake.js'), 'utf8');
             assert(chatIntakeSrc.includes('isLegalHeirFlow') && chatIntakeSrc.includes('advanceTnegaLegalHeirFlow') && chatIntakeSrc.includes('LEGAL_HEIR_DEATH_CERT_WAIT'), 'chat_tnega_intake routes CAN search & docs into advanceTnegaLegalHeirFlow');
+            assert(chatIntakeSrc.includes('isWidowFlow') && chatIntakeSrc.includes('advanceTnegaWidowFlow') && chatIntakeSrc.includes('WIDOW_DEATH_CERT_WAIT'), 'chat_tnega_intake routes CAN search & docs into advanceTnegaWidowFlow');
 
             const subEngSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
             assert(subEngSrc.includes("curSub.includes('LEGAL_HEIR')"), 'submission_engine enforces pre-flight document gate for LEGAL_HEIR');
+            assert(subEngSrc.includes("curSub.includes('WIDOW')"), 'submission_engine enforces pre-flight document gate for WIDOW');
 
             const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
             assert(runnerSrc.includes('isLegalHeir') && runnerSrc.includes('startTnegaLegalHeirFlow'), 'desktop/automation_runner routes LEGAL_HEIR to startTnegaLegalHeirFlow');
+            assert(runnerSrc.includes('isWidow') && runnerSrc.includes('startTnegaWidowFlow'), 'desktop/automation_runner routes WIDOW to startTnegaWidowFlow');
 
-            passedCount += 16;
+            passedCount += 22;
         }
 
         // =========================================================================
@@ -3934,6 +3939,118 @@ async function runTests() {
             assert(tnpdsAutoSrc.includes('cachedUserOtp = \'\'; cachedOtpTimestamp = 0;') && tnpdsAutoSrc.includes('!isModalVisible'), "tnpds_automation clears cachedUserOtp on consumption and ignores spinner while OTP modal is open");
 
             passedCount += 13;
+        }
+
+        // =========================================================================
+        // TEST 61: 🧾 Ration Card Certified-Only Menu + Digital Sign PDF Upload Lock
+        // =========================================================================
+        console.log('\n[TEST 61] 🧾 Verifying Certified-Only Ration Card Options & Digital Sign PDF Upload Fix...');
+        {
+            const { RATION_CARD_SERVICE_OPTIONS } = require('../src/core/fsm/fsm_options_registry');
+            const vals = RATION_CARD_SERVICE_OPTIONS.map(o => o.value);
+            const expectedVals = [
+                'புதிய ரேஷன் கார்டு',
+                'குடும்ப உறுப்பினர் சேர்க்க',
+                'முகவரி மாற்றம்',
+                'கைபேசி எண் மாற்றம்',
+                'MAIN_MENU'
+            ];
+            assert(vals.length === 5, 'RATION_CARD_SERVICE_OPTIONS exposes only the 4 completed services + MAIN_MENU');
+            assert(JSON.stringify(vals) === JSON.stringify(expectedVals), 'Only certified completed Ration Card services appear in menu');
+            assert(!vals.includes('குடும்ப அட்டை வகை மாற்றம்') && !vals.includes('எரிவாயு விவரங்கள் திருத்தம்'), 'Unbuilt Ration Card options removed');
+            assert(!vals.includes('குடும்ப உறுப்பினர் நீக்க') && !vals.includes('குடும்பத் தலைவர் மாற்றம்'), 'Unfinished Ration Card options hidden from menu');
+
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes('🏛️ ரேஷன் கார்டு (4 சேவைகள்)') && !indexHtml.includes('8 சேவைகள்'), 'UI badges show 4 certified Ration Card services');
+            assert(indexHtml.includes('id="tool4DocSignInput" accept="image/*,.pdf,application/pdf'), 'Digital Sign document input explicitly allows .pdf extension');
+
+            const toolsJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'eseva_tools.js'), 'utf8');
+            assert(toolsJs.includes('inspectBinaryDocBytes') && toolsJs.includes('loadPdfDocumentWithFallback'), 'Digital Sign handles disguised images, leading offset %PDF-, password & disableWorker fallback');
+
+            // Back-navigation rewind verification (Step 3 -> Step 2 -> Step 1 never stacks downward)
+            const backMob = 'walkin_back_rewind_61';
+            const backHdr = { 'x-session-mobile': backMob };
+            const r1 = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: backMob }, backHdr);
+            assert(r1.body.step === 'RATION_CARD_SERVICES', 'Enters RATION_CARD_SERVICES on first click');
+            assert(r1.body.citizenProfile === null, 'Category browsing on walkin session NEVER leaks dummy citizenProfile or walkin_ phone');
+            const lenAtCat = r1.body.chatHistory.length;
+            const r1Again = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: backMob }, backHdr);
+            assert(r1Again.body.step === 'RATION_CARD_SERVICES' && !String(r1Again.body.botResponse || '').includes('விரைவில் முழுமையாக'), 'Repeated Ration Card click rewinds cleanly instead of hitting unimplemented fallback');
+            assert(r1Again.body.chatHistory.length === lenAtCat, 'Repeated category click never appends duplicate category menus');
+            const r2 = await request('POST', '/api/chat', { message: 'MAIN_MENU', mobileNumber: backMob }, backHdr);
+            assert(r2.body.step === 'SERVICE_SELECTION' && r2.body.chatHistory.length === 1, 'MAIN_MENU Back rewinds cleanly to top Step 1 (chatHistory.length === 1)');
+            assert(r2.body.citizenProfile === null, 'MAIN_MENU Back NEVER leaks dummy walkin_ citizenProfile');
+
+            const docViewerSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
+            assert(docViewerSrc.includes('hasRealActiveMob') && docViewerSrc.includes('hasRealProfileMob'), 'document_viewer.js blocks dummy walkin_ sidebar flicker');
+
+            passedCount += 14;
+        }
+
+        // =========================================================================
+        // TEST 62: 🕊️ TNeGA Widow Certificate (REV-109) End-to-End Contract Lock
+        // =========================================================================
+        console.log('\n[TEST 62] 🕊️ Verifying TNeGA Widow Certificate (REV-109) Engine, FSM, UI & Pre-Submit Gate...');
+        {
+            const { startTnegaWidowFlow, startTnegaWidowCertificateFlow } = require('../tnega_can_automation');
+            const { formatWidowDateForPortal } = require('../src/portal/tnega/tnega_widow_certificate');
+            const { REVENUE_DEPARTMENT_SERVICE_OPTIONS } = require('../src/core/fsm/fsm_options_registry');
+            const { advanceTnegaWidowFlow } = require('../src/core/fsm/tnega_flow_engine');
+
+            assert(typeof startTnegaWidowFlow === 'function' && typeof startTnegaWidowCertificateFlow === 'function', 'startTnegaWidowFlow & alias exported from tnega_can_automation');
+            assert(formatWidowDateForPortal('15-01-2025') === '15-Jan-2025', 'formatWidowDateForPortal converts DD-MM-YYYY to dd-MMM-yyyy');
+            assert(formatWidowDateForPortal('12/05/1990') === '12-May-1990', 'formatWidowDateForPortal converts DD/MM/YYYY to dd-MMM-yyyy');
+            assert(formatWidowDateForPortal('2025-01-15') === '15-Jan-2025', 'formatWidowDateForPortal converts YYYY-MM-DD to dd-MMM-yyyy');
+            assert(formatWidowDateForPortal('5-jan-2025') === '05-Jan-2025', 'formatWidowDateForPortal normalizes dd-MMM-yyyy casing & day');
+
+            const mockRes = await startTnegaWidowFlow({ canNumber: '133370314319242', fullNameEng: 'Devaki K' }, () => {}, { isMockSandbox: true });
+            assert(mockRes && mockRes.success === true && mockRes.status === 'PRE_SUBMIT_GATE', 'Mock sandbox REV-109 returns PRE_SUBMIT_GATE');
+            assert(String(mockRes.appNumber || '').startsWith('TN-16'), 'Mock REV-109 returns TN-16 application number');
+
+            // Verify source contracts (exact live GWT IDs, exact uploadDocs codes, NEVER auto-click #btnSubmit, NEVER auto-upload '71')
+            const widowSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_widow_certificate.js'), 'utf8');
+            for (const reqId of ['#AD_AppellationID', '#AD_SpouseNameID', '#AD_SpouseNameinTamilID', '#DateofMarriageId', '#AD_DODID', '#AD_DeathCertificateNoID', '#AD_MaritalStatusID', '#btnSubmit']) {
+                assert(widowSrc.includes(reqId), `REV-109 engine locks live GWT DOM selector ${reqId}`);
+            }
+            for (const docCode of ["code: '133'", "code: '70'", "code: '69'", "code: '201'"]) {
+                assert(widowSrc.includes(docCode), `REV-109 engine locks live uploadDocs.xhtml ${docCode}`);
+            }
+            assert(!/submitBtn\.click\s*\(|#btnSubmit['"`]\)\.click\s*\(/i.test(widowSrc), 'REV-109 NEVER auto-clicks #btnSubmit (Operator Human Gate)');
+            assert(widowSrc.includes('downloadAndOpenSelfDeclaration') && !widowSrc.includes("code: '71'"), 'REV-109 downloads & opens Self-Declaration PDF and NEVER auto-uploads code 71');
+
+            // Verify menu & FSM progression
+            assert(REVENUE_DEPARTMENT_SERVICE_OPTIONS.some(o => o.value === 'விதவைச் சான்றிதழ்' && o.label.includes('REV-109')), 'Revenue Department menu includes REV-109 Widow Certificate');
+
+            const gDir = path.join(__dirname, '..', 'data', 'golden_samples', 'kumaran_gallery');
+            const wSess = {
+                citizenProfile: {
+                    fullNameEng: 'Devaki K',
+                    fullNameTam: 'தேவகி கி',
+                    headAadhaar: '311526466205',
+                    canNumber: '133370314319242',
+                    spouseNameEng: 'Late Kirubakaran',
+                    spouseNameTam: 'லேட் கிருபாகரன்',
+                    dateOfDeath: '15-Jan-2025',
+                    deathCertificateNo: 'DC-2025-88412',
+                    dateOfMarriage: '12-May-1990',
+                    profilePhoto: path.join(gDir, '01_kumaran_passport_photo.jpg'),
+                    headAadhaarDocPath: path.join(gDir, '04_kumaran_aadhaar_2in1.jpg'),
+                    deathCertificate: path.join(gDir, '11_death_certificate_kirubakaran.jpg'),
+                    marriageProof: path.join(gDir, '09_family_smart_ration_card_kumaran.jpg')
+                },
+                chatHistory: []
+            };
+            const wReady = advanceTnegaWidowFlow(wSess);
+            assert(wReady.step === 'READY_TO_SUBMIT_WIDOW', 'advanceTnegaWidowFlow skips all known fields/docs and jumps to READY_TO_SUBMIT_WIDOW');
+            assert(wReady.options.some(o => o.value === 'START_WIDOW_APPLY'), 'READY_TO_SUBMIT_WIDOW exposes START_WIDOW_APPLY CTA');
+
+            const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            assert(runnerSrc.includes('isWidow') && runnerSrc.includes('startTnegaWidowFlow'), 'desktop/automation_runner.js routes isWidow to startTnegaWidowFlow');
+
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes('id="editWidowFieldsWrap"') && indexHtml.includes('id="sidebarWidowBox"') && indexHtml.includes('REV-109'), 'UI includes REV-109 Quick Pill, Sidebar Box, and Edit Modal fields');
+
+            passedCount += 25;
         }
 
         console.log('\n======================================================');

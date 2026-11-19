@@ -4,7 +4,7 @@ const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { validateUploadedDocument } = require('../../services/document_validator');
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { searchCitizenCan, registerNewCan } = require('../../../tnega_can_automation');
-const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow } = require('../../core/fsm/tnega_flow_engine');
+const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow, advanceTnegaWidowFlow } = require('../../core/fsm/tnega_flow_engine');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
@@ -81,12 +81,15 @@ async function handleTnegaIntake(ctx, req, res) {
         if (matchedCan) {
             sess.citizenProfile.canNumber = matchedCan[1];
             persistSessions();
-            const isLegalHeirFlow = sess.subService === 'LEGAL_HEIR' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR'));
-            const isObcFlow = !isLegalHeirFlow && (sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC')));
-            const isFirstGraduateFlow = !isLegalHeirFlow && !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
-            const isCommunityFlow = !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
-            const isResidenceFlow = !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
-            const flowStep = isLegalHeirFlow
+            const isWidowFlow = sess.subService === 'WIDOW' || sess.subService === 'WIDOW_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('WIDOW'));
+            const isLegalHeirFlow = !isWidowFlow && (sess.subService === 'LEGAL_HEIR' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR')));
+            const isObcFlow = !isWidowFlow && !isLegalHeirFlow && (sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC')));
+            const isFirstGraduateFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
+            const isCommunityFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+            const isResidenceFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+            const flowStep = isWidowFlow
+                ? advanceTnegaWidowFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
+                : (isLegalHeirFlow
                 ? advanceTnegaLegalHeirFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
                 : (isObcFlow
                 ? advanceTnegaObcFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
@@ -96,7 +99,7 @@ async function handleTnegaIntake(ctx, req, res) {
                     ? advanceTnegaCommunityFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
                     : (isResidenceFlow
                         ? advanceTnegaResidenceFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)
-                        : advanceTnegaIncomeFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`)))));
+                        : advanceTnegaIncomeFlow(sess, `✅ CAN எண் **${matchedCan[1]}** வெற்றிகரமாகப் பொருத்தப்பட்டது! 🛡️`))))));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -174,11 +177,12 @@ async function handleTnegaIntake(ctx, req, res) {
                 ? `\n\n📋 **இந்த மொபைல் எண்ணில் உள்ள அனைத்து குடும்ப CAN எண்கள்:**\n` +
                   searchRes.records.map((r, idx) => `${idx + 1}. **${r.canNumber}** — ${r.name} (தந்தை/கணவர்: ${r.fatherName})`).join('\n')
                 : '';
-            const isLegalHeirFlow = sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR'));
-            const isObcFlow = !isLegalHeirFlow && (sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC')));
-            const isFirstGraduateFlow = !isLegalHeirFlow && !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
-            const isCommunityFlow = !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
-            const isResidenceFlow = !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+            const isWidowFlow = sess.subService === 'WIDOW' || sess.subService === 'WIDOW_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('WIDOW'));
+            const isLegalHeirFlow = !isWidowFlow && (sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR')));
+            const isObcFlow = !isWidowFlow && !isLegalHeirFlow && (sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.startsWith('OBC')));
+            const isFirstGraduateFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && (sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.startsWith('FIRST_GRADUATE')));
+            const isCommunityFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+            const isResidenceFlow = !isWidowFlow && !isLegalHeirFlow && !isObcFlow && !isFirstGraduateFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
             const canFoundBanner =
                 `🎉 **${isFirstGraduateFlow ? 'மாணவரின்' : 'வாடிக்கையாளரின்'} CAN எண் கண்டறியப்பட்டது!**\n\n` +
                 `• 🔢 **CAN எண்:** **${searchRes.canNumber}** ✅\n` +
@@ -186,7 +190,9 @@ async function handleTnegaIntake(ctx, req, res) {
                 `• 👨 **தந்தை/கணவர்:** ${searchRes.fatherName || p.fatherNameTam || '—'}\n` +
                 `• 🏛️ **வட்டம் & மாவட்டம்:** ${searchRes.taluk || p.taluk || ''}, ${searchRes.district || p.district || ''}` +
                 familyListText;
-            const flowStep = isLegalHeirFlow
+            const flowStep = isWidowFlow
+                ? advanceTnegaWidowFlow(sess, canFoundBanner)
+                : (isLegalHeirFlow
                 ? advanceTnegaLegalHeirFlow(sess, canFoundBanner)
                 : (isObcFlow
                     ? advanceTnegaObcFlow(sess, canFoundBanner)
@@ -196,7 +202,7 @@ async function handleTnegaIntake(ctx, req, res) {
                             ? advanceTnegaCommunityFlow(sess, canFoundBanner)
                             : (isResidenceFlow
                                 ? advanceTnegaResidenceFlow(sess, canFoundBanner)
-                                : advanceTnegaIncomeFlow(sess, canFoundBanner)))));
+                                : advanceTnegaIncomeFlow(sess, canFoundBanner))))));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -570,20 +576,23 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             if (selectedMem.canNumber) {
                 sess.citizenProfile.canNumber = selectedMem.canNumber;
             }
-            const isLegalHeirFlow = sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR'));
-            const isCommunityFlow = !isLegalHeirFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
-            const isResidenceFlow = !isLegalHeirFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
-            sess.intakeState = isLegalHeirFlow ? 'LEGAL_HEIR_INTAKE' : (isCommunityFlow ? 'COMMUNITY_INTAKE' : (isResidenceFlow ? 'RESIDENCE_INTAKE' : 'INCOME_INTAKE'));
+            const isWidowFlow = sess.subService === 'WIDOW' || sess.subService === 'WIDOW_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('WIDOW'));
+            const isLegalHeirFlow = !isWidowFlow && (sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR')));
+            const isCommunityFlow = !isWidowFlow && !isLegalHeirFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+            const isResidenceFlow = !isWidowFlow && !isLegalHeirFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+            sess.intakeState = isWidowFlow ? 'WIDOW_INTAKE' : (isLegalHeirFlow ? 'LEGAL_HEIR_INTAKE' : (isCommunityFlow ? 'COMMUNITY_INTAKE' : (isResidenceFlow ? 'RESIDENCE_INTAKE' : 'INCOME_INTAKE')));
             persistSessions();
 
             const memBanner = `✅ உறுப்பினர் **${selectedMem.nameTam || selectedMem.nameEng}** தேர்ந்தெடுக்கப்பட்டார்! அவரது விவரங்கள் தானாகப் பொருத்தப்பட்டுவிட்டன.`;
-            const flowStep = isLegalHeirFlow
+            const flowStep = isWidowFlow
+                ? advanceTnegaWidowFlow(sess, memBanner)
+                : (isLegalHeirFlow
                 ? advanceTnegaLegalHeirFlow(sess, memBanner)
                 : (isCommunityFlow
                     ? advanceTnegaCommunityFlow(sess, memBanner)
                     : (isResidenceFlow
                         ? advanceTnegaResidenceFlow(sess, memBanner)
-                        : advanceTnegaIncomeFlow(sess, `✅ உறுப்பினர் **${selectedMem.nameTam || selectedMem.nameEng}** தேர்ந்தெடுக்கப்பட்டார்! அவரது ஆதார் மற்றும் குடும்ப முகவரி விவரங்கள் தானாகப் பொருத்தப்பட்டுவிட்டன.`)));
+                        : advanceTnegaIncomeFlow(sess, `✅ உறுப்பினர் **${selectedMem.nameTam || selectedMem.nameEng}** தேர்ந்தெடுக்கப்பட்டார்! அவரது ஆதார் மற்றும் குடும்ப முகவரி விவரங்கள் தானாகப் பொருத்தப்பட்டுவிட்டன.`))));
             sess.chatHistory.push({
                 sender: 'bot',
                 text: flowStep.text,
@@ -1256,17 +1265,20 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             if (m.aadhaar) sess.citizenProfile.headAadhaar = m.aadhaar;
         }
         persistSessions();
-        const isLegalHeirFlow = sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR'));
-        const isCommunityFlow = !isLegalHeirFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
-        const isResidenceFlow = !isLegalHeirFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
+        const isWidowFlow = sess.subService === 'WIDOW' || sess.subService === 'WIDOW_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('WIDOW'));
+        const isLegalHeirFlow = !isWidowFlow && (sess.subService === 'LEGAL_HEIR' || sess.subService === 'LEGAL_HEIR_CERTIFICATE' || (sess.intakeState && sess.intakeState.startsWith('LEGAL_HEIR')));
+        const isCommunityFlow = !isWidowFlow && !isLegalHeirFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.startsWith('COMMUNITY')));
+        const isResidenceFlow = !isWidowFlow && !isLegalHeirFlow && !isCommunityFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE')));
         const selBanner = `✅ **${m ? (m.nameTam || m.nameEng) : 'உறுப்பினர்'}** தேர்ந்தெடுக்கப்பட்டார்!`;
-        const flowStep = isLegalHeirFlow
+        const flowStep = isWidowFlow
+            ? advanceTnegaWidowFlow(sess, selBanner)
+            : (isLegalHeirFlow
             ? advanceTnegaLegalHeirFlow(sess, selBanner)
             : (isCommunityFlow
                 ? advanceTnegaCommunityFlow(sess, selBanner)
                 : (isResidenceFlow
                     ? advanceTnegaResidenceFlow(sess, selBanner)
-                    : advanceTnegaIncomeFlow(sess, selBanner)));
+                    : advanceTnegaIncomeFlow(sess, selBanner))));
         sess.chatHistory.push({
             sender: 'bot',
             text: flowStep.text,
@@ -1759,6 +1771,124 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         sess.citizenProfile.annualIncome = cleanInc;
         persistSessions();
         const flowStep = advanceTnegaObcFlow(sess, `✅ குடும்ப ஆண்டு வருமானம் **₹${cleanInc}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // WIDOW CERTIFICATE INTAKE GATES (TNeGA REV-109)
+    // -------------------------------------------------------------------------
+    if (['WIDOW_DEATH_CERT_WAIT', 'WIDOW_PHOTO_WAIT', 'WIDOW_AADHAAR_WAIT', 'WIDOW_MARRIAGE_PROOF_WAIT'].includes(sess.intakeState)) {
+        if (text === 'TRIGGER_FILE_UPLOAD') {
+            const limitMsg = sess.intakeState === 'WIDOW_PHOTO_WAIT' ? '<50KB பாஸ்போர்ட் அளவிற்கு' : '<200KB அளவிற்கு';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `📤 தயவுசெய்து ஆவணத்தை கீழே உள்ள கோப்பு பொத்தானைப் பயன்படுத்திப் பதிவேற்றவும் (${limitMsg} தானாகச் சுருக்கப்படும் ✨):`,
+                actionRequired: 'upload',
+                uploadPrompt: 'ஆவணம் பதிவேற்றவும்'
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        if (uploadedFile) {
+            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+            if (!sess.tempUploads) sess.tempUploads = {};
+            if (sess.intakeState === 'WIDOW_PHOTO_WAIT') {
+                const compPhoto = await produceCompliantPassportPhoto(uploadedFile.path, { skipFaceExtraction: true }).catch(() => uploadedFile.path);
+                sess.citizenProfile.profilePhoto = compPhoto;
+                sess.citizenProfile.headPhotoPath = compPhoto;
+                sess.citizenProfile.documents.profilePhoto = compPhoto;
+                sess.tempUploads.profilePhoto = compPhoto;
+            } else {
+                const compFile = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+                if (sess.intakeState === 'WIDOW_DEATH_CERT_WAIT') {
+                    sess.citizenProfile.deathCertificate = compFile;
+                    sess.citizenProfile.documents.deathCertificate = compFile;
+                    sess.tempUploads.deathCertificate = compFile;
+                    try {
+                        const ext = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }).catch(() => null);
+                        if (ext) {
+                            if (ext.fullNameEng && !sess.citizenProfile.spouseNameEng) sess.citizenProfile.spouseNameEng = ext.fullNameEng;
+                            if (ext.fullNameTam && !sess.citizenProfile.spouseNameTam) sess.citizenProfile.spouseNameTam = ext.fullNameTam;
+                            if (ext.dateOfDeath && !sess.citizenProfile.dateOfDeath) sess.citizenProfile.dateOfDeath = ext.dateOfDeath;
+                            if (ext.deathCertificateNo && !sess.citizenProfile.deathCertificateNo) sess.citizenProfile.deathCertificateNo = ext.deathCertificateNo;
+                        }
+                    } catch (_) {}
+                } else if (sess.intakeState === 'WIDOW_AADHAAR_WAIT') {
+                    sess.citizenProfile.headAadhaarDocPath = compFile;
+                    sess.citizenProfile.documents.headAadhaar = compFile;
+                    sess.tempUploads.headAadhaar = compFile;
+                    try {
+                        const ext = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }).catch(() => null);
+                        if (ext) {
+                            if (ext.fullNameEng && !sess.citizenProfile.fullNameEng) sess.citizenProfile.fullNameEng = ext.fullNameEng;
+                            if (ext.fullNameTam && !sess.citizenProfile.fullNameTam) sess.citizenProfile.fullNameTam = ext.fullNameTam;
+                            if (ext.aadhaarNumber && !sess.citizenProfile.headAadhaar) sess.citizenProfile.headAadhaar = ext.aadhaarNumber;
+                            if (ext.doorNo && !sess.citizenProfile.doorNo) sess.citizenProfile.doorNo = ext.doorNo;
+                            if (ext.streetEng && !sess.citizenProfile.streetEng) sess.citizenProfile.streetEng = ext.streetEng;
+                            if (ext.streetTam && !sess.citizenProfile.streetTam) sess.citizenProfile.streetTam = ext.streetTam;
+                            if (ext.district && !sess.citizenProfile.district) sess.citizenProfile.district = ext.district;
+                            if (ext.taluk && !sess.citizenProfile.taluk) sess.citizenProfile.taluk = ext.taluk;
+                            if (ext.village && !sess.citizenProfile.village) sess.citizenProfile.village = ext.village;
+                            if (ext.pincode && !sess.citizenProfile.pincode) sess.citizenProfile.pincode = ext.pincode;
+                        }
+                    } catch (_) {}
+                } else if (sess.intakeState === 'WIDOW_MARRIAGE_PROOF_WAIT') {
+                    sess.citizenProfile.marriageProof = compFile;
+                    sess.citizenProfile.documents.marriageProof = compFile;
+                    sess.tempUploads.marriageProof = compFile;
+                }
+            }
+            persistSessions();
+            const flowStep = advanceTnegaWidowFlow(sess, `✅ ஆவணம் வெற்றிகரமாகப் பெறப்பட்டு சேமிக்கப்பட்டது! 🛡️`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    if (sess.intakeState === 'WIDOW_SPOUSE_NAME_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const pair = ensureBilingualPair(text.trim(), text.trim());
+        sess.citizenProfile.spouseNameEng = pair.eng || text.trim();
+        sess.citizenProfile.spouseNameTam = pair.tam || text.trim();
+        persistSessions();
+        const flowStep = advanceTnegaWidowFlow(sess, `✅ கணவரின் பெயர் **${sess.citizenProfile.spouseNameTam}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'WIDOW_DEATH_DATE_WAIT' || (text && text.startsWith('WD_DOD:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        sess.citizenProfile.dateOfDeath = text.replace('WD_DOD:', '').trim();
+        persistSessions();
+        const flowStep = advanceTnegaWidowFlow(sess, `✅ கணவர் இறந்த தேதி **${sess.citizenProfile.dateOfDeath}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'WIDOW_DEATH_CERT_NO_WAIT' || (text && text.startsWith('WD_DCNO:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        sess.citizenProfile.deathCertificateNo = text.replace('WD_DCNO:', '').trim();
+        persistSessions();
+        const flowStep = advanceTnegaWidowFlow(sess, `✅ இறப்புச் சான்றிதழ் எண் **${sess.citizenProfile.deathCertificateNo}** எனப் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'WIDOW_MARRIAGE_DATE_WAIT' || text === 'WD_MAR_SKIP' || (text && text.startsWith('WD_MAR:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        if (text === 'WD_MAR_SKIP' || /தவிர்|skip|இல்லை|தெரியாது/i.test(text)) {
+            sess.citizenProfile.dateOfMarriageSkipped = true;
+            sess.citizenProfile.dateOfMarriage = '';
+        } else {
+            sess.citizenProfile.dateOfMarriage = text.replace('WD_MAR:', '').trim();
+        }
+        persistSessions();
+        const banner = sess.citizenProfile.dateOfMarriage
+            ? `✅ திருமணத் தேதி **${sess.citizenProfile.dateOfMarriage}** எனப் பதிவானது!`
+            : `✅ திருமணத் தேதி தவிர்க்கப்பட்டது!`;
+        const flowStep = advanceTnegaWidowFlow(sess, banner);
         sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
         return true;

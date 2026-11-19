@@ -572,6 +572,24 @@
 - **No Auto-Upload of Self-Declaration:** சுய உறுதிமொழிப் படிவம் (`SelfDeclarationForm_TN-*.pdf`) பதிவிறக்கப்பட்டு புதிய Chrome Tab-ல் திறக்கப்படுமே தவிர தானாகப் பதிவேற்றப்படாது (`PRE_SUBMIT_GATE`).
 - **REV-114 Delta Chat & Edit Modal Contract:** `src/routes/chat/chat_tnega_intake.js` (`isLegalHeirFlow`, `LEGAL_HEIR_*_WAIT`), `public/js/modules/submission_engine.js` (`LEGAL_HEIR` pre-flight check), `public/js/modules/edit_modal_manager.js` (`isLegalHeirMode`, `editLegalHeirFieldsWrap`), `desktop/automation_runner.js` (`isLegalHeir` -> `startTnegaLegalHeirFlow`), மற்றும் `tests/regression_suite.js` (`[TEST 58]` & `[TEST 59]`).
 
+---
+
+## 23. REV-109 விதவைச் சான்றிதழ் நிரந்தர குறியீட்டு முடக்கம் & SHA-256 பாதுகாப்புப் பூட்டு (Widow Certificate Permanent Code Freeze — 100% Live Certified)
+
+> **நிரந்தரப் பூட்டு சாசனம் (IMMUTABLE FREEZE CONTRACT):**
+> நேரலை தமிழ்நாடு அரசு போர்ட்டலில் (`tnesevai.tn.gov.in` / `tnedistrict.tn.gov.in/eda/common/includePage.xhtml?formId=16&processInstId=13` -> `uploadDocs.xhtml`, விண்ணப்ப எண் `TN-1620261119335`) `eSevaDraft Desktop` ஆப் வழியாக 100% முழுமையாகச் சோதிக்கப்பட்டு சான்றளிக்கப்பட்ட **`REV-109` விதவைச் சான்றிதழ் (Widow Certificate)** எஞ்சின் இப்போது **நிரந்தரமாக முடக்கப்பட்டு (FROZEN / SEALED)** உள்ளது.
+> நிறுவனரின் நேரடி அனுமதி இன்றி கீழ்க்கண்ட கோப்பில் ஒரு எழுத்துகூட மாற்றப்படக் கூடாது; மாற்றப்பட்டால் `npm.cmd test` (`[TEST 59]`) உடனடியாகத் தோல்வியடைந்து தடுக்கும்.
+
+### 23.1 நிரந்தரமாகப் பூட்டப்பட்ட எஞ்சின் & SHA-256 முத்திரை:
+- **REV-109 விதவைச் சான்றிதழ் (`src/portal/tnega/tnega_widow_certificate.js`)**
+  - SHA-256: `9a33ea17a896d790b0b590738a27405ca684d2cabf4c0f649cab1dbd11cd2b1d`
+  - **பூட்டப்பட்ட நேரலை விதிகள்:**
+    1. GWT Purcforms தேதி வடிவ விதி: `#DateofMarriageId` & `#AD_DODID` எப்போதும் **`dd-MMM-yyyy`** (எ.கா: `15-Jan-2025`, `12-May-1990`) வடிவத்தில் மட்டுமே நிரப்பப்படும் (`formatWidowDateForPortal`).
+    2. இருமொழி விதி (Golden Rule 7): `#AD_SpouseNameID` & `#AD_SpouseNameinTamilID` வெளிப்படையாக ஆங்கிலம் + தமிழ் இரண்டிலும் நிரப்பப்பட்டு உறுதிப்படுத்தப்படும்.
+    3. தகுதி மற்றும் சேமிப்பு மீட்பு: `#AD_AppellationID` (`Selvi` தவிர்ப்பு), `#AD_MaritalStatusID = 'Widow'`, `validateAadhar.xhtml`-ல் `"Applicant not applicable to apply service"` எச்சரிக்கை & `/eda/common/saveapp.xhtml` தானியங்கி மீட்பு, `Services.aspx` அமர்வு காலாவதி ஆட்டோ-லாகின் & `OpenWindow(this)` tab reuse கையாளுதல்.
+    4. ஆப்ரேட்டர் சரிபார்ப்பு வாயில்கள்: `#btnSubmit` ஒருபோதும் தானாக அழுத்தப்படாது (`Click Submit 🛑`); `uploadDocs.xhtml`-ல் `SelfDeclarationForm_TN-*.pdf` (`#ss:decForm1`) புதிய Chrome Tab-ல் திறக்கப்படும் (கோடு `'71'` தானியங்கி அப்லோடு முற்றிலும் தடை); 4 கட்டாய ஆதரவு ஆவணங்கள் மட்டும் (`133` Photo `<50KB`, `70` Any Address Proof `<200KB`, `69` Husband Death Cert `<200KB`, `201` Marriage Proof `<200KB`) பதிவேற்றப்பட்டு **`Pre-Submit Gate 🛑`**-ல் நிறுத்தப்படும்.
+    5. **App & UI Contract:** `src/catalog/services/tnega_widow.js`, `src/core/fsm/tnega_flow_engine.js` (`advanceTnegaWidowFlow`), `src/routes/chat/chat_tnega_intake.js` (`isWidowFlow`, `WIDOW_*_WAIT`), `desktop/automation_runner.js` (`isWidow` -> `startTnegaWidowFlow`), `public/index.html` (`#editWidowFieldsWrap`, `#sidebarWidowBox`), மற்றும் `tests/regression_suite.js` (`[TEST 59]` & `[TEST 62]`).
+
 
 
 

@@ -3,10 +3,22 @@
  * Handles Income, Residence, Voter ID, and general service fallback dialogs.
  */
 
-const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow } = require('./tnega_flow_engine');
+const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow, advanceTnegaWidowFlow } = require('./tnega_flow_engine');
 
 function handleNonRationServiceSelection(text, sess) {
-    if (text.includes('வாரிசு') || text.toLowerCase().includes('legal heir') || text.includes('REV-114') || text === 'LEGAL_HEIR' || text === 'LEGAL_HEIR_CERTIFICATE') {
+    if (text.includes('விதவை') || text.toLowerCase().includes('widow') || text.includes('REV-109') || text === 'WIDOW' || text === 'WIDOW_CERTIFICATE') {
+        sess.subService = 'WIDOW';
+        if (sess.citizenProfile) {
+            sess.citizenProfile.subService = 'WIDOW';
+        }
+        const flowStep = advanceTnegaWidowFlow(sess);
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: flowStep.text,
+            options: flowStep.options
+        });
+        return true;
+    } else if (text.includes('வாரிசு') || text.toLowerCase().includes('legal heir') || text.includes('REV-114') || text === 'LEGAL_HEIR' || text === 'LEGAL_HEIR_CERTIFICATE') {
         sess.subService = 'LEGAL_HEIR';
         if (sess.citizenProfile) {
             sess.citizenProfile.subService = 'LEGAL_HEIR';

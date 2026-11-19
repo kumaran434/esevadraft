@@ -398,8 +398,9 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
     // Delete collected physical files so stale photos/PDFs never linger on disk
     for (const fp of filesToPurge) {
         if (fp && typeof fp === 'string' && fs.existsSync(fp)) {
+            const fullLower = fp.toLowerCase();
             const base = path.basename(fp).toLowerCase();
-            if (base.startsWith('test_') || base.includes('sample')) continue;
+            if (base.startsWith('test_') || base.includes('sample') || fullLower.includes('golden_samples')) continue;
             try { fs.unlinkSync(fp); } catch (_) {}
         }
     }

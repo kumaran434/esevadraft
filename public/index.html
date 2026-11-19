@@ -18,6 +18,8 @@
     <link rel="stylesheet" href="css/operator_panels.css">
     <link rel="stylesheet" href="css/modals_dialogs.css">
     <link rel="stylesheet" href="css/responsive_mobile.css">
+    <link rel="stylesheet" href="css/pro_international_theme.css">
+    <link rel="stylesheet" href="css/studio_ultra_theme.css">
     <style id="master-header-nav-style">
         /* Master Header Actions & Glass Icon Buttons */
         .nav-actions {
@@ -287,14 +289,21 @@
         <!-- Top Unified Navbar (Always in front of modals/auth screen with window controls) -->
         <div class="navbar" style="position: sticky; top: 0; z-index: 100002; flex-shrink: 0;">
             <div class="brand-box">
+                <span class="brand-logo-mark" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 3.75H13.6L18.25 8.4V18.75C18.25 19.85 17.35 20.75 16.25 20.75H7C5.9 20.75 5 19.85 5 18.75V5.75C5 4.65 5.9 3.75 7 3.75Z" stroke="white" stroke-width="1.9" stroke-linejoin="round"/>
+                        <path d="M13.25 3.75V8.75H18.25" stroke="white" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M8.5 13.5L10.75 15.75L15 11.25" stroke="#d1fae5" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
                 <div class="brand-title">
-                    <div style="display: flex; align-items: baseline; gap: 6px; line-height: 1.1;">
-                        <h1 style="margin: 0; font-size: 22.5px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; display: inline-flex; align-items: baseline; gap: 1.5px; line-height: 1.1;">
-                            <span>eSeva</span><span style="font-size: 15.5px; font-weight: 800; letter-spacing: -0.2px; background: linear-gradient(135deg, #6ee7b7 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.35));">Draft</span>
+                    <div style="display: flex; align-items: center; gap: 7px; line-height: 1.1;">
+                        <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.45px; color: #ffffff; display: inline-flex; align-items: baseline; line-height: 1.05;">
+                            <span class="brand-word-eseva">eSeva</span><span class="brand-word-draft">Draft</span>
                         </h1>
-                        <span id="headerAppVersionBadge" title="தற்போதைய பதிப்பு (App Version)" style="font-size: 9.5px; font-weight: 800; padding: 1.5px 6px; border-radius: 5px; background: rgba(16, 185, 129, 0.16); border: 1px solid rgba(52, 211, 153, 0.42); color: #6ee7b7; letter-spacing: 0.3px; line-height: 1.3; vertical-align: middle;">v1.1.24</span>
+                        <span id="headerAppVersionBadge" title="தற்போதைய பதிப்பு (App Version)" style="font-size: 9.5px; font-weight: 800; padding: 1.5px 6px; border-radius: 5px; background: rgba(16, 185, 129, 0.16); border: 1px solid rgba(52, 211, 153, 0.42); color: #6ee7b7; letter-spacing: 0.3px; line-height: 1.3; vertical-align: middle;">v1.1.25</span>
                     </div>
-                    <span style="font-size: 10.5px; color: #94a3b8; font-weight: 600; display: block; margin-top: 2px;">தமிழ்நாடு அரசு சேவைகள் ஏஐ • Smart AI</span>
+                    <span class="brand-subtitle-text" style="font-size: 10.5px; color: #94a3b8; font-weight: 600; display: block; margin-top: 2px;">தமிழ்நாடு அரசு சேவைகள் ஏஐ • Smart AI</span>
                 </div>
                 <div class="live-status-pill" style="margin-left: 8px;">
                     <span class="status-dot-pulse"></span>
@@ -303,19 +312,52 @@
             </div>
 
             <div class="nav-actions">
-                <!-- 1. Operator Desk Quick Icon Button -->
+                <!-- 0. Instant 1-Click 3-Theme Switcher (Studio UI ⇄ Pro UI ⇄ Classic) -->
+                <button id="btnToggleUiTheme" type="button" onclick="toggleEsevaUiTheme()" data-tooltip="டிசைன் மாற்று: Studio UI ⇄ Pro UI ⇄ Classic" title="டிசைன் மாற்று: Studio UI ⇄ Pro UI ⇄ Classic">
+                    <span class="theme-pill-dot"></span>
+                    <span id="uiThemeLabel">Studio UI</span>
+                </button>
+                <script>
+                    (function initEsevaUiTheme() {
+                        const THEMES = ['studio', 'pro', 'classic'];
+                        const LABELS = { studio: 'Studio UI', pro: 'Pro UI', classic: 'Classic' };
+                        window.applyEsevaUiTheme = function(mode) {
+                            const m = THEMES.includes(mode) ? mode : 'studio';
+                            document.body.classList.remove('eseva-pro-ui', 'eseva-studio-ui');
+                            if (m === 'pro') document.body.classList.add('eseva-pro-ui');
+                            if (m === 'studio') document.body.classList.add('eseva-studio-ui');
+                            const lbl = document.getElementById('uiThemeLabel');
+                            if (lbl) lbl.textContent = LABELS[m];
+                            try { localStorage.setItem('eseva_ui_theme_v3', m); } catch (_) {}
+                        };
+                        window.toggleEsevaUiTheme = function() {
+                            const cur = document.body.classList.contains('eseva-studio-ui')
+                                ? 'studio'
+                                : (document.body.classList.contains('eseva-pro-ui') ? 'pro' : 'classic');
+                            const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+                            window.applyEsevaUiTheme(next);
+                        };
+                        try {
+                            const saved = localStorage.getItem('eseva_ui_theme_v3') || 'studio';
+                            window.applyEsevaUiTheme(saved);
+                        } catch (_) {
+                            window.applyEsevaUiTheme('studio');
+                        }
+                    })();
+                </script>
+                <!-- 1. Home / Interface Page Quick Icon Button (FIRST primary nav icon) -->
+                <button id="btnHeaderHome" class="nav-icon-btn btn-home" onclick="goToHomePage()" data-tooltip="முகப்பு (Home)" title="முகப்பு (Home)" style="display: none;">
+                    <i class="fa-solid fa-house" style="color: #ffffff;"></i>
+                </button>
+
+                <!-- 2. Operator Desk Quick Icon Button -->
                 <button id="btnBackToOperator" class="nav-icon-btn btn-desk-active" onclick="backToOperatorDashboard()" data-tooltip="மையம் பணிப்பகுதி (Operator Desk)" title="மையம் பணிப்பகுதி (Operator Desk)" style="display: none;">
                     <i class="fa-solid fa-table-columns" style="color: #fde047;"></i>
                 </button>
 
-                <!-- 2. Save Current Draft Quick Icon Button -->
+                <!-- 3. Save Current Draft Quick Icon Button -->
                 <button id="btnSaveDraftTop" class="nav-icon-btn btn-save-draft" onclick="saveCurrentDraftManually()" data-tooltip="வரைவாகச் சேமி (Save Draft)" title="வரைவாகச் சேமி (Save Draft)" style="display: none;">
                     <i class="fa-solid fa-floppy-disk" style="color: #4ade80;"></i>
-                </button>
-
-                <!-- 3. Home / Interface Page Quick Icon Button -->
-                <button id="btnHeaderHome" class="nav-icon-btn btn-home" onclick="goToHomePage()" data-tooltip="முகப்பு (Home)" title="முகப்பு (Home)" style="display: none;">
-                    <i class="fa-solid fa-house" style="color: #ffffff;"></i>
                 </button>
 
                 <!-- Developer Mock Mode Indicator & Toggle (Visible ONLY when Dev Mode is Active) -->
@@ -393,12 +435,12 @@
         <!-- Universal Web Browser Download Notification Banner -->
         <div id="universalWebDownloadBanner" style="display: none; background: linear-gradient(90deg, #064e3b 0%, #065f46 50%, #047857 100%); color: #ffffff; padding: 9px 18px; font-size: 13px; font-weight: 600; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.18); z-index: 100000; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <span class="app-version-tag" style="background: rgba(255,255,255,0.22); padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3);">புதிய பதிப்பு v1.1.24</span>
+                <span class="app-version-tag" style="background: rgba(255,255,255,0.22); padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3);">புதிய பதிப்பு v1.1.25</span>
                 <span>💻 தமிழ்நாடு அரசு சேவைகளை (TNeGA & TNPDS) உங்கள் கம்ப்யூட்டரில் அதிவேகமாக ஆட்டோமேஷன் செய்ய எங்கள் விண்டோஸ் ஆப்பை உடனே டவுன்லோட் செய்து பயன்படுத்தவும்!</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 <a href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #ffffff; color: #065f46; font-weight: 800; font-size: 12px; padding: 6px 14px; border-radius: 6px; text-decoration: none; box-shadow: 0 2px 6px rgba(0,0,0,0.2); transition: transform 0.15s;">
-                    <i class="fa-brands fa-windows" style="color: #0284c7; font-size: 14px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (<span class="app-version-num">v1.1.24</span>)
+                    <i class="fa-brands fa-windows" style="color: #0284c7; font-size: 14px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (<span class="app-version-num">v1.1.25</span>)
                 </a>
                 <button type="button" onclick="document.getElementById('universalWebDownloadBanner').style.display='none'" style="background: transparent; border: none; color: #a7f3d0; font-size: 16px; cursor: pointer; padding: 0 6px;" title="மூடுக">✕</button>
             </div>
@@ -460,7 +502,7 @@
                                     <div>
                                         <div style="display: flex; align-items: center; gap: 6px;">
                                             <h4 style="margin: 0; font-size: 14.5px; font-weight: 800; color: #ffffff;">விண்டோஸ் டெஸ்க்டாப் ஆப்</h4>
-                                            <span class="app-version-num" style="background: #10b981; color: #ffffff; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 800;">v1.1.24</span>
+                                            <span class="app-version-num" style="background: #10b981; color: #ffffff; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 800;">v1.1.25</span>
                                         </div>
                                         <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #cbd5e1;">அரசு போர்ட்டல் அதிவேக ஃபார்ம் ஆட்டோமேஷனை உங்கள் கம்ப்யூட்டரில் இயக்க</p>
                                     </div>
@@ -548,7 +590,7 @@
                                     அரசு போர்ட்டல் ஃபார்ம் ஆட்டோமேஷனை உங்கள் கம்ப்யூட்டரில் இயக்க எங்கள் ஆப்பைப் பயன்படுத்தவும்.
                                 </div>
                                 <a href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 16px; background: #16a34a; color: white; border-radius: 6px; font-size: 11.5px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 6px rgba(22,163,74,0.3);">
-                                    <i class="fa-solid fa-download"></i> 📥 Download Windows Setup (v1.1.20)
+                                    <i class="fa-solid fa-download"></i> 📥 Download Windows Setup (v1.1.25)
                                 </a>
                             </div>
                         </div>
@@ -683,11 +725,11 @@
                                     <div style="width: 38px; height: 38px; border-radius: 10px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 20px;">
                                         🏛️
                                     </div>
-                                    <span style="background: #dcfce7; color: #166534; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px;">8 சேவைகள்</span>
+                                    <span style="background: #dcfce7; color: #166534; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px;">4 சேவைகள்</span>
                                 </div>
                                 <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #0f172a;">ரேஷன் கார்டு (Ration Card)</h4>
                                 <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.4;">
-                                    புதிய குடும்ப அட்டை, உறுப்பினர் சேர்க்கை/நீக்கம், முகவரி, தலைவர் மற்றும் அட்டை வகை மாற்றம்.
+                                    புதிய குடும்ப அட்டை, குடும்ப உறுப்பினர் சேர்க்கை, முகவரி மற்றும் கைபேசி எண் மாற்றம்.
                                 </p>
                             </div>
                             <button style="margin-top: 12px; height: 34px; width: 100%; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
@@ -786,6 +828,25 @@
                                 </p>
                             </div>
                             <button style="margin-top: 12px; height: 34px; width: 100%; background: #d97706; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                <i class="fa-solid fa-bolt"></i> விண்ணப்பிக்கத் தொடங்கு 🚀
+                            </button>
+                        </div>
+
+                        <!-- Card 7: Widow Certificate (REV-109) -->
+                        <div class="c-service-card" onclick="citizenStartService('விதவைச் சான்றிதழ்')">
+                            <div>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <div style="width: 38px; height: 38px; border-radius: 10px; background: #f3e8ff; color: #6b21a8; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                        🕊️
+                                    </div>
+                                    <span style="background: #f3e8ff; color: #6b21a8; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px;">REV-109</span>
+                                </div>
+                                <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #0f172a;">விதவைச் சான்றிதழ் (Widow Certificate)</h4>
+                                <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.4;">
+                                    அரசு நலத்திட்டங்கள் மற்றும் வேலைவாய்ப்பிற்கான வருவாய்த் துறை விதவைச் சான்றிதழ்.
+                                </p>
+                            </div>
+                            <button style="margin-top: 12px; height: 34px; width: 100%; background: #7e22ce; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
                                 <i class="fa-solid fa-bolt"></i> விண்ணப்பிக்கத் தொடங்கு 🚀
                             </button>
                         </div>
@@ -1159,6 +1220,16 @@
                             <div class="card-row">ஆண்டு வருமானம்: <strong id="infoObcIncome" class="badge-green">—</strong></div>
                         </div>
 
+                        <!-- Dynamic Widow Certificate Details Box (REV-109) -->
+                        <div class="card-box" id="sidebarWidowBox" style="display: none; border-left: 4px solid #7e22ce; background: #faf5ff;">
+                            <h4 style="color: #6b21a8;"><i class="fa-solid fa-dove"></i> விதவைச் சான்றிதழ் விவரங்கள் (REV-109)</h4>
+                            <div class="card-row">CAN எண்: <strong id="infoWidowCanNo" class="badge-empty">—</strong></div>
+                            <div class="card-row">கணவர் பெயர்: <strong id="infoWidowSpouse" class="badge-green">—</strong></div>
+                            <div class="card-row">இறந்த தேதி: <strong id="infoWidowDod" class="badge-green">—</strong></div>
+                            <div class="card-row">இறப்புச் சான்றிதழ் எண்: <strong id="infoWidowDcNo" class="badge-green">—</strong></div>
+                            <div class="card-row">திருமணத் தேதி: <strong id="infoWidowMarDate" class="badge-empty">—</strong></div>
+                        </div>
+
                         <!-- Dynamic Add Member Details Box -->
                         <div class="card-box" id="sidebarAddMemberBox" style="display: none; border-left: 4px solid #16a34a; background: #f0fdf4;">
                             <h4 style="color: #166534;"><i class="fa-solid fa-user-plus"></i> சேர்க்கப்படும் புதிய உறுப்பினர்</h4>
@@ -1254,7 +1325,7 @@
                         <!-- Big Download Button -->
                         <div style="margin-bottom: 20px;">
                             <a id="hubDownloadBtn" href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 32px; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; border-radius: 12px; font-weight: 800; font-size: 16px; text-decoration: none; box-shadow: 0 6px 18px rgba(22,163,74,0.35); transition: transform 0.2s;">
-                                <i class="fa-brands fa-windows" style="font-size: 20px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (Download App <span class="app-version-num">v1.1.24</span>)
+                                <i class="fa-brands fa-windows" style="font-size: 20px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (Download App <span class="app-version-num">v1.1.25</span>)
                             </a>
                         </div>
 
@@ -1335,10 +1406,10 @@
                             <i class="fa-solid fa-layer-group" style="color: #0284c7;"></i> அரசுத் துறைகள்:
                         </span>
                         <button type="button" onclick="startDirectApplyService('ரேஷன் கார்டு')" style="height: 32px; padding: 0 13px; background: #ecfdf5; border: 1.5px solid #a7f3d0; border-radius: 999px; font-size: 11.5px; font-weight: 800; color: #065f46; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(6,95,70,0.08);">
-                            🏛️ ரேஷன் கார்டு (8 சேவைகள்)
+                            🏛️ ரேஷன் கார்டு (4 சேவைகள்)
                         </button>
                         <button type="button" onclick="startDirectApplyService('வருவாய்த் துறை')" style="height: 32px; padding: 0 13px; background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 999px; font-size: 11.5px; font-weight: 800; color: #1d4ed8; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(29,78,216,0.08);">
-                            🏛️ வருவாய்த் துறை (5 சான்றிதழ்கள்)
+                            🏛️ வருவாய்த் துறை (7 சான்றிதழ்கள்)
                         </button>
                         <span style="font-size: 11px; font-weight: 700; color: #94a3b8; margin: 0 2px;">|</span>
                         <button type="button" onclick="startDirectApplyService('புதிய ரேஷன் கார்டு')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
@@ -1361,6 +1432,9 @@
                         </button>
                         <button type="button" onclick="startDirectApplyService('வாரிசு சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                             👨‍👩‍👧‍👦 வாரிசு (REV-114)
+                        </button>
+                        <button type="button" onclick="startDirectApplyService('விதவைச் சான்றிதழ்')" style="height: 29px; padding: 0 10px; background: #faf5ff; border: 1px solid #d8b4fe; border-radius: 999px; font-size: 11px; font-weight: 700; color: #6b21a8; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            🕊️ விதவை (REV-109)
                         </button>
                     </div>
 
@@ -1940,7 +2014,7 @@
                         <!-- STEP 2 & 3: UPLOAD DOCUMENT -> PLACE SIGNATURE -> DOWNLOAD FULL DOCUMENT  -->
                         <!-- ========================================================================= -->
                         <div style="border: 2px solid #7e22ce; background: #faf5ff; border-radius: 14px; padding: 16px;">
-                            <input type="file" id="tool4DocSignInput" accept="application/pdf,image/*" style="display: none;" onchange="handleTool4DocSignSelected(this)">
+                            <input type="file" id="tool4DocSignInput" accept="image/*,.pdf,application/pdf,.jpg,.jpeg,.png,.webp" style="display: none;" onchange="handleTool4DocSignSelected(this)">
 
                             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -1965,6 +2039,7 @@
                                     ஆவணத்தை அப்லோட் செய்து, மேலே உள்ள கையொப்பத்தை மவுஸால் இழுத்துச் சரியான இடத்தில் வைத்து, கையொப்பமிட்ட முழு ஆவணத்தையும் பதிவிறக்கலாம்!
                                 </div>
                             </div>
+                            <div id="tool4DocLoadStatus" style="display: none; margin-top: 10px;"></div>
 
                             <!-- Interactive Document + Draggable Signature Stage -->
                             <div id="tool4DocSignStageWrap" style="display: none; flex-direction: column; gap: 12px;">
@@ -2674,6 +2749,33 @@
                     </div>
                 </div>
 
+                <!-- Widow Certificate Form Fields (Service-Scoped REV-109) -->
+                <div id="editWidowFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #faf5ff; border: 1.5px solid #d8b4fe; padding: 12px; border-radius: 10px; margin-top: 4px;">
+                    <div style="grid-column: span 2; font-weight: 700; color: #6b21a8; font-size: 12.5px;">
+                        🕊️ விதவைச் சான்றிதழ் விவரங்கள் (Widow Certificate REV-109)
+                    </div>
+                    <div>
+                        <label>கணவரின் பெயர் (Spouse Name Eng) *:</label>
+                        <input type="text" id="editWidowSpouseNameEng" placeholder="எ.கா: Late Kirubakaran" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #581c87;">
+                    </div>
+                    <div>
+                        <label>கணவரின் பெயர் (தமிழில்) *:</label>
+                        <input type="text" id="editWidowSpouseNameTam" placeholder="எ.கா: லேட் கிருபாகரன்" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700; color: #581c87;">
+                    </div>
+                    <div>
+                        <label>கணவர் இறந்த தேதி (Date of Death) *:</label>
+                        <input type="text" id="editWidowDateOfDeath" placeholder="எ.கா: 15-Jan-2025" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label>இறப்புச் சான்றிதழ் எண் (Death Cert No.) *:</label>
+                        <input type="text" id="editWidowDeathCertNo" placeholder="எ.கா: DC-2025-88412" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 700;">
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <label>திருமணத் தேதி (Date of Marriage — விருப்பம்):</label>
+                        <input type="text" id="editWidowDateOfMarriage" placeholder="எ.கா: 12-May-1990 (விருப்பம்)" style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600;">
+                    </div>
+                </div>
+
                 <!-- DYNAMIC ACCUMULATING CUSTOM FIELDS (Master Profile Vault) -->
                 <div id="editDynamicCustomFieldsWrap" style="grid-column: span 2; display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1.5px solid #cbd5e1; padding: 12px; border-radius: 10px; margin-top: 4px;"></div>
 
@@ -3332,7 +3434,7 @@
 
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <a href="/api/download/desktop-app" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 10px; font-weight: 800; font-size: 14px; text-decoration: none; box-shadow: 0 4px 14px rgba(16,185,129,0.35);">
-                    <i class="fa-brands fa-windows"></i> 📥 ஆப் டவுன்லோட் செய்க (Download App <span class="app-version-num">v1.1.24</span>)
+                    <i class="fa-brands fa-windows"></i> 📥 ஆப் டவுன்லோட் செய்க (Download App <span class="app-version-num">v1.1.25</span>)
                 </a>
                 <span style="font-size: 11px; color: #64748b; text-align: center;">
                     ஏற்கனவே இன்ஸ்டால் செய்திருந்தால்: உங்கள் கம்ப்யூட்டரில் உள்ள <b>eSevaDraft</b> ஆப்பைத் திறக்கவும்
@@ -3364,8 +3466,8 @@
     <script src="js/modules/portal_vault_manager.js"></script>
     <script src="js/modules/edit_modal_manager.js"></script>
     <script src="js/modules/founder_gallery.js"></script>
-    <script defer src="vendor/pdf-lib.min.js"></script>
-    <script defer src="vendor/pdf.min.js"></script>
+    <script src="vendor/pdf-lib.min.js"></script>
+    <script src="vendor/pdf.min.js"></script>
     <script src="js/modules/eseva_tools.js"></script>
 </body>
 </html>

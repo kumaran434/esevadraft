@@ -22,7 +22,7 @@
 
             const isTnegaActive = Boolean(
                 currentCitizenData && (
-                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
+                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
                     (currentCitizenData.intakeState && (
                         currentCitizenData.intakeState.includes('INCOME') ||
                         currentCitizenData.intakeState.includes('RESIDENCE') ||
@@ -31,6 +31,7 @@
                         currentCitizenData.intakeState.includes('FIRST_GRADUATE') ||
                         currentCitizenData.intakeState.includes('OBC') ||
                         currentCitizenData.intakeState.includes('LEGAL_HEIR') ||
+                        currentCitizenData.intakeState.includes('WIDOW') ||
                         currentCitizenData.intakeState.includes('CAN')
                     ))
                 )
@@ -136,6 +137,18 @@
                     const hasApplicantProof = Boolean(currentCitizenData.applicantEducationProof || currentCitizenData.studentTc || docs.applicantEducationProof || docs.studentTc);
                     if (!hasApplicantProof) {
                         alert('⚠️ முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் 12-ஆம் வகுப்பு மாற்றுச் சான்றிதழ் (TC) அல்லது மதிப்பெண் பட்டியல் கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                } else if (curSub.includes('WIDOW')) {
+                    if (!hasPhoto) {
+                        alert('⚠️ விதவைச் சான்றிதழ் (REV-109) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
+                        if (typeof openEditModal === 'function') openEditModal(activeMob);
+                        return;
+                    }
+                    const hasDeathCert = Boolean(currentCitizenData.deathCertificate?.docPath || currentCitizenData.deathCertificate || docs.deathCertificate);
+                    if (!hasDeathCert) {
+                        alert('⚠️ விதவைச் சான்றிதழ் (REV-109) விண்ணப்பிக்க கணவரின் இறப்புச் சான்றிதழ் (Death Certificate <200KB) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
                         if (typeof openEditModal === 'function') openEditModal(activeMob);
                         return;
                     }
@@ -247,6 +260,7 @@
                                 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE',
                                 'OBC', 'OBC_CERTIFICATE',
                                 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE',
+                                'WIDOW', 'WIDOW_CERTIFICATE',
                                 'CAN_REGISTER', 'CAN_SEARCH',
                                 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
                             ];
@@ -261,7 +275,10 @@
 
                             let resolvedTargetService = draftData.targetService || dJson.draft?.targetService || prof.targetService || '';
 
-                            if (effectiveSubService === 'LEGAL_HEIR' || effectiveSubService === 'LEGAL_HEIR_CERTIFICATE' || targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeHint.includes('LEGAL_HEIR')) {
+                            if (effectiveSubService === 'WIDOW' || effectiveSubService === 'WIDOW_CERTIFICATE' || targetServiceHint.includes('WIDOW') || targetServiceHint.includes('விதவை') || intakeHint.includes('WIDOW')) {
+                                effectiveSubService = 'WIDOW';
+                                resolvedTargetService = 'WIDOW';
+                            } else if (effectiveSubService === 'LEGAL_HEIR' || effectiveSubService === 'LEGAL_HEIR_CERTIFICATE' || targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeHint.includes('LEGAL_HEIR')) {
                                 effectiveSubService = 'LEGAL_HEIR';
                                 resolvedTargetService = 'LEGAL_HEIR';
                             } else if (effectiveSubService === 'OBC' || effectiveSubService === 'OBC_CERTIFICATE' || targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeHint.includes('OBC')) {
