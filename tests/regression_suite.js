@@ -4091,7 +4091,8 @@ async function runTests() {
             assert(bpRes.status === 200 && Array.isArray(bpRes.body.blueprints), 'GET /api/lab/blueprints returns 200 & array');
 
             const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-            assert(indexHtml.includes('id="toolTabBtn-field-lab"') && indexHtml.includes('id="toolPane-field-lab"') && indexHtml.includes('field_lab_ui.js'), 'index.html exposes isolated Field Lab pane & controller');
+            assert(indexHtml.includes('id="panel-field-lab"') && indexHtml.includes('id="toolPane-field-lab"') && indexHtml.includes('field_lab_ui.js'), 'index.html exposes standalone Field Lab page panel & controller');
+            assert(!indexHtml.includes('id="toolTabBtn-field-lab"'), 'Tools page never mixes Field Lab tab inside #panel-tools');
             assert(indexHtml.includes('id="btnHeaderFieldLab"') && !indexHtml.includes('id="btnToggleUiTheme"'), 'index.html places Field Lab icon directly in header and locks Studio UI without theme switcher button');
             assert(indexHtml.includes("document.body.classList.add('eseva-studio-ui')"), 'Studio UI is permanently locked on startup');
 

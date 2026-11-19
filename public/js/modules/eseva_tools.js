@@ -131,10 +131,10 @@
         }
     };
 
-    // Switch between the 5 Tools inside #panel-tools
+    // Switch between the 4 Tools inside #panel-tools
     window.switchEsevaToolSubTab = function (toolKey) {
         ensurePdfJsWorker();
-        const keys = ['pdf-comp-split', 'jpg-pdf', 'photo-crop', 'digital-sign', 'field-lab'];
+        const keys = ['pdf-comp-split', 'jpg-pdf', 'photo-crop', 'digital-sign'];
         keys.forEach(k => {
             const pane = document.getElementById(`toolPane-${k}`);
             const btn = document.getElementById(`toolTabBtn-${k}`);

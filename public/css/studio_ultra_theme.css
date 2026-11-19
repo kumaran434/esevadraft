@@ -690,11 +690,13 @@ body.eseva-studio-ui .modal-content {
 /* ==========================================================================
    6. E-SEVA OPERATOR UTILITY TOOLS SUITE (#panel-tools — STUDIO POLISH)
    ========================================================================== */
-body.eseva-studio-ui #panel-tools {
+body.eseva-studio-ui #panel-tools,
+body.eseva-studio-ui #panel-field-lab {
     background: var(--st-bg) !important;
 }
 
-body.eseva-studio-ui #panel-tools > div > div {
+body.eseva-studio-ui #panel-tools > div > div,
+body.eseva-studio-ui #panel-field-lab > div > div {
     border-radius: 14px !important;
 }
 
@@ -711,14 +713,19 @@ body.eseva-studio-ui #panel-tools button[id^="toolTabBtn-"]:hover {
 
 body.eseva-studio-ui #panel-tools input[type="text"],
 body.eseva-studio-ui #panel-tools input[type="number"],
-body.eseva-studio-ui #panel-tools select {
+body.eseva-studio-ui #panel-tools select,
+body.eseva-studio-ui #panel-field-lab input[type="text"],
+body.eseva-studio-ui #panel-field-lab input[type="number"],
+body.eseva-studio-ui #panel-field-lab select {
     border-radius: 9px !important;
     border-color: #d1d5db !important;
     transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
 }
 
 body.eseva-studio-ui #panel-tools input:focus,
-body.eseva-studio-ui #panel-tools select:focus {
+body.eseva-studio-ui #panel-tools select:focus,
+body.eseva-studio-ui #panel-field-lab input:focus,
+body.eseva-studio-ui #panel-field-lab select:focus {
     border-color: #4f46e5 !important;
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13) !important;
 }

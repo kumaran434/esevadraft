@@ -90,8 +90,24 @@
     }
 
     window.openFieldLabPanel = function () {
-        if (typeof window.openEsevaToolsPage === 'function') {
-            window.openEsevaToolsPage('field-lab');
+        const modals = [
+            'operatorDraftsModal',
+            'newCustomerModal',
+            'tnegaCanSearchModal',
+            'directApplyServiceModal',
+            'tnegaPortalVaultModal',
+            'operatorProfileModal'
+        ];
+        modals.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        if (typeof window.switchTab === 'function') {
+            window.switchTab('field-lab');
+        } else {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active-panel'));
+            const panel = document.getElementById('panel-field-lab');
+            if (panel) panel.classList.add('active-panel');
         }
         if (typeof window.refreshFieldLabState === 'function') {
             window.refreshFieldLabState();
