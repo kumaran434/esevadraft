@@ -55,6 +55,7 @@ const tnegaRoutes = require('./src/routes/tnega_routes');
 const devRoutes = require('./src/routes/dev_routes');
 const desktopAssetRoutes = require('./src/routes/desktop_asset_routes');
 const toolsRoutes = require('./src/routes/tools_routes');
+const fieldLabRoutes = require('./src/routes/field_lab_routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -118,6 +119,7 @@ app.use(tnegaRoutes);
 app.use(devRoutes);
 app.use(desktopAssetRoutes);
 app.use(toolsRoutes);
+app.use(fieldLabRoutes);
 
 // Android SMS Auto-Forwarder Webhook & Autonomous E2E OTP Interception
 app.all(['/api/automation/otp_webhook', '/api/automation/otp-webhook'], (req, res) => {

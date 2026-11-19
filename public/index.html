@@ -301,7 +301,7 @@
                         <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.45px; color: #ffffff; display: inline-flex; align-items: baseline; line-height: 1.05;">
                             <span class="brand-word-eseva">eSeva</span><span class="brand-word-draft">Draft</span>
                         </h1>
-                        <span id="headerAppVersionBadge" title="தற்போதைய பதிப்பு (App Version)" style="font-size: 9.5px; font-weight: 800; padding: 1.5px 6px; border-radius: 5px; background: rgba(16, 185, 129, 0.16); border: 1px solid rgba(52, 211, 153, 0.42); color: #6ee7b7; letter-spacing: 0.3px; line-height: 1.3; vertical-align: middle;">v1.1.25</span>
+                        <span id="headerAppVersionBadge" title="தற்போதைய பதிப்பு (App Version)" style="font-size: 9.5px; font-weight: 800; padding: 1.5px 6px; border-radius: 5px; background: rgba(16, 185, 129, 0.16); border: 1px solid rgba(52, 211, 153, 0.42); color: #6ee7b7; letter-spacing: 0.3px; line-height: 1.3; vertical-align: middle;">v1.1.26</span>
                     </div>
                     <span class="brand-subtitle-text" style="font-size: 10.5px; color: #94a3b8; font-weight: 600; display: block; margin-top: 2px;">தமிழ்நாடு அரசு சேவைகள் ஏஐ • Smart AI</span>
                 </div>
@@ -312,37 +312,15 @@
             </div>
 
             <div class="nav-actions">
-                <!-- 0. Instant 1-Click 3-Theme Switcher (Studio UI ⇄ Pro UI ⇄ Classic) -->
-                <button id="btnToggleUiTheme" type="button" onclick="toggleEsevaUiTheme()" data-tooltip="டிசைன் மாற்று: Studio UI ⇄ Pro UI ⇄ Classic" title="டிசைன் மாற்று: Studio UI ⇄ Pro UI ⇄ Classic">
-                    <span class="theme-pill-dot"></span>
-                    <span id="uiThemeLabel">Studio UI</span>
-                </button>
+                <!-- Studio UI Permanently Locked (No Theme Switcher Button) -->
                 <script>
                     (function initEsevaUiTheme() {
-                        const THEMES = ['studio', 'pro', 'classic'];
-                        const LABELS = { studio: 'Studio UI', pro: 'Pro UI', classic: 'Classic' };
-                        window.applyEsevaUiTheme = function(mode) {
-                            const m = THEMES.includes(mode) ? mode : 'studio';
-                            document.body.classList.remove('eseva-pro-ui', 'eseva-studio-ui');
-                            if (m === 'pro') document.body.classList.add('eseva-pro-ui');
-                            if (m === 'studio') document.body.classList.add('eseva-studio-ui');
-                            const lbl = document.getElementById('uiThemeLabel');
-                            if (lbl) lbl.textContent = LABELS[m];
-                            try { localStorage.setItem('eseva_ui_theme_v3', m); } catch (_) {}
+                        window.applyEsevaUiTheme = function() {
+                            document.body.classList.remove('eseva-pro-ui');
+                            document.body.classList.add('eseva-studio-ui');
+                            try { localStorage.setItem('eseva_ui_theme_v3', 'studio'); } catch (_) {}
                         };
-                        window.toggleEsevaUiTheme = function() {
-                            const cur = document.body.classList.contains('eseva-studio-ui')
-                                ? 'studio'
-                                : (document.body.classList.contains('eseva-pro-ui') ? 'pro' : 'classic');
-                            const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
-                            window.applyEsevaUiTheme(next);
-                        };
-                        try {
-                            const saved = localStorage.getItem('eseva_ui_theme_v3') || 'studio';
-                            window.applyEsevaUiTheme(saved);
-                        } catch (_) {
-                            window.applyEsevaUiTheme('studio');
-                        }
+                        window.applyEsevaUiTheme();
                     })();
                 </script>
                 <!-- 1. Home / Interface Page Quick Icon Button (FIRST primary nav icon) -->
@@ -385,6 +363,11 @@
                 <!-- 4C. e-Seva Operator Utility Tools Quick Icon Button (PDF Compress/Split, JPG<->PDF, Photo Crop, Digital Sign) -->
                 <button id="btnHeaderTools" class="nav-icon-btn btn-tools" onclick="openEsevaToolsPage()" data-tooltip="இ-சேவை டூல்ஸ் (PDF சுருக்கி / ஸ்பிளிட்டர், JPG⇄PDF, போட்டோ கிராப், கையொப்பம்)" title="இ-சேவை டூல்ஸ் (e-Seva Tools)" style="display: none; background: rgba(168, 85, 247, 0.22); border: 1.5px solid rgba(192, 132, 252, 0.55); color: #f3e8ff;">
                     <i class="fa-solid fa-screwdriver-wrench" style="color: #e9d5ff;"></i>
+                </button>
+
+                <!-- 4D. Field Lab Recorder Quick Icon Button (Direct Header Access from Home / Desk) -->
+                <button id="btnHeaderFieldLab" class="nav-icon-btn btn-field-lab" onclick="openFieldLabPanel()" data-tooltip="Field Lab Recorder (தளப் பதிவு ஆய்வகம் — Zero-PII Cloud Blueprint)" title="Field Lab Recorder (தளப் பதிவு ஆய்வகம்)" style="display: none; background: rgba(16, 185, 129, 0.16); border: 1.5px solid rgba(52, 211, 153, 0.5); color: #d1fae5;">
+                    <i class="fa-solid fa-flask" style="color: #34d399;"></i>
                 </button>
 
                 <!-- 5. Reset / New Intake Quick Icon Button -->
@@ -435,12 +418,12 @@
         <!-- Universal Web Browser Download Notification Banner -->
         <div id="universalWebDownloadBanner" style="display: none; background: linear-gradient(90deg, #064e3b 0%, #065f46 50%, #047857 100%); color: #ffffff; padding: 9px 18px; font-size: 13px; font-weight: 600; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.18); z-index: 100000; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <span class="app-version-tag" style="background: rgba(255,255,255,0.22); padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3);">புதிய பதிப்பு v1.1.25</span>
+                <span class="app-version-tag" style="background: rgba(255,255,255,0.22); padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3);">புதிய பதிப்பு v1.1.26</span>
                 <span>💻 தமிழ்நாடு அரசு சேவைகளை (TNeGA & TNPDS) உங்கள் கம்ப்யூட்டரில் அதிவேகமாக ஆட்டோமேஷன் செய்ய எங்கள் விண்டோஸ் ஆப்பை உடனே டவுன்லோட் செய்து பயன்படுத்தவும்!</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 <a href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #ffffff; color: #065f46; font-weight: 800; font-size: 12px; padding: 6px 14px; border-radius: 6px; text-decoration: none; box-shadow: 0 2px 6px rgba(0,0,0,0.2); transition: transform 0.15s;">
-                    <i class="fa-brands fa-windows" style="color: #0284c7; font-size: 14px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (<span class="app-version-num">v1.1.25</span>)
+                    <i class="fa-brands fa-windows" style="color: #0284c7; font-size: 14px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (<span class="app-version-num">v1.1.26</span>)
                 </a>
                 <button type="button" onclick="document.getElementById('universalWebDownloadBanner').style.display='none'" style="background: transparent; border: none; color: #a7f3d0; font-size: 16px; cursor: pointer; padding: 0 6px;" title="மூடுக">✕</button>
             </div>
@@ -502,7 +485,7 @@
                                     <div>
                                         <div style="display: flex; align-items: center; gap: 6px;">
                                             <h4 style="margin: 0; font-size: 14.5px; font-weight: 800; color: #ffffff;">விண்டோஸ் டெஸ்க்டாப் ஆப்</h4>
-                                            <span class="app-version-num" style="background: #10b981; color: #ffffff; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 800;">v1.1.25</span>
+                                            <span class="app-version-num" style="background: #10b981; color: #ffffff; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 800;">v1.1.26</span>
                                         </div>
                                         <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #cbd5e1;">அரசு போர்ட்டல் அதிவேக ஃபார்ம் ஆட்டோமேஷனை உங்கள் கம்ப்யூட்டரில் இயக்க</p>
                                     </div>
@@ -590,7 +573,7 @@
                                     அரசு போர்ட்டல் ஃபார்ம் ஆட்டோமேஷனை உங்கள் கம்ப்யூட்டரில் இயக்க எங்கள் ஆப்பைப் பயன்படுத்தவும்.
                                 </div>
                                 <a href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 16px; background: #16a34a; color: white; border-radius: 6px; font-size: 11.5px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 6px rgba(22,163,74,0.3);">
-                                    <i class="fa-solid fa-download"></i> 📥 Download Windows Setup (v1.1.25)
+                                    <i class="fa-solid fa-download"></i> 📥 Download Windows Setup (v1.1.26)
                                 </a>
                             </div>
                         </div>
@@ -1325,7 +1308,7 @@
                         <!-- Big Download Button -->
                         <div style="margin-bottom: 20px;">
                             <a id="hubDownloadBtn" href="/api/download/desktop-app" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 32px; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; border-radius: 12px; font-weight: 800; font-size: 16px; text-decoration: none; box-shadow: 0 6px 18px rgba(22,163,74,0.35); transition: transform 0.2s;">
-                                <i class="fa-brands fa-windows" style="font-size: 20px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (Download App <span class="app-version-num">v1.1.25</span>)
+                                <i class="fa-brands fa-windows" style="font-size: 20px;"></i> 📥 விண்டோஸ் ஆப் பதிவிறக்குக (Download App <span class="app-version-num">v1.1.26</span>)
                             </a>
                         </div>
 
@@ -1563,6 +1546,9 @@
                             </button>
                             <button type="button" id="toolTabBtn-digital-sign" onclick="switchEsevaToolSubTab('digital-sign')" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: white; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 800;">
                                 <i class="fa-solid fa-signature"></i> 4. டிஜிட்டல் கையொப்பம்
+                            </button>
+                            <button type="button" id="toolTabBtn-field-lab" onclick="switchEsevaToolSubTab('field-lab')" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1.5px solid #c7d2fe; background: #eef2ff; color: #3730a3; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 800;">
+                                <i class="fa-solid fa-flask"></i> 5. Field Lab (Blueprint)
                             </button>
                         </div>
                         <button type="button" onclick="goToHomePage()" title="முகப்புக்குத் திரும்பு" style="height: 36px; padding: 0 12px; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #0f172a; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
@@ -2096,6 +2082,70 @@
                                 </div>
                                 <div id="tool4SignedDocResult"></div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- ================================================================== -->
+                    <!-- TOOL 5 PANE: ISOLATED AIR-GAPPED FIELD LAB (BLUEPRINT RECORDER)    -->
+                    <!-- ================================================================== -->
+                    <div id="toolPane-field-lab" style="display: none; background: white; border-radius: 14px; padding: 18px; border: 1.5px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <div>
+                                <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 7px;">
+                                    🧪 Field Lab — போர்ட்டல் Blueprint பதிவுக் கூடம் (100% தனிமைப்படுத்தப்பட்டது)
+                                </h3>
+                                <p style="margin: 3px 0 0 0; font-size: 11.5px; color: #64748b;">
+                                    புதிய சேவைகளுக்கான DOM அமைப்பை (ID, Dropdowns, Validation) மட்டும் பதிவு செய்யும் தனி Sandbox. <b>Main App ஆட்டோமேஷன்களை ஒருபோதும் தொடாது; ஆதார்/OTP/மொபைல் சேமிக்கப்படாது!</b>
+                                </p>
+                            </div>
+                            <span style="background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; font-size: 10.5px; font-weight: 800; padding: 4px 10px; border-radius: 999px;">Air-Gapped Sandbox ✅</span>
+                        </div>
+
+                        <div id="labLiveStatusBox" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px;">
+                            <strong style="color:#0f172a;font-size:12.5px;">🧪 தனிமைப்படுத்தப்பட்ட Lab தயார் நிலை</strong>
+                        </div>
+
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <span style="font-size: 11px; font-weight: 700; color: #475569; align-self: center;">விரைவுத் தேர்வு:</span>
+                            <button type="button" onclick="applyFieldLabPreset('tnpds-head-change')" style="height: 28px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer;">👨‍👩‍👧‍👦 குடும்பத் தலைவர் மாற்றம் (TNPDS)</button>
+                            <button type="button" onclick="applyFieldLabPreset('tnpds-remove-member')" style="height: 28px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer;">➖ உறுப்பினர் நீக்கம் (TNPDS)</button>
+                            <button type="button" onclick="applyFieldLabPreset('tnega-revenue-new')" style="height: 28px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer;">🏛️ புதிய TNeGA சேவை</button>
+                            <button type="button" onclick="applyFieldLabPreset('eci-voter-new')" style="height: 28px; padding: 0 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer;">🗳️ வாக்காளர் அட்டை (ECI)</button>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 10px; margin-bottom: 12px;">
+                            <div>
+                                <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">சேவை பெயர் (Service):</label>
+                                <input type="text" id="labServiceNameInput" value="குடும்பத் தலைவர் மாற்றம் (Head Change)" style="width:100%;height:36px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:600;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">போர்ட்டல் பெயர்:</label>
+                                <input type="text" id="labPortalNameInput" value="TNPDS ரேஷன் போர்ட்டல்" style="width:100%;height:36px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:600;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">தொடக்க URL:</label>
+                                <input type="text" id="labPortalUrlInput" value="https://www.tnpds.gov.in" style="width:100%;height:36px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:600;">
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+                            <button type="button" id="btnLabStartRec" onclick="startFieldLabSession()" style="height: 38px; padding: 0 18px; background: #dc2626; color: white; border: none; border-radius: 9px; font-size: 12.5px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;">
+                                <i class="fa-solid fa-circle-dot"></i> 🔴 Chrome திற & பதிவு தொடங்கு (Start Lab Recording)
+                            </button>
+                            <button type="button" id="btnLabCaptureNow" onclick="captureFieldLabPage()" style="display: none; height: 38px; padding: 0 16px; background: #4f46e5; color: white; border: none; border-radius: 9px; font-size: 12.5px; font-weight: 800; cursor: pointer; align-items: center; gap: 7px;">
+                                <i class="fa-solid fa-camera"></i> 📸 இந்தப் பக்கத்தை இப்போதே Capture செய்
+                            </button>
+                            <button type="button" id="btnLabStopRec" onclick="stopFieldLabSession()" style="display: none; height: 38px; padding: 0 18px; background: #0f172a; color: white; border: none; border-radius: 9px; font-size: 12.5px; font-weight: 800; cursor: pointer; align-items: center; gap: 7px;">
+                                <i class="fa-solid fa-floppy-disk"></i> ⏹️ நிறுத்தி Blueprint சேமி (Save Blueprint)
+                            </button>
+                        </div>
+
+                        <div style="border-top: 1px solid #e2e8f0; padding-top: 12px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                <strong style="font-size:12.5px;color:#0f172a;">📂 சேமிக்கப்பட்ட Zero-PII Blueprints பட்டியல்</strong>
+                                <button type="button" onclick="refreshFieldLabState()" style="height:28px;padding:0 10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">🔄 புதுப்பி</button>
+                            </div>
+                            <div id="labBlueprintsList" style="display:flex;flex-direction:column;gap:8px;"></div>
                         </div>
                     </div>
 
@@ -3434,7 +3484,7 @@
 
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <a href="/api/download/desktop-app" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 10px; font-weight: 800; font-size: 14px; text-decoration: none; box-shadow: 0 4px 14px rgba(16,185,129,0.35);">
-                    <i class="fa-brands fa-windows"></i> 📥 ஆப் டவுன்லோட் செய்க (Download App <span class="app-version-num">v1.1.25</span>)
+                    <i class="fa-brands fa-windows"></i> 📥 ஆப் டவுன்லோட் செய்க (Download App <span class="app-version-num">v1.1.26</span>)
                 </a>
                 <span style="font-size: 11px; color: #64748b; text-align: center;">
                     ஏற்கனவே இன்ஸ்டால் செய்திருந்தால்: உங்கள் கம்ப்யூட்டரில் உள்ள <b>eSevaDraft</b> ஆப்பைத் திறக்கவும்
@@ -3469,5 +3519,6 @@
     <script src="vendor/pdf-lib.min.js"></script>
     <script src="vendor/pdf.min.js"></script>
     <script src="js/modules/eseva_tools.js"></script>
+    <script src="js/modules/field_lab_ui.js"></script>
 </body>
 </html>

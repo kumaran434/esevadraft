@@ -28,6 +28,7 @@
         const btnSaveDraft = document.getElementById('btnSaveDraftTop');
         const btnHome = document.getElementById('btnHeaderHome');
         const btnTools = document.getElementById('btnHeaderTools');
+        const btnFieldLab = document.getElementById('btnHeaderFieldLab');
         const btnReset = document.getElementById('btnHeaderReset');
         const btnCounterQr = document.getElementById('btnInstantCounterQr');
         const profileBadge = document.getElementById('authProfileBadge');
@@ -40,6 +41,7 @@
             if (btnSaveDraft) btnSaveDraft.style.display = 'none';
             if (btnHome) btnHome.style.display = 'none';
             if (btnTools) btnTools.style.display = 'none';
+            if (btnFieldLab) btnFieldLab.style.display = 'none';
             if (btnReset) btnReset.style.display = 'none';
             if (btnCounterQr) btnCounterQr.style.display = 'none';
             if (profileBadge) profileBadge.style.display = 'none';
@@ -54,6 +56,7 @@
         if (btnLogout) btnLogout.style.display = 'inline-flex';
         if (btnHome) btnHome.style.display = 'inline-flex';
         if (btnTools) btnTools.style.display = 'inline-flex';
+        if (btnFieldLab) btnFieldLab.style.display = 'inline-flex';
         if (devMockBadge) devMockBadge.style.display = 'none';
 
         // 3. Tab-specific display logic

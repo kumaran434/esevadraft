@@ -425,6 +425,8 @@
             const homeHeaderBtn = document.getElementById('btnHeaderHome');
             const toolsHeaderBtn = document.getElementById('btnHeaderTools');
             if (toolsHeaderBtn) toolsHeaderBtn.style.display = 'inline-flex';
+            const fieldLabHeaderBtn = document.getElementById('btnHeaderFieldLab');
+            if (fieldLabHeaderBtn) fieldLabHeaderBtn.style.display = 'inline-flex';
 
             if (isOp) {
                 // Restore Operator layout

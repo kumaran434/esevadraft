@@ -4053,6 +4053,71 @@ async function runTests() {
             passedCount += 25;
         }
 
+        // =========================================================================
+        // TEST 63: 🧪 Isolated Air-Gapped Field Lab / Blueprint Recorder Lock
+        // =========================================================================
+        console.log('\n[TEST 63] 🧪 Verifying 100% Air-Gapped Field Lab Blueprint Recorder & Zero-PII Scrubbing...');
+        {
+            const recSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'field_lab_recorder.js'), 'utf8');
+            const routeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'field_lab_routes.js'), 'utf8');
+
+            // 1. Strict Architectural Air-Gap Check (NEVER touches production automations, FSM, or drafts)
+            const forbiddenImports = ['tnpds_automation', 'tnega_', 'chat_fsm', 'automation_runner', 'draft_manage'];
+            for (const bad of forbiddenImports) {
+                assert(!recSrc.includes(bad) && !routeSrc.includes(bad), `Field Lab stays 100% air-gapped (never imports ${bad})`);
+            }
+            assert(recSrc.includes('9225') && !recSrc.includes('9222'), 'Field Lab uses dedicated debug port 9225 and never collides with port 9222');
+
+            // 2. Strict Zero-PII Scrubbing Verification
+            const { scrubPiiText, sanitizeCapturedSnapshot, sanitizePortalUrl } = require('../src/services/field_lab_recorder');
+            const dirtyText = 'User +91 9842367866 Aadhaar 3115 2646 6205 OTP: 482910 email test.user@gmail.com CAN 133370314319242';
+            const cleanedText = scrubPiiText(dirtyText);
+            assert(!cleanedText.includes('9842367866') && !cleanedText.includes('3115') && !cleanedText.includes('482910') && !cleanedText.includes('test.user@gmail.com') && !cleanedText.includes('133370314319242'), 'scrubPiiText masks mobile, Aadhaar, OTP, email, and CAN numbers completely');
+
+            const sanSnap = sanitizeCapturedSnapshot({
+                url: 'https://tnedistrict.tn.gov.in/eda/common/includePage.xhtml?formId=16&secretToken=abc999',
+                title: 'Widow Certificate Form',
+                fields: [{ tag: 'INPUT', type: 'text', id: 'AD_SpouseNameID', value: 'Secret Citizen Name', label: 'Spouse Name 9842367866' }],
+                buttons: [{ tag: 'BUTTON', id: 'btnSubmit', text: 'Submit' }]
+            });
+            assert(sanSnap.piiStripped === true && sanSnap.fields[0].value === '', 'sanitizeCapturedSnapshot wipes all input values');
+            assert(!sanSnap.fields[0].label.includes('9842367866'), 'sanitizeCapturedSnapshot scrubs phone numbers from field labels');
+            assert(sanSnap.url.includes('formId=16') && !sanSnap.url.includes('secretToken'), 'sanitizePortalUrl strips session tokens while keeping formId');
+
+            // 3. Isolated Endpoint & UI Verification
+            const stRes = await request('GET', '/api/lab/status');
+            assert(stRes.status === 200 && stRes.body.success === true && stRes.body.isRecording === false, 'GET /api/lab/status returns clean idle state');
+            const bpRes = await request('GET', '/api/lab/blueprints');
+            assert(bpRes.status === 200 && Array.isArray(bpRes.body.blueprints), 'GET /api/lab/blueprints returns 200 & array');
+
+            const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            assert(indexHtml.includes('id="toolTabBtn-field-lab"') && indexHtml.includes('id="toolPane-field-lab"') && indexHtml.includes('field_lab_ui.js'), 'index.html exposes isolated Field Lab pane & controller');
+            assert(indexHtml.includes('id="btnHeaderFieldLab"') && !indexHtml.includes('id="btnToggleUiTheme"'), 'index.html places Field Lab icon directly in header and locks Studio UI without theme switcher button');
+            assert(indexHtml.includes("document.body.classList.add('eseva-studio-ui')"), 'Studio UI is permanently locked on startup');
+
+            // 4. Cloud-Sync Ingestion & Zero-PII Re-Scrub Verification
+            const badSync = await request('POST', '/api/lab/cloud-sync', {});
+            assert(badSync.status === 400, 'POST /api/lab/cloud-sync rejects invalid empty payload');
+            const testSyncId = `bp_test_cloud_${Date.now()}`;
+            const goodSync = await request('POST', '/api/lab/cloud-sync', {
+                id: testSyncId,
+                serviceName: 'Cloud Sync Test 9842367866',
+                portalName: 'TNeGA Test',
+                startUrl: 'https://www.tnesevai.tn.gov.in?secretToken=xyz&formId=9',
+                steps: [{ url: 'https://www.tnesevai.tn.gov.in', fields: [{ id: 'f1', value: 'LeakShouldWipe', label: 'Aadhaar 3115 2646 6205' }], buttons: [] }],
+                clicks: [{ text: 'Call 9842367866', id: 'btnNext' }]
+            });
+            assert(goodSync.status === 200 && goodSync.body.success === true && goodSync.body.piiStrippedGuaranteed === true, 'POST /api/lab/cloud-sync accepts blueprint and enforces Zero-PII');
+            const syncedRead = await request('GET', `/api/lab/blueprints/${testSyncId}`);
+            assert(syncedRead.status === 200 && syncedRead.body.blueprint.steps[0].fields[0].value === '' && !syncedRead.body.blueprint.serviceName.includes('9842367866'), 'Cloud-synced blueprint strictly wipes PII values and masks phone numbers');
+            await request('DELETE', `/api/lab/blueprints/${testSyncId}`);
+
+            const cloudListRes = await request('GET', '/api/lab/cloud-blueprints');
+            assert(cloudListRes.status === 200 && Array.isArray(cloudListRes.body.blueprints), 'GET /api/lab/cloud-blueprints returns 200 & array');
+
+            passedCount += 19;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');

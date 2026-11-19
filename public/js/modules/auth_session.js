@@ -690,6 +690,8 @@
             if (btnHome) btnHome.style.display = 'none';
             const btnTools = document.getElementById('btnHeaderTools');
             if (btnTools) btnTools.style.display = 'none';
+            const btnFieldLab = document.getElementById('btnHeaderFieldLab');
+            if (btnFieldLab) btnFieldLab.style.display = 'none';
             const btnReset = document.getElementById('btnHeaderReset');
             if (btnReset) btnReset.style.display = 'none';
             const btnSave = document.getElementById('btnSaveDraftTop');

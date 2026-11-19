@@ -60,7 +60,7 @@ if (!isTestEnv && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 if (!isTestEnv && (process.env.K_SERVICE || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GAE_SERVICE)) {
     try {
         Firestore = require('@google-cloud/firestore').Firestore;
-        firestoreInstance = new Firestore({ projectId: PROJECT_ID });
+        firestoreInstance = new Firestore({ projectId: PROJECT_ID, ignoreUndefinedProperties: true });
         firestoreAvailable = true;
         console.log('☁️ [Local + Cloud Sync] Firestore client initialized for project:', PROJECT_ID);
     } catch (e) {

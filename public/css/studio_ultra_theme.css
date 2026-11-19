@@ -201,6 +201,14 @@ body.eseva-studio-ui .nav-icon-btn.btn-tools:hover i {
     color: #7c3aed !important;
 }
 
+body.eseva-studio-ui .nav-icon-btn.btn-field-lab:hover {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+}
+body.eseva-studio-ui .nav-icon-btn.btn-field-lab:hover i {
+    color: #059669 !important;
+}
+
 body.eseva-studio-ui .nav-icon-btn.nav-btn-logout:hover,
 body.eseva-studio-ui .nav-icon-btn.btn-reset:hover {
     background: #fef2f2 !important;
