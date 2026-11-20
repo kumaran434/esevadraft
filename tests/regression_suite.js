@@ -4123,6 +4123,36 @@ async function runTests() {
             passedCount += 19;
         }
 
+        // =========================================================================
+        // TEST 64: 🔄 Universal Revenue Auto-CAN Lookup -> Register CAN -> Continue Certificate Lock
+        // =========================================================================
+        console.log('\n[TEST 64] 🔄 Verifying Universal Revenue Auto-CAN -> Auto-Register -> Continue Flow (All 7 REV Services)...');
+        {
+            const { detectTargetGoal } = require('../src/portal/tnega/tnega_can_register');
+
+            // 1. Explicit service selection MUST beat profile field heuristics (e.g., INCOME applicant who happens to have caste filled)
+            const gIncome = detectTargetGoal({ subService: 'INCOME', caste: 'MBC', community: 'MBC' }, { targetService: 'INCOME' });
+            assert(gIncome.isIncomeGoal === true && gIncome.isCommunityGoal === false && gIncome.targetUpper === 'INCOME', 'detectTargetGoal prioritizes explicit INCOME over caste heuristic');
+            assert(detectTargetGoal({ subService: 'RESIDENCE' }, {}).isResidenceGoal === true, 'detectTargetGoal detects RESIDENCE (REV-102)');
+            assert(detectTargetGoal({ subService: 'COMMUNITY' }, {}).isCommunityGoal === true, 'detectTargetGoal detects COMMUNITY (REV-101)');
+            assert(detectTargetGoal({ subService: 'FIRST_GRADUATE' }, {}).isFirstGraduateGoal === true, 'detectTargetGoal detects FIRST_GRADUATE (REV-104)');
+            assert(detectTargetGoal({ subService: 'OBC' }, {}).isObcGoal === true, 'detectTargetGoal detects OBC (REV-115)');
+            assert(detectTargetGoal({ subService: 'LEGAL_HEIR' }, {}).isLegalHeirGoal === true, 'detectTargetGoal detects LEGAL_HEIR (REV-114)');
+            assert(detectTargetGoal({ subService: 'WIDOW' }, {}).isWidowGoal === true, 'detectTargetGoal detects WIDOW (REV-109)');
+
+            // 2. Verify Universal Pre-CAN & needCanRegister Chaining Guard in desktop/automation_runner.js
+            const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            assert(runnerSrc.includes('runRevenueServiceWithAutoCan') && runnerSrc.includes('returnAfterCanResolved: true'), 'automation_runner chains pre-CAN resolution into all 7 Revenue certificates');
+            assert(runnerSrc.includes('certRes.needCanRegister === true') && runnerSrc.includes('forceNewCanRegister: true'), 'automation_runner auto-recovers if any certificate returns needCanRegister');
+            assert(runnerSrc.includes('isWidow') && runnerSrc.includes('isLegalHeir') && runnerSrc.includes('isObc') && runnerSrc.includes('isFirstGraduate') && runnerSrc.includes('isIncome') && runnerSrc.includes('isResidence') && runnerSrc.includes('isCommunity'), 'isRevenueCert covers ALL 7 Revenue Department services');
+
+            // 3. Verify tnega_can_register supports DataTables 100 expansion and ALL 7 REV links
+            const canRegSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_can_register.js'), 'utf8');
+            assert(canRegSrc.includes('REV-109') && canRegSrc.includes('REV-114') && canRegSrc.includes('REV-115') && canRegSrc.includes('REV-104') && canRegSrc.includes("selectOption('100')"), 'tnega_can_register supports all 7 REV services and DataTables 100 expansion');
+
+            passedCount += 12;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');

@@ -664,9 +664,10 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     };
 
     const base64Docs = Object.assign({}, draftData?.base64Docs || {}, draftData?.citizenProfile?.base64Docs || {});
+    const isRevenueCert = Boolean(isIncome || isResidence || isCommunity || isFirstGraduate || isObc || isLegalHeir || isWidow);
 
-    runner(targetProfile, onProgress, { 
-        isMockSandbox: false, 
+    const runOptions = {
+        isMockSandbox: false,
         mockSandbox: false,
         isMockSandboxMode: false,
         headless: false,
@@ -683,6 +684,16 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         base64Docs,
         geminiApiKey: process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8'),
         serverUrl: process.env.ESEVA_DEV_URL || 'https://esevadraft.in'
+    };
+
+    runRevenueServiceWithAutoCan({
+        isRevenueCert,
+        tnegaModule,
+        runner,
+        targetProfile,
+        onProgress,
+        runOptions,
+        writeLogEntry
     }).then(res => {
         clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
@@ -725,8 +736,75 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         }
     });
 
-    const portalName = (isCanRegister || isCanSearch || isIncome || isResidence || isCommunity || isFirstGraduate || isObc) ? 'TNeGA' : 'TNPDS';
+    const portalName = (isCanRegister || isCanSearch || isRevenueCert) ? 'TNeGA' : 'TNPDS';
     return { success: true, message: `${portalName} Chrome திறக்கப்பட்டது — படிவம் தானாக நிரப்பப்படுகிறது!` };
+}
+
+/**
+ * Universal Revenue Department Pre-CAN + Certificate Chaining Guard.
+ * Works across ALL 7 TNeGA Revenue Certificates without modifying frozen certificate files:
+ *  - If CAN is missing before launch -> searches portal -> auto-registers CAN if not found -> continues straight to Certificate.
+ *  - If certificate still returns { needCanRegister: true } -> auto-registers CAN -> re-enters Certificate up to Pre-Submit Gate.
+ */
+async function runRevenueServiceWithAutoCan({ isRevenueCert, tnegaModule, runner, targetProfile, onProgress, runOptions, writeLogEntry }) {
+    const canRegFn = tnegaModule && (tnegaModule.startTnegaCanRegisterFlow || tnegaModule.registerNewCan);
+
+    if (isRevenueCert && !targetProfile.canNumber && typeof canRegFn === 'function') {
+        const msgStart = '🔍 [தானியங்கி CAN + சான்றிதழ் சங்கிலி] சுயவிவரத்தில் CAN எண் இல்லை — போர்ட்டலில் CAN தேடி, இல்லாவிட்டால் உடனடியாக புதிய CAN பதிவு செய்து தொடர்ந்து சான்றிதழ் விண்ணப்பத்தை நிரப்புகிறது...';
+        onProgress(msgStart);
+        if (typeof writeLogEntry === 'function') writeLogEntry(msgStart);
+
+        const canRes = await canRegFn(targetProfile, onProgress, {
+            ...runOptions,
+            returnAfterCanResolved: true
+        });
+        if (!canRes || !canRes.success || !canRes.canNumber) {
+            return canRes || { success: false, needCanRegister: true, error: 'CAN resolution halted before certificate stage' };
+        }
+
+        const resolvedCan = String(canRes.canNumber).replace(/\D+/g, '');
+        targetProfile.canNumber = resolvedCan;
+        runOptions.canNumber = resolvedCan;
+        if (runOptions.draftData) {
+            runOptions.draftData.canNumber = resolvedCan;
+            if (runOptions.draftData.citizenProfile) runOptions.draftData.citizenProfile.canNumber = resolvedCan;
+        }
+        const msgHandover = `✅ CAN எண் (${resolvedCan}) உறுதி செய்யப்பட்டது — இப்போது ${runOptions.targetService || targetProfile.subService} சான்றிதழ் படிவத்திற்குத் தானாகத் தொடர்கிறது!`;
+        onProgress(msgHandover);
+        if (typeof writeLogEntry === 'function') writeLogEntry(msgHandover);
+    }
+
+    let certRes = await runner(targetProfile, onProgress, runOptions);
+
+    if (isRevenueCert && certRes && certRes.needCanRegister === true && typeof canRegFn === 'function') {
+        const msgFallback = '🔄 [தானியங்கி மீட்பு] போர்ட்டலில் CAN எண் இல்லாததால் தானாகவே "Register Can" பக்கம் சென்று புதிய CAN பதிவு செய்து சான்றிதழைத் தொடர்கிறது...';
+        onProgress(msgFallback);
+        if (typeof writeLogEntry === 'function') writeLogEntry(msgFallback);
+
+        targetProfile.canNumber = '';
+        runOptions.canNumber = '';
+        const canRes = await canRegFn(targetProfile, onProgress, {
+            ...runOptions,
+            canNumber: '',
+            returnAfterCanResolved: true,
+            forceNewCanRegister: true
+        });
+        if (!canRes || !canRes.success || !canRes.canNumber) {
+            return canRes || certRes;
+        }
+
+        const resolvedCan = String(canRes.canNumber).replace(/\D+/g, '');
+        targetProfile.canNumber = resolvedCan;
+        runOptions.canNumber = resolvedCan;
+        if (runOptions.draftData) {
+            runOptions.draftData.canNumber = resolvedCan;
+            if (runOptions.draftData.citizenProfile) runOptions.draftData.citizenProfile.canNumber = resolvedCan;
+        }
+        onProgress(`✅ புதிய CAN எண் (${resolvedCan}) பதிவு செய்யப்பட்டது — சான்றிதழ் படிவம் தொடர்கிறது!`);
+        certRes = await runner(targetProfile, onProgress, runOptions);
+    }
+
+    return certRes;
 }
 
 async function stopActiveAutomation() {
@@ -796,6 +874,7 @@ async function stopActiveAutomation() {
 
 module.exports = {
     executeLiveDesktopAutomation,
+    runRevenueServiceWithAutoCan,
     resolveDiskDraftAndGas,
     loadAutomationModule,
     resolveStorageService,

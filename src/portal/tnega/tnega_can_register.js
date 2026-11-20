@@ -66,51 +66,63 @@ async function safeSaveCanToDraft(mobile, citizenProfile, canNumber, subService 
 }
 
 /**
- * Accurately detects whether the citizen/draft goal is Community, Residence, or Income Certificate.
- * Strictly adheres to Golden Rule 6 & 11 (Strict 1-to-1 Portal Dropdown/Link Mapping).
+ * Accurately detects whether the citizen/draft goal is any of the 7 TNeGA Revenue Department Certificates.
+ * Strictly checks explicit service hints FIRST (Rule 6 & Rule 11) before any profile-field heuristics.
  */
 function detectTargetGoal(citizenProfile = {}, options = {}) {
-    const rawTarget = options.targetService || 
-                      citizenProfile.targetService || 
-                      options.draftData?.targetService ||
-                      options.draftData?.citizenProfile?.targetService ||
-                      options.draftData?.service ||
-                      options.draftData?.serviceId ||
-                      citizenProfile.service ||
-                      citizenProfile.serviceId ||
-                      citizenProfile.parentService || 
-                      options.parentService ||
-                      options.subService ||
-                      citizenProfile.subService || '';
-    const targetUpper = String(rawTarget).toUpperCase();
+    const candidates = [
+        options.targetService,
+        options.subService,
+        options.serviceId,
+        options.draftData?.targetService,
+        options.draftData?.subService,
+        options.draftData?.serviceId,
+        options.draftData?.service,
+        options.draftData?.citizenProfile?.targetService,
+        options.draftData?.citizenProfile?.subService,
+        citizenProfile.targetService,
+        citizenProfile.subService,
+        citizenProfile.serviceId,
+        citizenProfile.service,
+        citizenProfile.parentService,
+        options.parentService
+    ].filter(Boolean).map(v => String(v).toUpperCase());
+
+    const combinedExplicit = candidates.join(' | ');
     const intakeState = String(citizenProfile.intakeState || options.draftData?.intakeState || options.intakeState || '').toUpperCase();
+    const explicitStr = `${combinedExplicit} | ${intakeState}`;
 
-    // Check Community Goal
-    const isCommunityGoal = targetUpper.includes('COMMUNITY') || 
-                            targetUpper.includes('சாதி') || 
-                            intakeState.includes('COMMUNITY') || 
-                            Boolean(citizenProfile.caste || citizenProfile.community || options.draftData?.citizenProfile?.caste || options.draftData?.caste);
+    const isWidowGoal = /WIDOW|REV-109|விதவை/.test(explicitStr);
+    const isLegalHeirGoal = !isWidowGoal && /LEGAL_HEIR|LEGAL HEIR|REV-114|வாரிசு/.test(explicitStr);
+    const isObcGoal = !isWidowGoal && !isLegalHeirGoal && /\bOBC\b|OBC_|REV-115|OTHER BACKWARD/.test(explicitStr);
+    const isFirstGraduateGoal = !isWidowGoal && !isLegalHeirGoal && !isObcGoal && /FIRST_GRADUATE|FIRST GRADUATE|REV-104|முதல் பட்டதாரி/.test(explicitStr);
+    const isIncomeGoalExplicit = !isWidowGoal && !isLegalHeirGoal && !isObcGoal && !isFirstGraduateGoal && /INCOME|REV-103|வருமான/.test(explicitStr);
+    const isResidenceGoalExplicit = !isWidowGoal && !isLegalHeirGoal && !isObcGoal && !isFirstGraduateGoal && !isIncomeGoalExplicit && /RESIDENCE|NATIVITY|REV-102|இருப்பிட/.test(explicitStr);
+    const isCommunityGoalExplicit = !isWidowGoal && !isLegalHeirGoal && !isObcGoal && !isFirstGraduateGoal && !isIncomeGoalExplicit && !isResidenceGoalExplicit && /COMMUNITY|REV-101|சாதி/.test(explicitStr);
 
-    // Check Residence Goal
-    const isResidenceGoal = !isCommunityGoal && (
-                            targetUpper.includes('RESIDENCE') || 
-                            targetUpper.includes('NATIVITY') || 
-                            targetUpper.includes('இருப்பிடம்') || 
-                            intakeState.includes('RESIDENCE') || 
-                            intakeState.includes('NATIVITY') ||
-                            Boolean(citizenProfile.yearsOfResidence || options.draftData?.citizenProfile?.yearsOfResidence));
+    const anyExplicitCert = isWidowGoal || isLegalHeirGoal || isObcGoal || isFirstGraduateGoal || isIncomeGoalExplicit || isResidenceGoalExplicit || isCommunityGoalExplicit;
+    const isExplicitCanOnly = !anyExplicitCert && /\bCAN_REGISTER\b|\bCAN_SEARCH\b/.test(explicitStr);
 
-    // Check Income Goal
-    const isIncomeGoal = !isCommunityGoal && !isResidenceGoal && (
-                            targetUpper.includes('INCOME') || 
-                            targetUpper.includes('வருமானம்') || 
-                            intakeState.includes('INCOME') || 
-                            Boolean(citizenProfile.annualIncome || options.draftData?.citizenProfile?.annualIncome));
+    // Fallback field heuristics ONLY when no explicit certificate/CAN-only goal was declared
+    const isCommunityGoal = isCommunityGoalExplicit || (!anyExplicitCert && !isExplicitCanOnly && Boolean(citizenProfile.caste || citizenProfile.community || options.draftData?.citizenProfile?.caste || options.draftData?.caste));
+    const isResidenceGoal = isResidenceGoalExplicit || (!anyExplicitCert && !isExplicitCanOnly && !isCommunityGoal && Boolean(citizenProfile.yearsOfResidence || options.draftData?.citizenProfile?.yearsOfResidence));
+    const isIncomeGoal = isIncomeGoalExplicit || (!anyExplicitCert && !isExplicitCanOnly && !isCommunityGoal && !isResidenceGoal && Boolean(citizenProfile.annualIncome || options.draftData?.citizenProfile?.annualIncome));
 
-    const hasCertificateGoal = (isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
-    const resolvedTarget = isCommunityGoal ? 'COMMUNITY' : (isResidenceGoal ? 'RESIDENCE' : (isIncomeGoal ? 'INCOME' : (targetUpper === 'CAN_SEARCH' ? 'CAN_SEARCH' : 'CAN_REGISTER')));
+    const hasCertificateGoal = (isWidowGoal || isLegalHeirGoal || isObcGoal || isFirstGraduateGoal || isCommunityGoal || isResidenceGoal || isIncomeGoal) && options.searchOnly !== true;
+    const resolvedTarget = isWidowGoal ? 'WIDOW'
+        : (isLegalHeirGoal ? 'LEGAL_HEIR'
+        : (isObcGoal ? 'OBC'
+        : (isFirstGraduateGoal ? 'FIRST_GRADUATE'
+        : (isCommunityGoal ? 'COMMUNITY'
+        : (isResidenceGoal ? 'RESIDENCE'
+        : (isIncomeGoal ? 'INCOME'
+        : (explicitStr.includes('CAN_SEARCH') ? 'CAN_SEARCH' : 'CAN_REGISTER')))))));
 
     return {
+        isWidowGoal,
+        isLegalHeirGoal,
+        isObcGoal,
+        isFirstGraduateGoal,
         isCommunityGoal,
         isResidenceGoal,
         isIncomeGoal,
@@ -1017,20 +1029,52 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         onProgress(`📄 CAN பதிவு ஒப்புதல் ரசீது PDF உருவாக்கப்பட்டது.`);
 
         const goal = detectTargetGoal(citizenProfile, options);
-        const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal } = goal;
+        const { isWidowGoal, isLegalHeirGoal, isObcGoal, isFirstGraduateGoal, isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal } = goal;
+
+        if (options.returnAfterCanResolved === true) {
+            return {
+                success: true,
+                newlyRegistered: true,
+                canNumber: mockNewCan,
+                applicationNumber: mockNewCan,
+                citizenName: fullNameTam,
+                mobile: mobile,
+                aadhaar: aadhaar,
+                receiptPdf: receiptPath,
+                isMockSandbox: true,
+                message: `🎉 [Safe Mock Sandbox] புதிய 13-இலக்க CAN எண் உருவாக்கப்பட்டது (${mockNewCan}) — சான்றிதழ் விண்ணப்பம் தொடர்கிறது...`
+            };
+        }
 
         if (hasCertificateGoal) {
-            const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
+            const goalNameTam = isWidowGoal ? 'விதவைச் சான்றிதழ் (REV-109)'
+                : (isLegalHeirGoal ? 'வாரிசு சான்றிதழ் (REV-114)'
+                : (isObcGoal ? 'OBC சான்றிதழ் (REV-115)'
+                : (isFirstGraduateGoal ? 'முதல் பட்டதாரி சான்றிதழ் (REV-104)'
+                : (isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)'
+                : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)')))));
             onProgress(`🎉 [Safe Mock Sandbox] புதிய CAN எண் (${mockNewCan}) உருவாக்கப்பட்டது! ${goalNameTam} படிவத்திற்குத் தானாகத் தொடர்கிறது...`);
-            if (isCommunityGoal) {
+            if (isWidowGoal) {
+                const { startTnegaWidowFlow } = require('./tnega_widow_certificate');
+                return await startTnegaWidowFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
+            } else if (isLegalHeirGoal) {
+                const { startTnegaLegalHeirFlow } = require('./tnega_legal_heir');
+                return await startTnegaLegalHeirFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
+            } else if (isObcGoal) {
+                const { startTnegaObcCertificateFlow } = require('./tnega_obc_certificate');
+                return await startTnegaObcCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
+            } else if (isFirstGraduateGoal) {
+                const { startTnegaFirstGraduateFlow } = require('./tnega_first_graduate');
+                return await startTnegaFirstGraduateFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
+            } else if (isCommunityGoal) {
                 const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
-                return await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
+                return await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
             } else if (isResidenceGoal) {
                 const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
-                return await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
+                return await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
             } else {
                 const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
-                return await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
+                return await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: mockNewCan });
             }
         }
 
@@ -1260,12 +1304,36 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                 await tnegaPage.waitForTimeout(1200);
                             }
 
-                            // Click matching service link based on target service (Golden Rule 6 & 11)
+                            // Expand DataTables pagination ("10" -> "100") so REV-104/REV-109/REV-114/REV-115 are always visible
+                            const dtLenSel = tnegaPage.locator('.dataTables_length select, select[name*="Length"], select[aria-controls]').first();
+                            if (await dtLenSel.count() > 0 && await dtLenSel.isVisible().catch(() => false)) {
+                                const curLen = await dtLenSel.inputValue().catch(() => '');
+                                if (curLen !== '100') {
+                                    await dtLenSel.selectOption('100').catch(async () => {
+                                        await dtLenSel.selectOption({ label: '100' }).catch(() => {});
+                                    });
+                                    await tnegaPage.waitForTimeout(800);
+                                }
+                            }
+
+                            // Click matching service link based on target service (All 7 Revenue Services)
                             const goal = detectTargetGoal(citizenProfile, options);
-                            const { isCommunityGoal, isResidenceGoal, isIncomeGoal } = goal;
+                            const { isWidowGoal, isLegalHeirGoal, isObcGoal, isFirstGraduateGoal, isCommunityGoal, isResidenceGoal, isIncomeGoal } = goal;
 
                             let certLink = null;
-                            if (isCommunityGoal) {
+                            if (isWidowGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-109"), a:has-text("REV-109"), a:has-text("Widow Certificate"), a:has-text("Widow certificate"), td:has-text("REV-109") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] விதவைச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-109) — CAN சரிபார்ப்பிற்காகக் கிளிக் செய்யப்படுகிறது...');
+                            } else if (isLegalHeirGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-114"), a:has-text("REV-114"), a:has-text("Legal Heir"), td:has-text("REV-114") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] வாரிசு சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-114) — CAN சரிபார்ப்பிற்காகக் கிளிக் செய்யப்படுகிறது...');
+                            } else if (isObcGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-115"), a:has-text("REV-115"), a:has-text("Other Backward Classes"), a:has-text("OBC Certificate"), td:has-text("REV-115") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] OBC சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-115) — CAN சரிபார்ப்பிற்காகக் கிளிக் செய்யப்படுகிறது...');
+                            } else if (isFirstGraduateGoal) {
+                                certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-104"), a:has-text("REV-104"), a:has-text("First Graduate"), td:has-text("REV-104") a').first();
+                                onProgress('🔍 [DOM பகுப்பாய்வு] முதல் பட்டதாரி சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-104) — CAN சரிபார்ப்பிற்காகக் கிளிக் செய்யப்படுகிறது...');
+                            } else if (isCommunityGoal) {
                                 certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-101"), a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a:has-text("Community certificate"), td:has-text("REV-101") a').first();
                                 onProgress('🔍 [DOM பகுப்பாய்வு] சாதிச் சான்றிதழ் சேவை கண்டறியப்பட்டது (REV-101 Community certificate) — கிளிக் செய்யப்படுகிறது...');
                             } else if (isResidenceGoal) {
@@ -1278,6 +1346,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                 certLink = tnegaPage.locator('a[href*="eDistrict.aspx"]:has-text("REV-101"), a:has-text("REV-101 Community certificate"), a:has-text("REV-101"), a:has-text("Community certificate"), td:has-text("REV-101") a').first();
                                 onProgress('🔍 [DOM பகுப்பாய்வு] சேவை தேர்ந்தெடுக்கப்படுகிறது (REV-101 Community certificate)...');
                             }
+
+                            if (certLink && await certLink.count() > 0 && await certLink.isVisible().catch(() => false)) {
                                 rev103Clicked = true;
                                 rev103ClickTime = Date.now();
 
@@ -1342,7 +1412,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
 
                     // 5. Smart 2-in-1 CAN Pre-Check Search + Auto-Fallback to "Register Can" on validateAadhar.xhtml
                     const isValidatePage = currentUrl.includes('validateaadhar') || (await tnegaPage.locator('input#statusform\\:Search, input#statusform\\:aadharNo').count()) > 0;
-                    const btnReg = tnegaPage.locator('a:has-text("Register Can"), a[href*="canregistration"], input#btnRegisterCAN, button#btnRegisterCAN, input[value*="Register CAN"]').first();
+                    const btnReg = tnegaPage.locator('a:has-text("Register Can"), a:has-text("Register CAN"), a[href*="canregistration"], input#btnRegisterCAN, button#btnRegisterCAN, input[value*="Register CAN" i], input[value*="Register Can" i]').first();
                     if (isValidatePage || (await btnReg.count() > 0 && await btnReg.isVisible())) {
                         const isFormActive = (await tnegaPage.locator('#canreg\\:aadharnum').count()) > 0;
                         if (!isFormActive) {
@@ -1377,7 +1447,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                     const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal, targetUpper } = canGoal;
                                     await safeSaveCanToDraft(mobile, citizenProfile, foundCan, targetUpper || citizenProfile.subService || options.subService || 'CAN_REGISTER');
 
-                                    if (hasCertificateGoal) {
+                                    if (hasCertificateGoal && options.returnAfterCanResolved !== true) {
                                         const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
                                         onProgress(`🎉 ஏற்கனவே பதிவு செய்யப்பட்ட CAN எண் (${foundCan}) தேர்ந்தெடுக்கப்பட்டது! ${goalNameTam} படிவத்திற்கு (Proceed) செல்கிறது...`);
                                         await updateTnegaHud(tnegaPage, {
@@ -1565,6 +1635,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                             }
                         }
                     }
+                }
 
                 // Check if CAN form or Citizen Registration form is active
                 const hasAadhaarInp = (await tnegaPage.locator('#canreg\\:aadharnum, input[name*="aadharnum"], input#txtAadhaar, input[name*="Aadhaar"]').count()) > 0;
@@ -2075,7 +2146,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                         }
 
                         const goal = detectTargetGoal(citizenProfile, options);
-                        const { isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal, targetUpper } = goal;
+                        const { isWidowGoal, isLegalHeirGoal, isObcGoal, isFirstGraduateGoal, isCommunityGoal, isResidenceGoal, isIncomeGoal, hasCertificateGoal, targetUpper } = goal;
 
                         await safeSaveCanToDraft(mobile, citizenProfile, newCan, hasCertificateGoal ? targetUpper : 'CAN_REGISTER');
 
@@ -2083,21 +2154,57 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                         onProgress(`🌟 புதிய CAN எண்: ${newCan}`);
                         onProgress(`📄 ஒப்புதல் ரசீது PDF தயாராக உள்ளது.`);
 
+                        if (options.returnAfterCanResolved === true) {
+                            try {
+                                await tnegaPage.goto('https://www.tnesevai.tn.gov.in/Home/Services.aspx', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+                                await tnegaPage.waitForTimeout(1200);
+                            } catch (_) {}
+                            return resolve({
+                                success: true,
+                                newlyRegistered: true,
+                                canNumber: newCan,
+                                applicationNumber: newCan,
+                                citizenName: fullNameTam,
+                                mobile,
+                                aadhaar,
+                                receiptPdf: receiptPath,
+                                message: `🎉 புதிய 13-இலக்க CAN எண் உருவாக்கப்பட்டது (${newCan}) — சான்றிதழ் விண்ணப்பத்திற்குத் தொடர்கிறது...`
+                            });
+                        }
+
                         if (hasCertificateGoal) {
-                            const goalNameTam = isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)' : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)');
+                            const goalNameTam = isWidowGoal ? 'விதவைச் சான்றிதழ் (REV-109)'
+                                : (isLegalHeirGoal ? 'வாரிசு சான்றிதழ் (REV-114)'
+                                : (isObcGoal ? 'OBC சான்றிதழ் (REV-115)'
+                                : (isFirstGraduateGoal ? 'முதல் பட்டதாரி சான்றிதழ் (REV-104)'
+                                : (isCommunityGoal ? 'சாதிச் சான்றிதழ் (REV-101)'
+                                : (isResidenceGoal ? 'இருப்பிடச் சான்றிதழ் (REV-102)' : 'வருமானச் சான்றிதழ் (REV-103)')))));
                             onProgress(`🎉 [முதன்மை இலக்கு தொடர்ச்சி] புதிய CAN எண் (${newCan}) பதிவு செய்யப்பட்டது! ${goalNameTam} விண்ணப்பத்திற்குத் தானாகத் தொடர்கிறது...`);
-                            if (isCommunityGoal) {
+                            try {
+                                await tnegaPage.goto('https://www.tnesevai.tn.gov.in/Home/Services.aspx', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+                                await tnegaPage.waitForTimeout(1500);
+                            } catch (_) {}
+                            if (isWidowGoal) {
+                                const { startTnegaWidowFlow } = require('./tnega_widow_certificate');
+                                return resolve(await startTnegaWidowFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
+                            } else if (isLegalHeirGoal) {
+                                const { startTnegaLegalHeirFlow } = require('./tnega_legal_heir');
+                                return resolve(await startTnegaLegalHeirFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
+                            } else if (isObcGoal) {
+                                const { startTnegaObcCertificateFlow } = require('./tnega_obc_certificate');
+                                return resolve(await startTnegaObcCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
+                            } else if (isFirstGraduateGoal) {
+                                const { startTnegaFirstGraduateFlow } = require('./tnega_first_graduate');
+                                return resolve(await startTnegaFirstGraduateFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
+                            } else if (isCommunityGoal) {
                                 const { startTnegaCommunityCertificateFlow } = require('./tnega_community_certificate');
-                                const flowRes = await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, options);
-                                return resolve(flowRes);
+                                return resolve(await startTnegaCommunityCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
                             } else if (isResidenceGoal) {
                                 const { startTnegaResidenceCertificateFlow } = require('./tnega_residence_certificate');
-                                const flowRes = await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, options);
-                                return resolve(flowRes);
+                                return resolve(await startTnegaResidenceCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
                             } else {
                                 const { startTnegaIncomeCertificateFlow } = require('./tnega_income_certificate');
-                                const flowRes = await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, options);
-                                return resolve(flowRes);
+                                return resolve(await startTnegaIncomeCertificateFlow(citizenProfile, onProgress, { ...options, canNumber: newCan }));
                             }
                         }
 
@@ -2135,6 +2242,7 @@ async function startTnegaCanRegisterFlow(citizenProfile, onProgress, options = {
 }
 
 module.exports = {
+    detectTargetGoal,
     resolveTnegaVaultCredentials,
     performAutomatedTnegaLogin,
     performLiveCanLookupOnPage,
