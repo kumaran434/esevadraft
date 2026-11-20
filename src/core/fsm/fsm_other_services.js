@@ -50,6 +50,10 @@ function handleNonRationServiceSelection(text, sess) {
             delete sess.citizenProfile.annualIncome;
             delete sess.citizenProfile.profession;
             delete sess.citizenProfile.incomeMembers;
+            delete sess.citizenProfile.incomeMembersConfirmed;
+            delete sess.citizenProfile.incomeSelectedIndices;
+            delete sess.citizenProfile.incomeExtraAddedMembers;
+            delete sess.citizenProfile.salaryProofPrompted;
         }
         delete sess.annualIncome;
         delete sess.profession;

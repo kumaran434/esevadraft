@@ -232,6 +232,39 @@ function applyExtractedAadhaarRelationsAndDob(targetProfile, extracted) {
     }
 }
 
+/**
+ * Applies Smart Ration Card details (card number + family members list + address) cleanly to citizenProfile.
+ */
+function applyExtractedSmartCardDetails(targetProfile, extracted) {
+    if (!targetProfile || !extracted) return;
+    if (extracted.smartCardNumber) {
+        const cleanSc = String(extracted.smartCardNumber).trim();
+        targetProfile.smartCardNumber = cleanSc;
+        targetProfile.rationCardNo = cleanSc;
+    }
+    if (Array.isArray(extracted.smartCardMembers) && extracted.smartCardMembers.length > 0) {
+        targetProfile.smartCardMembers = extracted.smartCardMembers
+            .filter(m => m && (m.nameTam || m.nameEng || m.name))
+            .map(m => ({
+                nameEng: m.nameEng || m.name || '',
+                nameTam: m.nameTam || m.name || '',
+                name: m.nameTam || m.nameEng || m.name || '',
+                relationship: m.relationship || 'Member',
+                age: m.age ? String(m.age) : '',
+                gender: m.gender || ''
+            }));
+    }
+    if (extracted.doorNo && !targetProfile.doorNo) targetProfile.doorNo = extracted.doorNo;
+    if (extracted.streetTam && !targetProfile.streetTam) targetProfile.streetTam = extracted.streetTam;
+    if (extracted.streetEng && !targetProfile.streetEng) targetProfile.streetEng = extracted.streetEng;
+    if (extracted.areaTam && !targetProfile.areaTam) targetProfile.areaTam = extracted.areaTam;
+    if (extracted.areaEng && !targetProfile.areaEng) targetProfile.areaEng = extracted.areaEng;
+    if (extracted.pincode && !targetProfile.pincode) targetProfile.pincode = extracted.pincode;
+    if (extracted.district && !targetProfile.district) targetProfile.district = extracted.district;
+    if (extracted.taluk && !targetProfile.taluk) targetProfile.taluk = extracted.taluk;
+    if (extracted.village && !targetProfile.village) targetProfile.village = extracted.village;
+}
+
 module.exports = {
     syncFatherOrHusband,
     isValidAadhaarVerhoeff,
@@ -239,5 +272,6 @@ module.exports = {
     getVerifiedRationCardDocs,
     updateHeadMember,
     normalizeDobWithYearFallback,
-    applyExtractedAadhaarRelationsAndDob
+    applyExtractedAadhaarRelationsAndDob,
+    applyExtractedSmartCardDetails
 };

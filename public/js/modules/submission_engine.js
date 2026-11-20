@@ -62,6 +62,23 @@
                     currentCitizenData.profilePhoto || 
                     currentCitizenData.photo
                 );
+                const hasSmartCard = Boolean(
+                    currentCitizenData.smartCard ||
+                    currentCitizenData.rationCard ||
+                    currentCitizenData.smartCardPath ||
+                    currentCitizenData.rationCardPath ||
+                    docs.smartCard ||
+                    docs.rationCard ||
+                    docs.smartCardFront ||
+                    window._tempUploads?.smartCard ||
+                    window._tempUploads?.smartCardFront
+                );
+                const isRevCert = ['OBC', 'COMMUNITY', 'INCOME', 'RESIDENCE', 'NATIVITY', 'FIRST_GRADUATE', 'WIDOW', 'LEGAL_HEIR'].some(k => curSub.includes(k));
+                if (isRevCert && !hasSmartCard) {
+                    alert('⚠️ அனைத்து வருவாய்த் துறை சேவைகளுக்கும் குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) கட்டாயம் தேவை.\n\nதயவுசெய்து ரேஷன் கார்டு (முழு அட்டை OR முன்பக்கம்+பின்பக்கம்) பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                    if (typeof openEditModal === 'function') openEditModal(activeMob);
+                    return;
+                }
 
                 if (curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub.includes('OBC')) {
                     if (!hasPhoto) {

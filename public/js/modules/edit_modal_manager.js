@@ -574,6 +574,9 @@
                 setVal('editDistrict', prof.district);
                 setVal('editTaluk', prof.taluk);
                 setVal('editVillage', prof.village);
+                if (Array.isArray(prof.smartCardMembers) && prof.smartCardMembers.length > 0 && currentCitizenData) {
+                    currentCitizenData.smartCardMembers = prof.smartCardMembers;
+                }
             }
         }
         window.syncEditModalInputsFromProfile = syncEditModalInputsFromProfile;
@@ -1318,7 +1321,7 @@
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
                 if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isIncomeMode) {
@@ -1332,21 +1335,21 @@
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
                 if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isLegalHeirMode) {
                 if (photoDocBox) photoDocBox.style.display = 'none';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
                 if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isObcMode) {
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
                 if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isFirstGraduateMode) {
@@ -1360,7 +1363,7 @@
                 if (photoDocBox) photoDocBox.style.display = 'flex';
                 if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
                 if (residenceDocBox) residenceDocBox.style.display = 'flex';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'none';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else if (isCanMode) {

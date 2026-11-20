@@ -2966,6 +2966,7 @@ async function runTests() {
                 headAadhaarDocPath: dummyAadh48,
                 headPhotoPath: dummyPhoto48,
                 profilePhoto: dummyPhoto48,
+                smartCard: dummyInc48,
                 incomeProof: dummyInc48,
                 fullNameEng: 'Kumaran K',
                 fullNameTam: 'குமரன் கி'
@@ -3319,17 +3320,20 @@ async function runTests() {
             advanceTnegaCommunityFlow(sessFresh);
             assert(sessFresh.intakeState === 'COMMUNITY_PHOTO_WAIT', "Aadhaar entered -> prompts Mandatory Photo Gate");
 
-            // Fresh step 2: Photo Upload
+            // Fresh step 2: Photo Upload -> Mandatory Smart Card -> Community Proof -> CAN
             sessFresh.citizenProfile.headPhotoPath = path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg');
             if (!fs.existsSync(sessFresh.citizenProfile.headPhotoPath)) fs.writeFileSync(sessFresh.citizenProfile.headPhotoPath, Buffer.alloc(1024, 'b'));
             advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_PROOF_WAIT', "Photo entered -> prompts Family Community Proof / School TC");
+            assert(sessFresh.intakeState === 'COMMUNITY_SMARTCARD_WAIT', "Photo entered -> prompts mandatory Smart Ration Card");
 
-            // Fresh step 3: Family Community Proof
-            sessFresh.citizenProfile.communityProof = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
-            if (!fs.existsSync(sessFresh.citizenProfile.communityProof)) fs.writeFileSync(sessFresh.citizenProfile.communityProof, Buffer.alloc(1024, 'c'));
+            sessFresh.citizenProfile.smartCard = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
+            if (!fs.existsSync(sessFresh.citizenProfile.smartCard)) fs.writeFileSync(sessFresh.citizenProfile.smartCard, Buffer.alloc(1024, 'c'));
             advanceTnegaCommunityFlow(sessFresh);
-            assert(sessFresh.intakeState === 'COMMUNITY_CAN_GATE', "All 3 documents entered -> prompts CAN Gate");
+            assert(sessFresh.intakeState === 'COMMUNITY_PROOF_WAIT', "Smart Card entered -> prompts Family Community Proof / School TC");
+
+            sessFresh.citizenProfile.communityProof = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
+            advanceTnegaCommunityFlow(sessFresh);
+            assert(sessFresh.intakeState === 'COMMUNITY_CAN_GATE', "All 4 documents entered -> prompts CAN Gate");
 
             // Fresh step 4: CAN
             sessFresh.citizenProfile.canNumber = '133370337878397';
@@ -3389,6 +3393,7 @@ async function runTests() {
                     taluk: 'அரக்கோணம்',
                     district: 'இராணிப்பேட்டை',
                     pincode: '631001',
+                    smartCard: path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf'),
                     headPhotoPath: path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg')
                 }
             };
@@ -3660,15 +3665,19 @@ async function runTests() {
             freshObcSess.citizenProfile.fullNameEng = 'Arun K';
             freshObcSess.citizenProfile.headAadhaar = '123412341234';
             advanceTnegaObcFlow(freshObcSess);
-            assert(freshObcSess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT', "Fresh OBC step 3 asks Community Certificate");
+            assert(freshObcSess.intakeState === 'OBC_SMARTCARD_WAIT', "Fresh OBC step 3 asks Smart Ration Card");
+
+            freshObcSess.citizenProfile.smartCard = sampleItrFile;
+            advanceTnegaObcFlow(freshObcSess);
+            assert(freshObcSess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT', "Fresh OBC step 4 asks Community Certificate");
 
             freshObcSess.citizenProfile.communityCertificate = sampleDocFile;
             advanceTnegaObcFlow(freshObcSess);
-            assert(freshObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Fresh OBC step 4 asks ITR / Income Proof");
+            assert(freshObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Fresh OBC step 5 asks ITR / Income Proof");
 
             freshObcSess.citizenProfile.incomeTaxReturn = sampleItrFile;
             advanceTnegaObcFlow(freshObcSess);
-            assert(freshObcSess.intakeState === 'OBC_CAN_GATE', "Fresh OBC step 5 reaches OBC_CAN_GATE");
+            assert(freshObcSess.intakeState === 'OBC_CAN_GATE', "Fresh OBC step 6 reaches OBC_CAN_GATE");
 
             freshObcSess.citizenProfile.canNumber = '133370337878397';
             advanceTnegaObcFlow(freshObcSess);
@@ -3709,6 +3718,7 @@ async function runTests() {
                     headAadhaar: '575567662931',
                     headPhotoPath: samplePhotoFile,
                     headAadhaarDocPath: sampleAadhFile,
+                    smartCard: sampleDocFile,
                     canNumber: '133370337878397',
                     caste: 'Vanniyar'
                 }
@@ -3852,6 +3862,7 @@ async function runTests() {
                     deathCertificate: 'data/golden_samples/kumaran_gallery/11_death_certificate_kirubakaran.jpg',
                     deceasedAddressProof: 'data/golden_samples/kumaran_gallery/12_deceased_aadhaar_address_kirubakaran.jpg',
                     headAadhaar: 'data/golden_samples/kumaran_gallery/04_kumaran_aadhaar_2in1.jpg',
+                    smartCard: 'data/golden_samples/kumaran_gallery/09_family_smart_ration_card_kumaran.jpg',
                     birthCertificate: 'data/golden_samples/kumaran_gallery/10_fg_student_12th_tc_kumaran.jpg'
                 }
             };
@@ -3870,7 +3881,7 @@ async function runTests() {
                 'src/portal/tnega/tnega_legal_heir.js': '50e377ae6acb8765f22a86192526b26d2d0967f22c99a2aea3c7c0c867129ccd',
                 'src/portal/tnega/tnega_community_certificate.js': '45a52d8ec902627124d013167a64c6b0a951ae6345da0b46a3329242198317e4',
                 'src/portal/tnega/tnega_residence_certificate.js': '09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272',
-                'src/portal/tnega/tnega_income_certificate.js': 'e96cc70a6dd3565fd88009e10fd3c9f8beae922a362174e6c729b6103a1c75f9',
+                'src/portal/tnega/tnega_income_certificate.js': '21eb4e37ec427ee8a78e84881730e3cae247e917bd76cb493ad97cb1c9c902f3',
                 'src/portal/tnega/tnega_first_graduate.js': '1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b',
                 'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7',
                 'src/portal/tnega/tnega_widow_certificate.js': '9a33ea17a896d790b0b590738a27405ca684d2cabf4c0f649cab1dbd11cd2b1d'
@@ -4040,6 +4051,7 @@ async function runTests() {
                     profilePhoto: path.join(gDir, '01_kumaran_passport_photo.jpg'),
                     headAadhaarDocPath: path.join(gDir, '04_kumaran_aadhaar_2in1.jpg'),
                     deathCertificate: path.join(gDir, '11_death_certificate_kirubakaran.jpg'),
+                    smartCard: path.join(gDir, '09_family_smart_ration_card_kumaran.jpg'),
                     marriageProof: path.join(gDir, '09_family_smart_ration_card_kumaran.jpg')
                 },
                 chatHistory: []
@@ -4306,6 +4318,7 @@ async function runTests() {
             const samplePdf = path.join(__dirname, '..', 'package.json');
             marriedSess.citizenProfile.headPhotoPath = samplePdf;
             marriedSess.citizenProfile.headAadhaarDocPath = samplePdf;
+            marriedSess.citizenProfile.smartCard = samplePdf;
             const fsmStep = advanceTnegaIncomeFlow(marriedSess);
             assert(fsmStep.step === 'INCOME_ADDITIONAL_MEMBER_WAIT', 'Married 2-member Income flow prompts explicitly for member 2');
             const optLabels = (fsmStep.options || []).map(o => o.label).join(' ');
@@ -4339,6 +4352,7 @@ async function runTests() {
                 headAadhaarDocPath: dummyIncAadh,
                 headPhotoPath: dummyIncPh,
                 profilePhoto: dummyIncPh,
+                smartCard: dummyIncPr,
                 incomeProof: dummyIncPr,
                 canNumber: '133370337878399'
             }, incHeaders);
@@ -4364,6 +4378,114 @@ async function runTests() {
             try { [dummyIncAadh, dummyIncPh, dummyIncPr].forEach(f => fs.existsSync(f) && fs.unlinkSync(f)); } catch (_) {}
             await request('DELETE', '/api/drafts/' + incChatMob + '?permanent=true');
             passedCount += 14;
+        }
+
+        console.log('\n[TEST 67] 📑 Verifying Mandatory Smart Ration Card Across All 7 Revenue Services, Smart Member Picker + Newborn + Work Queue + Chrome Auto-Overwrite Lock...');
+        {
+            const { applyExtractedSmartCardDetails } = require('../src/services/profile_helpers');
+            const flowEng = require('../src/core/fsm/tnega_flow_engine');
+            const { validateUploadedDocument } = require('../src/services/document_validator');
+            const subEngSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
+            const incPortalSrc2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_income_certificate.js'), 'utf8');
+
+            // 1. Smart Card Vision Extractor Helper & Slot Validation
+            const targetScProf = { doorNo: '12' };
+            applyExtractedSmartCardDetails(targetScProf, {
+                smartCardNumber: '333123456789',
+                streetEng: 'Mettu Street',
+                smartCardMembers: [
+                    { nameEng: 'Munusamy K', nameTam: 'முனுசாமி கே', relationship: 'Self', age: 52, gender: 'Male' },
+                    { nameEng: 'Muthammaal M', nameTam: 'முத்தம்மாள் மு', relationship: 'Wife', age: 46, gender: 'Female' },
+                    { nameEng: 'Surya M', nameTam: 'சூர்யா மு', relationship: 'Son', age: 18, gender: 'Male' }
+                ]
+            });
+            assert(targetScProf.smartCardNumber === '333123456789' && targetScProf.smartCardMembers.length === 3, 'applyExtractedSmartCardDetails populates card number & normalized member list');
+            assert(validateUploadedDocument('smartCard', { documentType: 'PASSPORT_PHOTO' }).valid === false, 'Smart Card slot rejects passport photo');
+            assert(validateUploadedDocument('smartCardBack', { documentType: 'SMART_CARD_BACK' }).valid === true, 'Smart Card Back slot accepts SMART_CARD_BACK');
+
+            // 2. All 7 Revenue Services Gate on *_SMARTCARD_WAIT when smartCard missing (and Aadhaar/Photo already present)
+            const dummyScAadh = path.join(__dirname, 'test67_aadh.pdf');
+            const dummyScPh = path.join(__dirname, 'test67_ph.jpg');
+            const dummyScCard = path.join(__dirname, 'test67_sc.pdf');
+            fs.writeFileSync(dummyScAadh, '%PDF-1.4\n' + 'A'.repeat(250));
+            fs.writeFileSync(dummyScPh, Buffer.alloc(300, 0xFF));
+            fs.writeFileSync(dummyScCard, '%PDF-1.4\n' + 'S'.repeat(250));
+
+            const mkNoScSess = (sub) => ({
+                subService: sub,
+                citizenProfile: {
+                    subService: sub,
+                    fullNameEng: 'Munusamy K', fullNameTam: 'முனுசாமி கே',
+                    fatherNameEng: 'Kannan', fatherNameTam: 'கண்ணன்',
+                    headAadhaar: '598412369874', headDob: '01/01/1974', headGender: 'Male',
+                    headAadhaarDocPath: dummyScAadh, headPhotoPath: dummyScPh,
+                    incomeProof: dummyScAadh, residenceProof: dummyScAadh,
+                    communityProof: dummyScAadh, applicantEducationProof: dummyScAadh,
+                    communityCertificate: dummyScAadh, incomeTaxReturn: dummyScAadh,
+                    deathCertificate: dummyScAadh, deceasedAddressProof: dummyScAadh, birthCertificate: dummyScAadh, marriageProof: dummyScAadh
+                },
+                draftData: { base64Docs: {} },
+                tempUploads: {}
+            });
+            assert(flowEng.advanceTnegaIncomeFlow(mkNoScSess('INCOME')).step === 'INCOME_SMARTCARD_WAIT', 'Income gates on INCOME_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaResidenceFlow(mkNoScSess('RESIDENCE')).step === 'RESIDENCE_SMARTCARD_WAIT', 'Residence gates on RESIDENCE_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaCommunityFlow(mkNoScSess('COMMUNITY')).step === 'COMMUNITY_SMARTCARD_WAIT', 'Community gates on COMMUNITY_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaFirstGraduateFlow(mkNoScSess('FIRST_GRADUATE')).step === 'FIRST_GRADUATE_SMARTCARD_WAIT', 'First Graduate gates on FIRST_GRADUATE_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaObcFlow(mkNoScSess('OBC')).step === 'OBC_SMARTCARD_WAIT', 'OBC gates on OBC_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaLegalHeirFlow(mkNoScSess('LEGAL_HEIR')).step === 'LEGAL_HEIR_SMARTCARD_WAIT', 'Legal Heir gates on LEGAL_HEIR_SMARTCARD_WAIT');
+            assert(flowEng.advanceTnegaWidowFlow(mkNoScSess('WIDOW')).step === 'WIDOW_SMARTCARD_WAIT', 'Widow gates on WIDOW_SMARTCARD_WAIT');
+
+            // 3. Full Income Member Picker -> Newborn Add -> Per-Member Work -> Optional Salary Proof -> Ready Station via /api/chat
+            const scChatMob = '9000000067';
+            const scHeaders = { 'x-session-mobile': scChatMob };
+            await request('DELETE', '/api/drafts/' + scChatMob + '?permanent=true');
+            fs.writeFileSync(dummyScAadh, '%PDF-1.4\n' + 'A'.repeat(250));
+            fs.writeFileSync(dummyScPh, Buffer.alloc(300, 0xFF));
+            fs.writeFileSync(dummyScCard, '%PDF-1.4\n' + 'S'.repeat(250));
+            await request('POST', '/api/operator/new-customer', { customerMobile: scChatMob });
+            await request('POST', '/api/profile/update', {
+                mobileNumber: scChatMob,
+                fullNameEng: 'Surya M', fullNameTam: 'சூர்யா மு',
+                fatherNameEng: 'Munusamy', fatherNameTam: 'முனுசாமி',
+                motherNameTam: 'முத்தம்மாள்', community: 'MBC',
+                headDob: '15/06/2006', headGender: 'Female', relationship: 'Husband', maritalStatus: 'Married',
+                headAadhaar: '598412369874', headAadhaarDocPath: dummyScAadh,
+                headPhotoPath: dummyScPh, profilePhoto: dummyScPh,
+                smartCard: dummyScCard, smartCardNumber: '333123456789',
+                smartCardMembers: [
+                    { nameEng: 'Surya M', nameTam: 'சூர்யா மு', relationship: 'Self', age: 25, gender: 'Female' },
+                    { nameEng: 'Karthik S', nameTam: 'கார்த்திக் எஸ்', relationship: 'Husband', age: 29, gender: 'Male' },
+                    { nameEng: 'Palani R', nameTam: 'பழனி ஆர்', relationship: 'Father', age: 58, gender: 'Male' }
+                ],
+                profession: 'குடும்பத் தலைவி', incomeProof: 'SELF_DECLARATION', monthlyIncome: 0, annualIncome: '',
+                canNumber: '133370337878399'
+            }, scHeaders);
+
+            const sPick = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, scHeaders);
+            assert(sPick.body.step === 'INCOME_SELECT_MEMBERS_WAIT', `Income shows Smart Card extracted members in INCOME_SELECT_MEMBERS_WAIT (got step=${sPick.body?.step}, intake=${sPick.body?.intakeState}, sc=${Boolean(sPick.body?.citizenProfile?.smartCard)}, scMem=${(sPick.body?.citizenProfile?.smartCardMembers||[]).length})`);
+            await request('POST', '/api/chat', { text: 'INC_TOGGLE_1' }, scHeaders);
+            const sAddNb = await request('POST', '/api/chat', { text: 'INC_ADD_NEWBORN' }, scHeaders);
+            assert(sAddNb.body.step === 'INCOME_EXTRA_NEWBORN_WAIT', 'Clicking INC_ADD_NEWBORN transitions to INCOME_EXTRA_NEWBORN_WAIT');
+            const sNbAdded = await request('POST', '/api/chat', { text: 'மகன் - ஆதித்யா, வயது 1' }, scHeaders);
+            assert(sNbAdded.body.step === 'INCOME_SELECT_MEMBERS_WAIT', 'Adding newborn returns cleanly to INCOME_SELECT_MEMBERS_WAIT');
+            const sConfMem = await request('POST', '/api/chat', { text: 'INC_MEMBERS_CONFIRMED' }, scHeaders);
+            assert(sConfMem.body.step === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT', 'Confirming selected members enters INCOME_ADDITIONAL_MEMBER_WORK_WAIT for earning adult member');
+            const sWorkAns = await request('POST', '/api/chat', { text: 'தனியார் வேலை மாதம் 9000' }, scHeaders);
+            assert(String(sWorkAns.body.citizenProfile.annualIncome) === '108000', 'Auto-sums selected family monthly income to annualIncome (9000 * 12 = 108000)');
+            assert(sWorkAns.body.step === 'INCOME_INTAKE', 'Asks applicant occupation after member work/income if applicant profession was reset');
+            const sAppProf = await request('POST', '/api/chat', { text: 'விவசாயம்' }, scHeaders);
+            assert(sAppProf.body.step === 'INCOME_SALARY_DOC_OPTIONAL_WAIT', 'Private sector member triggers INCOME_SALARY_DOC_OPTIONAL_WAIT optional upload prompt');
+            const sReady = await request('POST', '/api/chat', { text: 'SKIP_SALARY_PROOF' }, scHeaders);
+            assert(sReady.body.step === 'READY_TO_APPLY_INCOME', 'Skipping optional salary proof advances cleanly to READY_TO_APPLY_INCOME');
+            assert((sReady.body.citizenProfile.incomeMembers || []).length === 2, 'Excluded Father (index 2) and saved only Husband + Newborn (2 additional members)');
+
+            // 4. Client Pre-Flight Smart Card Guard + Income Portal Auto-Overwrite Lock + Strict 457 Upload
+            assert(subEngSrc.includes('hasSmartCard') && subEngSrc.includes('isRevCert'), 'Client submission pre-flight guard checks Smart Ration Card for all Revenue services');
+            assert(incPortalSrc2.includes('initialFormFillLocked') && !incPortalSrc2.includes('smartCardPath = aadhaarDocPath'), 'tnega_income_certificate locks #incme:landDet autofill after Gate & never swaps Aadhaar into option 457');
+
+            try { [dummyScAadh, dummyScPh, dummyScCard].forEach(f => fs.existsSync(f) && fs.unlinkSync(f)); } catch (_) {}
+            await request('DELETE', '/api/drafts/' + scChatMob + '?permanent=true');
+            passedCount += 16;
         }
 
         console.log('\n======================================================');

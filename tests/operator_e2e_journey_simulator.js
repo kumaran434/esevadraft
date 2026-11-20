@@ -260,6 +260,7 @@ async function runOperatorJourneySimulator() {
         headAadhaar: '123456789012',
         headAadhaarDocPath: dummyTestAadh,
         headPhotoPath: dummyTestPhoto,
+        smartCard: dummyTestInc,
         incomeProof: dummyTestInc,
         fatherNameTam: 'கிருபாகரன்',
         fatherNameEng: 'Kirubakaran',

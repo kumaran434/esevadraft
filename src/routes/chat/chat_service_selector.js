@@ -33,6 +33,7 @@ async function handleServiceSelector(ctx, req, res) {
                         (text && text.startsWith('LEGAL_HEIR_')) ||
                         (text && text.startsWith('WD_')) ||
                         (text && text.startsWith('WIDOW_')) ||
+                        (text && text.startsWith('INC_')) ||
                         (text && text.startsWith('SELECT_MEMBER_')) ||
                         (text && text.startsWith('COMMUNITY_')) ||
                         (text && text.startsWith('RELIGION_')) ||

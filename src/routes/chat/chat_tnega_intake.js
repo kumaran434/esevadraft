@@ -8,7 +8,7 @@ const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResiden
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
-const { applyExtractedAadhaarRelationsAndDob } = require('../../services/profile_helpers');
+const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails } = require('../../services/profile_helpers');
 const { persistSessions } = storageService;
 
 function extractIncomeAndProfession(inputStr) {
@@ -454,6 +454,170 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             options: [
                 { label: "📷 ஆதார் பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
                 { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ]
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    return null;
+}
+
+/**
+ * Shared Smart Ration Card Upload Helper for ALL 7 TNeGA Revenue Services.
+ * Supports single combined/PDF sheet OR Front + Back 2-in-1 A4 PDF merge,
+ * and extracts smartCardNumber + smartCardMembers via applyExtractedSmartCardDetails.
+ */
+async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, advanceFlowFn }) {
+    const { text, uploadedFile, sess } = ctx;
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+    if (!sess.citizenProfile) sess.citizenProfile = {};
+    if (!sess.tempUploads) sess.tempUploads = {};
+    if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+
+    const syncSmartCardToProfile = async (finalPath, extracted) => {
+        sess.tempUploads.smartCard = finalPath;
+        sess.citizenProfile.smartCard = finalPath;
+        sess.citizenProfile.rationCard = finalPath;
+        sess.citizenProfile.documents.smartCard = finalPath;
+        if (extracted) applyExtractedSmartCardDetails(sess.citizenProfile, extracted);
+        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+        persistSessions();
+    };
+
+    if (sess.intakeState === backWaitState) {
+        if (text === 'TRIGGER_EDIT_MODAL' || (text && (text.includes('திருத்து') || text.toLowerCase().includes('edit')))) {
+            return false;
+        }
+        if (text === 'SMARTCARD_SKIP_BACK') {
+            const frontPath = sess.tempUploads.smartCardFront || sess.citizenProfile.smartCard;
+            const compliantFront = frontPath ? await produceCompliantDocument(frontPath).catch(() => frontPath) : frontPath;
+            if (compliantFront) await syncSmartCardToProfile(compliantFront, null);
+            const flowStep = advanceFlowFn(sess, `✅ **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு சேமிக்கப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        if (uploadedFile) {
+            let extractedBack = null;
+            try { extractedBack = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }); } catch (_) {}
+            const validation = validateUploadedDocument('smartCardBack', extractedBack);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 ரேஷன் கார்டு பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: "SMARTCARD_SKIP_BACK" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+            sess.tempUploads.smartCardBack = uploadedFile.path;
+            sess.tempUploads.smartCardBackBoundingBox = extractedBack?.documentBoundingBox || null;
+            const mergedPdf = await produceDualSidedDocument(
+                sess.tempUploads.smartCardFront,
+                sess.tempUploads.smartCardBack,
+                produceCompliantDocument,
+                {
+                    frontBoundingBox: sess.tempUploads.smartCardFrontBoundingBox,
+                    backBoundingBox: sess.tempUploads.smartCardBackBoundingBox
+                }
+            );
+            sess.citizenProfile.documents.smartCardFront = sess.tempUploads.smartCardFront;
+            sess.citizenProfile.documents.smartCardBack = sess.tempUploads.smartCardBack;
+            await syncSmartCardToProfile(mergedPdf, extractedBack);
+
+            const mCount = Array.isArray(sess.citizenProfile.smartCardMembers) ? sess.citizenProfile.smartCardMembers.length : 0;
+            const flowStep = advanceFlowFn(
+                sess,
+                `📄 **ஸ்மார்ட் ரேஷன் கார்டு 2-in-1 அரசு A4 PDF-ஆக இணைக்கப்பட்டது!** ✅` +
+                (mCount > 0 ? `\n👨‍👩‍👧‍👦 *பின்பக்கத்தில் ${mCount} குடும்ப உறுப்பினர்கள் கண்டறியப்பட்டனர்!*` : '')
+            );
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `🔄 தயவுசெய்து குடும்ப ஸ்மார்ட் ரேஷன் கார்டின் **பின்பக்கப் புகைப்படத்தை (Back Side — குடும்ப உறுப்பினர்கள் பட்டியல் உள்ள பக்கம்)** பதிவேற்றவும்:`,
+            actionRequired: 'upload',
+            uploadPrompt: 'ரேஷன் கார்டு பின்பக்கம் பதிவேற்றவும்',
+            options: [
+                { label: "📷 ரேஷன் கார்டு பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: "SMARTCARD_SKIP_BACK" }
+            ]
+        });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if (uploadedFile) {
+        let extracted = null;
+        try { extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }); } catch (_) {}
+
+        const validation = validateUploadedDocument('smartCard', extracted);
+        if (!validation.valid) {
+            try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+            delete sess.citizenProfile.smartCard;
+            delete sess.citizenProfile.rationCard;
+            delete sess.tempUploads.smartCard;
+            delete sess.citizenProfile.documents.smartCard;
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: validation.errorTamil,
+                options: [
+                    { label: "📷 குடும்ப அட்டை (Smart Card) பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        const isPdfUpload = /\.pdf$/i.test(uploadedFile.originalname || uploadedFile.path || '');
+        const hasBackMembers = Array.isArray(extracted?.smartCardMembers) && extracted.smartCardMembers.length > 0;
+        const isFullCard = Boolean(extracted?.isFullSmartCard || isPdfUpload || hasBackMembers);
+
+        if (isFullCard) {
+            const fullPdf = await produceCompliantDocument(uploadedFile.path);
+            sess.tempUploads.smartCardFront = uploadedFile.path;
+            sess.tempUploads.smartCardBack = null;
+            await syncSmartCardToProfile(fullPdf, extracted);
+            const mCount = Array.isArray(sess.citizenProfile.smartCardMembers) ? sess.citizenProfile.smartCardMembers.length : 0;
+            const flowStep = advanceFlowFn(
+                sess,
+                `✅ **முழு குடும்ப ஸ்மார்ட் ரேஷன் கார்டு வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️` +
+                (mCount > 0 ? `\n👨‍👩‍👧‍👦 *${mCount} குடும்ப உறுப்பினர்கள் தானாகப் படிக்கப்பட்டனர்.*` : '')
+            );
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        // Front side image only -> extract Front details & ask for Back side
+        sess.tempUploads.smartCardFront = uploadedFile.path;
+        sess.tempUploads.smartCardFrontBoundingBox = extracted?.documentBoundingBox || null;
+        if (extracted) applyExtractedSmartCardDetails(sess.citizenProfile, extracted);
+        sess.citizenProfile.smartCard = uploadedFile.path;
+        sess.citizenProfile.documents.smartCard = uploadedFile.path;
+        sess.intakeState = backWaitState;
+        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+        persistSessions();
+
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `✅ **ஸ்மார்ட் ரேஷன் கார்டு முன்பக்கம் பெறப்பட்டது!**` +
+                  (sess.citizenProfile.smartCardNumber ? ` (எண்: **${sess.citizenProfile.smartCardNumber}**)` : '') +
+                  `\n\n🔄 **குடும்ப உறுப்பினர்கள் பெயர் உள்ள பின்பக்கத்தையும் (Back Side) பதிவேற்றவும் (AI தானாக 2-in-1 PDF ஆக இணைத்து உறுப்பினர்களைக் காட்டும்):**`,
+            actionRequired: 'upload',
+            uploadPrompt: 'ரேஷன் கார்டு பின்பக்கம் பதிவேற்றவும்',
+            options: [
+                { label: "📷 ரேஷன் கார்டு பின்பக்கம் அப்லோட்", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: "SMARTCARD_SKIP_BACK" }
             ]
         });
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
@@ -915,46 +1079,265 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     }
 
     // -------------------------------------------------------------------------
+    // SMART CARD EXTRACTED MEMBER PICKER + EXTRA NEWBORN (TNeGA Income REV-103)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_SELECT_MEMBERS_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const p = sess.citizenProfile || {};
+        const scMembers = Array.isArray(p.smartCardMembers) ? p.smartCardMembers : [];
+        if (!Array.isArray(sess.smartCardSelectedIndices)) {
+            sess.smartCardSelectedIndices = Array.isArray(p.incomeSelectedIndices) ? [...p.incomeSelectedIndices] : [];
+        }
+
+        if (text === 'INC_ADD_NEWBORN') {
+            p.incomeSelectedIndices = [...sess.smartCardSelectedIndices];
+            sess.intakeState = 'INCOME_EXTRA_NEWBORN_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `👶 **ரேஷன் கார்டில் இல்லாத பிறந்த குழந்தை / கூடுதல் உறுப்பினர் சேர்க்க:**\n\n` +
+                      `நபரின் **பெயர் மற்றும் உறவுமுறை** (அல்லது வயது) தட்டச்சு செய்யவும்:\n` +
+                      `*(எ.கா: \`மகன் - ஆதித்யா, வயது 1\` அல்லது \`மகள் - தியா, வயது 2\`)*`,
+                options: [
+                    { label: "👶 ஆண் குழந்தை (வயது 1)", value: "மகன் - பிறந்த குழந்தை, வயது 1" },
+                    { label: "👧 பெண் குழந்தை (வயது 1)", value: "மகள் - பிறந்த குழந்தை, வயது 1" },
+                    { label: "🔙 உறுப்பினர் பட்டியலுக்குத் திரும்பு", value: "BACK_TO_MEMBER_PICKER" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        if (text === 'INC_SEL_SELF_ONLY') {
+            p.familyMemberCount = 1;
+            p.incomeMembers = [];
+            p.incomeExtraAddedMembers = [];
+            p.incomeSelectedIndices = [];
+            p.incomeMembersConfirmed = true;
+            sess.smartCardSelectedIndices = [];
+            persistSessions();
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **விண்ணப்பதாரர் மட்டும் (1 நபர்)** தேர்ந்தெடுக்கப்பட்டார்!`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        if (text === 'INC_SEL_ALL') {
+            sess.smartCardSelectedIndices = scMembers.map((_, i) => i);
+            p.incomeSelectedIndices = [...sess.smartCardSelectedIndices];
+        } else if (text.startsWith('INC_TOGGLE_')) {
+            const idx = parseInt(text.replace('INC_TOGGLE_', ''), 10);
+            if (!Number.isNaN(idx) && idx >= 0 && idx < scMembers.length) {
+                const pos = sess.smartCardSelectedIndices.indexOf(idx);
+                if (pos === -1) sess.smartCardSelectedIndices.push(idx);
+                else sess.smartCardSelectedIndices.splice(pos, 1);
+            }
+            p.incomeSelectedIndices = [...sess.smartCardSelectedIndices];
+            persistSessions();
+            const flowStep = advanceTnegaIncomeFlow(sess);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        } else if (text !== 'INC_MEMBERS_CONFIRMED') {
+            const nums = (text.match(/\d+/g) || []).map(n => parseInt(n, 10) - 1).filter(i => i >= 0 && i < scMembers.length);
+            if (nums.length > 0) {
+                sess.smartCardSelectedIndices = Array.from(new Set(nums));
+                p.incomeSelectedIndices = [...sess.smartCardSelectedIndices];
+            }
+        }
+
+        if (text === 'INC_SEL_ALL' || text === 'INC_MEMBERS_CONFIRMED' || (text.match(/\d+/) && !text.startsWith('INC_TOGGLE_'))) {
+            const pickedIndices = Array.isArray(sess.smartCardSelectedIndices) ? sess.smartCardSelectedIndices : [];
+            const extraBabies = Array.isArray(p.incomeExtraAddedMembers) ? p.incomeExtraAddedMembers : [];
+            const selfNameLow = String(p.fullNameEng || p.fullNameTam || '').trim().toLowerCase();
+
+            const mappedAddl = [];
+            pickedIndices.forEach(idx => {
+                const m = scMembers[idx];
+                if (!m) return;
+                const mNameLow = String(m.nameEng || m.nameTam || m.name || '').trim().toLowerCase();
+                const mRelLow = String(m.relationship || '').trim().toLowerCase();
+                const isSelf = mRelLow === 'self' || mRelLow === 'தலைவர்' || (selfNameLow && mNameLow === selfNameLow);
+                if (isSelf) return;
+                mappedAddl.push({
+                    name: m.nameEng || m.nameTam || m.name || 'உறுப்பினர்',
+                    nameEng: m.nameEng || m.name || '',
+                    nameTam: m.nameTam || m.nameEng || m.name || '',
+                    relationship: m.relationship || 'Family Member',
+                    age: m.age ? String(m.age) : '',
+                    gender: m.gender || '',
+                    profession: '',
+                    monthlyIncome: '0',
+                    workConfirmed: false
+                });
+            });
+            extraBabies.forEach(eb => {
+                mappedAddl.push({
+                    ...eb,
+                    workConfirmed: true,
+                    monthlyIncome: String(eb.monthlyIncome || '0')
+                });
+            });
+
+            p.incomeMembers = mappedAddl;
+            p.familyMemberCount = Math.max(1, 1 + mappedAddl.length);
+            p.incomeMembersConfirmed = true;
+            persistSessions();
+
+            const flowStep = advanceTnegaIncomeFlow(
+                sess,
+                `✅ **குடும்ப உறுப்பினர்கள் (${p.familyMemberCount} நபர்கள்) உறுதிப்படுத்தப்பட்டனர்!**\n` +
+                (mappedAddl.length > 0 ? `இப்போது ஒவ்வொரு உறுப்பினரின் தொழில் & மாத வருமானத்தை உறுதிப்படுத்துவோம்:` : '')
+            );
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    if (sess.intakeState === 'INCOME_EXTRA_NEWBORN_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const p = sess.citizenProfile || {};
+        if (text === 'BACK_TO_MEMBER_PICKER') {
+            sess.intakeState = 'INCOME_SELECT_MEMBERS_WAIT';
+            persistSessions();
+            const flowStep = advanceTnegaIncomeFlow(sess);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        const rel = /மகள்|daughter|பெண்/i.test(text) ? 'Daughter' : (/மனைவி|wife/i.test(text) ? 'Wife' : (/கணவர்|husband/i.test(text) ? 'Husband' : 'Son'));
+        const dashMatch = text.match(/[-–:]\s*([^\(,0-9]+)/);
+        const cleanedName = (dashMatch && dashMatch[1] ? dashMatch[1].trim() : text.replace(/(மகன்|மகள்|குழந்தை|பிறந்த|வயது|age|\d+|,|-)/gi, ' ').trim()) || (rel === 'Daughter' ? 'Baby Girl' : 'Baby Boy');
+        const ageMatch = text.match(/\b(\d{1,2})\b/);
+        const ageVal = ageMatch ? ageMatch[1] : '1';
+        if (!Array.isArray(p.incomeExtraAddedMembers)) p.incomeExtraAddedMembers = [];
+        p.incomeExtraAddedMembers.push({
+            name: cleanedName,
+            nameEng: cleanedName,
+            nameTam: cleanedName,
+            relationship: rel,
+            age: ageVal,
+            profession: 'குழந்தை / வேலை இல்லை',
+            monthlyIncome: '0',
+            workConfirmed: true
+        });
+        sess.intakeState = 'INCOME_SELECT_MEMBERS_WAIT';
+        persistSessions();
+        const flowStep = advanceTnegaIncomeFlow(sess, `👶 **${cleanedName} (${rel}, ${ageVal} வயது)** பட்டியலில் சேர்க்கப்பட்டார்!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // OPTIONAL SALARY CERTIFICATE UPLOAD GATE (TNeGA Income REV-103)
+    // -------------------------------------------------------------------------
+    if (sess.intakeState === 'INCOME_SALARY_DOC_OPTIONAL_WAIT') {
+        const p = sess.citizenProfile || {};
+        if (text === 'TRIGGER_FILE_UPLOAD') {
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `📤 தயவுசெய்து **சம்பளச் சான்று / Pay Slip** ஆவணத்தைப் பதிவேற்றவும் (<200KB அளவிற்கு தானாகச் சுருக்கப்படும்):`,
+                actionRequired: 'upload',
+                uploadPrompt: 'சம்பளச் சான்று பதிவேற்றுக'
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        if (uploadedFile) {
+            let extracted = null;
+            try { extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true }); } catch (_) {}
+            const validation = validateUploadedDocument('incomeProof', extracted);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: validation.errorTamil,
+                    options: [
+                        { label: "📷 சம்பளச் சான்று பதிவேற்றுக (Upload Salary Cert)", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "⏭️ தேவையில்லை / சுய அறிவிப்பு போதும்", value: "SKIP_SALARY_PROOF" }
+                    ]
+                });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            p.incomeProof = compliantProof;
+            p.salaryCertificatePath = compliantProof;
+            p.salaryCertificate = compliantProof;
+            p.salaryProofPrompted = true;
+            if (!sess.tempUploads) sess.tempUploads = {};
+            sess.tempUploads.incomeProof = compliantProof;
+            if (!p.documents) p.documents = {};
+            p.documents.incomeProof = compliantProof;
+            persistSessions();
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **சம்பளச் சான்று (<200KB PDF) வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+        if (text === 'SKIP_SALARY_PROOF' || /தேவையில்லை|சுய அறிவிப்பு|skip/i.test(text || '')) {
+            p.salaryProofPrompted = true;
+            if (!p.incomeProof) p.incomeProof = 'SELF_DECLARATION';
+            if (!p.salaryCertificatePath) p.salaryCertificatePath = 'SELF_DECLARATION';
+            persistSessions();
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ **சுய அறிவிப்புடன்** தொடரலாம்!`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // ADDITIONAL MEMBER DETAILS GATE (TNeGA Income Certificate — Ask Real Rel, Work & Income)
     // -------------------------------------------------------------------------
     if ((sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WAIT' || sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT') && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         const p = sess.citizenProfile;
 
-        if (sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT' && sess.pendingIncomeMember) {
-            const pending = sess.pendingIncomeMember;
+        if (sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT' && (typeof sess.pendingIncomeMemberIndex === 'number' || sess.pendingIncomeMember)) {
             const incParsed = extractIncomeAndProfession(text) || {};
             let prof = incParsed.profession || '';
             if (!prof) {
                 if (/இல்லத்தரசி|வீட்டு|house|dependent|வேலை இல்லை|no work/i.test(text)) prof = 'குடும்பத் தலைவி / இல்லத்தரசி';
-                else if (/மாணவ|student|பள்ளி|கல்லூரி/i.test(text)) prof = 'மாணவர்';
+                else if (/மாணவ|student|பள்ளி|கல்லூரி|குழந்தை/i.test(text)) prof = 'மாணவர்';
                 else if (/அரசு|govt/i.test(text)) prof = 'அரசு வேலை';
                 else prof = text.replace(/\d+|₹|,|மாதம்|ஆண்டு|ரூ/g, '').trim() || 'கூலி வேலை';
             }
             const monMatch = text.replace(/,/g, '').match(/\b\d{1,6}\b/);
-            const monInc = /வருமானம் இல்லை|இல்லத்தரசி|மாணவர்|₹0|\b0\b/i.test(text)
+            const monInc = /வருமானம் இல்லை|இல்லத்தரசி|மாணவர்|குழந்தை|₹0|\b0\b/i.test(text)
                 ? '0'
                 : String(incParsed.monthlyIncome || (monMatch ? parseInt(monMatch[0], 10) : 0));
 
             if (!p.incomeMembers) p.incomeMembers = [];
-            const finalMem = {
-                ...pending,
-                profession: prof,
-                monthlyIncome: monInc
-            };
-            p.incomeMembers.push(finalMem);
-            delete sess.pendingIncomeMember;
+            let finalMem = null;
+            if (typeof sess.pendingIncomeMemberIndex === 'number' && p.incomeMembers[sess.pendingIncomeMemberIndex]) {
+                p.incomeMembers[sess.pendingIncomeMemberIndex] = {
+                    ...p.incomeMembers[sess.pendingIncomeMemberIndex],
+                    profession: prof,
+                    monthlyIncome: monInc,
+                    workConfirmed: true
+                };
+                finalMem = p.incomeMembers[sess.pendingIncomeMemberIndex];
+                delete sess.pendingIncomeMemberIndex;
+            } else {
+                const pending = sess.pendingIncomeMember;
+                finalMem = {
+                    ...pending,
+                    profession: prof,
+                    monthlyIncome: monInc,
+                    workConfirmed: true
+                };
+                p.incomeMembers.push(finalMem);
+                delete sess.pendingIncomeMember;
+            }
 
-            const monNum = parseInt(monInc, 10) || 0;
-            if (monNum > 0 && !p.annualIncome) {
-                const curSelfMon = parseInt(String(p.monthlyIncome || 0), 10) || 0;
-                const memSum = p.incomeMembers.reduce((s, m) => s + (parseInt(String(m.monthlyIncome || 0), 10) || 0), 0);
-                if (curSelfMon + memSum > 0) {
-                    p.annualIncome = String((curSelfMon + memSum) * 12);
-                }
+            const curSelfMon = parseInt(String(p.monthlyIncome || 0), 10) || 0;
+            const memSum = p.incomeMembers.reduce((s, m) => s + (parseInt(String(m.monthlyIncome || 0), 10) || 0), 0);
+            if (curSelfMon + memSum > 0) {
+                p.annualIncome = String((curSelfMon + memSum) * 12);
             }
             persistSessions();
 
-            const flowStep = advanceTnegaIncomeFlow(sess, `✅ உறுப்பினர் **${finalMem.name} (${finalMem.relationship} - ${finalMem.profession}, மாதம் ₹${monInc})** சேர்க்கப்பட்டார்!`);
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ உறுப்பினர் **${finalMem.nameTam || finalMem.name} (${finalMem.relationship} - ${finalMem.profession}, மாதம் ₹${monInc})** சேர்க்கப்பட்டார்!`);
             sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
@@ -1542,54 +1925,34 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     }
 
     // -------------------------------------------------------------------------
-    // FIRST GRADUATE: FAMILY SMART CARD UPLOAD GATE
+    // ALL 7 REVENUE SERVICES: FAMILY SMART RATION CARD UPLOAD & MEMBER PARSING GATE
     // -------------------------------------------------------------------------
-    if (sess.intakeState === 'FIRST_GRADUATE_SMARTCARD_WAIT') {
-        if (uploadedFile) {
-            let extracted = null;
-            try {
-                extracted = await inspectAndExtractDocument(uploadedFile.path, { isTnega: true });
-            } catch (_) {}
-
-            const validation = validateUploadedDocument('smartCard', extracted);
-            if (!validation.valid) {
-                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch (_) {}
-                delete sess.citizenProfile.smartCard;
-                delete sess.citizenProfile.rationCard;
-                if (sess.tempUploads) delete sess.tempUploads.smartCard;
-                if (sess.citizenProfile.documents) delete sess.citizenProfile.documents.smartCard;
-                persistSessions();
-
-                sess.chatHistory.push({
-                    sender: 'bot',
-                    text: validation.errorTamil,
-                    options: [
-                        { label: "📷 குடும்ப அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
-                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
-                    ]
-                });
-                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
-                return true;
-            }
-
-            const compliantProof = await produceCompliantDocument(uploadedFile.path);
-            sess.citizenProfile.smartCard = compliantProof;
-            sess.citizenProfile.rationCard = compliantProof;
-            if (!sess.tempUploads) sess.tempUploads = {};
-            sess.tempUploads.smartCard = compliantProof;
-            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
-            sess.citizenProfile.documents.smartCard = compliantProof;
-
-            persistSessions();
-            const flowStep = advanceTnegaFirstGraduateFlow(sess, `✅ **குடும்ப ஸ்மார்ட் அட்டை வெற்றிகரமாகப் பெறப்பட்டது!** 🛡️`);
-            sess.chatHistory.push({
-                sender: 'bot',
-                text: flowStep.text,
-                options: flowStep.options
-            });
-            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
-            return true;
-        }
+    const smartCardRouteMap = {
+        INCOME_SMARTCARD_WAIT: { back: 'INCOME_SMARTCARD_BACK_WAIT', fn: advanceTnegaIncomeFlow },
+        INCOME_SMARTCARD_BACK_WAIT: { back: 'INCOME_SMARTCARD_BACK_WAIT', fn: advanceTnegaIncomeFlow },
+        RESIDENCE_SMARTCARD_WAIT: { back: 'RESIDENCE_SMARTCARD_BACK_WAIT', fn: advanceTnegaResidenceFlow },
+        RESIDENCE_SMARTCARD_BACK_WAIT: { back: 'RESIDENCE_SMARTCARD_BACK_WAIT', fn: advanceTnegaResidenceFlow },
+        COMMUNITY_SMARTCARD_WAIT: { back: 'COMMUNITY_SMARTCARD_BACK_WAIT', fn: advanceTnegaCommunityFlow },
+        COMMUNITY_SMARTCARD_BACK_WAIT: { back: 'COMMUNITY_SMARTCARD_BACK_WAIT', fn: advanceTnegaCommunityFlow },
+        FIRST_GRADUATE_SMARTCARD_WAIT: { back: 'FIRST_GRADUATE_SMARTCARD_BACK_WAIT', fn: advanceTnegaFirstGraduateFlow },
+        FIRST_GRADUATE_SMARTCARD_BACK_WAIT: { back: 'FIRST_GRADUATE_SMARTCARD_BACK_WAIT', fn: advanceTnegaFirstGraduateFlow },
+        OBC_SMARTCARD_WAIT: { back: 'OBC_SMARTCARD_BACK_WAIT', fn: advanceTnegaObcFlow },
+        OBC_SMARTCARD_BACK_WAIT: { back: 'OBC_SMARTCARD_BACK_WAIT', fn: advanceTnegaObcFlow },
+        LEGAL_HEIR_SMARTCARD_WAIT: { back: 'LEGAL_HEIR_SMARTCARD_BACK_WAIT', fn: advanceTnegaLegalHeirFlow },
+        LEGAL_HEIR_SMARTCARD_BACK_WAIT: { back: 'LEGAL_HEIR_SMARTCARD_BACK_WAIT', fn: advanceTnegaLegalHeirFlow },
+        WIDOW_SMARTCARD_WAIT: { back: 'WIDOW_SMARTCARD_BACK_WAIT', fn: advanceTnegaWidowFlow },
+        WIDOW_SMARTCARD_BACK_WAIT: { back: 'WIDOW_SMARTCARD_BACK_WAIT', fn: advanceTnegaWidowFlow }
+    };
+    if (smartCardRouteMap[sess.intakeState]) {
+        const cfg = smartCardRouteMap[sess.intakeState];
+        const handled = await handleTnegaSmartCardUploadHelper({
+            ctx,
+            req,
+            res,
+            backWaitState: cfg.back,
+            advanceFlowFn: cfg.fn
+        });
+        if (handled !== null) return handled;
     }
 
     // -------------------------------------------------------------------------

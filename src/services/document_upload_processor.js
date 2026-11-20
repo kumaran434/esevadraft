@@ -4,7 +4,7 @@ const fs = require('fs');
 const { produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 const { validateUploadedDocument } = require('./document_validator');
-const { applyExtractedAadhaarRelationsAndDob } = require('./profile_helpers');
+const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails } = require('./profile_helpers');
 
 async function processUploadedDocument(sess, docType, uploadedFile, memberIndex, targetMobile) {
     let optimizedPath = uploadedFile.path;
@@ -413,15 +413,7 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                 sess.citizenProfile.rationCardNo = extractedOther.smartCardNumber;
             }
             if (isSmartCardDoc) {
-                if (extractedOther.doorNo) sess.citizenProfile.doorNo = extractedOther.doorNo;
-                if (extractedOther.streetTam) sess.citizenProfile.streetTam = extractedOther.streetTam;
-                if (extractedOther.streetEng) sess.citizenProfile.streetEng = extractedOther.streetEng;
-                if (extractedOther.areaTam) sess.citizenProfile.areaTam = extractedOther.areaTam;
-                if (extractedOther.areaEng) sess.citizenProfile.areaEng = extractedOther.areaEng;
-                if (extractedOther.pincode) sess.citizenProfile.pincode = extractedOther.pincode;
-                if (extractedOther.district) sess.citizenProfile.district = extractedOther.district;
-                if (extractedOther.taluk) sess.citizenProfile.taluk = extractedOther.taluk;
-                if (extractedOther.village) sess.citizenProfile.village = extractedOther.village;
+                applyExtractedSmartCardDetails(sess.citizenProfile, extractedOther);
             }
         }
 

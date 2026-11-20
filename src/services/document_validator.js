@@ -13,6 +13,8 @@ const DOC_NAMES_TAMIL = {
     'AADHAAR_FRONT': 'ஆதார் அட்டை முன்பக்கம் (Aadhaar Front)',
     'AADHAAR_BACK': 'ஆதார் அட்டை பின்பக்கம் (Aadhaar Back)',
     'SMART_CARD': 'ஸ்மார்ட் குடும்ப அட்டை (Smart Ration Card)',
+    'SMART_CARD_FRONT': 'ஸ்மார்ட் குடும்ப அட்டை முன்பக்கம் (Smart Card Front)',
+    'SMART_CARD_BACK': 'ஸ்மார்ட் குடும்ப அட்டை பின்பக்கம் (Smart Card Back)',
     'COMMUNITY_CERTIFICATE': 'சாதிச் சான்றிதழ் (Community Certificate)',
     'TRANSFER_CERTIFICATE': 'பள்ளி / கல்லூரி மாற்றுச் சான்றிதழ் (School / College TC)',
     'SCHOOL_TC': 'பள்ளி மாற்றுச் சான்றிதழ் (School TC)',
@@ -180,16 +182,16 @@ function validateUploadedDocument(slotName, extracted) {
         return { valid: true, detectedType: docType, detectedNameTamil };
     }
 
-    // 8. FAMILY SMART CARD (TNeGA REV-104 First Graduate)
-    if (slotName === 'smartCard' || slotName === 'rationCard' || slotName === 'FIRST_GRADUATE_SMARTCARD_WAIT') {
-        const isPhoto = docType === 'PASSPORT_PHOTO';
-        if (isPhoto) {
+    // 8. FAMILY SMART CARD (All 7 TNeGA Revenue Services — Front, Back, or Combined 2-in-1)
+    if (slotName === 'smartCard' || slotName === 'smartCardBack' || slotName === 'rationCard' || slotName.endsWith('_SMARTCARD_WAIT') || slotName.endsWith('_SMARTCARD_BACK_WAIT')) {
+        const isDisallowed = docType === 'PASSPORT_PHOTO' || docType.startsWith('AADHAAR_');
+        if (isDisallowed) {
             return {
                 valid: false,
                 detectedType: docType,
                 detectedNameTamil,
-                errorTamil: `❌ **தவறான ஆவணம்!** குடும்ப அட்டைக்கு பதிலாக **${detectedNameTamil}** பதிவேற்றப்பட்டுள்ளது.\n\n` +
-                            `தயவுசெய்து குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) ஆவணத்தைப் பதிவேற்றவும்.`
+                errorTamil: `❌ **தவறான ஆவணம்!** குடும்ப ரேஷன் அட்டைக்குப் பதிலாக **${detectedNameTamil}** பதிவேற்றப்பட்டுள்ளது.\n\n` +
+                            `தயவுசெய்து **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card)** ஆவணத்தைப் பதிவேற்றவும்.`
             };
         }
         return { valid: true, detectedType: docType, detectedNameTamil };

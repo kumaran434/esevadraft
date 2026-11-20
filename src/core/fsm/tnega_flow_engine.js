@@ -28,6 +28,30 @@ function isPhysicalDocValid(docPath, b64Data) {
     return false;
 }
 
+function hasValidSmartCard(p = {}, sess = {}) {
+    return isPhysicalDocValid(
+        p.smartCard || p.rationCard || p.smartCardPath || p.rationCardPath || p.smartCardDocPath || p.rationCardDocPath || p.documents?.smartCard || p.documents?.rationCard || sess.tempUploads?.smartCard,
+        sess.draftData?.base64Docs?.smartCardBase64 || sess.draftData?.base64Docs?.rationCardBase64
+    );
+}
+
+function buildSmartCardPromptStep(sess, waitState, prefixMessage, svcLabel, isIncome = false) {
+    sess.intakeState = waitState;
+    const extraHint = isIncome
+        ? '\n💡 *பின்பக்கத்தில் உள்ள குடும்ப உறுப்பினர்கள் பட்டியலை AI தானாகப் படித்துக் காட்டும்!*'
+        : '';
+    const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+        `📑 **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) தேவை — ${svcLabel}:**\n\n` +
+        `⚠️ **கட்டாய அரசு முகவரி & குடும்ப ஆவணம்:**\n` +
+        `வருவாய்த் துறை சேவைகளுக்கு **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு** (முழு அட்டை OR முன்பக்கம் + பின்பக்கம்) கட்டாயம் தேவை.${extraHint}\n\n` +
+        `தயவுசெய்து **ரேஷன் கார்டு (முன்பக்கம் / முழுப் படம் அல்லது PDF)** பதிவேற்றவும்:`;
+    const options = [
+        { label: "📷 குடும்ப அட்டை (Smart Card) பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+    ];
+    return { text: welcomeText, options, step: sess.intakeState };
+}
+
 /**
  * PHASE 1 VERIFIED PORTAL MASTER SCHEMAS (TNeGA e-Sevai Portal DOM)
  * Explicitly separates:
@@ -55,6 +79,7 @@ const TNEGA_PORTAL_SCHEMAS = {
             'doorNo', 'streetTam', 'village', 'taluk', 'district', 'pincode'
         ],
         bucketB_UserPrompted: [
+            { key: 'smartCard', state: 'INCOME_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'incomeProof', state: 'INCOME_PROOF_WAIT', label: 'வருமான ஆதாரம் / சம்பளச் சான்று (Income Proof)' },
             { key: 'headPhotoPath', state: 'INCOME_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' },
             { key: 'canNumber', state: 'INCOME_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -72,6 +97,7 @@ const TNEGA_PORTAL_SCHEMAS = {
             'doorNo', 'streetTam', 'village', 'taluk', 'district', 'pincode'
         ],
         bucketB_UserPrompted: [
+            { key: 'smartCard', state: 'RESIDENCE_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'residenceProof', state: 'RESIDENCE_PROOF_WAIT', label: 'இருப்பிட ஆதாரம் / முகவரிச் சான்று (Residence Proof)' },
             { key: 'headPhotoPath', state: 'RESIDENCE_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' },
             { key: 'canNumber', state: 'RESIDENCE_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -87,6 +113,7 @@ const TNEGA_PORTAL_SCHEMAS = {
             'doorNo', 'streetTam', 'village', 'taluk', 'district', 'pincode'
         ],
         bucketB_UserPrompted: [
+            { key: 'smartCard', state: 'COMMUNITY_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'communityProof', state: 'COMMUNITY_PROOF_WAIT', label: 'குடும்ப சாதிச் சான்று (Family Community Proof)' },
             { key: 'headPhotoPath', state: 'COMMUNITY_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <50KB)' },
             { key: 'canNumber', state: 'COMMUNITY_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -129,6 +156,7 @@ const TNEGA_PORTAL_SCHEMAS = {
         bucketB_UserPrompted: [
             { key: 'headPhotoPath', state: 'OBC_PHOTO_WAIT', label: 'விண்ணப்பதாரர் புகைப்படம் (Photo <250px, <50KB)' },
             { key: 'headAadhaarDocPath', state: 'OBC_AADHAAR_WAIT', label: 'முகவரி ஆதாரம் (ஆதார் அட்டை)' },
+            { key: 'smartCard', state: 'OBC_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'communityProof', state: 'OBC_COMMUNITY_PROOF_WAIT', label: 'சாதிச் சான்றிதழ் (Community Certificate)' },
             { key: 'incomeTaxReturn', state: 'OBC_INCOME_PROOF_WAIT', label: 'வருமான வரி / வருமானச் சான்று (ITR / Income Proof)' },
             { key: 'canNumber', state: 'OBC_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -150,6 +178,7 @@ const TNEGA_PORTAL_SCHEMAS = {
         bucketB_UserPrompted: [
             { key: 'deathCertificate', state: 'LEGAL_HEIR_DEATH_CERT_WAIT', label: 'இறப்புச் சான்றிதழ் (Death Certificate)' },
             { key: 'headAadhaarDocPath', state: 'LEGAL_HEIR_AADHAAR_WAIT', label: 'வாரிசு உறவுமுறைச் சான்று (ஆதார் / ஸ்மார்ட் கார்டு)' },
+            { key: 'smartCard', state: 'LEGAL_HEIR_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'deceasedAddressProof', state: 'LEGAL_HEIR_DECEASED_ADDR_WAIT', label: 'இறந்தவரின் முகவரிச் சான்று (Deceased Address Proof)' },
             { key: 'birthCertificate', state: 'LEGAL_HEIR_CHILD_PROOF_WAIT', label: 'வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC' },
             { key: 'canNumber', state: 'LEGAL_HEIR_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -168,6 +197,7 @@ const TNEGA_PORTAL_SCHEMAS = {
         bucketB_UserPrompted: [
             { key: 'profilePhoto', state: 'WIDOW_PHOTO_WAIT', label: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<50KB)' },
             { key: 'headAadhaarDocPath', state: 'WIDOW_AADHAAR_WAIT', label: 'முகவரி ஆதாரம் (ஆதார் / ஸ்மார்ட் கார்டு)' },
+            { key: 'smartCard', state: 'WIDOW_SMARTCARD_WAIT', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)' },
             { key: 'deathCertificate', state: 'WIDOW_DEATH_CERT_WAIT', label: 'கணவரின் இறப்புச் சான்றிதழ் (Death Certificate of Husband)' },
             { key: 'marriageProof', state: 'WIDOW_MARRIAGE_PROOF_WAIT', label: 'திருமண ஆதாரம் (Marriage Certificate / Smart Card)' },
             { key: 'canNumber', state: 'WIDOW_CAN_GATE', label: '13/15-இலக்க CAN எண்' },
@@ -284,6 +314,11 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
+    // 1.2B Smart Ration Card Gate (Mandatory across ALL 7 Revenue Services; extracts family members for Income!)
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'INCOME_SMARTCARD_WAIT', prefixMessage, 'வருமானச் சான்றிதழ் (REV-103)', true);
+    }
+
     // 1.3 Income Proof / Salary Certificate Gate
     const hasIncomeProof = isPhysicalDocValid(
         p.incomeProof || p.salaryCertificatePath || p.salaryCertificate || p.documents?.incomeProof || p.documents?.salaryCertificate || sess.tempUploads?.incomeProof,
@@ -375,9 +410,43 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
-    // 3.3 Family Member Count Gate
+    // 3.3 Smart Card Family Member Multi-Select Picker OR Manual Member Count Gate
     const relHintInc = String(p.relationship || p.headRelationship || '').toLowerCase();
     const isMarriedInc = relHintInc.includes('husband') || relHintInc.includes('spouse') || String(p.maritalStatus || '').toLowerCase().includes('married') || Boolean(p.spouseNameEng || p.spouseNameTam || p.spouseName);
+
+    if (Array.isArray(p.smartCardMembers) && p.smartCardMembers.length > 0 && p.incomeMembersConfirmed !== true) {
+        sess.intakeState = 'INCOME_SELECT_MEMBERS_WAIT';
+        const pickedSet = new Set(Array.isArray(p.incomeSelectedIndices) ? p.incomeSelectedIndices : []);
+        const extraBabies = Array.isArray(p.incomeExtraAddedMembers) ? p.incomeExtraAddedMembers : [];
+        const lines = p.smartCardMembers.map((m, idx) => {
+            const mark = pickedSet.has(idx) ? '✅' : '⬜';
+            return `${mark} **${idx + 1}. ${m.nameTam || m.nameEng || m.name}** (${m.relationship || 'உறுப்பினர்'}${m.age ? `, ${m.age} வயது` : ''})`;
+        });
+        extraBabies.forEach((eb, i) => {
+            lines.push(`✅ **${p.smartCardMembers.length + i + 1}. ${eb.name} (${eb.relationship}${eb.age ? `, ${eb.age} வயது` : ''})** *(புதிதாகச் சேர்க்கப்பட்டது)*`);
+        });
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `👨‍👩‍👧‍👦 **ரேஷன் கார்டிலிருந்து கண்டறியப்பட்ட குடும்ப உறுப்பினர்கள்:**\n\n` +
+            lines.join('\n') + `\n\n` +
+            `⚠️ *திருமணமான பெண்களின் விண்ணப்பத்தில் கணவர் குடும்ப உறுப்பினர்களை மட்டுமே தேர்ந்தெடுக்கவும்; ரேஷன் கார்டில் இல்லாத பிறந்த குழந்தையையும் சேர்க்கலாம்.*\n` +
+            `👇 சேர்க்க வேண்டிய நபர்களைத் தேர்ந்தெடுக்கவும் (அல்லது எண்களைத் தட்டச்சு செய்க — எ.கா: \`1, 2\`):`;
+        const options = [
+            { label: `✅ அனைவரையும் சேர் (${p.smartCardMembers.length + extraBabies.length} நபர்கள்)`, value: "INC_SEL_ALL" },
+            { label: "👤 விண்ணப்பதாரர் மட்டும் (1 நபர்)", value: "INC_SEL_SELF_ONLY" }
+        ];
+        p.smartCardMembers.forEach((m, idx) => {
+            const mark = pickedSet.has(idx) ? '✅' : '➕';
+            options.push({
+                label: `${mark} ${idx + 1}. ${m.nameTam || m.nameEng || m.name} (${m.relationship || 'உறுப்பினர்'})`,
+                value: `INC_TOGGLE_${idx}`
+            });
+        });
+        options.push({ label: "👶 + பிறந்த குழந்தை / கூடுதல் நபர் சேர்", value: "INC_ADD_NEWBORN" });
+        if (pickedSet.size > 0 || extraBabies.length > 0) {
+            options.push({ label: `➡️ தேர்வு முடிந்தது (${pickedSet.size + extraBabies.length} பேர்) — தொடர்க`, value: "INC_MEMBERS_CONFIRMED" });
+        }
+        return { text: welcomeText, options, step: sess.intakeState };
+    }
 
     if (!p.familyMemberCount) {
         sess.intakeState = 'INCOME_MEMBER_COUNT_WAIT';
@@ -415,7 +484,7 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
                 const hLbl = spouseName ? `👨 கணவர் - ${spouseName}` : '👨 கணவர் (பெயர் சேர்க்க)';
                 options.push({ label: hLbl, value: spouseName ? `கணவர் - ${spouseName}` : 'கணவர்' });
             }
-            options.push({ label: "👦 மகன் (Son)", value: "மகன்" });
+            options.push({ label: "👶 பிறந்த குழந்தை / மகன் / மகள்", value: "மகன்" });
             options.push({ label: "👧 மகள் (Daughter)", value: "மகள்" });
             options.push({ label: "👵 மாமியார் (Mother-in-law)", value: "மாமியார்" });
             options.push({ label: "👴 மாமனார் (Father-in-law)", value: "மாமனார்" });
@@ -425,13 +494,36 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
             options.push({ label: motherName ? `👩 தாய் - ${motherName}` : '👩 தாய்', value: motherName ? `தாய் - ${motherName}` : 'தாய்' });
             options.push({ label: fatherName ? `👨 தந்தை - ${fatherName}` : '👨 தந்தை', value: fatherName ? `தந்தை - ${fatherName}` : 'தந்தை' });
             options.push({ label: "👰 மனைவி (Wife)", value: "மனைவி" });
-            options.push({ label: "👦 மகன் / 👧 மகள்", value: "மகன்" });
+            options.push({ label: "👶 பிறந்த குழந்தை / மகன் / மகள்", value: "மகன்" });
         }
         const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
             `👥 **குடும்ப உறுப்பினர் ${currentAddl + 2}/${Number(p.familyMemberCount)} விவரங்கள்:**\n\n` +
             `இந்த உறுப்பினரின் **உறவுமுறை, பெயர், வயது மற்றும் தொழில்/மாத வருமானம்** உள்ளிடவும் (அல்லது கீழே தேர்ந்தெடுக்கவும்):\n` +
-            `*(எ.கா: \`கணவர் - முனுசாமி, வயது 58, கூலி வேலை, மாதம் 6000\`)*`;
+            `*(எ.கா: \`கணவர் - முனுசாமி, வயது 58, கூலி வேலை, மாதம் 6000\` அல்லது \`பிறந்த குழந்தை - ஆதித்யா, வயது 1\`)*`;
         return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 3.4B Sequential Work & Monthly Income Queue for picked Smart Card members (with workConfirmed === false)
+    if (Array.isArray(p.incomeMembers)) {
+        const nextPendingIdx = p.incomeMembers.findIndex(m => m && m.workConfirmed === false);
+        if (nextPendingIdx !== -1) {
+            const targetMem = p.incomeMembers[nextPendingIdx];
+            sess.pendingIncomeMemberIndex = nextPendingIdx;
+            sess.intakeState = 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT';
+            const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+                `💼 **உறுப்பினர் ${nextPendingIdx + 2}: ${targetMem.nameTam || targetMem.name} (${targetMem.relationship || 'உறுப்பினர்'})**\n\n` +
+                `இவர் என்ன வேலை செய்கிறார் மற்றும் மாத வருமானம் எவ்வளவு?\n` +
+                `*(கீழே தேர்ந்தெடுக்கவும் அல்லது தட்டச்சு செய்யவும் — எ.கா: \`கூலி வேலை மாதம் 6000\`)*`;
+            const options = [
+                { label: "🔨 கூலி வேலை (மாதம் ₹6,000)", value: "கூலி வேலை மாதம் 6000" },
+                { label: "🌾 விவசாயம் (மாதம் ₹6,000)", value: "விவசாயம் மாதம் 6000" },
+                { label: "🏢 தனியார் வேலை (மாதம் ₹8,000)", value: "தனியார் வேலை மாதம் 8000" },
+                { label: "🏪 சிறு வியாபாரம் (மாதம் ₹7,000)", value: "வியாபாரம் மாதம் 7000" },
+                { label: "🏠 இல்லத்தரசி / வேலை இல்லை (₹0)", value: "இல்லத்தரசி ₹0" },
+                { label: "🎓 மாணவர் / 👶 குழந்தை (₹0)", value: "மாணவர் ₹0" }
+            ];
+            return { text: welcomeText, options, step: sess.intakeState };
+        }
     }
 
     // 3.5 Family Annual Income Gate
@@ -468,6 +560,24 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
             { label: "🏢 தனியார் துறை (Private Sector)", value: "தனியார் வேலை" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // Optional Salary Proof Upload Offer if any member is employed in Private / Govt Sector
+    const hasEmployedMember = /தனியார்|அரசு|private|govt|salary/i.test(`${p.profession || ''} ${(p.incomeMembers || []).map(m => m.profession || '').join(' ')}`);
+    const hasPhysicalSalaryDoc = isPhysicalDocValid(p.salaryCertificatePath || p.salaryCertificate || p.incomeProof, sess.draftData?.base64Docs?.incomeProofBase64) && p.incomeProof !== 'SELF_DECLARATION';
+    if (hasEmployedMember && !hasPhysicalSalaryDoc && !p.salaryProofPrompted) {
+        sess.intakeState = 'INCOME_SALARY_DOC_OPTIONAL_WAIT';
+        const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
+            `📄 **சம்பளச் சான்று / Pay Slip உள்ளதா? (விருப்பம் / Optional):**\n\n` +
+            `குடும்பத்தில் தனியார்/அரசு வேலை செய்பவர் உள்ளதால், **சம்பளச் சான்று (Salary Certificate)** இருந்தால் பதிவேற்றலாம்; இல்லையெனில் சுய அறிவிப்புடன் தொடரலாம்:`;
+        return {
+            text: welcomeText,
+            options: [
+                { label: "📷 சம்பளச் சான்று பதிவேற்றுக (Upload Salary Cert)", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "⏭️ தேவையில்லை / சுய அறிவிப்பு போதும்", value: "SKIP_SALARY_PROOF" }
+            ],
+            step: sess.intakeState
+        };
     }
 
     // =========================================================================
@@ -721,6 +831,11 @@ function advanceTnegaResidenceFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
+    // 1.2B Smart Ration Card Gate (Mandatory across ALL 7 Revenue Services)
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'RESIDENCE_SMARTCARD_WAIT', prefixMessage, 'இருப்பிடச் சான்றிதழ் (REV-102)');
+    }
+
     // 1.3 Residence Proof Gate (Electricity Bill EB / Gas Book / Ration Card / Rent Deed / Property Tax)
     const hasResidenceProof = isPhysicalDocValid(
         p.residenceProof?.docPath || p.residenceProof || p.documents?.residenceProof || p.documents?.gasBook || sess.tempUploads?.residenceProof || sess.tempUploads?.gasBook,
@@ -923,6 +1038,11 @@ function advanceTnegaCommunityFlow(sess, prefixMessage = '') {
             { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
         ];
         return { text: welcomeText, options, step: sess.intakeState };
+    }
+
+    // 1.2B Smart Ration Card Gate (Mandatory across ALL 7 Revenue Services)
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'COMMUNITY_SMARTCARD_WAIT', prefixMessage, 'சாதிச் சான்றிதழ் (REV-101)');
     }
 
     // 1.3 Family Community Certificate or School TC Upload Gate (Strict Zero-Skip Law)
@@ -1475,6 +1595,11 @@ function advanceTnegaObcFlow(sess, prefixMessage = '') {
         };
     }
 
+    // 1.2B Smart Ration Card Gate (Mandatory across ALL 7 Revenue Services)
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'OBC_SMARTCARD_WAIT', prefixMessage, 'OBC சான்றிதழ் (REV-115)');
+    }
+
     // 1.3 Community Certificate (Extracts OBC Caste automatically)
     const hasCommDoc = isPhysicalDocValid(
         p.communityCertificate || p.communityCertificatePath || p.communityProof || p.familyCommunityProofPath || docs.communityCertificate || docs.communityProof || tu.communityCertificate || tu.communityProof,
@@ -1715,6 +1840,11 @@ function advanceTnegaLegalHeirFlow(sess, prefixMessage = '') {
         };
     }
 
+    // 1.2b Mandatory Smart Ration Card for Legal Heir Service
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'LEGAL_HEIR_SMARTCARD_WAIT', prefixMessage, 'வாரிசுச் சான்றிதழ் (REV-114)');
+    }
+
     // 1.3 Address Proof of the Deceased (Portal Code 430 Mandatory — falls back to Aadhaar/SmartCard if already present)
     const hasDeceasedAddrDoc = isPhysicalDocValid(
         p.deceasedAddressProof || docs.deceasedAddressProof || tu.deceasedAddressProof || p.residenceProof?.docPath || p.residenceProof || docs.residenceProof || p.smartCard || docs.smartCard || p.headAadhaarDocPath || docs.headAadhaar,
@@ -1900,7 +2030,7 @@ function advanceTnegaWidowFlow(sess, prefixMessage = '') {
 
     // 1.2 Applicant Passport Photo (Portal Code 133 Mandatory, <50KB)
     const hasPhoto = isPhysicalDocValid(
-        p.profilePhoto || p.headPhoto || p.photo || docs.profilePhoto || docs.headPhoto || tu.profilePhoto || tu.headPhoto,
+        p.profilePhoto || p.headPhotoPath || p.headPhoto || p.photo || docs.profilePhoto || docs.headPhoto || tu.profilePhoto || tu.headPhoto,
         b64.profilePhotoBase64 || b64.headPhotoBase64 || b64.photoBase64
     );
     if (!hasPhoto) {
@@ -1937,6 +2067,11 @@ function advanceTnegaWidowFlow(sess, prefixMessage = '') {
             ],
             step: sess.intakeState
         };
+    }
+
+    // 1.3B Smart Ration Card Gate (Mandatory across ALL 7 Revenue Services)
+    if (!hasValidSmartCard(p, sess)) {
+        return buildSmartCardPromptStep(sess, 'WIDOW_SMARTCARD_WAIT', prefixMessage, 'விதவைச் சான்றிதழ் (REV-109)');
     }
 
     // 1.4 Marriage Proof — Marriage Registration Certificate / Wedding Card / Smart Ration Card (Portal Code 201 Mandatory, <200KB)

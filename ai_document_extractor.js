@@ -75,11 +75,14 @@ TASK 1: QUALITY ASSESSMENT:
 
 TASK 2: PRECISE DATA EXTRACTION & DOCUMENT CLASSIFICATION (If isQualityAcceptable is true):
 Extract ONLY the fields actually visible on the uploaded image and classify the document (use null for any field not visible on the image; NEVER copy example placeholder values):
-- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "COMMUNITY_CERTIFICATE" | "TRANSFER_CERTIFICATE" | "SCHOOL_TC" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
+- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "SMART_CARD_FRONT" | "SMART_CARD_BACK" | "COMMUNITY_CERTIFICATE" | "TRANSFER_CERTIFICATE" | "SCHOOL_TC" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
   * AADHAAR_FULL: The image or PDF contains BOTH front details (Photo, Name, DOB, Aadhaar Number) AND back details (Address, S/O or W/O Care of, Pincode), or is a downloaded e-Aadhaar single-page letter containing full front and address sections.
   * AADHAAR_FRONT: The image contains ONLY the cropped front side of the card (Photo, Name, DOB, Aadhaar number) and DOES NOT have the address or back side.
   * AADHAAR_BACK: The image contains ONLY the back side of the card (Address, QR, C/O father/husband).
-  * SMART_CARD: Tamil Nadu Smart Ration Card (குடும்ப அட்டை / TNPDS Smart Card).
+  * SMART_CARD: Full Tamil Nadu Smart Ration Card (or PDF/combined image containing BOTH front side card/address/head AND back side Family Members Table). Set "isFullSmartCard": true.
+  * SMART_CARD_FRONT: ONLY the front side of a Tamil Nadu Smart Ration Card (Family Head photo, Card number 33..., Address) without the back Family Members list. Set "isFullSmartCard": false.
+  * SMART_CARD_BACK: ONLY the back side of a Tamil Nadu Smart Ration Card showing the QR code and Family Members Table. Set "isFullSmartCard": false.
+  * SMART CARD MEMBERS RULE: Whenever ANY family members table/list is visible on a Smart Ration Card (back or full sheet), extract EVERY member listed into "smartCardMembers": [ { "nameTam": "...", "nameEng": "...", "relationship": "Head|Husband|Wife|Son|Daughter|Father|Mother|Father-in-law|Mother-in-law|Brother|Sister|Other", "age": "", "gender": "Male|Female" } ]. Also extract "smartCardNumber" (e.g. 33...) and family address.
   * COMMUNITY_CERTIFICATE: Tamil Nadu Government Community Certificate (ஜாதிச் சான்றிதழ் / E-Certificate).
   * TRANSFER_CERTIFICATE / SCHOOL_TC: School / College Transfer Certificate (பள்ளி மாற்றுச் சான்றிதழ் / TC) showing student Community & Caste.
 - isFullAadhaar: boolean (true if BOTH front details AND address details are visible on this document; false if only one side).
@@ -135,6 +138,7 @@ Respond strictly in JSON format (use null for fields not present in the image):
   "feedbackTamil": "ஆவணம் தெளிவாக உள்ளது / ஆவணம் மங்கலாக உள்ளது...",
   "documentType": "AADHAAR_FULL",
   "isFullAadhaar": true,
+  "isFullSmartCard": false,
   "hasAddress": true,
   "documentBoundingBox": [20, 20, 980, 980],
   "faceDetected": true,
@@ -157,6 +161,7 @@ Respond strictly in JSON format (use null for fields not present in the image):
   "genderTam": "ஆண்",
   "aadhaarNumber": "",
   "smartCardNumber": "",
+  "smartCardMembers": [],
   "doorNo": "",
   "streetEng": "",
   "streetTam": "",
@@ -222,6 +227,20 @@ Respond strictly in JSON format (use null for fields not present in the image):
                 result.spouseNameTam = normalizeTamilInitialsFromEnglish(result.spouseNameEng, result.spouseNameTam);
             } else if (result.spouseNameEng && !result.spouseNameTam) {
                 result.spouseNameTam = ensureBilingualPair(result.spouseNameEng, '').tam;
+            }
+            if (Array.isArray(result.smartCardMembers)) {
+                result.smartCardMembers = result.smartCardMembers
+                    .filter(m => m && (m.nameTam || m.nameEng))
+                    .map(m => {
+                        const mp = ensureBilingualPair(m.nameEng || '', m.nameTam || '');
+                        return {
+                            nameEng: mp.eng || m.nameEng || '',
+                            nameTam: mp.tam || m.nameTam || '',
+                            relationship: m.relationship || 'Member',
+                            age: m.age ? String(m.age).replace(/\D/g, '') : '',
+                            gender: m.gender || ''
+                        };
+                    });
             }
             if (result.dob) {
                 const { normalizeDobWithYearFallback } = require('./src/services/profile_helpers');

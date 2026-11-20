@@ -131,8 +131,8 @@ function evaluateServiceChecklist(serviceId, profile = {}, base64Docs = {}) {
             } else if (doc.key === 'applicantEducationProof') {
                 candidatePaths.push(profile.applicantEducationProof, profile.studentTc, profile.twelfthMarksheet, profile.bonafideCertificate, profile.documents?.applicantEducationProof, profile.documents?.studentTc);
                 candidateB64.push(base64Docs.applicantEducationProofBase64, base64Docs.studentTcBase64);
-            } else if (doc.key === 'smartCard') {
-                candidatePaths.push(profile.smartCard, profile.rationCard, profile.smartCardDocPath, profile.documents?.smartCard, profile.documents?.rationCard);
+            } else if (doc.key === 'smartCard' || doc.key === 'rationCard') {
+                candidatePaths.push(profile.smartCard, profile.rationCard, profile.smartCardPath, profile.rationCardPath, profile.smartCardDocPath, profile.rationCardDocPath, profile.documents?.smartCard, profile.documents?.rationCard);
                 candidateB64.push(base64Docs.smartCardBase64, base64Docs.rationCardBase64);
             } else if (doc.key === 'fatherEducationProof') {
                 candidatePaths.push(profile.fatherEducationProof, profile.fatherTc, profile.fatherEducationProofPath, profile.documents?.fatherEducationProof, profile.documents?.fatherTc);

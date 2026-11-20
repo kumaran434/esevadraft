@@ -195,6 +195,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
         let proceedClickTime = 0;
         let preSearchDone = false;
         let memberAdded = false;
+        let initialFormFillLocked = false;
         let formSubmitted = false;
         let waitingForOperatorSubmit = false;
 
@@ -453,7 +454,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
 
                     const hasApplicant = actualAddedRows.some(t => (t.includes('Self') || (fullNameEng && t.includes(fullNameEng)) || (fullNameTam && t.includes(fullNameTam))) && !/\b0\s+0\b/.test(t));
 
-                    if (!memberAdded && !hasApplicant) {
+                    if (!initialFormFillLocked && !waitingForOperatorSubmit && !memberAdded && !hasApplicant) {
                         await updateTnegaHud(tnegaPage, {
                             title: '📝 வருமானச் சான்றிதழ் படிவம்',
                             desc: `குடும்ப வருமான விவரங்கள் நிரப்பப்படுகின்றன (ஆண்டு: ₹${annualIncome.toLocaleString('en-IN')})...`,
@@ -677,8 +678,12 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                 memberAdded = true;
                             }
                         }
+                        // Lock auto-fill permanently after initial pass so manual operator deletes/edits in Chrome are never overwritten
+                        initialFormFillLocked = true;
+                        memberAdded = true;
                     } else if (hasApplicant) {
                         memberAdded = true;
+                        initialFormFillLocked = true;
                     }
 
                     // 5C. Set Total number of family members & Submit
@@ -700,6 +705,8 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                 await totalInput.dispatchEvent('blur', { bubbles: true }).catch(() => {});
                             }
 
+                            initialFormFillLocked = true;
+                            memberAdded = true;
                             waitingForOperatorSubmit = true;
                             onProgress('🔍 [படிவ சரிபார்ப்பு] வருமானச் சான்றிதழ் விவரங்கள் அனைத்தும் நிரப்பப்பட்டுவிட்டன. விவரங்களை ஒருமுறை சரிபார்த்துவிட்டு போர்ட்டலில் உள்ள "Submit" பொத்தானை நீங்களே அழுத்தவும் ⌨️');
                             onProgress('⏳ ஆப்ரேட்டர் Submit பொத்தானை அழுத்த காத்திருக்கிறது... (சமர்ப்பித்தவுடன் ஆவணப் பதிவேற்றம் தானாகத் தொடங்கும் 🚀)');
@@ -875,13 +882,14 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                         }
                     }
 
-                    let smartCardPath = citizenProfile.smartCardPath || citizenProfile.rationCardPath || citizenProfile.documents?.smartCard || citizenProfile.documents?.rationCard;
+                    let smartCardPath = citizenProfile.smartCard || citizenProfile.rationCard || citizenProfile.smartCardPath || citizenProfile.rationCardPath || citizenProfile.smartCardDocPath || citizenProfile.documents?.smartCard || citizenProfile.documents?.rationCard;
                     if (smartCardPath && !fs.existsSync(smartCardPath)) {
                         const resolved = await resolveOrRestoreFile(smartCardPath, null, 'smartCard');
                         if (resolved && fs.existsSync(resolved)) smartCardPath = resolved;
                     }
-                    if (!smartCardPath || !fs.existsSync(smartCardPath)) {
-                        smartCardPath = aadhaarDocPath;
+                    if (smartCardPath && fs.existsSync(smartCardPath) && fs.statSync(smartCardPath).size > 190000) {
+                        const compSc = await produceCompliantDocument(smartCardPath).catch(() => null);
+                        if (compSc && fs.existsSync(compSc)) smartCardPath = compSc;
                     }
 
                     const docUploadList = [
@@ -902,8 +910,10 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             docNum: '1',
                             filePath: aadhaarDocPath,
                             maxKb: 200
-                        },
-                        {
+                        }
+                    ];
+                    if (smartCardPath && fs.existsSync(smartCardPath)) {
+                        docUploadList.push({
                             nameTamil: 'குடும்ப அட்டை / ஸ்மார்ட் கார்டு (Family or Smart Card)',
                             nameEng: 'Family or Smart Card',
                             searchTerms: ['family or smart card', 'smart card', 'family'],
@@ -911,8 +921,10 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             docNum: '1',
                             filePath: smartCardPath,
                             maxKb: 200
-                        }
-                    ];
+                        });
+                    } else {
+                        onProgress('⚠️ [குடும்ப அட்டை இல்லை] ஸ்மார்ட் ரேஷன் கார்டு பதிவேற்றப்படாததால் option 457 தவிர்க்கப்பட்டது — போர்ட்டலில் நீங்களே அப்லோட் செய்யலாம்.');
+                    }
 
                     let salRawPath = citizenProfile.salaryProofPath || citizenProfile.incomeProofPath || citizenProfile.documents?.incomeProof || citizenProfile.documents?.salarySlip || citizenProfile.documents?.salaryCertificate;
                     if (salRawPath && !fs.existsSync(salRawPath)) {

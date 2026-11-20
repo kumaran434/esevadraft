@@ -150,7 +150,7 @@ const SERVICES_REGISTRY = {
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை', format: 'pdf' },
             { key: 'incomeProof', label: 'சம்பளச் சான்று அல்லது சுய அறிவிப்புப் படிவம் (Self-declaration)', format: 'pdf', optional: true },
-            { key: 'rationCard', label: 'குடும்ப ரேஷன் கார்டு', format: 'pdf', optional: true }
+            { key: 'smartCard', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Ration Card)', format: 'pdf' }
         ]
     },
 
@@ -180,6 +180,7 @@ const SERVICES_REGISTRY = {
         requiredDocuments: [
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை', format: 'pdf' },
+            { key: 'smartCard', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு', format: 'pdf' },
             { key: 'residenceProof', label: 'முகவரிச் சான்று (மின் கட்டணம் / வீட்டு வரி / கேஸ் அட்டை)', format: 'pdf' }
         ]
     },
@@ -214,6 +215,7 @@ const SERVICES_REGISTRY = {
         requiredDocuments: [
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் புகைப்படம்', format: 'image' },
             { key: 'headAadhaar', label: 'ஆதார் அட்டை', format: 'pdf' },
+            { key: 'smartCard', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு', format: 'pdf' },
             { key: 'communityProof', label: 'பள்ளி மாற்றுச் சான்றிதழ் (TC) அல்லது பெற்றோர் சாதிச் சான்றிதழ்', format: 'pdf' }
         ]
     },
@@ -345,6 +347,7 @@ const SERVICES_REGISTRY = {
             { key: 'deathCertificate', label: 'இறப்புச் சான்றிதழ் (Death Certificate of the deceased)', format: 'pdf' },
             { key: 'deceasedAddressProof', label: 'இறந்தவரின் முகவரிச் சான்று (Address Proof of Deceased)', format: 'pdf' },
             { key: 'headAadhaar', label: 'வாரிசு உறவுமுறைச் சான்று (ஆதார் / ஸ்மார்ட் கார்டு)', format: 'pdf' },
+            { key: 'smartCard', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு', format: 'pdf' },
             { key: 'birthCertificate', label: 'வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC', format: 'pdf' }
         ]
     },
@@ -379,6 +382,7 @@ const SERVICES_REGISTRY = {
             { key: 'profilePhoto', label: 'விண்ணப்பதாரர் பாஸ்போர்ட் புகைப்படம் (<50KB)', format: 'image' },
             { key: 'headAadhaar', label: 'முகவரி ஆதாரம் (ஆதார் / ஸ்மார்ட் கார்டு)', format: 'pdf' },
             { key: 'deathCertificate', label: 'கணவரின் இறப்புச் சான்றிதழ் (Death Certificate of Husband)', format: 'pdf' },
+            { key: 'smartCard', label: 'குடும்ப ஸ்மார்ட் ரேஷன் கார்டு', format: 'pdf' },
             { key: 'marriageProof', label: 'திருமண ஆதாரம் (திருமண சான்றிதழ் / ஸ்மார்ட் கார்டு)', format: 'pdf' }
         ]
     }
