@@ -219,6 +219,7 @@ function handleLocalTelemetry(req, res) {
                 const { reportOperatorTelemetry } = require('./desktop_services');
                 if (typeof reportOperatorTelemetry === 'function') {
                     reportOperatorTelemetry({
+                        runId: data.runId || '',
                         operatorUid: data.operatorUid || req.headers['x-operator-uid'] || '',
                         operatorName: data.operatorName || '',
                         operatorMobile: data.operatorMobile || '',

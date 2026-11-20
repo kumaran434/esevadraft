@@ -112,17 +112,31 @@ async function loadOperatorErrors() {
             if (teleErrors.length === 0) {
                 cloudContainer.innerHTML = '<div style="padding:12px;border-radius:8px;background:#0f172a;border:1px solid #334155;color:#94a3b8;font-size:12px;">Cloud Telemetry-இல் எரர்கள் எதுவும் இல்லை ✅</div>';
             } else {
-                cloudContainer.innerHTML = teleErrors.map(e => `
+                const badgeMap = {
+                    OPERATOR_HUD_FAULT_REPORT: { label: '🚨 Chrome HUD புகார்', bg: '#7f1d1d', fg: '#fecaca' },
+                    OPERATOR_MID_RUN_FEEDBACK: { label: '💬 ஆபரேட்டர் காரணம்', bg: '#78350f', fg: '#fde68a' },
+                    AUTOMATION_ABANDONED_MID_RUN: { label: '⛔ Pre-Submit முன் நின்றது', bg: '#991b1b', fg: '#fee2e2' },
+                    AUTOMATION_STUCK_WARNING: { label: '⏰ 120s Stuck Watchdog', bg: '#713f12', fg: '#fef08a' },
+                    AUTOMATION_ORPHANED_APP_CLOSE: { label: '🔌 App பாதியில் மூடப்பட்டது', bg: '#581c87', fg: '#e9d5ff' }
+                };
+                cloudContainer.innerHTML = teleErrors.map(e => {
+                    const b = badgeMap[e.errorType] || { label: e.errorType || 'ERROR', bg: '#1e293b', fg: '#fca5a5' };
+                    return `
                     <div style="padding:12px;border-radius:8px;background:#0f172a;border:1px solid #475569;color:#e2e8f0;font-size:12px;">
                         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
                             <span style="font-weight:800;color:#fbbf24;">👤 ${escapeDevHtml(e.operatorName || 'unknown')} (${escapeDevHtml(e.operatorMobile || e.operatorKey || '-')})</span>
                             <span style="color:#94a3b8;font-size:11px;">v${escapeDevHtml(e.appVersion || '')} • ${escapeDevHtml((e.timestamp || '').replace('T', ' ').slice(0, 19))}</span>
                         </div>
-                        <div style="color:#f87171;font-weight:700;">[${escapeDevHtml(e.errorType)}] ${escapeDevHtml(e.serviceName ? e.serviceName + ' • ' : '')}${escapeDevHtml(e.step)}</div>
+                        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:3px;">
+                            <span style="background:${b.bg};color:${b.fg};padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:800;">${escapeDevHtml(b.label)}</span>
+                            <span style="color:#f87171;font-weight:700;">${escapeDevHtml(e.serviceName ? e.serviceName + ' • ' : '')}${escapeDevHtml(e.step)}</span>
+                        </div>
                         <div style="margin-top:4px;color:#fecaca;word-break:break-word;">${escapeDevHtml(e.errorMessage)}</div>
+                        ${e.runId ? `<div style="margin-top:3px;font-size:10.5px;color:#64748b;">Run: ${escapeDevHtml(e.runId)}${e.portalUrl ? ` • URL: ${escapeDevHtml(e.portalUrl)}` : ''}</div>` : ''}
                         ${Array.isArray(e.lastUiActions) && e.lastUiActions.length ? `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">கடைசி செயல்கள்: ${e.lastUiActions.slice(-4).map(a => escapeDevHtml(`${a.cat}:${a.action}`)).join(' → ')}</div>` : ''}
                     </div>
-                `).join('');
+                `;
+                }).join('');
             }
         }
 

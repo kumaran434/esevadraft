@@ -2,6 +2,7 @@
  * Browser HUD & Visual Banners for Operator Feedback
  */
 const { exec } = require('child_process');
+const { registerHudFaultBridge } = require('../../tnega/tnega_hud');
 
 let defaultHudPage = null;
 function setDefaultHudPage(p) { if (p && !p.isClosed()) defaultHudPage = p; }
@@ -10,6 +11,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
     const activePage = targetPage || defaultHudPage;
     if (!activePage || activePage.isClosed()) return;
     try {
+        await registerHudFaultBridge(activePage).catch(() => {});
         await activePage.evaluate(({ title, subtitle, type }) => {
             const u = window.location.href.toLowerCase();
             if (u.includes('perfdrive') || u.includes('validate')) return;
@@ -32,23 +34,108 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
                     position: fixed; top: 12px; right: 24px; z-index: 2147483647;
                     height: 36px; box-sizing: border-box; background: rgba(15, 23, 42, 0.94);
                     backdrop-filter: blur(8px); border: 1.5px solid ${borderColor};
-                    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); border-radius: 8px; padding: 0 12px;
+                    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); border-radius: 8px; padding: 0 10px 0 12px;
                     color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     display: inline-flex; align-items: center; gap: 8px; pointer-events: none;
-                    transition: border-color 0.2s ease, opacity 0.2s ease; max-width: 60vw; white-space: nowrap;
+                    transition: border-color 0.2s ease, opacity 0.2s ease; max-width: 72vw; white-space: nowrap;
                 `;
                 hud.innerHTML = `
                     <span id="eseva-hud-icon" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;">${iconSvg}</span>
                     <span id="eseva-hud-step-badge" style="display: none; font-size: 11px; font-weight: 800; background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 6px;"></span>
                     <span id="eseva-hud-title" style="font-size: 12px; font-weight: 700; color: #f8fafc; letter-spacing: 0.1px;"></span>
-                    <span id="eseva-hud-sub" style="font-size: 11.5px; font-weight: 500; color: #94a3b8; max-width: 700px; overflow: hidden; text-overflow: ellipsis;"></span>
-                    <span style="font-size: 9.5px; font-weight: 700; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 6px; border-radius: 4px; text-transform: uppercase; margin-left: 4px;">eSeva</span>
+                    <span id="eseva-hud-sub" style="font-size: 11.5px; font-weight: 500; color: #94a3b8; max-width: 520px; overflow: hidden; text-overflow: ellipsis;"></span>
+                    <span style="font-size: 9.5px; font-weight: 700; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 6px; border-radius: 4px; text-transform: uppercase; margin-left: 2px;">eSeva</span>
+                    <button type="button" id="esevaHudReportToggle" style="pointer-events: auto; background: rgba(239,68,68,0.22); color: #fecaca; border: 1px solid rgba(248,113,113,0.5); border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer; margin-left: 4px;">🚨 பிழை தெரிவி</button>
                 `;
                 document.body.appendChild(hud);
             } else {
                 hud.style.borderColor = borderColor;
                 const iconEl = document.getElementById('eseva-hud-icon');
                 if (iconEl) iconEl.innerHTML = iconSvg;
+            }
+
+            let drawer = document.getElementById('esevaHudReportBox');
+            if (!drawer) {
+                drawer = document.createElement('div');
+                drawer.id = 'esevaHudReportBox';
+                drawer.style.cssText = 'display:none; position:fixed; top:54px; right:24px; z-index:2147483647; width:330px; background:rgba(15,23,42,0.96); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.45); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.45); pointer-events:auto;';
+                drawer.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11.5px;font-weight:700;color:#fecaca;">
+                        <span>🚨 பிழை / தாமதம் தெரிவிக்க</span>
+                        <span id="esevaHudFaultToast" style="color:#86efac;font-size:10.5px;"></span>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px;">
+                        <button type="button" class="eseva-tnpds-chip" data-msg="OTP வரவில்லை" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:3px 6px;font-size:10.5px;cursor:pointer;">OTP வரவில்லை</button>
+                        <button type="button" class="eseva-tnpds-chip" data-msg="பக்கம் சுற்றிக்கொண்டே உள்ளது" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:3px 6px;font-size:10.5px;cursor:pointer;">பக்கம் சுற்றிக்கொண்டே உள்ளது</button>
+                        <button type="button" class="eseva-tnpds-chip" data-msg="தவறான விவரம் / போர்ட்டல் பிழை" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:3px 6px;font-size:10.5px;cursor:pointer;">தவறான விவரம் / பிழை</button>
+                        <button type="button" class="eseva-tnpds-chip" data-msg="ஆவணம் அப்லோட் ஆகவில்லை" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:3px 6px;font-size:10.5px;cursor:pointer;">ஆவணம் அப்லோட் ஆகவில்லை</button>
+                    </div>
+                    <div style="display:flex;gap:5px;">
+                        <input type="text" id="esevaHudFaultNote" placeholder="என்ன பிரச்சனை? (தமிழ் / English)..." style="flex:1;min-width:0;background:#020617;color:#f8fafc;border:1px solid #475569;border-radius:6px;padding:5px 7px;font-size:11px;outline:none;">
+                        <button type="button" id="esevaHudFaultSend" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;">📤 அனுப்பு</button>
+                    </div>
+                `;
+                document.body.appendChild(drawer);
+            }
+
+            if (hud && hud.dataset.faultWired !== '1') {
+                hud.dataset.faultWired = '1';
+                const btn = document.getElementById('esevaHudReportToggle');
+                const noteEl = document.getElementById('esevaHudFaultNote');
+                const sendEl = document.getElementById('esevaHudFaultSend');
+                const toastEl = document.getElementById('esevaHudFaultToast');
+                const sendFault = async (reasonText) => {
+                    const cleaned = String(reasonText || (noteEl ? noteEl.value : '') || '').trim() || 'ஆபரேட்டர் பிழை அறிவிப்பு (TNPDS HUD)';
+                    if (sendEl) sendEl.disabled = true;
+                    if (toastEl) toastEl.textContent = '⏳ அனுப்புகிறது...';
+                    try {
+                        if (typeof window.__esevaReportHudFault === 'function') {
+                            await window.__esevaReportHudFault({
+                                reason: cleaned,
+                                note: cleaned,
+                                hudStepTitle: document.getElementById('eseva-hud-title')?.textContent || '',
+                                hudStepDesc: document.getElementById('eseva-hud-sub')?.textContent || '',
+                                url: window.location.href
+                            });
+                        }
+                        if (noteEl) noteEl.value = '';
+                        if (toastEl) toastEl.textContent = '✅ அனுப்பப்பட்டது!';
+                        setTimeout(() => {
+                            drawer.style.display = 'none';
+                            if (toastEl) toastEl.textContent = '';
+                        }, 2000);
+                    } catch (_) {
+                        if (toastEl) toastEl.textContent = '⚠️ தோல்வி';
+                    } finally {
+                        if (sendEl) sendEl.disabled = false;
+                    }
+                };
+                if (btn) {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        drawer.style.display = drawer.style.display === 'block' ? 'none' : 'block';
+                        if (drawer.style.display === 'block' && noteEl) setTimeout(() => noteEl.focus(), 30);
+                    });
+                }
+                if (noteEl) {
+                    noteEl.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); sendFault(noteEl.value); }
+                    });
+                }
+                drawer.querySelectorAll('.eseva-tnpds-chip').forEach((ch) => {
+                    ch.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const m = ch.getAttribute('data-msg') || ch.textContent || '';
+                        if (noteEl) noteEl.value = m;
+                        sendFault(m);
+                    });
+                });
+                if (sendEl) {
+                    sendEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        sendFault(noteEl ? noteEl.value : '');
+                    });
+                }
             }
 
             // Extract step if present e.g. [படி 18/51] or [படிகள் 9-13/51]

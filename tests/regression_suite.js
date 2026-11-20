@@ -4155,6 +4155,99 @@ async function runTests() {
             passedCount += 14;
         }
 
+        // =========================================================================
+        // TEST 65: 🚨 In-Chrome HUD Fault Report + Mid-Run Pre-Submit Drop & Orphan Watchdog
+        // =========================================================================
+        console.log('\n[TEST 65] 🚨 Verifying Chrome HUD Fault Report + Mid-Run Drop & Orphan Detector...');
+        {
+            const hudSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_hud.js'), 'utf8');
+            const tnpdsHudSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'helpers', 'browser_hud.js'), 'utf8');
+            assert(hudSrc.includes('esevaHudReportToggle') && hudSrc.includes('esevaHudReportBox') && hudSrc.includes('esevaHudFaultNote') && hudSrc.includes('__esevaReportHudFault'), 'TNeGA Chrome HUD exposes inline Report Issue button and Playwright CSP-safe bridge');
+            assert(tnpdsHudSrc.includes('registerHudFaultBridge') && tnpdsHudSrc.includes('esevaHudReportToggle') && tnpdsHudSrc.includes('esevaHudFaultNote'), 'TNPDS Chrome HUD exposes inline Report Issue button and drawer');
+
+            // Verify registerHudFaultBridge invokes handler cleanly on mock Playwright page
+            const { registerHudFaultBridge } = require('../src/portal/tnega/tnega_hud');
+            let exposedCb = null;
+            let capturedHudFault = null;
+            const prevHudHandler = global.__esevaHudFaultHandler;
+            global.__esevaHudFaultHandler = async (p) => { capturedHudFault = p; };
+            const mockPage = {
+                isClosed: () => false,
+                url: () => 'https://tnedistrict.tn.gov.in/tneda/test',
+                exposeFunction: async (name, fn) => {
+                    if (name === '__esevaReportHudFault') exposedCb = fn;
+                }
+            };
+            await registerHudFaultBridge(mockPage);
+            assert(typeof exposedCb === 'function' && mockPage.__esevaHudFaultExposed === true, 'registerHudFaultBridge binds __esevaReportHudFault once');
+            const bridgeRes = await exposedCb({ reason: 'OTP வரவில்லை', hudStepTitle: 'OTP Page' });
+            assert(bridgeRes.ok === true && capturedHudFault && capturedHudFault.reason === 'OTP வரவில்லை' && capturedHudFault.portalUrl.includes('tnedistrict'), 'Chrome HUD fault bridge delivers reason and live URL');
+            global.__esevaHudFaultHandler = prevHudHandler;
+
+            // Verify Pre-Submit Drop, Startup Orphan Detector, and Desktop Services isolation
+            const tmpUserData = fs.mkdtempSync(path.join(require('os').tmpdir(), 'eseva-t65-'));
+            const prevTestDir = process.env.ESEVA_TEST_USERDATA;
+            process.env.ESEVA_TEST_USERDATA = tmpUserData;
+            try {
+                const ds = require('../desktop/desktop_services');
+                assert(ds.isPreSubmitReached('PRE_SUBMIT_GATE') === true && ds.isPreSubmitReached('OTP அனுப்பப்பட்டது') === false, 'isPreSubmitReached distinguishes Pre-Submit Gate from mid-run steps');
+
+                // 1) Orphaned mid-run (< Pre-Submit) must emit AUTOMATION_ORPHANED_APP_CLOSE
+                ds.writeActiveRunFlight({
+                    runId: 'run_orphan_test_1',
+                    operatorUid: 'op_test',
+                    operatorName: 'Tester',
+                    serviceName: 'INCOME_CERTIFICATE',
+                    lastProgressMsg: 'CAN Search OTP Waiting',
+                    reachedPreSubmit: false
+                });
+                let orphanReported = null;
+                const orphanRes = ds.detectOrphanedMidRunOnStartup((p) => { orphanReported = p; });
+                assert(orphanRes.orphaned === true && orphanReported?.errorType === 'AUTOMATION_ORPHANED_APP_CLOSE' && orphanReported?.runId === 'run_orphan_test_1', 'Startup orphan detector reports mid-run app close');
+                assert(!fs.existsSync(ds.getActiveFlightFilePath()), 'Startup orphan detector clears active_run_flight.json');
+
+                // 2) Cleanly reached Pre-Submit Gate must NOT report orphan error
+                ds.writeActiveRunFlight({ runId: 'run_done_test_2', reachedPreSubmit: true });
+                let cleanOrphan = null;
+                const cleanRes = ds.detectOrphanedMidRunOnStartup((p) => { cleanOrphan = p; });
+                assert(cleanRes.orphaned === false && cleanOrphan === null, 'Startup orphan detector stays silent after Pre-Submit Gate');
+
+                // 3) finalizeMidRunTelemetryIfNeeded returns promptFaultReason=true for mid-run drop, false for Pre-Submit completion
+                const ar = require('../desktop/automation_runner');
+                let capturedTele = null;
+                const prevSink = global.__esevaTestTelemetrySink;
+                global.__esevaTestTelemetrySink = (p) => { capturedTele = p; };
+                const midCtx = {
+                    runId: 'run_mid_3', operatorUid: 'op3', operatorName: 'Suman', customerMobile: '9000000001',
+                    serviceName: 'INCOME_CERTIFICATE', startedAt: new Date().toISOString(), lastProgressAt: new Date().toISOString(),
+                    lastProgressMsg: 'Step 21 OTP', reachedPreSubmit: false, midRunTelemetrySent: false
+                };
+                const midOut = ar.finalizeMidRunTelemetryIfNeeded(midCtx, { errorType: 'AUTOMATION_ABANDONED_MID_RUN', errorMessage: 'Closed mid-run' });
+                assert(midOut.promptFaultReason === true && capturedTele?.errorType === 'AUTOMATION_ABANDONED_MID_RUN', 'Mid-run stop emits AUTOMATION_ABANDONED_MID_RUN and prompts UI feedback');
+
+                capturedTele = null;
+                const preCtx = {
+                    runId: 'run_pre_4', operatorUid: 'op3', serviceName: 'INCOME_CERTIFICATE',
+                    lastProgressMsg: 'PRE_SUBMIT_GATE', reachedPreSubmit: true, midRunTelemetrySent: false
+                };
+                const preOut = ar.finalizeMidRunTelemetryIfNeeded(preCtx, { errorType: 'AUTOMATION_ABANDONED_MID_RUN' });
+                assert(preOut.promptFaultReason === false && capturedTele === null, 'Post-Pre-Submit stop stays clean without false error');
+                global.__esevaTestTelemetrySink = prevSink;
+            } finally {
+                process.env.ESEVA_TEST_USERDATA = prevTestDir || '';
+                if (!prevTestDir) delete process.env.ESEVA_TEST_USERDATA;
+                fs.rmSync(tmpUserData, { recursive: true, force: true });
+            }
+
+            // Verify In-App Feedback Card & Dev Studio Badges
+            const hudModuleSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'automation_hud.js'), 'utf8');
+            const devStudioSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dev_studio.js'), 'utf8');
+            assert(hudModuleSrc.includes('midRunFaultCard_') && hudModuleSrc.includes('OPERATOR_MID_RUN_FEEDBACK') && hudModuleSrc.includes('renderAutomationStoppedCard(activeMob, activeName, null)'), 'Renderer renders mid-run feedback card cleanly without undefined ReferenceError');
+            assert(devStudioSrc.includes('OPERATOR_HUD_FAULT_REPORT') && devStudioSrc.includes('AUTOMATION_ORPHANED_APP_CLOSE') && devStudioSrc.includes('AUTOMATION_STUCK_WARNING'), 'Dev Inspector displays distinct badges for HUD reports, stuck watchdogs, and orphaned closes');
+
+            passedCount += 9;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');

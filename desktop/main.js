@@ -30,7 +30,7 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 const { createMainWindow, getMainWindow } = require('./window_manager');
-const { setupAutoUpdater } = require('./desktop_services');
+const { setupAutoUpdater, detectOrphanedMidRunOnStartup } = require('./desktop_services');
 const { startLocalServer } = require('./local_server');
 const { startAssetSyncService } = require('./asset_sync_service');
 const { registerIpcHandlers } = require('./ipc_handlers');
@@ -157,6 +157,7 @@ if (!gotTheLock) {
 
         // Defer non-critical background services to ensure UI thread remains 100% responsive (<50ms) on startup
         setTimeout(() => {
+            detectOrphanedMidRunOnStartup();
             setupAutoUpdater(getMainWindow);
         }, 5000);
 

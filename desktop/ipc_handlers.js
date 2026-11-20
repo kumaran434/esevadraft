@@ -53,11 +53,22 @@ function registerIpcHandlers({ getMainWindow, getActiveModule, setActiveModule }
                     }
                 }
             }
+            const { reportMidRunStopIfNeeded } = require('./automation_runner');
+            const midMeta = reportMidRunStopIfNeeded({
+                silent: isSilent,
+                reason: 'Operator clicked Stop button before reaching Pre-Submit Gate'
+            });
             const win = getMainWindow();
             // Invariant: ONLY send stopped broadcast if an automation was ACTUALLY running and it's NOT a silent reset!
             if (win && !win.isDestroyed() && !isSilent && wasRunning) {
                 win.webContents.send('automation-step-update', '🛑 ஆட்டோமேஷன் நிறுத்தப்பட்டது.');
-                win.webContents.send('automation-finished', { success: false, stopped: true, wasRunning: true, message: 'ஆட்டோமேஷன் நிறுத்தப்பட்டது.' });
+                win.webContents.send('automation-finished', {
+                    success: false,
+                    stopped: true,
+                    wasRunning: true,
+                    ...(midMeta || {}),
+                    message: 'ஆட்டோமேஷன் நிறுத்தப்பட்டது.'
+                });
             }
             return { success: true, wasRunning };
         } catch (e) {

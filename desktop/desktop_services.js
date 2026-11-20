@@ -1,10 +1,66 @@
 // =========================================================================
 // eSevaDraft Desktop App — Support Services & Telemetry
 // =========================================================================
-const { app, dialog } = require('electron');
+let app = null;
+let dialog = null;
+try { ({ app, dialog } = require('electron')); } catch (_) {}
 let autoUpdater = null;
 const path = require('path');
 const fs = require('fs');
+
+function getSafeUserDataDir() {
+    if (process.env.ESEVA_TEST_USERDATA) return process.env.ESEVA_TEST_USERDATA;
+    try {
+        if (app && typeof app.getPath === 'function') return app.getPath('userData');
+    } catch (_) {}
+    return path.join(__dirname, '..', 'data');
+}
+
+function getActiveFlightFilePath() {
+    return path.join(getSafeUserDataDir(), 'data', 'active_run_flight.json');
+}
+
+function isPreSubmitReached(textOrRes) {
+    if (!textOrRes) return false;
+    if (typeof textOrRes === 'object') {
+        if (
+            textOrRes.status === 'PRE_SUBMIT_GATE' ||
+            textOrRes.preSubmitGate === true ||
+            Boolean(textOrRes.applicationNumber) ||
+            Boolean(textOrRes.canNumber)
+        ) {
+            return true;
+        }
+        const combined = `${textOrRes.step || ''} ${textOrRes.message || ''}`;
+        return /PRE_SUBMIT_GATE|Pre-Submit\s*Gate|சரிபார்ப்பு\s*நிலையம்|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(combined);
+    }
+    return /PRE_SUBMIT_GATE|Pre-Submit\s*Gate|சரிபார்ப்பு\s*நிலையம்|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(String(textOrRes));
+}
+
+function writeActiveRunFlight(data = {}) {
+    try {
+        const filePath = getActiveFlightFilePath();
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(filePath, JSON.stringify({
+            updatedAt: new Date().toISOString(),
+            ...data
+        }, null, 2), 'utf8');
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function clearActiveRunFlight() {
+    try {
+        const filePath = getActiveFlightFilePath();
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
 
 async function syncLatestAutomationEngine() {
     try {
@@ -53,7 +109,7 @@ async function syncLatestAutomationEngine() {
 
 function readLocalOperatorSessionFallback() {
     try {
-        const sessFile = path.join(app.getPath('userData'), 'data', 'active_operator_session.json');
+        const sessFile = path.join(getSafeUserDataDir(), 'data', 'active_operator_session.json');
         if (fs.existsSync(sessFile)) {
             return JSON.parse(fs.readFileSync(sessFile, 'utf8')) || {};
         }
@@ -75,7 +131,7 @@ function readTailLinesSafe(filePath, maxLines = 25) {
 function readFlightActionsSafe(maxItems = 10) {
     try {
         const candidates = [
-            path.join(app.getPath('userData'), 'data', 'telemetry', 'app_flight_recorder.json'),
+            path.join(getSafeUserDataDir(), 'data', 'telemetry', 'app_flight_recorder.json'),
             path.join(__dirname, '..', 'data', 'telemetry', 'app_flight_recorder.json')
         ];
         for (const p of candidates) {
@@ -99,7 +155,7 @@ function reportOperatorTelemetry(errorData = {}) {
         const opMob = errorData.operatorMobile || sess.mobileNumber || '';
         const runTail = Array.isArray(errorData.runLogTail) && errorData.runLogTail.length
             ? errorData.runLogTail
-            : readTailLinesSafe(path.join(app.getPath('userData'), 'logs', 'latest_run.log'), 25);
+            : readTailLinesSafe(path.join(getSafeUserDataDir(), 'logs', 'latest_run.log'), 25);
         const uiActions = Array.isArray(errorData.lastUiActions) && errorData.lastUiActions.length
             ? errorData.lastUiActions
             : readFlightActionsSafe(10);
@@ -107,7 +163,7 @@ function reportOperatorTelemetry(errorData = {}) {
         const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
         const targetUrl = `${baseUrl}/api/telemetry/error`;
         const payload = {
-            appVersion: (typeof app !== 'undefined' && app.getVersion) ? (app.getVersion() || '1.1.27') : '1.1.27',
+            appVersion: (app && typeof app.getVersion === 'function') ? (app.getVersion() || '1.1.31') : '1.1.31',
             platform: process.platform,
             arch: process.arch,
             timestamp: new Date().toISOString(),
@@ -120,7 +176,11 @@ function reportOperatorTelemetry(errorData = {}) {
             __fromCloudRelay: true
         };
 
-        if (skipCloud) return;
+        if (typeof global.__esevaTestTelemetrySink === 'function') {
+            try { global.__esevaTestTelemetrySink(payload); } catch (_) {}
+        }
+
+        if (skipCloud) return payload;
 
         const postData = JSON.stringify(payload);
         const urlObj = new URL(targetUrl);
@@ -314,9 +374,44 @@ function setupAutoUpdater(getMainWindow) {
     }, 18000);
 }
 
+function detectOrphanedMidRunOnStartup(telemetryReporter = reportOperatorTelemetry) {
+    try {
+        const filePath = getActiveFlightFilePath();
+        if (!fs.existsSync(filePath)) return { orphaned: false };
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+        clearActiveRunFlight();
+        if (parsed && parsed.runId && !parsed.reachedPreSubmit) {
+            const payload = {
+                runId: parsed.runId,
+                operatorUid: parsed.operatorUid || '',
+                operatorMobile: parsed.operatorMobile || '',
+                operatorName: parsed.operatorName || '',
+                customerMobile: parsed.customerMobile || '',
+                serviceName: parsed.serviceName || '',
+                step: parsed.lastProgressMsg || 'ORPHANED_MID_RUN',
+                errorType: 'AUTOMATION_ORPHANED_APP_CLOSE',
+                errorMessage: 'Desktop app closed or restarted mid-run before reaching Pre-Submit Gate',
+                startedAt: parsed.startedAt || '',
+                lastProgressAt: parsed.lastProgressAt || ''
+            };
+            if (typeof telemetryReporter === 'function') telemetryReporter(payload);
+            return { orphaned: true, payload };
+        }
+        return { orphaned: false };
+    } catch (_) {
+        clearActiveRunFlight();
+        return { orphaned: false };
+    }
+}
+
 module.exports = {
     syncLatestAutomationEngine,
     reportOperatorTelemetry,
     launchVisibleBrowser,
-    setupAutoUpdater
+    setupAutoUpdater,
+    getActiveFlightFilePath,
+    writeActiveRunFlight,
+    clearActiveRunFlight,
+    detectOrphanedMidRunOnStartup,
+    isPreSubmitReached
 };

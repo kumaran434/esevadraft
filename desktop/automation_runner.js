@@ -1,10 +1,17 @@
 // =========================================================================
 // eSevaDraft Desktop App — Live Automation Runner & Profile Resolver
 // =========================================================================
-const { app } = require('electron');
+let app = null;
+try { ({ app } = require('electron')); } catch (_) {}
 const path = require('path');
 const fs = require('fs');
-const { syncLatestAutomationEngine, reportOperatorTelemetry } = require('./desktop_services');
+const {
+    syncLatestAutomationEngine,
+    reportOperatorTelemetry,
+    writeActiveRunFlight,
+    clearActiveRunFlight,
+    isPreSubmitReached
+} = require('./desktop_services');
 
 function resolveDiskDraftAndGas(customerMobile, draftData) {
     const mobClean = customerMobile.replace(/\D/g, '');
@@ -179,6 +186,63 @@ let activeAutomationAborted = false;
 let lastMainWindowRef = null;
 let lastActiveTnpdsModule = null;
 let lastActiveTnegaModule = null;
+let activeRunContext = null;
+
+function finalizeMidRunTelemetryIfNeeded(ctx, { errorType, errorMessage, step, allowEvenIfAborted = true } = {}) {
+    if (!ctx) return null;
+    try {
+        if (ctx.stuckWatchdogTimer) {
+            clearInterval(ctx.stuckWatchdogTimer);
+            ctx.stuckWatchdogTimer = null;
+        }
+    } catch (_) {}
+    clearActiveRunFlight();
+    if (activeRunContext && activeRunContext.runId === ctx.runId) {
+        activeRunContext = null;
+    }
+    if (ctx.reachedPreSubmit) {
+        return { promptFaultReason: false, runId: ctx.runId, serviceName: ctx.serviceName, lastStep: ctx.lastProgressMsg };
+    }
+    if (!ctx.midRunTelemetrySent && (allowEvenIfAborted || !activeAutomationAborted)) {
+        ctx.midRunTelemetrySent = true;
+        reportOperatorTelemetry({
+            runId: ctx.runId,
+            operatorUid: ctx.operatorUid || '',
+            operatorMobile: ctx.operatorMobile || '',
+            operatorName: ctx.operatorName || '',
+            customerMobile: ctx.customerMobile || '',
+            serviceName: ctx.serviceName || '',
+            step: step || ctx.lastProgressMsg || 'MID_RUN_DROP',
+            errorType: errorType || 'AUTOMATION_ABANDONED_MID_RUN',
+            errorMessage: errorMessage || 'Automation stopped before reaching Pre-Submit Gate',
+            startedAt: ctx.startedAt,
+            lastProgressAt: ctx.lastProgressAt
+        });
+    }
+    return {
+        promptFaultReason: true,
+        runId: ctx.runId,
+        serviceName: ctx.serviceName,
+        lastStep: ctx.lastProgressMsg
+    };
+}
+
+function reportMidRunStopIfNeeded({ silent = false, reason = 'Operator stopped automation mid-run before Pre-Submit Gate' } = {}) {
+    const ctx = activeRunContext;
+    if (!ctx) return null;
+    if (silent) {
+        try {
+            if (ctx.stuckWatchdogTimer) clearInterval(ctx.stuckWatchdogTimer);
+        } catch (_) {}
+        clearActiveRunFlight();
+        activeRunContext = null;
+        return null;
+    }
+    return finalizeMidRunTelemetryIfNeeded(ctx, {
+        errorType: 'AUTOMATION_ABANDONED_MID_RUN',
+        errorMessage: reason
+    });
+}
 
 async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModule, setActiveModule) {
     activeAutomationAborted = false;
@@ -412,6 +476,81 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         try { fs.writeFileSync(t, startHeader, 'utf8'); } catch (_) {}
     }
 
+    const runId = `run_${runTimestamp}_${Math.random().toString(36).slice(2, 7)}`;
+    const runStartedAtIso = new Date(runTimestamp).toISOString();
+    const runCtx = {
+        runId,
+        operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
+        operatorMobile: draftData?.operatorMobile || '',
+        operatorName: draftData?.operatorName || 'admin',
+        customerMobile,
+        serviceName,
+        startedAt: runStartedAtIso,
+        lastProgressAt: runStartedAtIso,
+        lastProgressMs: Date.now(),
+        lastProgressMsg: `${serviceName} தொடங்கப்படுகிறது...`,
+        lastDiskWriteMs: 0,
+        reachedPreSubmit: false,
+        midRunTelemetrySent: false,
+        stuckWarningSent: false,
+        stuckWatchdogTimer: null
+    };
+    activeRunContext = runCtx;
+    writeActiveRunFlight({
+        runId: runCtx.runId,
+        operatorUid: runCtx.operatorUid,
+        operatorMobile: runCtx.operatorMobile,
+        operatorName: runCtx.operatorName,
+        customerMobile: runCtx.customerMobile,
+        serviceName: runCtx.serviceName,
+        startedAt: runCtx.startedAt,
+        lastProgressAt: runCtx.lastProgressAt,
+        lastProgressMsg: runCtx.lastProgressMsg,
+        reachedPreSubmit: false
+    });
+
+    global.__esevaHudFaultHandler = async (faultPayload = {}) => {
+        const reason = faultPayload.reason || faultPayload.note || 'ஆபரேட்டர் பிழை அறிவிப்பு (Chrome HUD)';
+        writeLogEntry(`🚨 [ஆபரேட்டர் HUD புகார்] ${reason} (Step: ${faultPayload.hudStepTitle || runCtx.lastProgressMsg})`);
+        reportOperatorTelemetry({
+            runId: runCtx.runId,
+            operatorUid: runCtx.operatorUid,
+            operatorMobile: runCtx.operatorMobile,
+            operatorName: runCtx.operatorName,
+            customerMobile: runCtx.customerMobile,
+            serviceName: runCtx.serviceName,
+            step: faultPayload.hudStepTitle || runCtx.lastProgressMsg,
+            portalUrl: faultPayload.portalUrl || faultPayload.url || '',
+            errorType: 'OPERATOR_HUD_FAULT_REPORT',
+            errorMessage: reason,
+            lastProgressMsg: runCtx.lastProgressMsg
+        });
+    };
+
+    runCtx.stuckWatchdogTimer = setInterval(() => {
+        try {
+            if (activeAutomationAborted || runCtx.reachedPreSubmit || runCtx.stuckWarningSent) return;
+            if (Date.now() - runCtx.lastProgressMs >= 120000) {
+                runCtx.stuckWarningSent = true;
+                writeLogEntry(`⏰ [120s Stuck Watchdog] ${runCtx.lastProgressMsg}`);
+                reportOperatorTelemetry({
+                    runId: runCtx.runId,
+                    operatorUid: runCtx.operatorUid,
+                    operatorMobile: runCtx.operatorMobile,
+                    operatorName: runCtx.operatorName,
+                    customerMobile: runCtx.customerMobile,
+                    serviceName: runCtx.serviceName,
+                    step: runCtx.lastProgressMsg,
+                    errorType: 'AUTOMATION_STUCK_WARNING',
+                    errorMessage: 'No automation progress for 120s before Pre-Submit Gate',
+                    startedAt: runCtx.startedAt,
+                    lastProgressAt: runCtx.lastProgressAt
+                });
+            }
+        } catch (_) {}
+    }, 15000);
+    if (typeof runCtx.stuckWatchdogTimer.unref === 'function') runCtx.stuckWatchdogTimer.unref();
+
     const clearRunningSessionState = () => {
         try {
             const storageService = resolveStorageService();
@@ -442,15 +581,56 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         writeLogEntry(msg);
         if (activeAutomationAborted) return;
 
+        const cleanMsg = String(msg || '').slice(0, 300);
+        const nowMs = Date.now();
+        runCtx.lastProgressMsg = cleanMsg || runCtx.lastProgressMsg;
+        runCtx.lastProgressAt = new Date(nowMs).toISOString();
+        runCtx.lastProgressMs = nowMs;
+        if (!runCtx.reachedPreSubmit && isPreSubmitReached(cleanMsg)) {
+            runCtx.reachedPreSubmit = true;
+            writeActiveRunFlight({
+                runId: runCtx.runId,
+                operatorUid: runCtx.operatorUid,
+                operatorMobile: runCtx.operatorMobile,
+                operatorName: runCtx.operatorName,
+                customerMobile: runCtx.customerMobile,
+                serviceName: runCtx.serviceName,
+                startedAt: runCtx.startedAt,
+                lastProgressAt: runCtx.lastProgressAt,
+                lastProgressMsg: runCtx.lastProgressMsg,
+                reachedPreSubmit: true
+            });
+            runCtx.lastDiskWriteMs = nowMs;
+        } else if (nowMs - runCtx.lastDiskWriteMs >= 1500) {
+            runCtx.lastDiskWriteMs = nowMs;
+            writeActiveRunFlight({
+                runId: runCtx.runId,
+                operatorUid: runCtx.operatorUid,
+                operatorMobile: runCtx.operatorMobile,
+                operatorName: runCtx.operatorName,
+                customerMobile: runCtx.customerMobile,
+                serviceName: runCtx.serviceName,
+                startedAt: runCtx.startedAt,
+                lastProgressAt: runCtx.lastProgressAt,
+                lastProgressMsg: runCtx.lastProgressMsg,
+                reachedPreSubmit: runCtx.reachedPreSubmit
+            });
+        }
+
         if (/பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன்|Target page, context or browser has been closed|Target closed|Browser has been closed/i.test(String(msg || ''))) {
             activeAutomationAborted = true;
             clearRunningSessionState();
+            const midMeta = finalizeMidRunTelemetryIfNeeded(runCtx, {
+                errorType: 'AUTOMATION_ABANDONED_MID_RUN',
+                errorMessage: 'Chrome window closed before reaching Pre-Submit Gate'
+            });
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('automation-finished', {
                     success: false,
                     stopped: true,
                     browserClosed: true,
                     wasRunning: true,
+                    ...(midMeta || {}),
                     message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் தானாக நிறுத்தப்பட்டது.'
                 });
             }
@@ -697,40 +877,35 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }).then(res => {
         clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
-        if (res && res.success === false && !res.stopped) {
-            reportOperatorTelemetry({
-                operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
-                operatorMobile: draftData?.operatorMobile || '',
-                operatorName: draftData?.operatorName || '',
-                customerMobile,
-                serviceName: targetProfile.subService || targetProfile.targetService || '',
-                step: res.step || 'AUTOMATION_RESULT_FAIL',
-                errorType: 'AUTOMATION_FAILED',
-                errorMessage: res.error || res.message || 'Automation finished with failure'
-            });
+        if (res && (res.success || isPreSubmitReached(res))) {
+            runCtx.reachedPreSubmit = true;
         }
+        const isAbandoned = Boolean(res?.stopped || res?.browserClosed);
+        const midMeta = finalizeMidRunTelemetryIfNeeded(runCtx, {
+            step: res?.step || runCtx.lastProgressMsg,
+            errorType: isAbandoned ? 'AUTOMATION_ABANDONED_MID_RUN' : 'AUTOMATION_FAILED',
+            errorMessage: res?.error || res?.message || (isAbandoned ? 'Stopped mid-run before reaching Pre-Submit Gate' : 'Automation finished with failure')
+        });
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('automation-finished', res);
+            mainWindow.webContents.send('automation-finished', {
+                ...(res || {}),
+                ...(midMeta || {})
+            });
         }
     }).catch(err => {
         clearRunningSessionState();
         writeLogEntry(`[விபத்து பிழை] ${err.message}\n${err.stack}`);
-        reportOperatorTelemetry({
-            operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
-            operatorMobile: draftData?.operatorMobile || '',
-            operatorName: draftData?.operatorName || '',
-            customerMobile,
-            serviceName: targetProfile.subService || targetProfile.targetService || '',
+        const midMeta = finalizeMidRunTelemetryIfNeeded(runCtx, {
             step: 'AUTOMATION_CRASH',
             errorType: 'AUTOMATION_CRASH',
-            errorMessage: err.message || 'Automation crashed unexpectedly',
-            errorStack: err.stack || ''
+            errorMessage: err.message || 'Automation crashed unexpectedly'
         });
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-finished', {
                 success: false,
                 stopped: true,
                 error: err.message,
+                ...(midMeta || {}),
                 message: `ஆட்டோமேஷன் நிறுத்தப்பட்டது: ${err.message}`
             });
         }
@@ -853,12 +1028,17 @@ async function stopActiveAutomation() {
         }
     } catch (_) {}
 
+    const midMeta = reportMidRunStopIfNeeded({
+        silent: false,
+        reason: 'Operator stopped automation via stopActiveAutomation before Pre-Submit Gate'
+    });
     try {
         if (lastMainWindowRef && !lastMainWindowRef.isDestroyed()) {
             lastMainWindowRef.webContents.send('automation-finished', {
                 success: false,
                 stopped: true,
                 wasRunning: true,
+                ...(midMeta || {}),
                 message: 'ஆட்டோமேஷன் நிறுத்தப்பட்டது.'
             });
         }
@@ -878,5 +1058,7 @@ module.exports = {
     resolveDiskDraftAndGas,
     loadAutomationModule,
     resolveStorageService,
-    stopActiveAutomation
+    stopActiveAutomation,
+    finalizeMidRunTelemetryIfNeeded,
+    reportMidRunStopIfNeeded
 };

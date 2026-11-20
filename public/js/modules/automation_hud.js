@@ -145,7 +145,7 @@
                 if (stepper) stepper.remove();
                 const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
                 const activeName = localStorage.getItem('eseva_active_customer_name') || 'வாடிக்கையாளர்';
-                renderAutomationStoppedCard(activeMob, activeName);
+                renderAutomationStoppedCard(activeMob, activeName, null);
                 return;
             }
 
@@ -464,7 +464,7 @@
                 }
                 const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
                 const activeName = localStorage.getItem('eseva_active_customer_name') || 'வாடிக்கையாளர்';
-                renderAutomationStoppedCard(activeMob, activeName);
+                renderAutomationStoppedCard(activeMob, activeName, res);
                 return;
             }
 
@@ -672,12 +672,50 @@
             }
         }
 
-        function renderAutomationStoppedCard(activeMob, activeName) {
+        async function submitMidRunFaultFeedback(runId, serviceName, lastStep, reasonText, cardEl) {
+            const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+            const cleaned = String(reasonText || '').trim() || 'Pre-Submit முன் நின்றது (காரணம் குறிப்பிடப்படவில்லை)';
+            if (cardEl) {
+                cardEl.querySelectorAll('button, input').forEach(el => { el.disabled = true; });
+            }
+            try {
+                await fetch('/api/operator/telemetry-log', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-operator-uid': localStorage.getItem('eseva_operator_uid') || ''
+                    },
+                    body: JSON.stringify({
+                        type: 'OPERATOR_MID_RUN_FEEDBACK',
+                        runId: runId || '',
+                        serviceName: serviceName || '',
+                        step: lastStep || 'MID_RUN_STOPPED',
+                        message: cleaned,
+                        mobile: activeMob,
+                        operatorUid: localStorage.getItem('eseva_operator_uid') || '',
+                        operatorName: localStorage.getItem('eseva_operator_name') || '',
+                        operatorMobile: localStorage.getItem('eseva_operator_mobile') || ''
+                    })
+                }).catch(() => {});
+                if (cardEl) {
+                    cardEl.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:#15803d;padding:2px 4px;">✅ உங்கள் தகவல் சேமிக்கப்பட்டது! ("${cleaned.replace(/[<>&"]/g, '')}")</div>`;
+                }
+            } catch (_) {
+                if (cardEl) {
+                    cardEl.querySelectorAll('button, input').forEach(el => { el.disabled = false; });
+                }
+            }
+        }
+
+        function renderAutomationStoppedCard(activeMob, activeName, stopMeta = null) {
             const chatBox = document.getElementById('chatMessages') || chatMessages;
             if (!chatBox) return;
 
             // Remove any old stopped cards or stepper cards
             chatBox.querySelectorAll('.live-automation-stepper, #liveAutomationStepperCard, .automation-stopped-pill').forEach(el => el.remove());
+
+            const safeRunId = String(stopMeta?.runId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
+            const promptFault = Boolean(stopMeta && stopMeta.promptFaultReason);
 
             const stoppedCard = document.createElement('div');
             stoppedCard.className = 'automation-stopped-pill';
@@ -697,9 +735,50 @@
                         </button>
                     </div>
                 </div>
+                ${promptFault ? `
+                <div id="midRunFaultCard_${safeRunId}" class="mid-run-fault-card" style="margin-top:6px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:9px 11px;box-shadow:0 1px 4px rgba(245,158,11,0.1);">
+                    <div style="font-size:11.5px;font-weight:800;color:#92400e;margin-bottom:6px;">
+                        ⚠️ ஆட்டோமேஷன் Pre-Submit நிலையை அடையும் முன் பாதியில் நின்றது — என்ன காரணம்? (விரும்பினால்)
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;">
+                        <button type="button" class="mid-run-chip" data-msg="OTP வரவில்லை" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">OTP வரவில்லை</button>
+                        <button type="button" class="mid-run-chip" data-msg="பக்கம் திறக்கவில்லை / Slow" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">பக்கம் திறக்கவில்லை / Slow</button>
+                        <button type="button" class="mid-run-chip" data-msg="தவறான விவரம் / CAN பிழை" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">தவறான விவரம்</button>
+                        <button type="button" class="mid-run-chip" data-msg="வேலை முடிந்து நானே மூடினேன்" style="background:#ffffff;border:1px solid #cbd5e1;color:#334155;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">வேலை முடிந்து நானே மூடினேன்</button>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="midRunFaultInput_${safeRunId}" placeholder="வேறு காரணம் இருந்தால் இங்கே தட்டச்சு செய்க..." style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:11.5px;outline:none;">
+                        <button type="button" id="midRunFaultSend_${safeRunId}" style="background:#d97706;color:#ffffff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📤 அனுப்பு</button>
+                    </div>
+                </div>
+                ` : ''}
             `;
 
             chatBox.appendChild(stoppedCard);
+            if (promptFault) {
+                const faultCard = document.getElementById(`midRunFaultCard_${safeRunId}`);
+                const noteIn = document.getElementById(`midRunFaultInput_${safeRunId}`);
+                const sendBtn = document.getElementById(`midRunFaultSend_${safeRunId}`);
+                const svc = stopMeta?.serviceName || '';
+                const step = stopMeta?.lastStep || '';
+                if (faultCard) {
+                    faultCard.querySelectorAll('.mid-run-chip').forEach(ch => {
+                        ch.addEventListener('click', () => {
+                            const msg = ch.getAttribute('data-msg') || ch.textContent || '';
+                            submitMidRunFaultFeedback(safeRunId, svc, step, msg, faultCard);
+                        });
+                    });
+                    if (sendBtn && noteIn) {
+                        sendBtn.addEventListener('click', () => submitMidRunFaultFeedback(safeRunId, svc, step, noteIn.value, faultCard));
+                        noteIn.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                submitMidRunFaultFeedback(safeRunId, svc, step, noteIn.value, faultCard);
+                            }
+                        });
+                    }
+                }
+            }
             scrollToChatBottom(true);
         }
 
