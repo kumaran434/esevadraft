@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const storageService = require('../../services/storage_service');
-const { updateHeadMember, isProfileDataComplete } = require('../../services/profile_helpers');
+const { updateHeadMember, isProfileDataComplete, applyExtractedAadhaarRelationsAndDob } = require('../../services/profile_helpers');
 const { saveCitizenProfile } = require('../../../database');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
@@ -57,9 +57,7 @@ async function handleHeadAadhaar(ctx, req, res) {
 
             sess.citizenProfile.fullNameEng = extracted.fullNameEng || sess.citizenProfile.fullNameEng || '';
             sess.citizenProfile.fullNameTam = extracted.fullNameTam || sess.citizenProfile.fullNameTam || '';
-            sess.citizenProfile.fatherNameEng = extracted.fatherNameEng || sess.citizenProfile.fatherNameEng || '';
-            sess.citizenProfile.fatherNameTam = extracted.fatherNameTam || sess.citizenProfile.fatherNameTam || '';
-            sess.citizenProfile.headDob = extracted.dob || sess.citizenProfile.headDob || '';
+            applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
             sess.citizenProfile.headGender = extracted.gender || 'Male';
             sess.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
             sess.citizenProfile.headAadhaar = (extracted.aadhaarNumber && extracted.aadhaarNumber.length === 12) ? extracted.aadhaarNumber : (sess.citizenProfile.headAadhaar || '');
@@ -194,9 +192,7 @@ async function handleHeadAadhaar(ctx, req, res) {
         const extracted = extractedBack || await inspectAndExtractDocument(mergedPdf);
         sess.citizenProfile.fullNameEng = extracted.fullNameEng || sess.citizenProfile.fullNameEng || '';
         sess.citizenProfile.fullNameTam = extracted.fullNameTam || sess.citizenProfile.fullNameTam || '';
-        sess.citizenProfile.fatherNameEng = extracted.fatherNameEng || sess.citizenProfile.fatherNameEng || '';
-        sess.citizenProfile.fatherNameTam = extracted.fatherNameTam || sess.citizenProfile.fatherNameTam || '';
-        sess.citizenProfile.headDob = extracted.dob || sess.citizenProfile.headDob || '';
+        applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
         sess.citizenProfile.headGender = extracted.gender || 'Male';
         sess.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
         sess.citizenProfile.headAadhaar = (extracted.aadhaarNumber && extracted.aadhaarNumber.length === 12) ? extracted.aadhaarNumber : (sess.citizenProfile.headAadhaar || '');

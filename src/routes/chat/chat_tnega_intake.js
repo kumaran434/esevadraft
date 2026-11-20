@@ -8,6 +8,7 @@ const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResiden
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
+const { applyExtractedAadhaarRelationsAndDob } = require('../../services/profile_helpers');
 const { persistSessions } = storageService;
 
 function extractIncomeAndProfession(inputStr) {
@@ -275,8 +276,9 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
 
             const extracted = extractedBack || await inspectAndExtractDocument(mergedPdf, { skipFaceExtraction: true }).catch(() => null);
             if (extracted) {
-                if (extracted.fatherNameEng) sess.citizenProfile.fatherNameEng = extracted.fatherNameEng;
-                if (extracted.fatherNameTam) sess.citizenProfile.fatherNameTam = extracted.fatherNameTam;
+                if (extracted.fullNameEng && !sess.citizenProfile.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
+                if (extracted.fullNameTam && !sess.citizenProfile.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
+                applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
                 if (extracted.doorNo) sess.citizenProfile.doorNo = extracted.doorNo;
                 if (extracted.streetTam) sess.citizenProfile.streetTam = extracted.streetTam;
                 if (extracted.streetEng) sess.citizenProfile.streetEng = extracted.streetEng;
@@ -383,10 +385,8 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
 
             if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
             if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
-            if (extracted.fatherNameEng) sess.citizenProfile.fatherNameEng = extracted.fatherNameEng;
-            if (extracted.fatherNameTam) sess.citizenProfile.fatherNameTam = extracted.fatherNameTam;
+            applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
             if (extracted.aadhaarNumber) sess.citizenProfile.headAadhaar = extracted.aadhaarNumber;
-            if (extracted.dob) sess.citizenProfile.headDob = extracted.dob;
             if (extracted.gender) {
                 sess.citizenProfile.headGender = extracted.gender;
                 sess.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
@@ -423,8 +423,8 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
         if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
         if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
+        applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
         if (extracted.aadhaarNumber) sess.citizenProfile.headAadhaar = extracted.aadhaarNumber;
-        if (extracted.dob) sess.citizenProfile.headDob = extracted.dob;
         if (extracted.gender) {
             sess.citizenProfile.headGender = extracted.gender;
             sess.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
@@ -915,40 +915,138 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
     }
 
     // -------------------------------------------------------------------------
-    // ADDITIONAL MEMBER DETAILS GATE (TNeGA Income Certificate)
+    // ADDITIONAL MEMBER DETAILS GATE (TNeGA Income Certificate — Ask Real Rel, Work & Income)
     // -------------------------------------------------------------------------
-    if (sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if ((sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WAIT' || sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT') && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         const p = sess.citizenProfile;
-        let memberName = 'தேவகி';
-        let memberRel = 'Mother';
-        let memberProf = 'கூலி வேலை';
 
-        if (text.includes('தாய்') || text.includes('Mother')) {
-            memberRel = 'Mother';
-            memberName = p.motherNameTam || p.motherNameEng || 'தேவகி';
-            memberProf = text.includes('கூலி') ? 'கூலி வேலை' : 'குடும்பத் தலைவி';
-        } else if (text.includes('மனைவி') || text.includes('Wife')) {
-            memberRel = 'Wife';
-            memberName = 'மனைவி';
-            memberProf = 'குடும்பத் தலைவி';
-        } else if (text.includes('தந்தை') || text.includes('Father')) {
-            memberRel = 'Father';
-            memberName = p.fatherNameTam || p.fatherNameEng || 'கிருபாகரன்';
-            memberProf = text.includes('விவசாயம்') ? 'விவசாயம்' : 'கூலி வேலை';
-        } else {
-            memberName = text.trim();
+        if (sess.intakeState === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT' && sess.pendingIncomeMember) {
+            const pending = sess.pendingIncomeMember;
+            const incParsed = extractIncomeAndProfession(text) || {};
+            let prof = incParsed.profession || '';
+            if (!prof) {
+                if (/இல்லத்தரசி|வீட்டு|house|dependent|வேலை இல்லை|no work/i.test(text)) prof = 'குடும்பத் தலைவி / இல்லத்தரசி';
+                else if (/மாணவ|student|பள்ளி|கல்லூரி/i.test(text)) prof = 'மாணவர்';
+                else if (/அரசு|govt/i.test(text)) prof = 'அரசு வேலை';
+                else prof = text.replace(/\d+|₹|,|மாதம்|ஆண்டு|ரூ/g, '').trim() || 'கூலி வேலை';
+            }
+            const monMatch = text.replace(/,/g, '').match(/\b\d{1,6}\b/);
+            const monInc = /வருமானம் இல்லை|இல்லத்தரசி|மாணவர்|₹0|\b0\b/i.test(text)
+                ? '0'
+                : String(incParsed.monthlyIncome || (monMatch ? parseInt(monMatch[0], 10) : 0));
+
+            if (!p.incomeMembers) p.incomeMembers = [];
+            const finalMem = {
+                ...pending,
+                profession: prof,
+                monthlyIncome: monInc
+            };
+            p.incomeMembers.push(finalMem);
+            delete sess.pendingIncomeMember;
+
+            const monNum = parseInt(monInc, 10) || 0;
+            if (monNum > 0 && !p.annualIncome) {
+                const curSelfMon = parseInt(String(p.monthlyIncome || 0), 10) || 0;
+                const memSum = p.incomeMembers.reduce((s, m) => s + (parseInt(String(m.monthlyIncome || 0), 10) || 0), 0);
+                if (curSelfMon + memSum > 0) {
+                    p.annualIncome = String((curSelfMon + memSum) * 12);
+                }
+            }
+            persistSessions();
+
+            const flowStep = advanceTnegaIncomeFlow(sess, `✅ உறுப்பினர் **${finalMem.name} (${finalMem.relationship} - ${finalMem.profession}, மாதம் ₹${monInc})** சேர்க்கப்பட்டார்!`);
+            sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
         }
+
+        let memberRel = '';
+        let memberName = '';
+        const lowerT = text.toLowerCase();
+        if (/கணவர்|husband/i.test(lowerT)) {
+            memberRel = 'Husband';
+            memberName = p.spouseNameTam || p.spouseNameEng || (p.relationship === 'Husband' ? (p.fatherNameTam || p.fatherNameEng || '') : '');
+        } else if (/மனைவி|wife/i.test(lowerT)) {
+            memberRel = 'Wife';
+        } else if (/மாமியார்|mother-in-law/i.test(lowerT)) {
+            memberRel = 'Mother-in-law';
+        } else if (/மாமனார்|father-in-law/i.test(lowerT)) {
+            memberRel = 'Father-in-law';
+        } else if (/மகள்|daughter/i.test(lowerT)) {
+            memberRel = 'Daughter';
+        } else if (/மகன்|son/i.test(lowerT)) {
+            memberRel = 'Son';
+        } else if (/சகோதரி|sister/i.test(lowerT)) {
+            memberRel = 'Sister';
+        } else if (/சகோதரர்|brother/i.test(lowerT)) {
+            memberRel = 'Brother';
+        } else if (/தாய்|mother|அம்மா/i.test(lowerT)) {
+            memberRel = 'Mother';
+            memberName = p.motherNameTam || p.motherNameEng || '';
+        } else if (/தந்தை|father|அப்பா/i.test(lowerT)) {
+            memberRel = 'Father';
+            memberName = (p.relationship !== 'Husband') ? (p.fatherNameTam || p.fatherNameEng || '') : '';
+        } else {
+            memberRel = (p.relationship === 'Husband' ? 'Husband' : 'Son');
+        }
+
+        // Extract name after '-' or ',' if provided by operator
+        const dashMatch = text.match(/[-–:]\s*([^\(,0-9]+)/);
+        if (dashMatch && dashMatch[1] && dashMatch[1].trim().length >= 2) {
+            memberName = dashMatch[1].trim();
+        } else if (!memberName && !/^(கணவர்|மனைவி|மகன்|மகள்|தாய்|தந்தை|மாமியார்|மாமனார்|Husband|Wife|Son|Daughter|Mother|Father)$/i.test(text.trim())) {
+            memberName = text.replace(/(கணவர்|மனைவி|மகன்|மகள்|தாய்|தந்தை|மாமியார்|மாமனார்|வயது|\d+|கூலி வேலை|விவசாயம்|தனியார் வேலை|குடும்பத் தலைவி|மாதம்|₹|,|-)/gi, ' ').trim();
+        }
+        if (!memberName) memberName = memberRel;
+
+        const ageMatch = text.match(/(?:வயது|age)?\s*(\d{2})\b/i);
+        const memberAge = ageMatch ? ageMatch[1] : '';
+
+        const incParsed = extractIncomeAndProfession(text);
+        const hasExplicitWork = Boolean(incParsed && (incParsed.profession || incParsed.monthlyIncome !== null)) || /இல்லத்தரசி|தலைவி|மாணவ|வேலை|விவசாய|கூலி|தனியார்|வியாபார|அரசு|₹0|\b0\b/i.test(text);
+
+        if (!hasExplicitWork) {
+            sess.pendingIncomeMember = {
+                name: memberName,
+                nameEng: memberName,
+                nameTam: memberName,
+                relationship: memberRel,
+                age: memberAge
+            };
+            sess.intakeState = 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT';
+            persistSessions();
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `💼 **${memberName} (${memberRel})** என்ன வேலை செய்கிறார் மற்றும் மாத வருமானம் எவ்வளவு?\n*(கீழே தேர்ந்தெடுக்கவும் அல்லது தட்டச்சு செய்யவும் — எ.கா: \`கூலி வேலை, மாதம் 6000\`)*`,
+                options: [
+                    { label: "🔨 கூலி வேலை (மாதம் ₹6,000)", value: "கூலி வேலை மாதம் 6000" },
+                    { label: "🌾 விவசாயம் (மாதம் ₹6,000)", value: "விவசாயம் மாதம் 6000" },
+                    { label: "🏢 தனியார் வேலை (மாதம் ₹8,000)", value: "தனியார் வேலை மாதம் 8000" },
+                    { label: "🏠 இல்லத்தரசி / வருமானம் இல்லை (₹0)", value: "இல்லத்தரசி ₹0" },
+                    { label: "🎓 மாணவர் / வேலை இல்லை (₹0)", value: "மாணவர் ₹0" }
+                ]
+            });
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+            return true;
+        }
+
+        let memberProf = (incParsed && incParsed.profession) || (/இல்லத்தரசி|தலைவி/i.test(text) ? 'குடும்பத் தலைவி' : (/மாணவ/i.test(text) ? 'மாணவர்' : 'கூலி வேலை'));
+        const monMatch = text.replace(/,/g, '').match(/மாதம்\s*₹?\s*(\d{1,6})|₹\s*(\d{1,6})/i);
+        const memberMon = (incParsed && incParsed.monthlyIncome) ? String(incParsed.monthlyIncome) : (monMatch ? (monMatch[1] || monMatch[2]) : '0');
 
         if (!sess.citizenProfile.incomeMembers) sess.citizenProfile.incomeMembers = [];
         sess.citizenProfile.incomeMembers.push({
             name: memberName,
+            nameEng: memberName,
+            nameTam: memberName,
             relationship: memberRel,
+            age: memberAge,
             profession: memberProf,
-            monthlyIncome: '0'
+            monthlyIncome: memberMon
         });
         persistSessions();
 
-        const flowStep = advanceTnegaIncomeFlow(sess, `✅ கூடுதல் குடும்ப உறுப்பினர் **${memberName} (${memberRel} - ${memberProf})** சேர்க்கப்பட்டார்!`);
+        const flowStep = advanceTnegaIncomeFlow(sess, `✅ கூடுதல் குடும்ப உறுப்பினர் **${memberName} (${memberRel} - ${memberProf}, மாதம் ₹${memberMon})** சேர்க்கப்பட்டார்!`);
         sess.chatHistory.push({
             sender: 'bot',
             text: flowStep.text,

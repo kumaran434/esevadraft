@@ -3870,7 +3870,7 @@ async function runTests() {
                 'src/portal/tnega/tnega_legal_heir.js': '50e377ae6acb8765f22a86192526b26d2d0967f22c99a2aea3c7c0c867129ccd',
                 'src/portal/tnega/tnega_community_certificate.js': '45a52d8ec902627124d013167a64c6b0a951ae6345da0b46a3329242198317e4',
                 'src/portal/tnega/tnega_residence_certificate.js': '09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272',
-                'src/portal/tnega/tnega_income_certificate.js': '7e3380d9db969ab4e38be5064b37980ef1e5bf7a0f4d1b1deb42a28c220b6f42',
+                'src/portal/tnega/tnega_income_certificate.js': 'e96cc70a6dd3565fd88009e10fd3c9f8beae922a362174e6c729b6103a1c75f9',
                 'src/portal/tnega/tnega_first_graduate.js': '1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b',
                 'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7',
                 'src/portal/tnega/tnega_widow_certificate.js': '9a33ea17a896d790b0b590738a27405ca684d2cabf4c0f649cab1dbd11cd2b1d'
@@ -4246,6 +4246,124 @@ async function runTests() {
             assert(devStudioSrc.includes('OPERATOR_HUD_FAULT_REPORT') && devStudioSrc.includes('AUTOMATION_ORPHANED_APP_CLOSE') && devStudioSrc.includes('AUTOMATION_STUCK_WARNING'), 'Dev Inspector displays distinct badges for HUD reports, stuck watchdogs, and orphaned closes');
 
             passedCount += 9;
+        }
+
+        // =========================================================================
+        // TEST 66: 💍 Married Lady (W/o Husband) + Year-Only DOB + Real Family Members Income Flow
+        // =========================================================================
+        console.log('\n[TEST 66] 💍 Verifying W/o Husband Extraction, Year-Only DOB (01/01/YYYY), Married Family Intake & Income Portal Fixes...');
+        {
+            const { normalizeDobWithYearFallback, applyExtractedAadhaarRelationsAndDob } = require('../src/services/profile_helpers');
+            const { advanceTnegaIncomeFlow } = require('../src/core/fsm/tnega_flow_engine');
+            const ds = require('../desktop/desktop_services');
+            const aiExtSrc = fs.readFileSync(path.join(__dirname, '..', 'ai_document_extractor.js'), 'utf8');
+            const canRegSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_can_register.js'), 'utf8');
+            const incPortalSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_income_certificate.js'), 'utf8');
+            const editMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            const idxHtmlSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+
+            // 1. Year-only DOB fallback & date normalization
+            assert(normalizeDobWithYearFallback('1968') === '01/01/1968', 'Year-only Aadhaar DOB 1968 normalizes cleanly to 01/01/1968');
+            assert(normalizeDobWithYearFallback('1968-05-09') === '09/05/1968', 'ISO DOB converts to DD/MM/YYYY');
+            assert(normalizeDobWithYearFallback('10/06/1993') === '10/06/1993', 'Full DD/MM/YYYY DOB remains intact');
+
+            // 2. W/o Husband vs Birth Father disambiguation
+            const ladyProf = { fullNameEng: 'Muthammaal Munusamy', headGender: 'Female' };
+            applyExtractedAadhaarRelationsAndDob(ladyProf, {
+                relationship: 'Husband',
+                maritalStatus: 'Married',
+                spouseNameEng: 'Munusamy',
+                spouseNameTam: 'முனுசாமி',
+                birthFatherNameEng: 'Ramasamy',
+                dob: '1968'
+            });
+            assert(ladyProf.relationship === 'Husband' && ladyProf.headRelationship === 'Husband' && ladyProf.maritalStatus === 'Married', 'W/o Aadhaar sets relationship=Husband & Married');
+            assert(ladyProf.fatherNameEng === 'Munusamy' && ladyProf.spouseNameEng === 'Munusamy' && ladyProf.birthFatherNameEng === 'Ramasamy', 'Husband wins CAN guardian slot without mixing birth father');
+            assert(ladyProf.headDob === '01/01/1968' && ladyProf.dobIsYearOnly === true, 'Year-only DOB normalized to 01/01/1968 with dobIsYearOnly flag');
+
+            // 3. Extractor prompt & CAN Registration DOM option matching
+            assert(aiExtSrc.includes('W/o') && aiExtSrc.includes('spouseNameEng') && aiExtSrc.includes('YEAR-ONLY DOB RULE'), 'AI document extractor distinguishes W/o Husband vs Father and handles YYYY DOB');
+            assert(canRegSrc.includes('normalizeDobWithYearFallback(dob)') && canRegSrc.includes('matchedOpt') && canRegSrc.includes('relation'), 'CAN Registration normalizes YYYY DOB and selects exact Husband option from DOM');
+
+            // 4. Married Income FSM never suggests Father/Mother and asks real household members explicitly
+            const marriedSess = {
+                subService: 'INCOME',
+                citizenProfile: {
+                    ...ladyProf,
+                    canNumber: '133370337878399',
+                    motherNameTam: 'பழனியம்மாள்',
+                    community: 'MBC',
+                    headAadhaar: '598412369874',
+                    headPhotoPath: 'uploads/passport_test.jpg',
+                    headAadhaarDocPath: 'compressed/test.pdf',
+                    incomeProof: 'SELF_DECLARATION',
+                    familyMemberCount: 2,
+                    incomeMembers: []
+                },
+                tempUploads: {}
+            };
+            // Ensure dummy physical paths check cleanly or test directly after setting mock paths to real test files:
+            const samplePdf = path.join(__dirname, '..', 'package.json');
+            marriedSess.citizenProfile.headPhotoPath = samplePdf;
+            marriedSess.citizenProfile.headAadhaarDocPath = samplePdf;
+            const fsmStep = advanceTnegaIncomeFlow(marriedSess);
+            assert(fsmStep.step === 'INCOME_ADDITIONAL_MEMBER_WAIT', 'Married 2-member Income flow prompts explicitly for member 2');
+            const optLabels = (fsmStep.options || []).map(o => o.label).join(' ');
+            assert(optLabels.includes('கணவர்') && !optLabels.includes('தந்தை -') && !optLabels.includes('தாய் -') && !optLabels.includes('தேவகி'), 'Married Income prompt suggests கணவர் and NEVER auto-suggests parents or Devaki');
+
+            // 5. E2E Chat test (real HTTP against child server): Selecting "கணவர் - முனுசாமி" prompts work/income, then saves cleanly
+            const incChatMob = '9790999881';
+            const incHeaders = { 'x-session-mobile': incChatMob };
+            const dummyIncAadh = path.join(__dirname, '..', 'uploads', 't66_aadh.pdf');
+            const dummyIncPh = path.join(__dirname, '..', 'uploads', 't66_ph.jpg');
+            const dummyIncPr = path.join(__dirname, '..', 'uploads', 't66_pr.pdf');
+            if (!fs.existsSync(dummyIncAadh)) fs.writeFileSync(dummyIncAadh, Buffer.alloc(1024, 'a'));
+            if (!fs.existsSync(dummyIncPh)) fs.writeFileSync(dummyIncPh, Buffer.alloc(1024, 'b'));
+            if (!fs.existsSync(dummyIncPr)) fs.writeFileSync(dummyIncPr, Buffer.alloc(1024, 'c'));
+            await request('POST', '/api/operator/new-customer', { customerMobile: incChatMob });
+            const rUpd = await request('POST', '/api/profile/update', {
+                mobileNumber: incChatMob,
+                fullNameEng: 'Muthammaal Munusamy',
+                fullNameTam: 'முத்தம்மாள் முனுசாமி',
+                relationship: 'Husband',
+                maritalStatus: 'Married',
+                fatherNameEng: 'Munusamy',
+                fatherNameTam: 'முனுசாமி',
+                spouseNameEng: 'Munusamy',
+                spouseNameTam: 'முனுசாமி',
+                motherNameTam: 'பழனியம்மாள்',
+                community: 'MBC',
+                headDob: '1968',
+                headGender: 'Female',
+                headAadhaar: '598412369874',
+                headAadhaarDocPath: dummyIncAadh,
+                headPhotoPath: dummyIncPh,
+                profilePhoto: dummyIncPh,
+                incomeProof: dummyIncPr,
+                canNumber: '133370337878399'
+            }, incHeaders);
+            const rSetup = await request('GET', '/api/drafts/' + incChatMob);
+            const profSaved = rUpd.body?.citizenProfile || rSetup.body?.draft?.citizenProfile || {};
+            assert(profSaved.headDob === '01/01/1968' && profSaved.relationship === 'Husband', 'Profile update normalizes 1968 -> 01/01/1968 & persists Husband relationship');
+
+            const rStartInc = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, incHeaders);
+            assert(rStartInc.body.step === 'INCOME_MEMBER_COUNT_WAIT', 'Income chat skips known fields and goes straight to INCOME_MEMBER_COUNT_WAIT');
+            const rCnt2 = await request('POST', '/api/chat', { text: '2 நபர்கள்' }, incHeaders);
+            assert(rCnt2.body.step === 'INCOME_ADDITIONAL_MEMBER_WAIT', 'Choosing 2 members prompts INCOME_ADDITIONAL_MEMBER_WAIT');
+            const rAskMem = await request('POST', '/api/chat', { text: 'கணவர் - முனுசாமி' }, incHeaders);
+            assert(rAskMem.body.step === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT', 'Selecting Husband without work prompts INCOME_ADDITIONAL_MEMBER_WORK_WAIT');
+            const rWorkDone = await request('POST', '/api/chat', { text: 'கூலி வேலை மாதம் 6000' }, incHeaders);
+            const savedMembers = rWorkDone.body.citizenProfile.incomeMembers || [];
+            assert(savedMembers.length === 1 && savedMembers[0].relationship === 'Husband' && savedMembers[0].name.includes('முனுசாமி') && savedMembers[0].monthlyIncome === '6000', 'Income member saves Husband name, occupation, and monthlyIncome cleanly');
+
+            // 6. Income Portal Engine & Telemetry premature Pre-Submit check & Edit Modal UI
+            assert(!incPortalSrc.includes("'Devaki'") && !incPortalSrc.includes("'தேவகி'") && incPortalSrc.includes("addlMonInc > 0"), 'tnega_income_certificate never fabricates Devaki and fills earning addlMembers monthlyIncome');
+            assert(ds.isPreSubmitReached('ஆவணப் பதிவேற்றப் பக்கம் எட்டப்பட்டது') === false && ds.isPreSubmitReached('ஆவணங்கள் வெற்றிகரமாகப் பதிவேற்றப்பட்டன') === true, 'Telemetry Pre-Submit guard ignores upload page open and triggers only after docs upload');
+            assert(idxHtmlSrc.includes('id="editRelationship"') && idxHtmlSrc.includes('id="editIncomeMembersWrap"') && editMgrSrc.includes('renderEditIncomeMembersList'), 'Edit Modal exposes Relationship dropdown & editable Income family member rows');
+
+            try { [dummyIncAadh, dummyIncPh, dummyIncPr].forEach(f => fs.existsSync(f) && fs.unlinkSync(f)); } catch (_) {}
+            await request('DELETE', '/api/drafts/' + incChatMob + '?permanent=true');
+            passedCount += 14;
         }
 
         console.log('\n======================================================');

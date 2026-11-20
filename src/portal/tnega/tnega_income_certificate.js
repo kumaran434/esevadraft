@@ -9,6 +9,7 @@ const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow, isTnegaSessionAl
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { resolveTnegaVaultCredentials, performAutomatedTnegaLogin, performLiveCanLookupOnPage, extractPreFilledPortalCanDetails } = require('./tnega_can_register');
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
+const { normalizeDobWithYearFallback } = require('../../services/profile_helpers');
 const { handleTnegaSavedApplication } = require('./tnega_residence_certificate');
 const { resolveOrRestoreFile } = require('../../services/draft_file_restorer');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
@@ -16,7 +17,8 @@ const { produceCompliantDocument, produceDualSidedDocument } = require('../../..
 function calculateAgeFromDob(dobStr) {
     if (!dobStr) return 31;
     try {
-        const parts = String(dobStr).split(/[\/\-\.\s]/).filter(Boolean);
+        const normalized = normalizeDobWithYearFallback(dobStr);
+        const parts = String(normalized).split(/[\/\-\.\s]/).filter(Boolean);
         let year = null;
         for (const p of parts) {
             if (/^\d{4}$/.test(p)) {
@@ -77,10 +79,16 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
     const fullNameEng = namePair.eng || citizenProfile.fullNameEng || citizenProfile.headNameEng || '';
     const fullNameTam = namePair.tam || citizenProfile.fullNameTam || citizenProfile.headNameTam || '';
 
-    const annualIncome = parseInt(String(citizenProfile.annualIncome || '72000').replace(/\D+/g, ''), 10) || 72000;
-    const monthlyIncome = Math.round(annualIncome / 12) || 6000;
+    const addlSumMon = Array.isArray(citizenProfile.incomeMembers)
+        ? citizenProfile.incomeMembers.reduce((s, m) => s + (parseInt(String(m?.monthlyIncome || '0').replace(/\D+/g, ''), 10) || 0), 0)
+        : 0;
+    const annualIncome = parseInt(String(citizenProfile.annualIncome || (addlSumMon > 0 ? addlSumMon * 12 : '72000')).replace(/\D+/g, ''), 10) || 72000;
+    const totalFamilyMon = Math.round(annualIncome / 12) || 6000;
+    const selfExplicitMon = citizenProfile.selfMonthlyIncome !== undefined ? (parseInt(String(citizenProfile.selfMonthlyIncome).replace(/\D+/g, ''), 10) || 0) : null;
+    const monthlyIncome = selfExplicitMon !== null ? selfExplicitMon : (addlSumMon > 0 && resolveProfessionCode(citizenProfile.profession) === '5' ? 0 : Math.max(0, totalFamilyMon - addlSumMon) || totalFamilyMon);
     const profession = citizenProfile.profession || 'தனியார் வேலை (Private)';
-    const age = calculateAgeFromDob(citizenProfile.headDob || citizenProfile.dob || '10/06/1993');
+    const normalizedDob = normalizeDobWithYearFallback(citizenProfile.headDob || citizenProfile.dob || '10/06/1993');
+    const age = calculateAgeFromDob(normalizedDob);
     const gender = (citizenProfile.headGender || citizenProfile.gender || 'Male').toLowerCase().startsWith('f') ? '2' : '1';
 
     onProgress(`👤 விண்ணப்பதாரர்: ${fullNameTam} (${fullNameEng}) | வயது: ${age}`);
@@ -506,33 +514,35 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             pCode: profCode
                         }).catch(() => {});
 
-                        // Check Salary Checkbox (#incme:sal) and wait for RichFaces AJAX to render #incme:salTxtId
-                        await tnegaPage.evaluate(() => {
-                            const sal = document.getElementById('incme:sal');
-                            if (sal && !sal.checked) {
-                                sal.click();
-                            }
-                        }).catch(() => {});
+                        // Check Salary Checkbox (#incme:sal) ONLY when applicant (Self) has monthlyIncome > 0
+                        if (monthlyIncome > 0) {
+                            await tnegaPage.evaluate(() => {
+                                const sal = document.getElementById('incme:sal');
+                                if (sal && !sal.checked) {
+                                    sal.click();
+                                }
+                            }).catch(() => {});
 
-                        await tnegaPage.waitForFunction(() => {
-                            const txt = document.getElementById('incme:salTxtId');
-                            return txt && txt.offsetParent !== null;
-                        }, { timeout: 5000 }).catch(() => {});
+                            await tnegaPage.waitForFunction(() => {
+                                const txt = document.getElementById('incme:salTxtId');
+                                return txt && txt.offsetParent !== null;
+                            }, { timeout: 5000 }).catch(() => {});
 
-                        // Fill Monthly Income into #incme:salTxtId and calculate totals
-                        onProgress(`💰 [மாத வருமானம்] ₹${monthlyIncome} உள்ளிடப்படுகிறது (ஆண்டு மொத்தம்: ₹${annualIncome})...`);
-                        await tnegaPage.evaluate((mInc) => {
-                            const txt = document.getElementById('incme:salTxtId');
-                            if (txt) {
-                                txt.value = String(mInc);
-                                txt.dispatchEvent(new Event('input', { bubbles: true }));
-                                txt.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-                                txt.dispatchEvent(new Event('change', { bubbles: true }));
-                                txt.dispatchEvent(new Event('blur', { bubbles: true }));
-                            }
-                            if (typeof window.findTotal === 'function') window.findTotal();
-                        }, String(monthlyIncome)).catch(() => {});
-                        await tnegaPage.waitForTimeout(500);
+                            // Fill Monthly Income into #incme:salTxtId and calculate totals
+                            onProgress(`💰 [மாத வருமானம்] ₹${monthlyIncome} உள்ளிடப்படுகிறது (ஆண்டு மொத்தம்: ₹${annualIncome})...`);
+                            await tnegaPage.evaluate((mInc) => {
+                                const txt = document.getElementById('incme:salTxtId');
+                                if (txt) {
+                                    txt.value = String(mInc);
+                                    txt.dispatchEvent(new Event('input', { bubbles: true }));
+                                    txt.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                    txt.dispatchEvent(new Event('change', { bubbles: true }));
+                                    txt.dispatchEvent(new Event('blur', { bubbles: true }));
+                                }
+                                if (typeof window.findTotal === 'function') window.findTotal();
+                            }, String(monthlyIncome)).catch(() => {});
+                            await tnegaPage.waitForTimeout(500);
+                        }
 
                         // Click Add button (#incme:submit1)
                         onProgress('➕ [உறுப்பினர் சேர்த்தல்] விண்ணப்பதாரர் (Self) Add பொத்தான் அழுத்தப்படுகிறது...');
@@ -542,19 +552,8 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             await tnegaPage.waitForTimeout(2500);
                             onProgress('✅ விண்ணப்பதாரர் விவரங்கள் அட்டவணையில் சேர்க்கப்பட்டன!');
 
-                            // Check and add Member 2 (e.g. Mother Devaki) if total members >= 2
-                            const targetFamCount = Number(citizenProfile.familyMemberCount || 2);
-                            const addlMembers = (citizenProfile.incomeMembers && citizenProfile.incomeMembers.length > 0)
-                                ? citizenProfile.incomeMembers
-                                : (targetFamCount >= 2 ? [{
-                                    nameEng: citizenProfile.motherNameEng || 'Devaki',
-                                    nameTam: citizenProfile.motherNameTam || 'தேவகி',
-                                    name: citizenProfile.motherNameTam || 'தேவகி',
-                                    relationship: 'Mother',
-                                    profession: 'Household/Dependent',
-                                    age: '55',
-                                    monthlyIncome: '0'
-                                }] : []);
+                            // ONLY add real user-entered additional members (zero fabricated default member)
+                            const addlMembers = Array.isArray(citizenProfile.incomeMembers) ? citizenProfile.incomeMembers : [];
 
                             const rowsAfterSelf = await tnegaPage.evaluate(() => {
                                 const table = document.getElementById('incme:landDet');
@@ -565,22 +564,28 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                             }).catch(() => []);
 
                             for (const addl of addlMembers) {
-                                const addlNameEng = addl.nameEng || addl.name || 'Devaki';
-                                const addlNameTam = addl.nameTam || addl.name || 'தேவகி';
-                                const alreadyInTable = rowsAfterSelf.some(t => t.includes(addlNameEng) || t.includes(addlNameTam) || (addl.relationship && t.includes(addl.relationship)));
+                                const addlPair = ensureBilingualPair(
+                                    addl.nameEng || addl.name || '',
+                                    addl.nameTam || addl.name || ''
+                                );
+                                const addlNameEng = addlPair.eng || addl.nameEng || addl.name || 'Member';
+                                const addlNameTam = addlPair.tam || addl.nameTam || addl.name || 'உறுப்பினர்';
+                                const alreadyInTable = rowsAfterSelf.some(t => t.includes(addlNameEng) || t.includes(addlNameTam));
                                 if (alreadyInTable) {
                                     onProgress(`✅ உறுப்பினர் ${addlNameTam} (${addl.relationship}) ஏற்கனவே அட்டவணையில் உள்ளார்!`);
                                     continue;
                                 }
 
-                                onProgress(`➕ [கூடுதல் உறுப்பினர் சேர்த்தல்] ${addl.name || addl.nameTam} (${addl.relationship}) விவரங்கள் சேர்க்கப்படுகின்றன...`);
-                                const addlAge = addl.age || '55';
-                                const isFemale = addl.relationship === 'Mother' || addl.relationship === 'Wife' || addl.gender === 'Female' || (addl.name || '').includes('தேவகி');
+                                onProgress(`➕ [கூடுதல் உறுப்பினர் சேர்த்தல்] ${addlNameTam} (${addl.relationship}) விவரங்கள் சேர்க்கப்படுகின்றன...`);
+                                const addlAge = String(addl.age || (String(addl.relationship || '').toLowerCase().includes('son') || String(addl.relationship || '').toLowerCase().includes('daughter') ? '18' : '45'));
+                                const relLow = String(addl.relationship || '').toLowerCase();
+                                const isFemale = relLow.includes('mother') || relLow.includes('wife') || relLow.includes('daughter') || relLow.includes('sister') || addl.gender === 'Female';
                                 const addlSex = isFemale ? '2' : '1';
                                 const addlRel = resolveRelationCode(addl.relationship);
-                                const addlProfCode = resolveProfessionCode(addl.profession || 'தலைவி');
+                                const addlProfCode = resolveProfessionCode(addl.profession || 'தனியார்');
+                                const addlMonInc = parseInt(String(addl.monthlyIncome || '0').replace(/\D+/g, ''), 10) || 0;
 
-                                await tnegaPage.evaluate(({ nEng, nTam, aAge, aSex, aRel, aProf }) => {
+                                await tnegaPage.evaluate(({ nEng, nTam, aAge, aSex, aRel, aRelLabel, aProf }) => {
                                     return new Promise((resolve) => {
                                         const setVal = (id, v) => {
                                             const el = document.getElementById(id);
@@ -595,7 +600,14 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                         setVal('incme:fmdNameTmId', nTam);
                                         setVal('incme:fmdDob', String(aAge));
                                         setVal('incme:sexId', aSex);
-                                        setVal('incme:fmdRelationId', aRel);
+                                        const relSel = document.getElementById('incme:fmdRelationId');
+                                        if (relSel) {
+                                            const opts = Array.from(relSel.options || []);
+                                            const lblLow = String(aRelLabel || '').toLowerCase();
+                                            const exactOpt = lblLow ? opts.find(o => o.text && o.text.trim().toLowerCase() === lblLow) : null;
+                                            const matchOpt = exactOpt || (lblLow ? opts.find(o => o.text && o.text.trim().toLowerCase().includes(lblLow)) : null);
+                                            setVal('incme:fmdRelationId', matchOpt ? matchOpt.value : aRel);
+                                        }
                                         const prof = document.getElementById('incme:fmdProffId');
                                         if (!prof) return resolve(false);
                                         let done = false;
@@ -618,13 +630,37 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                     aAge: addlAge,
                                     aSex: addlSex,
                                     aRel: addlRel,
+                                    aRelLabel: addl.relationship || '',
                                     aProf: addlProfCode
                                 }).catch(() => {});
+
+                                if (addlMonInc > 0) {
+                                    await tnegaPage.evaluate(() => {
+                                        const sal = document.getElementById('incme:sal');
+                                        if (sal && !sal.checked) sal.click();
+                                    }).catch(() => {});
+                                    await tnegaPage.waitForFunction(() => {
+                                        const txt = document.getElementById('incme:salTxtId');
+                                        return txt && txt.offsetParent !== null;
+                                    }, { timeout: 4000 }).catch(() => {});
+                                    await tnegaPage.evaluate((mInc) => {
+                                        const txt = document.getElementById('incme:salTxtId');
+                                        if (txt) {
+                                            txt.value = String(mInc);
+                                            txt.dispatchEvent(new Event('input', { bubbles: true }));
+                                            txt.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                            txt.dispatchEvent(new Event('change', { bubbles: true }));
+                                            txt.dispatchEvent(new Event('blur', { bubbles: true }));
+                                        }
+                                        if (typeof window.findTotal === 'function') window.findTotal();
+                                    }, String(addlMonInc)).catch(() => {});
+                                    await tnegaPage.waitForTimeout(400);
+                                }
 
                                 if (await addBtn.count() > 0) {
                                     await addBtn.click().catch(() => {});
                                     await tnegaPage.waitForTimeout(2500);
-                                    onProgress(`✅ உறுப்பினர் ${addlNameTam} (${addl.relationship}) வெற்றிகரமாக அட்டவணையில் சேர்க்கப்பட்டார்!`);
+                                    onProgress(`✅ உறுப்பினர் ${addlNameTam} (${addl.relationship}${addlMonInc > 0 ? ` - ₹${addlMonInc}/மாதம்` : ''}) வெற்றிகரமாக அட்டவணையில் சேர்க்கப்பட்டார்!`);
                                 }
                             }
 
@@ -655,7 +691,7 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                                 return Array.from(table.querySelectorAll('tr')).filter(r => !r.querySelector('input[type="text"], select') && r.querySelectorAll('td').length >= 5).length;
                             }).catch(() => 0);
 
-                            const totalCountStr = String(finalCount || citizenProfile.familyMemberCount || ((citizenProfile.incomeMembers && citizenProfile.incomeMembers.length > 0) ? (citizenProfile.incomeMembers.length + 1) : 2));
+                            const totalCountStr = String(finalCount || citizenProfile.familyMemberCount || ((Array.isArray(citizenProfile.incomeMembers) && citizenProfile.incomeMembers.length > 0) ? (citizenProfile.incomeMembers.length + 1) : 1));
                             const totalInput = tnegaPage.locator('input[id*="totalFamilyMember"], #incme\\:totalFamilyMember').first();
                             if (await totalInput.count() > 0 && await totalInput.isVisible()) {
                                 await totalInput.fill(totalCountStr);
@@ -694,10 +730,10 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
                 const isUploadStage = currentUrl.toLowerCase().includes('uploaddoc');
 
                 if (isUploadStage) {
-                    onProgress('🛡️ [சரிபார்ப்பு நிலையம் (Pre-Submit Human Gate)] வருமானச் சான்றிதழ் ஆவணப் பதிவேற்றப் பக்கம் எட்டப்பட்டது!');
+                    onProgress('📤 [ஆவணப் பதிவேற்றம்] வருமானச் சான்றிதழ் ஆவணப் பதிவேற்றப் பக்கம் எட்டப்பட்டது!');
                     await updateTnegaHud(tnegaPage, {
-                        title: '🛡️ சரிபார்ப்பு நிலையம் (Pre-Submit Gate)',
-                        desc: 'ஆவணங்கள் பதிவேற்றப்படுகின்றன. சுய உறுதிமொழிப் படிவம் பதிவிறக்கப்படுகிறது...',
+                        title: '📤 ஆவணங்கள் பதிவேற்றப்படுகின்றன...',
+                        desc: 'சுய உறுதிமொழிப் படிவம் பதிவிறக்கப்பட்டு ஆவணங்கள் பதிவேற்றப்படுகின்றன...',
                         badge: 'Uploading Docs',
                         type: 'working'
                     });
@@ -1027,6 +1063,8 @@ async function startTnegaIncomeCertificateFlow(citizenProfile = {}, onProgress =
 
                     return {
                         success: true,
+                        status: 'PRE_SUBMIT_GATE',
+                        preSubmitGate: true,
                         isPreSubmitGate: true,
                         appNumber,
                         canNumber: cleanCan,

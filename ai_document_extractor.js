@@ -102,8 +102,15 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * "NONE" (if it is photo or aadhaar)
 - Full Name in English and accurate Tamil transliteration.
   * CRITICAL TAMIL INITIAL RULE: For single-letter initials in names (e.g., "G. Suman", "Suman G", "J. Kumar", "K. Priya"), NEVER leave the initial in English and NEVER write wrong phonetic consonants (like க for G or ஜ for J). Strictly map standard Tamil letter-sounds: G -> ஜி, J -> ஜே, K -> கி, C -> சி, S -> எஸ், R -> ஆர், M -> எம், N -> என், P -> பி, B -> பி, D -> டி, T -> டி, V -> வி, L -> எல், A -> அ, E -> இ, I -> ஐ, O -> ஓ, U -> யூ, H -> ஹெச், F -> எஃப்.
-- Father / Husband Name in English and accurate Tamil transliteration (apply the same Tamil Initial Rule).
-- Date of Birth (format: DD/MM/YYYY).
+- Father / Husband Name & Relationship Rule (CRITICAL — NEVER CONFUSE W/O HUSBAND WITH FATHER!):
+  * Examine BOTH Aadhaar Front AND Back carefully.
+  * Look specifically for "W/o" (Wife of / க/பெ / கணவர் பெயர் / மனைவி) vs "S/o" (Son of / த/பெ) vs "D/o" (Daughter of) vs "C/o".
+  * Note: On many Tamil Nadu women's Aadhaar cards, the cardholder's full name on the front ALREADY has her husband's name appended next to it (e.g. "Muthammaal Munusamy"), AND the back address says "W/o Munusamy" (even if a father's name also appears elsewhere).
+  * If "W/o" / "Wife of" / "க/பெ" / "மனைவி" is visible -> set "relationship": "Husband", "maritalStatus": "Married", put the Husband's name in "spouseNameEng"/"spouseNameTam" AND "fatherNameEng"/"fatherNameTam". If a separate birth father name also appears, place it in "birthFatherNameEng"/"birthFatherNameTam" and NEVER put birth father in place of W/o Husband!
+  * If "S/o" or "D/o" is visible -> set "relationship": "Father", "maritalStatus": null, and put Father's name in "fatherNameEng"/"fatherNameTam".
+  * Apply the same Tamil Initial Rule to all extracted names.
+- Date of Birth (format: DD/MM/YYYY):
+  * YEAR-ONLY DOB RULE: Older Aadhaar cards sometimes print ONLY a 4-digit Year of Birth (e.g. "Year of Birth: 1968" or "1968") without day or month. In that case, set "dob": "01/01/YYYY" (e.g. "01/01/1968") and "dobIsYearOnly": true. Otherwise extract exact DD/MM/YYYY and "dobIsYearOnly": false.
 - Gender ("Male" / "Female").
 - BIRTH CERTIFICATE SPECIAL RULE: If documentType is "BIRTH_CERTIFICATE", extract the CHILD'S name as fullNameEng/fullNameTam, the child's DOB as dob, child's gender as gender, father's name as fatherNameEng/fatherNameTam, registration number as certificateNumber, and set aadhaarNumber strictly to null unless a 12-digit Aadhaar number specifically for that child is printed (NEVER put parent's phone/Aadhaar into child's aadhaarNumber).
 - 12-Digit Aadhaar Number (without spaces, ONLY if an Aadhaar number is printed on the document; do not confuse LPG ID with Aadhaar).
@@ -136,9 +143,16 @@ Respond strictly in JSON format (use null for fields not present in the image):
   "residenceProofNameTamil": "",
   "fullNameEng": "",
   "fullNameTam": "",
+  "relationship": "Father",
+  "maritalStatus": null,
   "fatherNameEng": "",
   "fatherNameTam": "",
+  "spouseNameEng": null,
+  "spouseNameTam": null,
+  "birthFatherNameEng": null,
+  "birthFatherNameTam": null,
   "dob": "",
+  "dobIsYearOnly": false,
   "gender": "Male",
   "genderTam": "ஆண்",
   "aadhaarNumber": "",
@@ -203,6 +217,17 @@ Respond strictly in JSON format (use null for fields not present in the image):
                 result.fatherNameTam = normalizeTamilInitialsFromEnglish(result.fatherNameEng, result.fatherNameTam);
             } else if (result.fatherNameEng && !result.fatherNameTam) {
                 result.fatherNameTam = ensureBilingualPair(result.fatherNameEng, '').tam;
+            }
+            if (result.spouseNameEng && result.spouseNameTam) {
+                result.spouseNameTam = normalizeTamilInitialsFromEnglish(result.spouseNameEng, result.spouseNameTam);
+            } else if (result.spouseNameEng && !result.spouseNameTam) {
+                result.spouseNameTam = ensureBilingualPair(result.spouseNameEng, '').tam;
+            }
+            if (result.dob) {
+                const { normalizeDobWithYearFallback } = require('./src/services/profile_helpers');
+                const rawDob = String(result.dob).trim();
+                if (/^\d{4}$/.test(rawDob)) result.dobIsYearOnly = true;
+                result.dob = normalizeDobWithYearFallback(rawDob);
             }
             if (result.documentType === 'BIRTH_CERTIFICATE' && result.aadhaarNumber && !/^\d{12}$/.test(String(result.aadhaarNumber).replace(/\D/g, ''))) {
                 result.aadhaarNumber = null;

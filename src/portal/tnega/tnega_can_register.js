@@ -13,6 +13,7 @@ const { generateCanReceiptPdf } = require('../../services/tnega_receipt_generato
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { AiCaptchaSolver } = require('../common/ai_captcha_solver');
 const { ensureBilingualPair, formatStreetWithHamlet } = require('../../utils/bilingual_helper');
+const { normalizeDobWithYearFallback } = require('../../services/profile_helpers');
 
 let saveCitizenDraft = null;
 let getCitizenDraft = null;
@@ -1658,11 +1659,31 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             onProgress(`🔢 ஆதார் எண்: XXXX-XXXX-${aadhaar.slice(-4)}`);
         }
 
-        // 2. Appellation / Title
+        // 2. Appellation / Title & Marital pre-calc
+        const relStr = String(
+            citizenProfile.relationship ||
+            citizenProfile.headRelationship ||
+            ((citizenProfile.spouseNameEng || citizenProfile.spouseNameTam || citizenProfile.spouseName) ? 'Husband' : 'Father')
+        ).toLowerCase();
+        let relCode = '4';
+        let relName = 'Father';
+        if (relStr.includes('husband') || relStr.includes('கணவர்') || relStr.includes('spouse')) {
+            relCode = '2';
+            relName = 'Husband';
+        } else if (relStr.includes('mother') || relStr.includes('தாய்')) {
+            relCode = '1';
+            relName = 'Mother';
+        } else if (relStr.includes('guardian') || relStr.includes('பாதுகாவலர்')) {
+            relCode = '3';
+            relName = 'Guardian';
+        }
+        const preMaritalStr = String(citizenProfile.maritalStatus || (relName === 'Husband' ? 'Married' : 'Unmarried')).toLowerCase();
+
         const appelSelect = tnegaPage.locator('#canreg\\:appelation, select#ddlAppellation, select[name*="appelation"], select#ddlTitle').first();
         if (await appelSelect.count() > 0 && await appelSelect.isVisible()) {
-            const titleTarget = gender === 'Female' ? '5' : '6';
-            const selected = await safeSelect(appelSelect, titleTarget) || await safeSelect(appelSelect, gender === 'Female' ? 'Tmt' : 'Thiru');
+            const titleCode = gender === 'Female' ? (preMaritalStr.includes('unmarried') ? '4' : '5') : '6';
+            const titleText = gender === 'Female' ? (preMaritalStr.includes('unmarried') ? 'Selvi' : 'Tmt') : 'Thiru';
+            const selected = await safeSelect(appelSelect, titleCode) || await safeSelect(appelSelect, titleText);
             if (selected) {
                 await tnegaPage.waitForTimeout(1000); // Wait for RichFaces dependent dropdown ajax
             }
@@ -1679,24 +1700,23 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             onProgress
         );
 
-        // 4. Relationship & Father/Spouse Name (Rule 7)
-        const relStr = (citizenProfile.relationship || citizenProfile.headRelationship || (citizenProfile.spouseName ? 'Husband' : 'Father')).toLowerCase();
-        let relCode = '4';
-        let relName = 'Father';
-        if (relStr.includes('husband') || relStr.includes('கணவர்') || relStr.includes('spouse')) {
-            relCode = '2';
-            relName = 'Husband';
-        } else if (relStr.includes('mother') || relStr.includes('தாய்')) {
-            relCode = '1';
-            relName = 'Mother';
-        } else if (relStr.includes('guardian') || relStr.includes('பாதுகாவலர்')) {
-            relCode = '3';
-            relName = 'Guardian';
-        }
+        // 4. Relationship & Father/Spouse Name (Rule 7 — Strictly matches Husband vs Father from DOM option text/value!)
         const relSelect = tnegaPage.locator('#canreg\\:relation, select#ddlRelationship, select[name*="relation"], select#ddlRelation').first();
         if (await relSelect.count() > 0 && await relSelect.isVisible()) {
-            await safeSelect(relSelect, relCode) || await safeSelect(relSelect, relName);
-            await tnegaPage.waitForTimeout(500);
+            const matchedOpt = await relSelect.evaluate((sel, targetRel) => {
+                const opts = Array.from(sel.options || []);
+                const tLower = String(targetRel || '').toLowerCase();
+                const found = opts.find(o => o.text && o.text.trim().toLowerCase().includes(tLower));
+                return found ? { value: found.value, text: found.text.trim() } : null;
+            }, relName).catch(() => null);
+
+            if (matchedOpt && matchedOpt.value) {
+                await safeSelect(relSelect, matchedOpt.value) || await safeSelect(relSelect, relName);
+            } else {
+                await safeSelect(relSelect, relName) || await safeSelect(relSelect, relCode);
+            }
+            await tnegaPage.waitForTimeout(600);
+            onProgress(`👨‍👧 [உறவுமுறை] ${relName === 'Husband' ? 'கணவர் (Husband)' : (relName === 'Mother' ? 'தாய் (Mother)' : (relName === 'Guardian' ? 'பாதுகாவலர் (Guardian)' : 'தந்தை (Father)'))} தேர்வு செய்யப்பட்டது ✅`);
         }
         await fillBilingualPair(
             tnegaPage,
@@ -1704,7 +1724,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             '#canreg\\:tnfatname, input#txtFatherTam, input[name*="tnfatname"], input#txtFatherNameTam',
             fatherNameEng,
             fatherNameTam,
-            'தந்தை பெயர்',
+            relName === 'Husband' ? 'கணவர் பெயர்' : 'தந்தை பெயர்',
             onProgress
         );
 
@@ -1748,14 +1768,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             await tnegaPage.waitForTimeout(500);
         }
 
-        // 7. DOB (RichFaces Calendar & Input handling) - Strictly DD/MM/YYYY
-        let normalizedDob = dob;
-        if (dob.includes('-')) {
-            const parts = dob.split('-');
-            if (parts[0].length === 4) { // YYYY-MM-DD -> DD/MM/YYYY
-                normalizedDob = `${parts[2]}/${parts[1]}/${parts[0]}`;
-            }
-        }
+        // 7. DOB (RichFaces Calendar & Input handling) - Strictly DD/MM/YYYY (Year-only "YYYY" defaults to "01/01/YYYY")
+        let normalizedDob = normalizeDobWithYearFallback(dob);
         const dobInp = tnegaPage.locator('#canreg\\:dobInputDate, input#txtDOB, input[name*="dobInputDate"]').first();
         if (await dobInp.count() > 0 && await dobInp.isVisible()) {
             await tnegaPage.evaluate(({ dobStr }) => {

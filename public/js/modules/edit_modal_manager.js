@@ -30,6 +30,79 @@
             if (oInput) oInput.value = prof;
         };
 
+        window.collectEditIncomeMembers = function() {
+            const listEl = document.getElementById('editIncomeMembersList');
+            if (!listEl) return Array.isArray(window.currentCitizenData?.incomeMembers) ? window.currentCitizenData.incomeMembers : [];
+            const rows = listEl.querySelectorAll('.edit-income-member-row');
+            const out = [];
+            rows.forEach((row) => {
+                const rel = row.querySelector('.im-rel')?.value || 'Husband';
+                const name = row.querySelector('.im-name')?.value?.trim() || '';
+                const age = row.querySelector('.im-age')?.value?.trim() || '';
+                const prof = row.querySelector('.im-prof')?.value?.trim() || 'கூலி வேலை';
+                const mon = row.querySelector('.im-mon')?.value?.trim() || '0';
+                if (name || rel) {
+                    out.push({
+                        name: name || rel,
+                        nameEng: name || '',
+                        nameTam: name || '',
+                        relationship: rel,
+                        age: age || '',
+                        profession: prof,
+                        monthlyIncome: mon || '0'
+                    });
+                }
+            });
+            return out;
+        };
+
+        window.renderEditIncomeMembersList = function(countVal, existingList = null) {
+            const wrap = document.getElementById('editIncomeMembersWrap');
+            const listEl = document.getElementById('editIncomeMembersList');
+            if (!wrap || !listEl) return;
+            const total = Math.max(1, parseInt(countVal || '1', 10) || 1);
+            const needed = total - 1;
+            if (needed <= 0) {
+                wrap.style.display = 'none';
+                listEl.innerHTML = '';
+                return;
+            }
+            const prevDom = listEl.querySelectorAll('.edit-income-member-row').length > 0 ? window.collectEditIncomeMembers() : null;
+            const source = Array.isArray(existingList) ? existingList : (prevDom || window.currentCitizenData?.incomeMembers || []);
+            wrap.style.display = 'block';
+            const relOpts = [
+                { v: 'Husband', l: 'கணவர் (Husband)' },
+                { v: 'Wife', l: 'மனைவி (Wife)' },
+                { v: 'Son', l: 'மகன் (Son)' },
+                { v: 'Daughter', l: 'மகள் (Daughter)' },
+                { v: 'Father', l: 'தந்தை (Father)' },
+                { v: 'Mother', l: 'தாய் (Mother)' },
+                { v: 'Mother-in-law', l: 'மாமியார் (Mother-in-law)' },
+                { v: 'Father-in-law', l: 'மாமனார் (Father-in-law)' }
+            ];
+            let html = '';
+            for (let i = 0; i < needed; i++) {
+                const m = source[i] || {};
+                const relDef = m.relationship || ((window.currentCitizenData?.relationship === 'Husband' && i === 0) ? 'Husband' : 'Son');
+                const safeName = (m.nameTam || m.nameEng || m.name || ((relDef === 'Husband' && i === 0) ? (window.currentCitizenData?.spouseNameEng || window.currentCitizenData?.fatherNameEng || '') : '')).replace(/"/g, '&quot;');
+                const safeAge = String(m.age || '').replace(/"/g, '&quot;');
+                const safeProf = String(m.profession || 'கூலி வேலை').replace(/"/g, '&quot;');
+                const safeMon = String(m.monthlyIncome || '0').replace(/"/g, '&quot;');
+                html += `
+                    <div class="edit-income-member-row" style="display:grid;grid-template-columns:1.1fr 1.3fr 0.6fr 1.2fr 0.8fr;gap:6px;align-items:center;background:#f8fafc;padding:6px;border-radius:6px;border:1px solid #e2e8f0;">
+                        <select class="im-rel" style="padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11.5px;">
+                            ${relOpts.map(o => `<option value="${o.v}" ${relDef === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}
+                        </select>
+                        <input type="text" class="im-name" value="${safeName}" placeholder="உறுப்பினர் பெயர்" style="padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11.5px;">
+                        <input type="number" class="im-age" value="${safeAge}" placeholder="வயது" style="padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11.5px;">
+                        <input type="text" class="im-prof" value="${safeProf}" placeholder="தொழில்" style="padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11.5px;">
+                        <input type="number" class="im-mon" value="${safeMon}" placeholder="மாத ₹" style="padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11.5px;">
+                    </div>
+                `;
+            }
+            listEl.innerHTML = html;
+        };
+
         function renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId = null, forcedIsPdf = false) {
             if (typeof window.renderDocPreview === 'function' && window.renderDocPreview !== renderDocPreview) {
                 return window.renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId, forcedIsPdf);
@@ -1748,11 +1821,14 @@
 
                 safeSetVal('editNameTam', data.fullNameTam);
                 safeSetVal('editNameEng', data.fullNameEng);
-                safeSetVal('editFatherTam', data.fatherNameTam);
-                safeSetVal('editFatherEng', data.fatherNameEng);
+                const resolvedRel = data.relationship || data.headRelationship || ((data.spouseNameEng || data.spouseNameTam || data.spouseName) ? 'Husband' : 'Father');
+                safeSetVal('editRelationship', resolvedRel);
+                safeSetVal('editFatherTam', data.fatherNameTam || data.spouseNameTam);
+                safeSetVal('editFatherEng', data.fatherNameEng || data.spouseNameEng);
                 safeSetVal('editMotherTam', data.motherNameTam || data.motherName);
                 safeSetVal('editMotherEng', data.motherNameEng || data.motherName);
-                safeSetVal('editDob', data.headDob);
+                const rawDobInit = String(data.headDob || data.dob || '').trim();
+                safeSetVal('editDob', /^\d{4}$/.test(rawDobInit) ? `01/01/${rawDobInit}` : rawDobInit);
                 safeSetVal('editGender', data.headGender || 'Male');
                 safeSetVal('editDoorNo', data.doorNo);
                 safeSetVal('editStreetTam', data.streetTam || data.streetEng);
@@ -1774,7 +1850,11 @@
                 safeSetVal('editAnnualIncome', resolvedAnnInc);
                 safeSetVal('editMonthlyIncome', resolvedMonInc);
                 safeSetVal('editOccupation', data.profession || data.occupation || '');
-                safeSetVal('editFamilyMemberCount', data.familyMemberCount || '2');
+                const resolvedFamCnt = String(data.familyMemberCount || (Array.isArray(data.incomeMembers) && data.incomeMembers.length > 0 ? data.incomeMembers.length + 1 : '1'));
+                safeSetVal('editFamilyMemberCount', resolvedFamCnt);
+                if (typeof window.renderEditIncomeMembersList === 'function') {
+                    window.renderEditIncomeMembersList(resolvedFamCnt, Array.isArray(data.incomeMembers) ? data.incomeMembers : []);
+                }
                 safeSetVal('editResidenceYears', data.residenceYears || '10');
                 safeSetVal('editResidencePurpose', data.residencePurpose || 'கல்வி / வேலைவாய்ப்பு');
                 safeSetVal('editFirstGraduateCourse', data.currentCourse || data.degreeCourse || '');
@@ -2236,7 +2316,10 @@
                 const relVal = document.getElementById('editReligion')?.value || currentCitizenData?.religion || 'Hindu';
                 const incVal = document.getElementById('editAnnualIncome')?.value?.trim() || currentCitizenData?.annualIncome || '';
                 const occVal = document.getElementById('editOccupation')?.value?.trim() || currentCitizenData?.profession || '';
-                const famCountVal = document.getElementById('editFamilyMemberCount')?.value || currentCitizenData?.familyMemberCount || '2';
+                const famCountVal = document.getElementById('editFamilyMemberCount')?.value || currentCitizenData?.familyMemberCount || '1';
+                const incomeMembersVal = (typeof window.collectEditIncomeMembers === 'function' && Number(famCountVal) > 1)
+                    ? window.collectEditIncomeMembers()
+                    : (Number(famCountVal) === 1 ? [] : (currentCitizenData?.incomeMembers || []));
                 const monIncVal = document.getElementById('editMonthlyIncome')?.value?.trim() || (incVal ? String(Math.round(Number(incVal) / 12)) : '');
                 const resYearsVal = document.getElementById('editResidenceYears')?.value?.trim() || currentCitizenData?.residenceYears || '';
                 const resPurpVal = document.getElementById('editResidencePurpose')?.value?.trim() || currentCitizenData?.residencePurpose || '';
@@ -2286,6 +2369,7 @@
                         monthlyIncome: monIncVal,
                         profession: occVal,
                         familyMemberCount: famCountVal,
+                    incomeMembers: incomeMembersVal,
                         canNumber: canVal
                     };
                 } else if (keepSub === 'RESIDENCE' || keepSub === 'RESIDENCE_CERTIFICATE' || keepSub === 'NATIVITY') {
@@ -2341,16 +2425,28 @@
                     };
                 }
 
+                const relSelectVal = document.getElementById('editRelationship')?.value || currentCitizenData?.relationship || 'Father';
+                const rawDobSave = (document.getElementById('editDob')?.value || '').trim();
+                const normDobSave = /^\d{4}$/.test(rawDobSave) ? `01/01/${rawDobSave}` : rawDobSave;
+                const fTamSave = document.getElementById('editFatherTam').value.trim();
+                const fEngSave = document.getElementById('editFatherEng').value.trim();
+
                 updated = {
                     subService: keepSub,
                     subServiceData: keepSubData,
                     fullNameTam: document.getElementById('editNameTam').value.trim(),
                     fullNameEng: document.getElementById('editNameEng').value.trim(),
-                    fatherNameTam: document.getElementById('editFatherTam').value.trim(),
-                    fatherNameEng: document.getElementById('editFatherEng').value.trim(),
+                    relationship: relSelectVal,
+                    headRelationship: relSelectVal,
+                    maritalStatus: relSelectVal === 'Husband' ? 'Married' : (currentCitizenData?.maritalStatus || ''),
+                    spouseNameTam: relSelectVal === 'Husband' ? fTamSave : (currentCitizenData?.spouseNameTam || ''),
+                    spouseNameEng: relSelectVal === 'Husband' ? fEngSave : (currentCitizenData?.spouseNameEng || ''),
+                    fatherNameTam: fTamSave,
+                    fatherNameEng: fEngSave,
                     motherNameTam: document.getElementById('editMotherTam')?.value.trim() || currentCitizenData?.motherNameTam || '',
                     motherNameEng: document.getElementById('editMotherEng')?.value.trim() || currentCitizenData?.motherNameEng || '',
-                    headDob: document.getElementById('editDob').value.trim(),
+                    headDob: normDobSave,
+                    dob: normDobSave,
                     headGender: document.getElementById('editGender').value,
                     headGenderTam: document.getElementById('editGender').value === 'Female' ? 'பெண்' : 'ஆண்',
                     doorNo: document.getElementById('editDoorNo').value.trim(),
@@ -2378,6 +2474,7 @@
                     fatherOccupation: obcFaOccVal,
                     motherOccupation: obcMoOccVal,
                     familyMemberCount: famCountVal,
+                    incomeMembers: incomeMembersVal,
                     residenceYears: resYearsVal,
                     residencePurpose: resPurpVal,
                     currentCourse: courseVal,

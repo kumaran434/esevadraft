@@ -200,7 +200,8 @@ function finalizeMidRunTelemetryIfNeeded(ctx, { errorType, errorMessage, step, a
     if (activeRunContext && activeRunContext.runId === ctx.runId) {
         activeRunContext = null;
     }
-    if (ctx.reachedPreSubmit) {
+    const isRealFailure = errorType === 'AUTOMATION_FAILED' || errorType === 'AUTOMATION_CRASH';
+    if (ctx.reachedPreSubmit && !isRealFailure) {
         return { promptFaultReason: false, runId: ctx.runId, serviceName: ctx.serviceName, lastStep: ctx.lastProgressMsg };
     }
     if (!ctx.midRunTelemetrySent && (allowEvenIfAborted || !activeAutomationAborted)) {

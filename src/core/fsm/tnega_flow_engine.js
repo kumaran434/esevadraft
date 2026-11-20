@@ -376,16 +376,24 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
     }
 
     // 3.3 Family Member Count Gate
+    const relHintInc = String(p.relationship || p.headRelationship || '').toLowerCase();
+    const isMarriedInc = relHintInc.includes('husband') || relHintInc.includes('spouse') || String(p.maritalStatus || '').toLowerCase().includes('married') || Boolean(p.spouseNameEng || p.spouseNameTam || p.spouseName);
+
     if (!p.familyMemberCount) {
         sess.intakeState = 'INCOME_MEMBER_COUNT_WAIT';
         const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
-            `👨‍👩‍👧‍👦 **வருமானச் சான்றிதழில் குடும்ப உறுப்பினர்கள் எத்தனை பேரைச் சேர்க்க வேண்டும்?**\n\n` +
+            `👨‍👩‍👧‍👦 **வருமானச் சான்றிதழில் சேர்க்க வேண்டிய குடும்ப உறுப்பினர்கள் மொத்தம் எத்தனை பேர்? (ரேஷன் கார்டின் படி)**\n\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
             `• 🔢 **CAN எண்:** **${p.canNumber}** ✅\n` +
-            `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
+            (isMarriedInc ? `• 💍 **திருமணமானவர் (கணவர்/மனைவி குடும்பம் — பெற்றோர் சேர்க்கப்பட மாட்டார்)**\n` : '') +
             `• 🏛️ **வகுப்பு:** ${p.community || 'MBC'}\n\n` +
-            `வருமானச் சான்றிதழில் சேர்க்க வேண்டிய மொத்த குடும்ப உறுப்பினர்களின் எண்ணிக்கையைத் தேர்ந்தெடுக்கவும்:`;
-        const options = [
+            `குடும்பத்தில் உள்ள மொத்த நபர்களின் எண்ணிக்கையைத் தேர்ந்தெடுக்கவும் (அல்லது எண் தட்டச்சு செய்க):`;
+        const options = isMarriedInc ? [
+            { label: "👤 1 நபர் (விண்ணப்பதாரர் மட்டும்)", value: "1 நபர்" },
+            { label: "👥 2 நபர்கள் (கணவன் & மனைவி மட்டும்)", value: "2 நபர்கள்" },
+            { label: "👨‍👩‍👧 3 நபர்கள் (குழந்தை/குடும்பத்துடன்)", value: "3 நபர்கள்" },
+            { label: "👨‍👩‍👧‍👦 4 நபர்கள்", value: "4 நபர்கள்" }
+        ] : [
             { label: "👤 1 நபர் (விண்ணப்பதாரர் மட்டும்)", value: "1 நபர்" },
             { label: "👥 2 நபர்கள் (விண்ணப்பதாரர் + குடும்ப நபர்)", value: "2 நபர்கள்" },
             { label: "👨‍👩‍👧 3 நபர்கள்", value: "3 நபர்கள்" },
@@ -394,22 +402,35 @@ function advanceTnegaIncomeFlow(sess, prefixMessage = '') {
         return { text: welcomeText, options, step: sess.intakeState };
     }
 
-    // 3.4 Additional Family Member Details (If Member Count > 1)
+    // 3.4 Additional Family Member Details (If Member Count > 1 — Ask user explicitly, NEVER auto-invent!)
     const neededAddl = Number(p.familyMemberCount) - 1;
     const currentAddl = (p.incomeMembers || []).length;
     if (neededAddl > 0 && currentAddl < neededAddl) {
         sess.intakeState = 'INCOME_ADDITIONAL_MEMBER_WAIT';
-        const motherName = p.motherNameTam || p.motherNameEng || 'தேவகி';
-        const fatherName = p.fatherNameTam || p.fatherNameEng || 'கிருபாகரன்';
+        const spouseName = p.spouseNameTam || p.spouseNameEng || (relHintInc.includes('husband') ? (p.fatherNameTam || p.fatherNameEng || '') : '');
+        const alreadyHasHusband = (p.incomeMembers || []).some(m => String(m.relationship || '').toLowerCase() === 'husband');
+        const options = [];
+        if (isMarriedInc) {
+            if (!alreadyHasHusband) {
+                const hLbl = spouseName ? `👨 கணவர் - ${spouseName}` : '👨 கணவர் (பெயர் சேர்க்க)';
+                options.push({ label: hLbl, value: spouseName ? `கணவர் - ${spouseName}` : 'கணவர்' });
+            }
+            options.push({ label: "👦 மகன் (Son)", value: "மகன்" });
+            options.push({ label: "👧 மகள் (Daughter)", value: "மகள்" });
+            options.push({ label: "👵 மாமியார் (Mother-in-law)", value: "மாமியார்" });
+            options.push({ label: "👴 மாமனார் (Father-in-law)", value: "மாமனார்" });
+        } else {
+            const motherName = p.motherNameTam || p.motherNameEng || '';
+            const fatherName = p.fatherNameTam || p.fatherNameEng || '';
+            options.push({ label: motherName ? `👩 தாய் - ${motherName}` : '👩 தாய்', value: motherName ? `தாய் - ${motherName}` : 'தாய்' });
+            options.push({ label: fatherName ? `👨 தந்தை - ${fatherName}` : '👨 தந்தை', value: fatherName ? `தந்தை - ${fatherName}` : 'தந்தை' });
+            options.push({ label: "👰 மனைவி (Wife)", value: "மனைவி" });
+            options.push({ label: "👦 மகன் / 👧 மகள்", value: "மகன்" });
+        }
         const welcomeText = (prefixMessage ? prefixMessage + '\n\n' : '') +
-            `👥 **கூடுதல் குடும்ப உறுப்பினர் விவரங்கள் (${currentAddl + 1}/${neededAddl}):**\n\n` +
-            `அடுத்த குடும்ப உறுப்பினரின் உறவுமுறை, பெயர் மற்றும் தொழில் விவரத்தைத் தேர்ந்தெடுக்கவும் (அல்லது தட்டச்சு செய்யவும்):`;
-        const options = [
-            { label: `👵 தாய் - ${motherName} (கூலி வேலை)`, value: `தாய் - ${motherName} (கூலி வேலை)` },
-            { label: `👴 தந்தை - ${fatherName} (விவசாயம்)`, value: `தந்தை - ${fatherName} (விவசாயம்)` },
-            { label: "👰 மனைவி (குடும்பத் தலைவி)", value: "மனைவி (குடும்பத் தலைவி)" },
-            { label: "👦 மகன் / மகள்", value: "மகன்" }
-        ];
+            `👥 **குடும்ப உறுப்பினர் ${currentAddl + 2}/${Number(p.familyMemberCount)} விவரங்கள்:**\n\n` +
+            `இந்த உறுப்பினரின் **உறவுமுறை, பெயர், வயது மற்றும் தொழில்/மாத வருமானம்** உள்ளிடவும் (அல்லது கீழே தேர்ந்தெடுக்கவும்):\n` +
+            `*(எ.கா: \`கணவர் - முனுசாமி, வயது 58, கூலி வேலை, மாதம் 6000\`)*`;
         return { text: welcomeText, options, step: sess.intakeState };
     }
 

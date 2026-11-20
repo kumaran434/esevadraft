@@ -153,10 +153,91 @@ function updateHeadMember(prof, docPath) {
     }
 }
 
+/**
+ * Normalizes DOB to strict DD/MM/YYYY.
+ * When older Aadhaar cards print ONLY a 4-digit birth year (e.g., "1968"), defaults day & month to "01/01/1968".
+ */
+function normalizeDobWithYearFallback(rawDob) {
+    if (!rawDob) return '';
+    const clean = String(rawDob).trim();
+    if (!clean) return '';
+    if (/^\d{4}$/.test(clean)) {
+        return `01/01/${clean}`;
+    }
+    const isoMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (isoMatch) {
+        return `${isoMatch[3].padStart(2, '0')}/${isoMatch[2].padStart(2, '0')}/${isoMatch[1]}`;
+    }
+    const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (dmyMatch) {
+        return `${dmyMatch[1].padStart(2, '0')}/${dmyMatch[2].padStart(2, '0')}/${dmyMatch[3]}`;
+    }
+    return clean;
+}
+
+/**
+ * Applies AI-extracted Aadhaar relationship (W/o Husband vs S/o or D/o Father) and DOB safely to citizenProfile.
+ */
+function applyExtractedAadhaarRelationsAndDob(targetProfile, extracted) {
+    if (!targetProfile || !extracted) return;
+
+    if (extracted.dob) {
+        const cleanRawDob = String(extracted.dob).trim();
+        const normalizedDob = normalizeDobWithYearFallback(cleanRawDob);
+        if (normalizedDob) {
+            targetProfile.headDob = normalizedDob;
+            targetProfile.dob = normalizedDob;
+        }
+        if (/^\d{4}$/.test(cleanRawDob) || extracted.dobIsYearOnly === true) {
+            targetProfile.dobIsYearOnly = true;
+        }
+    }
+
+    const relHint = String(extracted.relationship || extracted.relationType || '').toLowerCase();
+    const hasSpouse = Boolean(extracted.spouseNameEng || extracted.spouseNameTam || relHint.includes('husband') || relHint.includes('spouse') || relHint.includes('கணவர்'));
+
+    if (hasSpouse) {
+        targetProfile.relationship = 'Husband';
+        targetProfile.headRelationship = 'Husband';
+        targetProfile.maritalStatus = extracted.maritalStatus || 'Married';
+        const hEng = extracted.spouseNameEng || extracted.fatherNameEng || '';
+        const hTam = extracted.spouseNameTam || extracted.fatherNameTam || '';
+        if (hEng) {
+            targetProfile.spouseNameEng = hEng;
+            targetProfile.spouseName = hEng;
+            targetProfile.fatherNameEng = hEng;
+        }
+        if (hTam) {
+            targetProfile.spouseNameTam = hTam;
+            targetProfile.fatherNameTam = hTam;
+        }
+        if (extracted.birthFatherNameEng) targetProfile.birthFatherNameEng = extracted.birthFatherNameEng;
+        if (extracted.birthFatherNameTam) targetProfile.birthFatherNameTam = extracted.birthFatherNameTam;
+    } else {
+        if (extracted.fatherNameEng) targetProfile.fatherNameEng = extracted.fatherNameEng;
+        if (extracted.fatherNameTam) targetProfile.fatherNameTam = extracted.fatherNameTam;
+        if (relHint.includes('mother') || relHint.includes('தாய்')) {
+            targetProfile.relationship = 'Mother';
+            targetProfile.headRelationship = 'Mother';
+        } else if (relHint.includes('guardian')) {
+            targetProfile.relationship = 'Guardian';
+            targetProfile.headRelationship = 'Guardian';
+        } else if (relHint.includes('father') || relHint.includes('தந்தை') || (!targetProfile.relationship && (extracted.fatherNameEng || extracted.fatherNameTam))) {
+            targetProfile.relationship = 'Father';
+            targetProfile.headRelationship = 'Father';
+        }
+        if (extracted.maritalStatus && !targetProfile.maritalStatus) {
+            targetProfile.maritalStatus = extracted.maritalStatus;
+        }
+    }
+}
+
 module.exports = {
     syncFatherOrHusband,
     isValidAadhaarVerhoeff,
     isProfileDataComplete,
     getVerifiedRationCardDocs,
-    updateHeadMember
+    updateHeadMember,
+    normalizeDobWithYearFallback,
+    applyExtractedAadhaarRelationsAndDob
 };

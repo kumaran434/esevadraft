@@ -1,14 +1,34 @@
 const path = require('path');
 const fs = require('fs');
-const { syncFatherOrHusband } = require('./profile_helpers');
+const { syncFatherOrHusband, normalizeDobWithYearFallback } = require('./profile_helpers');
 const { resolveTnDistrict } = require('../../tn_district_mapper');
 const { ensureBilingualPair } = require('../utils/bilingual_helper');
 
 function applyProfileUpdates(sess, updated) {
     if (updated.fullNameTam !== undefined) sess.citizenProfile.fullNameTam = updated.fullNameTam;
     if (updated.fullNameEng !== undefined) sess.citizenProfile.fullNameEng = updated.fullNameEng;
+    if (updated.relationship !== undefined) {
+        sess.citizenProfile.relationship = updated.relationship;
+        sess.citizenProfile.headRelationship = updated.relationship;
+    }
+    if (updated.headRelationship !== undefined) {
+        sess.citizenProfile.headRelationship = updated.headRelationship;
+        if (!sess.citizenProfile.relationship) sess.citizenProfile.relationship = updated.headRelationship;
+    }
+    if (updated.maritalStatus !== undefined) sess.citizenProfile.maritalStatus = updated.maritalStatus;
     if (updated.fatherNameTam !== undefined) sess.citizenProfile.fatherNameTam = updated.fatherNameTam;
     if (updated.fatherNameEng !== undefined) sess.citizenProfile.fatherNameEng = updated.fatherNameEng;
+    if (updated.spouseNameTam !== undefined) sess.citizenProfile.spouseNameTam = updated.spouseNameTam;
+    if (updated.spouseNameEng !== undefined) {
+        sess.citizenProfile.spouseNameEng = updated.spouseNameEng;
+        sess.citizenProfile.spouseName = updated.spouseNameEng;
+    }
+    if ((sess.citizenProfile.relationship === 'Husband' || sess.citizenProfile.headRelationship === 'Husband') && (sess.citizenProfile.fatherNameEng || sess.citizenProfile.fatherNameTam)) {
+        sess.citizenProfile.spouseNameEng = sess.citizenProfile.fatherNameEng || sess.citizenProfile.spouseNameEng || '';
+        sess.citizenProfile.spouseNameTam = sess.citizenProfile.fatherNameTam || sess.citizenProfile.spouseNameTam || '';
+        sess.citizenProfile.spouseName = sess.citizenProfile.spouseNameEng || sess.citizenProfile.spouseNameTam;
+        if (!sess.citizenProfile.maritalStatus) sess.citizenProfile.maritalStatus = 'Married';
+    }
     if (updated.motherNameTam !== undefined) sess.citizenProfile.motherNameTam = updated.motherNameTam;
     if (updated.motherNameEng !== undefined) sess.citizenProfile.motherNameEng = updated.motherNameEng;
     if (updated.motherName !== undefined) sess.citizenProfile.motherName = updated.motherName;
@@ -31,9 +51,12 @@ function applyProfileUpdates(sess, updated) {
     if (updated.residencePurpose !== undefined) sess.citizenProfile.residencePurpose = updated.residencePurpose;
     if (updated.canNumber !== undefined) sess.citizenProfile.canNumber = updated.canNumber;
     if (updated.annualIncome !== undefined) sess.citizenProfile.annualIncome = updated.annualIncome;
+    if (updated.monthlyIncome !== undefined) sess.citizenProfile.monthlyIncome = updated.monthlyIncome;
+    if (updated.familyMemberCount !== undefined) sess.citizenProfile.familyMemberCount = Number(updated.familyMemberCount) || 1;
+    if (Array.isArray(updated.incomeMembers)) sess.citizenProfile.incomeMembers = updated.incomeMembers;
     if (updated.profession !== undefined) sess.citizenProfile.profession = updated.profession;
-    if (updated.headDob !== undefined) sess.citizenProfile.headDob = updated.headDob;
-    if (updated.dob !== undefined) sess.citizenProfile.dob = updated.dob;
+    if (updated.headDob !== undefined) sess.citizenProfile.headDob = normalizeDobWithYearFallback(updated.headDob);
+    if (updated.dob !== undefined) sess.citizenProfile.dob = normalizeDobWithYearFallback(updated.dob);
     if (updated.headGender !== undefined) sess.citizenProfile.headGender = updated.headGender;
     if (updated.headGenderTam !== undefined) sess.citizenProfile.headGenderTam = updated.headGenderTam;
     if (updated.doorNo !== undefined) sess.citizenProfile.doorNo = updated.doorNo;

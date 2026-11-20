@@ -4,6 +4,7 @@ const fs = require('fs');
 const { produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 const { validateUploadedDocument } = require('./document_validator');
+const { applyExtractedAadhaarRelationsAndDob } = require('./profile_helpers');
 
 async function processUploadedDocument(sess, docType, uploadedFile, memberIndex, targetMobile) {
     let optimizedPath = uploadedFile.path;
@@ -88,12 +89,7 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
             extractedData = extractedAadhaar;
             if (extractedAadhaar.fullNameTam) sess.citizenProfile.fullNameTam = extractedAadhaar.fullNameTam;
             if (extractedAadhaar.fullNameEng) sess.citizenProfile.fullNameEng = extractedAadhaar.fullNameEng;
-            if (extractedAadhaar.fatherNameTam) sess.citizenProfile.fatherNameTam = extractedAadhaar.fatherNameTam;
-            if (extractedAadhaar.fatherNameEng) sess.citizenProfile.fatherNameEng = extractedAadhaar.fatherNameEng;
-            if (extractedAadhaar.dob) {
-                sess.citizenProfile.headDob = extractedAadhaar.dob;
-                sess.citizenProfile.dob = extractedAadhaar.dob;
-            }
+            applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extractedAadhaar);
             if (extractedAadhaar.gender) {
                 sess.citizenProfile.headGender = extractedAadhaar.gender;
                 sess.citizenProfile.headGenderTam = extractedAadhaar.genderTam || (extractedAadhaar.gender === 'Female' ? 'பெண்' : 'ஆண்');
