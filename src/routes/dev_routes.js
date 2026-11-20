@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 
-const { logOperatorError, listOperatorErrors } = require('../../firestore_db');
+const { logOperatorError, listOperatorErrors, listOperatorErrorSummaries } = require('../../firestore_db');
 
 // 1. GET /dev
 router.get('/dev', (req, res) => {
@@ -147,18 +147,30 @@ router.post('/api/telemetry/error', async (req, res) => {
     try {
         const payload = req.body || {};
         const logged = await logOperatorError(payload);
-        res.json({ success: true, id: logged ? logged.id : null });
+        res.json({
+            success: true,
+            id: logged ? logged.id : null,
+            operatorKey: logged ? logged.operatorKey : null,
+            cloudSaved: Boolean(logged && logged.cloudSaved)
+        });
     } catch (e) {
         res.json({ success: false, error: e.message });
     }
 });
 
-// 8. GET /api/telemetry/errors
+// 8. GET /api/telemetry/errors (Supports ?operatorUid=...&operator=...&limit=50)
 router.get('/api/telemetry/errors', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit, 10) || 30;
-        const errors = await listOperatorErrors(limit);
-        res.json({ success: true, count: errors.length, errors });
+        const filter = {
+            operatorUid: req.query.operatorUid || req.query.operatorKey || '',
+            operator: req.query.operator || ''
+        };
+        const [errors, operators] = await Promise.all([
+            listOperatorErrors(limit, filter),
+            typeof listOperatorErrorSummaries === 'function' ? listOperatorErrorSummaries(30) : []
+        ]);
+        res.json({ success: true, count: errors.length, operators, errors });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

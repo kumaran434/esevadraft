@@ -86,18 +86,48 @@ function clearConsole(id) {
     if (el) el.innerText = '';
 }
 
+function escapeDevHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 async function loadOperatorErrors() {
     const container = document.getElementById('snapshotContainer');
+    const cloudContainer = document.getElementById('cloudTelemetryContainer');
     const loading = document.getElementById('inspectorLoading');
+    const opFilter = document.getElementById('telemetryOpFilterInput')?.value?.trim() || '';
     if (loading) loading.style.display = 'block';
 
     try {
-        const res = await fetch('/api/dev/errors');
-        const data = await res.json();
+        const teleQuery = `/api/telemetry/errors?limit=40${opFilter ? `&operator=${encodeURIComponent(opFilter)}` : ''}`;
+        const [snapRes, teleRes] = await Promise.all([
+            fetch('/api/dev/errors'),
+            fetch(teleQuery)
+        ]);
+        const data = await snapRes.json();
+        const teleData = await teleRes.json();
         if (loading) loading.style.display = 'none';
 
+        if (cloudContainer) {
+            const teleErrors = (teleData && Array.isArray(teleData.errors)) ? teleData.errors : [];
+            if (teleErrors.length === 0) {
+                cloudContainer.innerHTML = '<div style="padding:12px;border-radius:8px;background:#0f172a;border:1px solid #334155;color:#94a3b8;font-size:12px;">Cloud Telemetry-இல் எரர்கள் எதுவும் இல்லை ✅</div>';
+            } else {
+                cloudContainer.innerHTML = teleErrors.map(e => `
+                    <div style="padding:12px;border-radius:8px;background:#0f172a;border:1px solid #475569;color:#e2e8f0;font-size:12px;">
+                        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
+                            <span style="font-weight:800;color:#fbbf24;">👤 ${escapeDevHtml(e.operatorName || 'unknown')} (${escapeDevHtml(e.operatorMobile || e.operatorKey || '-')})</span>
+                            <span style="color:#94a3b8;font-size:11px;">v${escapeDevHtml(e.appVersion || '')} • ${escapeDevHtml((e.timestamp || '').replace('T', ' ').slice(0, 19))}</span>
+                        </div>
+                        <div style="color:#f87171;font-weight:700;">[${escapeDevHtml(e.errorType)}] ${escapeDevHtml(e.serviceName ? e.serviceName + ' • ' : '')}${escapeDevHtml(e.step)}</div>
+                        <div style="margin-top:4px;color:#fecaca;word-break:break-word;">${escapeDevHtml(e.errorMessage)}</div>
+                        ${Array.isArray(e.lastUiActions) && e.lastUiActions.length ? `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">கடைசி செயல்கள்: ${e.lastUiActions.slice(-4).map(a => escapeDevHtml(`${a.cat}:${a.action}`)).join(' → ')}</div>` : ''}
+                    </div>
+                `).join('');
+            }
+        }
+
         if (!data.errors || data.errors.length === 0) {
-            container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">பிழைகள் எதுவும் கண்டறியப்படவில்லை. அனைத்தும் சீராக இயங்குகிறது! ✅</p>';
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">ஸ்கிரீன்ஷாட் பிழைகள் எதுவும் இல்லை ✅</p>';
             return;
         }
 

@@ -51,17 +51,76 @@ async function syncLatestAutomationEngine() {
     }
 }
 
+function readLocalOperatorSessionFallback() {
+    try {
+        const sessFile = path.join(app.getPath('userData'), 'data', 'active_operator_session.json');
+        if (fs.existsSync(sessFile)) {
+            return JSON.parse(fs.readFileSync(sessFile, 'utf8')) || {};
+        }
+    } catch (_) {}
+    return {};
+}
+
+function readTailLinesSafe(filePath, maxLines = 25) {
+    try {
+        if (!fs.existsSync(filePath)) return [];
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const lines = raw.split(/\r?\n/).filter(Boolean);
+        return lines.slice(-maxLines);
+    } catch (_) {
+        return [];
+    }
+}
+
+function readFlightActionsSafe(maxItems = 10) {
+    try {
+        const candidates = [
+            path.join(app.getPath('userData'), 'data', 'telemetry', 'app_flight_recorder.json'),
+            path.join(__dirname, '..', 'data', 'telemetry', 'app_flight_recorder.json')
+        ];
+        for (const p of candidates) {
+            if (fs.existsSync(p)) {
+                const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+                if (parsed && Array.isArray(parsed.timeline)) {
+                    return parsed.timeline.slice(-maxItems);
+                }
+            }
+        }
+    } catch (_) {}
+    return [];
+}
+
 function reportOperatorTelemetry(errorData = {}) {
     try {
+        const skipCloud = process.env.NODE_ENV === 'test' || process.env.ESEVA_SKIP_CLOUD_SYNC === '1';
+        const sess = readLocalOperatorSessionFallback();
+        const opUid = errorData.operatorUid || sess.operatorUid || '';
+        const opName = errorData.operatorName || sess.displayName || 'unknown';
+        const opMob = errorData.operatorMobile || sess.mobileNumber || '';
+        const runTail = Array.isArray(errorData.runLogTail) && errorData.runLogTail.length
+            ? errorData.runLogTail
+            : readTailLinesSafe(path.join(app.getPath('userData'), 'logs', 'latest_run.log'), 25);
+        const uiActions = Array.isArray(errorData.lastUiActions) && errorData.lastUiActions.length
+            ? errorData.lastUiActions
+            : readFlightActionsSafe(10);
+
         const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
         const targetUrl = `${baseUrl}/api/telemetry/error`;
         const payload = {
-            appVersion: app.getVersion() || '1.1.24',
+            appVersion: (typeof app !== 'undefined' && app.getVersion) ? (app.getVersion() || '1.1.27') : '1.1.27',
             platform: process.platform,
             arch: process.arch,
             timestamp: new Date().toISOString(),
-            ...errorData
+            ...errorData,
+            operatorUid: opUid,
+            operatorName: opName,
+            operatorMobile: opMob,
+            runLogTail: runTail,
+            lastUiActions: uiActions,
+            __fromCloudRelay: true
         };
+
+        if (skipCloud) return;
 
         const postData = JSON.stringify(payload);
         const urlObj = new URL(targetUrl);
@@ -74,9 +133,10 @@ function reportOperatorTelemetry(errorData = {}) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
+                'Content-Length': Buffer.byteLength(postData, 'utf8'),
+                'User-Agent': 'eSevaDraft-Desktop-Telemetry/1.0'
             },
-            timeout: 4000
+            timeout: 6000
         }, (res) => {
             res.resume();
         });

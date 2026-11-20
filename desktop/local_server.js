@@ -213,8 +213,30 @@ function handleLocalTelemetry(req, res) {
             }
 
             console.log(`🚨 [Desktop Local Engine] In-app UI error recorded to disk: [${errType}] ${errMsg}`);
+
+            // 3. Immediately relay per-operator telemetry to Cloud (non-blocking)
+            try {
+                const { reportOperatorTelemetry } = require('./desktop_services');
+                if (typeof reportOperatorTelemetry === 'function') {
+                    reportOperatorTelemetry({
+                        operatorUid: data.operatorUid || req.headers['x-operator-uid'] || '',
+                        operatorName: data.operatorName || '',
+                        operatorMobile: data.operatorMobile || '',
+                        customerMobile,
+                        serviceName: data.serviceName || '',
+                        step: data.step || 'CLIENT_UI',
+                        errorType: errType,
+                        errorMessage: errMsg,
+                        errorStack: data.stack || `${data.filename || ''}:${data.lineno || ''}:${data.colno || ''}`,
+                        appVersion: data.appVersion || '',
+                        lastUiActions: Array.isArray(data.lastUiActions) ? data.lastUiActions : [],
+                        extraInfo: { role: data.role || 'operator', url: data.url || '' }
+                    });
+                }
+            } catch (_) {}
+
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: true, savedLocally: true, timestamp }));
+            return res.end(JSON.stringify({ success: true, savedLocally: true, cloudRelayQueued: true, timestamp }));
         } catch (e) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: e.message }));

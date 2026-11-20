@@ -432,10 +432,17 @@
                     if (result && result.success) {
                         appendLiveAutomationStep(`✅ ${portalLabel} Chrome சாளரம் திறக்கப்பட்டது! படிவம் தானாக நிரப்பப்படுகிறது...`);
                     } else {
-                        appendLiveAutomationStep(`⚠️ Chrome திறக்க முடியவில்லை: ${result?.error || 'Chrome நிறுவப்பட்டுள்ளதா சரிபார்க்கவும்.'}`);
+                        const errMsg = result?.error || 'Chrome நிறுவப்பட்டுள்ளதா சரிபார்க்கவும்.';
+                        appendLiveAutomationStep(`⚠️ Chrome திறக்க முடியவில்லை: ${errMsg}`);
+                        if (typeof window.reportUiError === 'function') {
+                            window.reportUiError('AUTOMATION_LAUNCH_FAIL', errMsg, { serviceName: draftData?.subService || portalLabel, step: 'DESKTOP_IPC_START' });
+                        }
                     }
                 } catch (e) {
                     appendLiveAutomationStep(`⚠️ பிழை: ${e.message}`);
+                    if (typeof window.reportUiError === 'function') {
+                        window.reportUiError('AUTOMATION_LAUNCH_EXCEPTION', e.message, { serviceName: draftData?.subService || portalLabel, step: 'DESKTOP_IPC_EXCEPTION', stack: e.stack });
+                    }
                 }
             } else if (runAsRealLive) {
                 sendTextMessage('Start', true, { forceRealGovtOtp: true, isMockSandbox: false, fromEditModal: true });

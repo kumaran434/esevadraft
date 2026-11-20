@@ -517,8 +517,14 @@ router.post('/api/operator/telemetry-log', async (req, res) => {
                 errorType: errType,
                 errorMessage: errMsg,
                 errorStack: stack || `${filename || ''}:${lineno || ''}:${colno || ''}`,
-                customerMobile: mobile || body.activeMobile || '',
-                operatorMobile: body.role === 'operator' ? (body.activeMobile || '') : '',
+                customerMobile: mobile || body.activeMobile || body.customerMobile || '',
+                operatorUid: body.operatorUid || req.headers['x-operator-uid'] || '',
+                operatorName: body.operatorName || '',
+                operatorMobile: body.operatorMobile || '',
+                serviceName: body.serviceName || '',
+                step: body.step || 'CLIENT_UI',
+                appVersion: body.appVersion || '',
+                lastUiActions: Array.isArray(body.lastUiActions) ? body.lastUiActions : [],
                 extraInfo: body
             }).catch(() => {});
         }

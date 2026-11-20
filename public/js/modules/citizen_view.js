@@ -219,14 +219,26 @@
             }
         }
 
-        // Universal Auto-Telemetry Error Capture (Captures client errors silently to /api/operator/telemetry-log)
+        // Universal Auto-Telemetry Error Capture (Captures client errors per-operator to /api/operator/telemetry-log)
         window.reportUiError = function(type, message, extraData) {
             try {
+                const prof = (typeof currentCitizenData !== 'undefined' && currentCitizenData) ? currentCitizenData : {};
+                const authEmail = localStorage.getItem('eseva_last_auth_email') || '';
+                const emailMob = authEmail.includes('@') ? authEmail.split('@')[0].replace(/\D/g, '').slice(-10) : '';
+                const recentActions = (window.AppFlightRecorder && typeof window.AppFlightRecorder.getHistory === 'function')
+                    ? window.AppFlightRecorder.getHistory().slice(-10)
+                    : [];
                 const payload = {
                     type: type || 'CLIENT_UI_ERROR',
                     message: typeof message === 'string' ? message : (message && message.message) || JSON.stringify(message || {}),
                     role: localStorage.getItem('eseva_user_role') || 'operator',
+                    operatorUid: localStorage.getItem('eseva_operator_uid') || '',
+                    operatorName: localStorage.getItem('eseva_operator_name') || '',
+                    operatorMobile: localStorage.getItem('eseva_operator_mobile') || emailMob || '',
                     activeMobile: localStorage.getItem('eseva_active_customer_mobile') || '',
+                    serviceName: prof.subService || prof.targetService || '',
+                    appVersion: document.getElementById('headerAppVersionBadge')?.textContent?.trim() || '',
+                    lastUiActions: recentActions,
                     time: new Date().toISOString(),
                     ...(extraData || {})
                 };
@@ -234,7 +246,10 @@
                 console.warn('🚨 [Auto-Telemetry] Recording UI Error:', payload.type, payload.message);
                 fetch('/api/operator/telemetry-log', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-operator-uid': payload.operatorUid || ''
+                    },
                     body: JSON.stringify(payload)
                 }).catch(() => {});
             } catch (_) {}

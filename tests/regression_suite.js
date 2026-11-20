@@ -500,32 +500,36 @@ async function runTests() {
         } catch (e) {}
 
         // ----------------------------------------------------------------
-        // TEST 14: Zero-Cost Centralized Operator Error Telemetry
+        // TEST 14: Zero-Cost Centralized Per-Operator Error Telemetry & PII Masking
         // ----------------------------------------------------------------
         console.log('\n[TEST 14] Zero-Cost Centralized Operator Error Telemetry');
         const telemetryPayload = {
+            operatorUid: 'op_test_suman_uid',
             operatorMobile: '9443322110',
             operatorName: 'Kumaran E-Seva Desk',
             customerMobile: '9123456780',
+            serviceName: 'INCOME_CERTIFICATE',
             step: 'STEP_3_PHOTO_UPLOAD',
             errorType: 'MISSING_PHOTO',
-            errorMessage: 'Citizen photo is required before proceeding to Step 4',
-            appVersion: '1.1.1'
+            errorMessage: 'Citizen photo missing for Aadhaar 3115 2646 6205',
+            appVersion: '1.1.28'
         };
 
         const res14_post = await request('POST', '/api/telemetry/error', telemetryPayload);
         assert(res14_post.status === 200, 'POST /api/telemetry/error returns 200 OK');
         assert(res14_post.body && res14_post.body.success === true, 'Telemetry error endpoint returns success');
         assert(res14_post.body && typeof res14_post.body.id === 'string' && res14_post.body.id.startsWith('err_'), 'Telemetry generates valid error ID');
+        assert(res14_post.body.operatorKey === 'op_test_suman_uid', 'Telemetry isolates error under exact operatorKey');
 
-        const res14_get = await request('GET', '/api/telemetry/errors?limit=5');
+        const res14_get = await request('GET', '/api/telemetry/errors?limit=5&operatorUid=op_test_suman_uid');
         assert(res14_get.status === 200, 'GET /api/telemetry/errors returns 200 OK');
         assert(res14_get.body && res14_get.body.success === true, 'Telemetry list returns success');
         assert(res14_get.body && Array.isArray(res14_get.body.errors), 'Telemetry errors list is array');
         const foundLoggedErr = res14_get.body.errors.find(e => e.id === res14_post.body.id);
-        assert(foundLoggedErr, 'Recently posted telemetry error is present in errors list');
+        assert(foundLoggedErr, 'Recently posted telemetry error is present in per-operator filtered errors list');
         assert(foundLoggedErr.step === 'STEP_3_PHOTO_UPLOAD', 'Logged error preserves step context');
         assert(foundLoggedErr.operatorMobile === '9443322110', 'Logged error preserves operator mobile');
+        assert(!foundLoggedErr.errorMessage.includes('3115') && foundLoggedErr.customerMobile === '91******80', 'Telemetry masks citizen Aadhaar & customer mobile');
 
         // Cleanup test telemetry file
         try {

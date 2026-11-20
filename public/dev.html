@@ -159,6 +159,13 @@
                 </p>
 
                 <div id="inspectorLoading" style="font-size: 12.5px; color: var(--text-muted);">பிழைகளைப் பெறுகிறது...</div>
+                <div style="margin-bottom: 14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                        <strong style="font-size:13px;color:#e2e8f0;">📡 ஒவ்வொரு ஆபரேட்டரின் Cloud எரர் லாக்குகள் (Per-Operator Telemetry)</strong>
+                        <input type="text" id="telemetryOpFilterInput" oninput="loadOperatorErrors()" placeholder="ஆபரேட்டர் பெயர் / மொபைல் தேடு (உதா: SUMAN)" style="height:32px;padding:0 10px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:12px;width:270px;">
+                    </div>
+                    <div id="cloudTelemetryContainer" style="display:flex;flex-direction:column;gap:8px;"></div>
+                </div>
                 <div id="snapshotContainer" class="snapshot-grid"></div>
             </div>
         </div>

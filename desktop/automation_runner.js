@@ -686,12 +686,35 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }).then(res => {
         clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
+        if (res && res.success === false && !res.stopped) {
+            reportOperatorTelemetry({
+                operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
+                operatorMobile: draftData?.operatorMobile || '',
+                operatorName: draftData?.operatorName || '',
+                customerMobile,
+                serviceName: targetProfile.subService || targetProfile.targetService || '',
+                step: res.step || 'AUTOMATION_RESULT_FAIL',
+                errorType: 'AUTOMATION_FAILED',
+                errorMessage: res.error || res.message || 'Automation finished with failure'
+            });
+        }
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-finished', res);
         }
     }).catch(err => {
         clearRunningSessionState();
         writeLogEntry(`[விபத்து பிழை] ${err.message}\n${err.stack}`);
+        reportOperatorTelemetry({
+            operatorUid: draftData?.operatorUid || draftData?.citizenProfile?.operatorUid || '',
+            operatorMobile: draftData?.operatorMobile || '',
+            operatorName: draftData?.operatorName || '',
+            customerMobile,
+            serviceName: targetProfile.subService || targetProfile.targetService || '',
+            step: 'AUTOMATION_CRASH',
+            errorType: 'AUTOMATION_CRASH',
+            errorMessage: err.message || 'Automation crashed unexpectedly',
+            errorStack: err.stack || ''
+        });
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-finished', {
                 success: false,
