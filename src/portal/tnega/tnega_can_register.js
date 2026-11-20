@@ -848,7 +848,7 @@ async function performLiveCanLookupOnPage(tnegaPage, criteria = {}, onProgress =
     let allRecords = [];
     let matchedRecord = null;
 
-    // 1. Try CAN Number directly if provided
+    // 1. Try CAN Number directly if provided (100% Unique)
     if (cleanCan.length >= 10) {
         const resCan = await runSingleFieldSearch('statusform:aadhar', cleanCan, 'CAN எண்');
         if (resCan.records && resCan.records.length > 0) {
@@ -857,25 +857,13 @@ async function performLiveCanLookupOnPage(tnegaPage, criteria = {}, onProgress =
         }
     }
 
-    // 2. Priority 1: Search by 12-digit Aadhaar Number (#statusform:aadharNo) - 100% Unique per person
+    // 2. Strictly Search ONLY by 12-digit Aadhaar Number (#statusform:aadharNo) — 100% Unique per person.
+    // NEVER search by mobile number (a single family mobile can share up to 5 different CAN numbers!).
     if (!matchedRecord && cleanAadhaar.length === 12) {
         const resAadhaar = await runSingleFieldSearch('statusform:aadharNo', cleanAadhaar, 'ஆதார் எண்');
         if (resAadhaar.records && resAadhaar.records.length > 0) {
             allRecords = resAadhaar.records;
             matchedRecord = pickMatchingRecord(resAadhaar.records, true);
-        }
-    }
-
-    // 3. Priority 2: Search by 10-digit Mobile Number (#statusform:applicantMobile)
-    if (!matchedRecord && cleanMobile.length === 10) {
-        const resMob = await runSingleFieldSearch('statusform:applicantMobile', cleanMobile, 'மொபைல் எண்');
-        if (resMob.records && resMob.records.length > 0) {
-            allRecords = resMob.records;
-            matchedRecord = pickMatchingRecord(resMob.records, false);
-            if (!matchedRecord && resMob.records.length > 0) {
-                const namesList = resMob.records.map(r => `${r.name} (${r.canNumber})`).join(', ');
-                onProgress(`ℹ️ இந்த மொபைல் எண்ணில் (${cleanMobile}) குடும்ப உறுப்பினர்கள் உள்ளனர்: [${namesList}], ஆனால் "${targetName}" பெயரில் CAN இல்லை.`);
-            }
         }
     }
 
@@ -1602,11 +1590,11 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                     state.currentTnegaStep = 'CAN_NOT_FOUND';
                                     await updateTnegaHud(tnegaPage, {
                                         title: 'ℹ️ CAN எண் பதிவு இல்லை',
-                                        desc: 'இந்த ஆதார் / மொபைல் எண்ணிற்கு CAN எண் இல்லை. "Register Can" மூலம் புதிய CAN பதிவு செய்யலாம்.',
+                                        desc: 'இந்த ஆதார் எண்ணிற்கு CAN எண் இல்லை. "Register Can" மூலம் புதிய CAN பதிவு செய்யலாம்.',
                                         badge: 'No CAN Found',
                                         type: 'waiting'
                                     });
-                                    onProgress('ℹ️ போர்ட்டலில் இந்த ஆதார்/மொபைல் எண்ணிற்கு CAN எண் எதுவும் இல்லை (No records found).');
+                                    onProgress('ℹ️ போர்ட்டலில் இந்த ஆதார் எண்ணிற்கு CAN எண் எதுவும் இல்லை (No records found).');
                                     return {
                                         success: true,
                                         found: false,

@@ -4146,11 +4146,13 @@ async function runTests() {
             assert(runnerSrc.includes('certRes.needCanRegister === true') && runnerSrc.includes('forceNewCanRegister: true'), 'automation_runner auto-recovers if any certificate returns needCanRegister');
             assert(runnerSrc.includes('isWidow') && runnerSrc.includes('isLegalHeir') && runnerSrc.includes('isObc') && runnerSrc.includes('isFirstGraduate') && runnerSrc.includes('isIncome') && runnerSrc.includes('isResidence') && runnerSrc.includes('isCommunity'), 'isRevenueCert covers ALL 7 Revenue Department services');
 
-            // 3. Verify tnega_can_register supports DataTables 100 expansion and ALL 7 REV links
+            // 3. Verify tnega_can_register supports DataTables 100 expansion, ALL 7 REV links, and STRICT Aadhaar-only CAN lookup (NO mobile fallback!)
             const canRegSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_can_register.js'), 'utf8');
             assert(canRegSrc.includes('REV-109') && canRegSrc.includes('REV-114') && canRegSrc.includes('REV-115') && canRegSrc.includes('REV-104') && canRegSrc.includes("selectOption('100')"), 'tnega_can_register supports all 7 REV services and DataTables 100 expansion');
+            assert(!canRegSrc.includes("runSingleFieldSearch('statusform:applicantMobile'"), 'performLiveCanLookupOnPage NEVER searches CAN by shared mobile number');
+            assert(canRegSrc.includes("runSingleFieldSearch('statusform:aadharNo'"), 'performLiveCanLookupOnPage searches CAN strictly by unique 12-digit Aadhaar');
 
-            passedCount += 12;
+            passedCount += 14;
         }
 
         console.log('\n======================================================');
