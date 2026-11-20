@@ -577,6 +577,33 @@
                 if (Array.isArray(prof.smartCardMembers) && prof.smartCardMembers.length > 0 && currentCitizenData) {
                     currentCitizenData.smartCardMembers = prof.smartCardMembers;
                 }
+            } else if (docType === 'incomeTaxReturn' || docType === 'incomeProof' || docType === 'salarySlip' || docType === 'salaryCertificate' || docType === 'communityCertificate' || docType === 'communityProof' || docType === 'familyCommunityProof') {
+                if (prof.annualIncome) {
+                    setVal('editObcAnnualIncome', prof.annualIncome);
+                    setVal('editAnnualIncome', prof.annualIncome);
+                    setVal('editMonthlyIncome', prof.monthlyIncome || String(Math.round(Number(prof.annualIncome) / 12)));
+                }
+                if (prof.caste) {
+                    setVal('editObcCaste', prof.caste);
+                    setVal('editCaste', prof.caste);
+                }
+                if (prof.community) setVal('editCommunity', prof.community);
+                if (prof.fatherOccupation) setVal('editObcFatherOccupation', prof.fatherOccupation);
+                if (prof.motherOccupation) setVal('editObcMotherOccupation', prof.motherOccupation);
+                const appOcc = prof.applicantOccupation || prof.occupation || '';
+                if (appOcc) {
+                    setVal('editOccupation', appOcc);
+                    const obcSel = document.getElementById('editObcOccupation');
+                    if (obcSel) {
+                        const lowOcc = String(appOcc).toLowerCase();
+                        let mappedVal = 'Service';
+                        if (/student|மாணவ/i.test(lowOcc)) mappedVal = 'Student';
+                        else if (/agri|farmer|விவசாய/i.test(lowOcc)) mappedVal = 'Agriculture';
+                        else if (/busi|வியாபார/i.test(lowOcc)) mappedVal = 'Business';
+                        obcSel.value = mappedVal;
+                        flash(obcSel);
+                    }
+                }
             }
         }
         window.syncEditModalInputsFromProfile = syncEditModalInputsFromProfile;
@@ -1618,10 +1645,10 @@
                         },
                         {
                             type: 'incomeTaxReturn',
-                            title: '💰 வருமான வரி / வருமானச் சான்று (ITR / Income Proof)',
-                            titleEng: 'Income Tax Return / Income Proof',
+                            title: '💰 வருமானச் சான்றிதழ் / வருமான வரி (Income Cert / ITR)',
+                            titleEng: 'Income Certificate / Income Tax Return',
                             icon: 'fa-file-invoice-dollar',
-                            defaultPrompt: 'வருமான / ITR சான்று தேவை'
+                            defaultPrompt: 'வருமானச் சான்றிதழ் / ITR சான்று தேவை'
                         }
                     );
                 }
@@ -1867,7 +1894,12 @@
                 safeSetVal('editFirstGraduateYop', data.yearOfPassing || '2024');
                 safeSetVal('editFirstGraduateCollegeAdd', data.institutionAddress || 'Coimbatore Tamil Nadu');
                 safeSetVal('editObcCaste', data.caste || data.subCaste || '');
-                safeSetVal('editObcOccupation', data.occupation || data.applicantOccupation || 'Service');
+                const rawObcOcc = String(data.occupation || data.applicantOccupation || 'Service').toLowerCase();
+                let mappedObcOcc = 'Service';
+                if (/student|மாணவ/i.test(rawObcOcc)) mappedObcOcc = 'Student';
+                else if (/agri|farmer|விவசாய/i.test(rawObcOcc)) mappedObcOcc = 'Agriculture';
+                else if (/busi|வியாபார/i.test(rawObcOcc)) mappedObcOcc = 'Business';
+                safeSetVal('editObcOccupation', mappedObcOcc);
                 safeSetVal('editObcFatherOccupation', data.fatherOccupation || '');
                 safeSetVal('editObcMotherOccupation', data.motherOccupation || '');
                 safeSetVal('editObcAnnualIncome', resolvedAnnInc);
@@ -2521,6 +2553,7 @@
                 }
             });
 
+            const safeIncVal = updated?.annualIncome || currentCitizenData?.annualIncome || '';
             try {
                 const res = await fetch('/api/profile/update', {
                     method: 'POST',
@@ -2534,8 +2567,8 @@
                         ...updated, 
                         headPhotoPath: currentCitizenData?.headPhotoPath || null,
                         profilePhoto: currentCitizenData?.headPhotoPath || null,
-                        incomeProof: (currentCitizenData?.incomeProof || currentCitizenData?.salaryCertificatePath || (incVal ? 'SELF_DECLARATION' : null)),
-                        incomeProofType: (currentCitizenData?.incomeProofType || (incVal ? 'SELF_DECLARATION' : null)),
+                        incomeProof: (currentCitizenData?.incomeProof || currentCitizenData?.salaryCertificatePath || (safeIncVal ? 'SELF_DECLARATION' : null)),
+                        incomeProofType: (currentCitizenData?.incomeProofType || (safeIncVal ? 'SELF_DECLARATION' : null)),
                         salaryCertificatePath: currentCitizenData?.salaryCertificatePath || null,
                         communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof || currentCitizenData?.communityCertificate) || null,
                         communityCertificate: currentCitizenData?.communityCertificate || currentCitizenData?.communityCertificatePath || null,

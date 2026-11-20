@@ -3626,7 +3626,7 @@ async function runTests() {
             assert(obcPortalSrc.includes("'100'") && obcPortalSrc.includes('REV-115'), "OBC portal engine expands DataTables to 100 rows before clicking REV-115");
             assert(obcPortalSrc.includes('#apCaste') && obcPortalSrc.includes('#apSerialCaste') && obcPortalSrc.includes('#gwt-uid-8'), "OBC portal engine fills exact #apCaste, #apSerialCaste & declaration checkbox");
             assert(obcPortalSrc.includes("code: '21'") && obcPortalSrc.includes("code: '18'") && obcPortalSrc.includes("code: '17'") && (obcPortalSrc.includes("code: '20'") || obcPortalSrc.includes("code: '358'")) && !obcPortalSrc.includes("code: '383'"), "OBC portal engine maps supporting #ss:do codes and strictly NEVER auto-uploads Self-Declaration ('383')");
-            assert(obcPortalSrc.includes('200, 240'), "OBC portal engine enforces TNeGA <250x250px passport photo requirement");
+            assert(obcPortalSrc.includes('200, 240') || obcPortalSrc.includes('w: 200, h: 240'), "OBC portal engine enforces TNeGA <250x250px passport photo requirement");
 
             // 2. Priority Exclusion Guards (caste / annualIncome must NEVER hijack OBC -> Community/Income!)
             const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
@@ -3883,7 +3883,7 @@ async function runTests() {
                 'src/portal/tnega/tnega_residence_certificate.js': '09b04f906bab1ac9c80aa4f595e6b32b13ac78cd50de7e9ff413640a025e6272',
                 'src/portal/tnega/tnega_income_certificate.js': '21eb4e37ec427ee8a78e84881730e3cae247e917bd76cb493ad97cb1c9c902f3',
                 'src/portal/tnega/tnega_first_graduate.js': '1afeab686fb75863e01c78f152a042fd07a227b3dcbfa0fca4f8f31a49aee09b',
-                'src/portal/tnega/tnega_obc_certificate.js': 'd77361d5de3155dc06934a80c2be1de95c55d1cefce8b4cc054bb9ec236bcbf7',
+                'src/portal/tnega/tnega_obc_certificate.js': 'e281aef34550b767ff46976dc112f887fcd526ab00c32abf7eabcd83740b325a',
                 'src/portal/tnega/tnega_widow_certificate.js': '9a33ea17a896d790b0b590738a27405ca684d2cabf4c0f649cab1dbd11cd2b1d'
             };
             for (const [relPath, expectedSha] of Object.entries(frozenEngines)) {
@@ -4486,6 +4486,61 @@ async function runTests() {
             try { [dummyScAadh, dummyScPh, dummyScCard].forEach(f => fs.existsSync(f) && fs.unlinkSync(f)); } catch (_) {}
             await request('DELETE', '/api/drafts/' + scChatMob + '?permanent=true');
             passedCount += 16;
+        }
+
+        console.log('\n[TEST 68] 📦 Verifying Universal <180KB Compression, OBC Income/Parent Extraction, Edit Modal incVal Fix & Mandatory 5-Doc OBC Upload...');
+        {
+            const sharp = require('sharp');
+            const { produceCompliantDocument } = require('../photo_studio');
+            const { applyExtractedIncomeDetails } = require('../src/services/profile_helpers');
+            const obcPortal = require('../src/portal/tnega/tnega_obc_certificate');
+            const obcPortalSrc68 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_obc_certificate.js'), 'utf8');
+            const editMgrSrc68 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            const aiExtSrc68 = fs.readFileSync(path.join(__dirname, '..', 'ai_document_extractor.js'), 'utf8');
+            const upProcSrc68 = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'document_upload_processor.js'), 'utf8');
+
+            // 1. Universal Compression Guarantee: Large noisy image (>300KB) strictly compressed <= 180KB
+            const bigNoiseImg = path.join(__dirname, 'test68_big.jpg');
+            const w = 1400, h = 1800;
+            const noiseBuf = Buffer.alloc(w * h * 3);
+            for (let i = 0; i < noiseBuf.length; i += 3) {
+                noiseBuf[i] = (i * 17) % 255;
+                noiseBuf[i + 1] = (i * 31) % 255;
+                noiseBuf[i + 2] = (i * 47) % 255;
+            }
+            await sharp(noiseBuf, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 96 }).toFile(bigNoiseImg);
+            assert(fs.statSync(bigNoiseImg).size > 250 * 1024, 'Synthetic test image starts above 250KB before compression');
+            const compOut = await produceCompliantDocument(bigNoiseImg, { maxKb: 180 });
+            assert(fs.existsSync(compOut) && fs.statSync(compOut).size <= 180 * 1024, 'produceCompliantDocument strictly compresses large image <= 180KB for TNeGA portal compliance');
+            try { if (fs.existsSync(bigNoiseImg)) fs.unlinkSync(bigNoiseImg); } catch (_) {}
+            try { if (compOut && compOut !== bigNoiseImg && fs.existsSync(compOut)) fs.unlinkSync(compOut); } catch (_) {}
+
+            // 2. Income Certificate AI Extraction & Profile Hydration
+            assert(aiExtSrc68.includes('INCOME_CERTIFICATE') && aiExtSrc68.includes('fatherOccupation') && aiExtSrc68.includes('motherOccupation'), 'AI extractor prompt extracts Income Certificate family & parent occupations');
+            const incProf = {};
+            applyExtractedIncomeDetails(incProf, {
+                documentType: 'INCOME_CERTIFICATE',
+                annualIncome: 'Rs. 36,000/-',
+                applicantOccupation: 'Student',
+                fatherOccupation: 'Farmer',
+                fatherEmploymentNature: 'Self Employed',
+                motherOccupation: 'Homemaker',
+                motherEmploymentNature: 'Unemployed',
+                certificateNumber: 'TN-420261119001'
+            });
+            assert(incProf.annualIncome === '36000' && incProf.occupation === 'Student' && incProf.fatherOccupation === 'Farmer' && incProf.motherOccupation === 'Homemaker', 'applyExtractedIncomeDetails populates income, applicant occupation, father Farmer & mother Homemaker');
+            assert(incProf.incomeCertNumber === 'TN-420261119001' && upProcSrc68.includes('applyExtractedIncomeDetails'), 'document_upload_processor persists extracted Income Certificate fields on Edit Modal upload');
+
+            // 3. Edit Modal incVal Scope Bug Fix & Live OBC Field Sync
+            assert(editMgrSrc68.includes('safeIncVal') && !editMgrSrc68.includes('(incVal ? \'SELF_DECLARATION\''), 'Edit Modal uses safeIncVal outside else block so incVal is never undefined');
+            assert(editMgrSrc68.includes("setVal('editObcFatherOccupation', prof.fatherOccupation)") && editMgrSrc68.includes("setVal('editObcAnnualIncome', prof.annualIncome)"), 'Edit Modal syncs extracted Income & Parent Occupations immediately after upload');
+
+            // 4. OBC Portal Farmer Designation Mapping & 5 Mandatory Docs Upload Queue
+            assert(obcPortal.mapParentStatusCode('Farmer', 'Self Employed') === 'agricultural_land_holdingowned_by_mother_father_minor_child', 'OBC Farmer status maps cleanly to Agricultural Land Holding code');
+            assert(obcPortalSrc68.includes("displayName: 'Any Address Proof #1 (Aadhaar)'") && obcPortalSrc68.includes("docNum: '2'") && obcPortalSrc68.includes("displayName: 'Any Address Proof #2 (Smart Ration Card)'"), 'OBC portal uploads Any Address Proof twice (doc 1 Aadhaar + doc 2 Smart Ration Card)');
+            assert(obcPortalSrc68.includes("label: 'Others'") && obcPortalSrc68.includes("docNameHint: 'Income Certificate'") && obcPortalSrc68.includes('selectGwtOptionSmart'), 'OBC portal uploads 5th doc via Others -> Income Certificate and uses smart GWT parent status/designation selection');
+
+            passedCount += 10;
         }
 
         console.log('\n======================================================');

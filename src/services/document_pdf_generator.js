@@ -41,15 +41,33 @@ function getSafeStudioDir() {
 
 const studioDir = getSafeStudioDir();
 
-async function compressHeavyPdf(inputPdfPath) {
+function findSystemChromePath() {
+    const candidates = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+    ];
+    return candidates.find(p => p && fs.existsSync(p)) || null;
+}
+
+async function compressHeavyPdf(inputPdfPath, maxKb = 180) {
+    let browser = null;
     try {
         let chromium;
         try { chromium = require('playwright').chromium; } catch(e) { chromium = require('playwright-core').chromium; }
         const pdfBuf = fs.readFileSync(inputPdfPath);
         const pdfBase64 = pdfBuf.toString('base64');
+        const targetBytes = Number(maxKb || 180) * 1024;
         const outputPdfPath = path.join(studioDir, `compressed_${Date.now()}_${path.basename(inputPdfPath)}`);
 
-        const browser = await chromium.launch({ headless: true });
+        const chromeExe = findSystemChromePath();
+        browser = await chromium.launch(
+            chromeExe
+                ? { executablePath: chromeExe, headless: true }
+                : { headless: true }
+        ).catch(async () => chromium.launch({ channel: 'chrome', headless: true }));
         const page = await browser.newPage();
         await page.setContent(`
             <!DOCTYPE html>
@@ -60,52 +78,77 @@ async function compressHeavyPdf(inputPdfPath) {
             <body style="margin:0; padding:0; background:white;">
                 <canvas id="pdfCanvas"></canvas>
                 <script>
-                    window.renderPdf = async function(base64Data) {
+                    window.renderPdfPage = async function(base64Data, pageNum, scaleVal) {
                         const raw = atob(base64Data);
                         const uint8 = new Uint8Array(raw.length);
                         for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i);
                         const loadingTask = pdfjsLib.getDocument({ data: uint8 });
                         const pdf = await loadingTask.promise;
-                        const p = await pdf.getPage(1);
-                        const viewport = p.getViewport({ scale: 1.5 });
+                        const total = pdf.numPages || 1;
+                        if (pageNum > total) return { total, rendered: false };
+                        const p = await pdf.getPage(pageNum);
+                        const viewport = p.getViewport({ scale: scaleVal || 1.35 });
                         const canvas = document.getElementById('pdfCanvas');
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
                         const ctx = canvas.getContext('2d');
                         await p.render({ canvasContext: ctx, viewport: viewport }).promise;
-                        return true;
+                        return { total, rendered: true };
                     };
                 </script>
             </body>
             </html>
         `);
 
-        await page.waitForFunction(() => typeof window.renderPdf === 'function', { timeout: 15000 });
-        await page.evaluate((b64) => window.renderPdf(b64), pdfBase64);
-        await page.waitForTimeout(1000);
+        await page.waitForFunction(() => typeof window.renderPdfPage === 'function', { timeout: 15000 });
+        const attempts = [
+            { scale: 1.4, quality: 72 },
+            { scale: 1.15, quality: 58 },
+            { scale: 0.95, quality: 44 },
+            { scale: 0.80, quality: 32 }
+        ];
 
-        const canvas = page.locator('#pdfCanvas');
-        const imgBuf = await canvas.screenshot({ type: 'jpeg', quality: 75 });
-        await browser.close();
+        for (const step of attempts) {
+            const pageImages = [];
+            const meta1 = await page.evaluate(({ b64, sc }) => window.renderPdfPage(b64, 1, sc), { b64: pdfBase64, sc: step.scale });
+            await page.waitForTimeout(350);
+            const canvas = page.locator('#pdfCanvas');
+            pageImages.push(await canvas.screenshot({ type: 'jpeg', quality: step.quality }));
 
-        return new Promise((resolve) => {
-            const PDFDocument = getPDFDocument();
-            const doc = new PDFDocument({ size: 'A4', margin: 20 });
-            const writeStream = fs.createWriteStream(outputPdfPath);
-            doc.pipe(writeStream);
-            doc.image(imgBuf, 20, 20, { fit: [555, 800], align: 'center', valign: 'center' });
-            doc.end();
+            if (meta1 && meta1.total >= 2) {
+                await page.evaluate(({ b64, sc }) => window.renderPdfPage(b64, 2, sc), { b64: pdfBase64, sc: step.scale });
+                await page.waitForTimeout(350);
+                pageImages.push(await canvas.screenshot({ type: 'jpeg', quality: step.quality }));
+            }
 
-            writeStream.on('finish', () => {
-                const szKB = (fs.statSync(outputPdfPath).size / 1024).toFixed(1);
-                console.log(`✨ Heavy PDF compressed to Government Standard: ${outputPdfPath} (${szKB} KB)`);
-                resolve(outputPdfPath);
+            const okPath = await new Promise((resolve) => {
+                const PDFDocument = getPDFDocument();
+                const doc = new PDFDocument({ size: 'A4', margin: 20 });
+                const writeStream = fs.createWriteStream(outputPdfPath);
+                doc.pipe(writeStream);
+                pageImages.forEach((imgBuf, idx) => {
+                    if (idx > 0) doc.addPage();
+                    doc.image(imgBuf, 20, 20, { fit: [555, 800], align: 'center', valign: 'center' });
+                });
+                doc.end();
+                writeStream.on('finish', () => resolve(outputPdfPath));
+                writeStream.on('error', () => resolve(null));
             });
 
-            writeStream.on('error', () => resolve(inputPdfPath));
-        });
+            if (okPath && fs.existsSync(okPath)) {
+                const sz = fs.statSync(okPath).size;
+                if (sz <= targetBytes || step === attempts[attempts.length - 1]) {
+                    console.log(`✨ Heavy PDF compressed to Government Standard: ${okPath} (${(sz / 1024).toFixed(1)} KB <= ${maxKb} KB)`);
+                    await browser.close().catch(() => {});
+                    return okPath;
+                }
+            }
+        }
+        await browser.close().catch(() => {});
+        return inputPdfPath;
     } catch (e) {
         console.error('Heavy PDF compression fallback:', e.message);
+        if (browser) await browser.close().catch(() => {});
         return inputPdfPath;
     }
 }
@@ -469,10 +512,11 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
         if (finalPdf && fs.existsSync(finalPdf)) {
             let fileSizeKB = fs.statSync(finalPdf).size / 1024;
             // Universal Document Ceiling: Strictly < 185 KB to pass TNeGA (<200KB) and TNPDS (<1MB)
-            if (fileSizeKB > 185) {
-                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 185 KB). Re-encoding at quality 70 for strict universal compliance...`);
+            for (const qRetry of [66, 52, 40]) {
+                if (!(fileSizeKB > 185)) break;
+                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 185 KB). Re-encoding at quality ${qRetry} for strict universal compliance...`);
                 try { fs.unlinkSync(finalPdf); } catch (e) {}
-                finalPdf = await generatePdfAtQuality(70);
+                finalPdf = await generatePdfAtQuality(qRetry);
                 if (finalPdf && fs.existsSync(finalPdf)) {
                     fileSizeKB = fs.statSync(finalPdf).size / 1024;
                 }

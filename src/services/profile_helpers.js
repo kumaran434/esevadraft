@@ -265,6 +265,61 @@ function applyExtractedSmartCardDetails(targetProfile, extracted) {
     if (extracted.village && !targetProfile.village) targetProfile.village = extracted.village;
 }
 
+/**
+ * Applies Income Certificate / Salary Slip / Community Certificate occupation & annual income details cleanly to citizenProfile.
+ */
+function applyExtractedIncomeDetails(targetProfile, extracted) {
+    if (!targetProfile || !extracted) return;
+    if (extracted.annualIncome) {
+        const cleanInc = String(extracted.annualIncome).replace(/\D+/g, '');
+        if (cleanInc && Number(cleanInc) > 0) {
+            targetProfile.annualIncome = cleanInc;
+            targetProfile.monthlyIncome = String(Math.round(Number(cleanInc) / 12));
+        }
+    }
+    const appOcc = extracted.applicantOccupation || extracted.occupation;
+    if (appOcc && String(appOcc).trim()) {
+        const cleanOcc = String(appOcc).trim();
+        targetProfile.occupation = cleanOcc;
+        targetProfile.applicantOccupation = cleanOcc;
+        if (!targetProfile.profession) targetProfile.profession = cleanOcc;
+    }
+    if (extracted.fatherOccupation && String(extracted.fatherOccupation).trim()) {
+        targetProfile.fatherOccupation = String(extracted.fatherOccupation).trim();
+        if (/deceased|late|dead|காலமான/i.test(targetProfile.fatherOccupation)) {
+            targetProfile.fatherAlive = false;
+        } else if (extracted.fatherAlive !== undefined && extracted.fatherAlive !== null) {
+            targetProfile.fatherAlive = Boolean(extracted.fatherAlive);
+        }
+    } else if (extracted.fatherAlive === false) {
+        targetProfile.fatherAlive = false;
+        targetProfile.fatherOccupation = 'Deceased';
+    }
+    if (extracted.fatherEmploymentNature) {
+        targetProfile.fatherEmploymentNature = String(extracted.fatherEmploymentNature).trim();
+    }
+    if (extracted.motherOccupation && String(extracted.motherOccupation).trim()) {
+        targetProfile.motherOccupation = String(extracted.motherOccupation).trim();
+        if (/deceased|late|dead|காலமான/i.test(targetProfile.motherOccupation)) {
+            targetProfile.motherAlive = false;
+        } else if (extracted.motherAlive !== undefined && extracted.motherAlive !== null) {
+            targetProfile.motherAlive = Boolean(extracted.motherAlive);
+        }
+    } else if (extracted.motherAlive === false) {
+        targetProfile.motherAlive = false;
+        targetProfile.motherOccupation = 'Deceased';
+    }
+    if (extracted.motherEmploymentNature) {
+        targetProfile.motherEmploymentNature = String(extracted.motherEmploymentNature).trim();
+    }
+    if (extracted.certificateNumber && String(extracted.certificateNumber).trim()) {
+        const cNo = String(extracted.certificateNumber).trim();
+        const dt = String(extracted.documentType || '').toUpperCase();
+        if (dt.includes('INCOME')) targetProfile.incomeCertNumber = cNo;
+        else if (dt.includes('COMMUNITY')) targetProfile.communityCertNumber = cNo;
+    }
+}
+
 module.exports = {
     syncFatherOrHusband,
     isValidAadhaarVerhoeff,
@@ -273,5 +328,6 @@ module.exports = {
     updateHeadMember,
     normalizeDobWithYearFallback,
     applyExtractedAadhaarRelationsAndDob,
-    applyExtractedSmartCardDetails
+    applyExtractedSmartCardDetails,
+    applyExtractedIncomeDetails
 };

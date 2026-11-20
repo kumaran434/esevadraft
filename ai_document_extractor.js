@@ -75,7 +75,7 @@ TASK 1: QUALITY ASSESSMENT:
 
 TASK 2: PRECISE DATA EXTRACTION & DOCUMENT CLASSIFICATION (If isQualityAcceptable is true):
 Extract ONLY the fields actually visible on the uploaded image and classify the document (use null for any field not visible on the image; NEVER copy example placeholder values):
-- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "SMART_CARD_FRONT" | "SMART_CARD_BACK" | "COMMUNITY_CERTIFICATE" | "TRANSFER_CERTIFICATE" | "SCHOOL_TC" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
+- Document Type: "AADHAAR_FULL" | "AADHAAR_FRONT" | "AADHAAR_BACK" | "SMART_CARD" | "SMART_CARD_FRONT" | "SMART_CARD_BACK" | "COMMUNITY_CERTIFICATE" | "INCOME_CERTIFICATE" | "INCOME_TAX_RETURN" | "TRANSFER_CERTIFICATE" | "SCHOOL_TC" | "GAS_BOOK" | "PROPERTY_TAX" | "EB_BILL" | "RENT_AGREEMENT" | "WATER_TAX" | "BANK_PASSBOOK" | "BIRTH_CERTIFICATE" | "DEATH_CERTIFICATE" | "PASSPORT_PHOTO" | "UNKNOWN"
   * AADHAAR_FULL: The image or PDF contains BOTH front details (Photo, Name, DOB, Aadhaar Number) AND back details (Address, S/O or W/O Care of, Pincode), or is a downloaded e-Aadhaar single-page letter containing full front and address sections.
   * AADHAAR_FRONT: The image contains ONLY the cropped front side of the card (Photo, Name, DOB, Aadhaar number) and DOES NOT have the address or back side.
   * AADHAAR_BACK: The image contains ONLY the back side of the card (Address, QR, C/O father/husband).
@@ -94,7 +94,12 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * "fatherCaste": Father's caste if printed
   * "motherCaste": Mother's caste if printed
   * "religion": "Hindu" | "Christian" | "Muslim" | null
-  * "certificateNumber": Certificate or TC serial number if visible
+  * "certificateNumber": Certificate or TC serial number if visible (e.g. TN-5202... or TN-4202...)
+- Income Certificate, Salary Slip & Parent Occupation Details (if INCOME_CERTIFICATE, INCOME_TAX_RETURN, or Salary Slip):
+  * Extract the EXACT annual family income in "annualIncome" as digits string (e.g. "36000", "72000"; if only monthly income is printed, multiply by 12).
+  * Extract applicant's occupation in "occupation" / "applicantOccupation" ("Student" | "Agriculture" | "Business" | "Service" | specific role).
+  * Extract Father's Occupation in "fatherOccupation" (e.g. "Farmer", "Agriculture", "Coolie", "Private Service", "Business", "Deceased") and "fatherEmploymentNature" ("Self Employed" | "Employed" | "Unemployed"). Note: On Tamil Nadu Income Certificates, inspect the Income Sources / Family Members table carefully — if Agriculture / Cultivation / Daily Wage / Business is shown under Father or Family Source, extract Father's real occupation (e.g. "Farmer") and set "fatherEmploymentNature": "Self Employed"! If Father is marked Late/Deceased, set "fatherAlive": false and "fatherOccupation": "Deceased".
+  * Extract Mother's Occupation in "motherOccupation" (e.g. "Homemaker", "Farmer", "Service", "Deceased") and "motherEmploymentNature" ("Unemployed" | "Self Employed" | "Employed"). If Mother earns Rs. 0 or is a homemaker/housewife/not working, set "motherOccupation": "Homemaker" and "motherEmploymentNature": "Unemployed".
 - Residence Proof Category: If this is a residence proof document, identify if it is:
   * "PROPERTY_TAX" (சொத்து வரி ரசீது / வீட்டு வரி ரசீது)
   * "EB_BILL" (மின் கட்டண ரசீது / TNEB Electricity Bill)
@@ -177,6 +182,15 @@ Respond strictly in JSON format (use null for fields not present in the image):
   "fatherCaste": null,
   "motherCaste": null,
   "certificateNumber": null,
+  "annualIncome": null,
+  "occupation": null,
+  "applicantOccupation": null,
+  "fatherOccupation": null,
+  "fatherEmploymentNature": null,
+  "fatherAlive": null,
+  "motherOccupation": null,
+  "motherEmploymentNature": null,
+  "motherAlive": null,
   "gasDetails": {
     "hasGas": false,
     "consumerNumber": "",

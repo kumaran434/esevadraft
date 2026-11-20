@@ -132,7 +132,13 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
 
         let fileSizeBytes = fs.statSync(outputPath).size;
         // Strict Universal Ceiling: Must be strictly < 45 KB to safely pass TNeGA (<50KB) and TNPDS (<100KB)
-        if (fileSizeBytes > 45 * 1024) {
+        const photoSteps = [
+            { w: 200, h: 230, q: 72 },
+            { w: 200, h: 230, q: 58 },
+            { w: 180, h: 208, q: 46 }
+        ];
+        for (const ps of photoSteps) {
+            if (fileSizeBytes <= 45 * 1024) break;
             let rePipeline = sharp(inputPath).rotate();
             if (hasFaceCrop && extractW > 40 && extractH > 40 && (extractW < imgW || extractH < imgH)) {
                 rePipeline = rePipeline.extract({
@@ -144,8 +150,8 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
             }
             await rePipeline
                 .flatten({ background: { r: 255, g: 255, b: 255 } })
-                .resize(200, 230, { fit: 'cover', position: resizeStrategy })
-                .jpeg({ quality: 74, chromaSubsampling: '4:2:0' })
+                .resize(ps.w, ps.h, { fit: 'cover', position: resizeStrategy })
+                .jpeg({ quality: ps.q, chromaSubsampling: '4:2:0' })
                 .toFile(outputPath);
             fileSizeBytes = fs.statSync(outputPath).size;
         }
@@ -161,15 +167,17 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
 
 async function produceCompliantDocument(inputPath, options = {}) {
     if (!fs.existsSync(inputPath)) return inputPath;
+    const maxKb = Number(options.maxKb || 180);
+    const maxBytes = maxKb * 1024;
 
     if (inputPath.toLowerCase().endsWith('.pdf')) {
         const sz = fs.statSync(inputPath).size;
-        // Universal Document Ceiling: <185 KB passes TNeGA (<200KB) and TNPDS (<1MB)
-        if (sz > 185 * 1024) {
-            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > 185 KB). Auto-compressing to Universal Government Standard (< 185 KB)...`);
-            return await compressHeavyPdf(inputPath);
+        // Universal Document Ceiling: <180 KB passes TNeGA (<200KB) and TNPDS (<1MB)
+        if (sz > maxBytes) {
+            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > ${maxKb} KB). Auto-compressing to Universal Government Standard (< ${maxKb} KB)...`);
+            return await compressHeavyPdf(inputPath, maxKb);
         }
-        console.log(`📄 Compliant PDF uploaded (${(sz / 1024).toFixed(1)} KB <= 185 KB). Ready directly for all portals!`);
+        console.log(`📄 Compliant PDF uploaded (${(sz / 1024).toFixed(1)} KB <= ${maxKb} KB). Ready directly for all portals!`);
         return inputPath;
     }
 
@@ -180,43 +188,30 @@ async function produceCompliantDocument(inputPath, options = {}) {
 
     try {
         croppedPath = await cropDocumentToExactBoundary(inputPath, options);
-        await sharp(croppedPath)
-            .rotate()
-            .resize({ width: 1000, height: 1350, fit: 'inside', withoutEnlargement: true })
-            .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .normalize()
-            .gamma(1.1)
-            .modulate({
-                brightness: 1.05,
-                saturation: 1.15
-            })
-            .sharpen({
-                sigma: 1.6,
-                m1: 2.0,
-                m2: 0.6
-            })
-            .jpeg({
-                quality: 82,
-                chromaSubsampling: '4:2:0'
-            })
-            .toFile(outputJpg);
-
-        let fileSizeBytes = fs.statSync(outputJpg).size;
-        if (fileSizeBytes > 98 * 1024) {
+        const passSpecs = [
+            { w: 1000, h: 1350, q: 82 },
+            { w: 860, h: 1160, q: 68 },
+            { w: 760, h: 1020, q: 56 },
+            { w: 660, h: 880, q: 44 },
+            { w: 560, h: 760, q: 34 }
+        ];
+        let fileSizeBytes = 0;
+        for (const spec of passSpecs) {
             await sharp(croppedPath)
                 .rotate()
-                .resize({ width: 860, height: 1160, fit: 'inside', withoutEnlargement: true })
+                .resize({ width: spec.w, height: spec.h, fit: 'inside', withoutEnlargement: true })
                 .flatten({ background: { r: 255, g: 255, b: 255 } })
                 .normalize()
                 .gamma(1.1)
-                .modulate({ brightness: 1.05, saturation: 1.1 })
-                .sharpen({ sigma: 1.4, m1: 1.8, m2: 0.5 })
-                .jpeg({ quality: 68, chromaSubsampling: '4:2:0' })
+                .modulate({ brightness: 1.05, saturation: spec.q >= 70 ? 1.15 : 1.08 })
+                .sharpen({ sigma: spec.q >= 70 ? 1.6 : 1.3, m1: 1.8, m2: 0.5 })
+                .jpeg({ quality: spec.q, chromaSubsampling: '4:2:0' })
                 .toFile(outputJpg);
             fileSizeBytes = fs.statSync(outputJpg).size;
+            if (fileSizeBytes <= maxBytes) break;
         }
         const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
-        console.log(`✨ AI Enhanced Compliant Document Generated: ${outputJpg} (${fileSizeKB} KB)`);
+        console.log(`✨ AI Enhanced Compliant Document Generated: ${outputJpg} (${fileSizeKB} KB <= ${maxKb} KB)`);
         return outputJpg;
     } catch (e) {
         console.error('Doc optimizer error:', e.message);

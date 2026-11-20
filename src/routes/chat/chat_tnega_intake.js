@@ -8,7 +8,7 @@ const { advanceTnegaIncomeFlow, advanceTnegaCanRegisterFlow, advanceTnegaResiden
 const { ensureBilingualPair } = require('../../utils/bilingual_helper');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
 const { saveCitizenProfile } = require('../../../database');
-const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails } = require('../../services/profile_helpers');
+const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails, applyExtractedIncomeDetails } = require('../../services/profile_helpers');
 const { persistSessions } = storageService;
 
 function extractIncomeAndProfession(inputStr) {
@@ -2105,11 +2105,17 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         sess.citizenProfile.documents.communityProof = compliantProof;
 
         let extraInfo = '';
-        if (extracted && (extracted.caste || extracted.subCaste)) {
-            const c = extracted.caste || extracted.subCaste;
-            sess.citizenProfile.caste = c;
-            if (extracted.community) sess.citizenProfile.community = extracted.community;
-            extraInfo = `\n• 🏷️ **சாதி:** **${c}** (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
+        if (extracted) {
+            if (extracted.caste || extracted.subCaste) {
+                const c = extracted.caste || extracted.subCaste;
+                sess.citizenProfile.caste = c;
+                if (extracted.community) sess.citizenProfile.community = extracted.community;
+                extraInfo += `\n• 🏷️ **சாதி:** **${c}** (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
+            }
+            if (extracted.certificateNumber) {
+                sess.citizenProfile.communityCertNumber = String(extracted.certificateNumber).trim();
+            }
+            applyExtractedIncomeDetails(sess.citizenProfile, extracted);
         }
         persistSessions();
         const flowStep = advanceTnegaObcFlow(sess, `✅ **சாதிச் சான்றிதழ் (Community Certificate) வெற்றிகரமாகப் பெறப்பட்டது!**${extraInfo}`);
@@ -2150,12 +2156,21 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         sess.citizenProfile.documents.incomeProof = compliantProof;
 
         let extraInc = '';
-        if (extracted && extracted.annualIncome) {
-            const cleanInc = String(extracted.annualIncome).replace(/\D+/g, '');
-            if (cleanInc) {
-                sess.citizenProfile.annualIncome = cleanInc;
-                extraInc = `\n• 💰 **ஆண்டு வருமானம்:** ₹${cleanInc} (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
+        if (extracted) {
+            applyExtractedIncomeDetails(sess.citizenProfile, extracted);
+            if (extracted.certificateNumber) {
+                sess.citizenProfile.incomeCertNumber = String(extracted.certificateNumber).trim();
             }
+            if (sess.citizenProfile.annualIncome) {
+                extraInc += `\n• 💰 **ஆண்டு வருமானம்:** ₹${sess.citizenProfile.annualIncome}`;
+            }
+            if (sess.citizenProfile.fatherOccupation) {
+                extraInc += `\n• 👨 **தந்தை பணி:** ${sess.citizenProfile.fatherOccupation}`;
+            }
+            if (sess.citizenProfile.motherOccupation) {
+                extraInc += `\n• 👩 **தாய் பணி:** ${sess.citizenProfile.motherOccupation}`;
+            }
+            if (extraInc) extraInc += ` (தானாகப் பிரித்தெடுக்கப்பட்டது ✅)`;
         }
         persistSessions();
         const flowStep = advanceTnegaObcFlow(sess, `✅ **வருமான வரி / வருமானச் சான்று வெற்றிகரமாகப் பெறப்பட்டது!**${extraInc}`);

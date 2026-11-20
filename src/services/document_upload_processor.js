@@ -4,7 +4,7 @@ const fs = require('fs');
 const { produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 const { validateUploadedDocument } = require('./document_validator');
-const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails } = require('./profile_helpers');
+const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails, applyExtractedIncomeDetails } = require('./profile_helpers');
 
 async function processUploadedDocument(sess, docType, uploadedFile, memberIndex, targetMobile) {
     let optimizedPath = uploadedFile.path;
@@ -343,13 +343,22 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
         }
     } else {
         const isCommunityDoc = (docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof');
+        const isIncomeDoc = (docType === 'incomeTaxReturn' || docType === 'incomeProof' || docType === 'salarySlip' || docType === 'salaryCertificate');
         let extractedOther = null;
         try {
-            extractedOther = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true, isTnega: isCommunityDoc });
+            extractedOther = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true, isTnega: isCommunityDoc || isIncomeDoc });
         } catch (_) {}
 
         if (isCommunityDoc) {
             const validation = validateUploadedDocument('communityProof', extractedOther);
+            if (!validation.valid) {
+                try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
+                const err = new Error(validation.errorTamil);
+                err.status = 400;
+                throw err;
+            }
+        } else if (isIncomeDoc) {
+            const validation = validateUploadedDocument('incomeProof', extractedOther);
             if (!validation.valid) {
                 try { if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path); } catch(_) {}
                 const err = new Error(validation.errorTamil);
@@ -407,6 +416,13 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                 sess.citizenProfile.motherCaste = extractedOther.motherCaste || c;
                 sess.citizenProfile.requestedCaste = c;
                 sess.citizenProfile.parentCasteConfirmed = true;
+            }
+            if (isCommunityDoc && extractedOther.certificateNumber) {
+                sess.citizenProfile.communityCertNumber = String(extractedOther.certificateNumber).trim();
+            }
+            applyExtractedIncomeDetails(sess.citizenProfile, extractedOther);
+            if (isIncomeDoc && extractedOther.certificateNumber) {
+                sess.citizenProfile.incomeCertNumber = String(extractedOther.certificateNumber).trim();
             }
             if (extractedOther.smartCardNumber) {
                 sess.citizenProfile.smartCardNumber = extractedOther.smartCardNumber;

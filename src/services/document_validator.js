@@ -16,6 +16,8 @@ const DOC_NAMES_TAMIL = {
     'SMART_CARD_FRONT': 'ஸ்மார்ட் குடும்ப அட்டை முன்பக்கம் (Smart Card Front)',
     'SMART_CARD_BACK': 'ஸ்மார்ட் குடும்ப அட்டை பின்பக்கம் (Smart Card Back)',
     'COMMUNITY_CERTIFICATE': 'சாதிச் சான்றிதழ் (Community Certificate)',
+    'INCOME_CERTIFICATE': 'வருமானச் சான்றிதழ் (Income Certificate)',
+    'INCOME_TAX_RETURN': 'வருமான வரி / வருமானச் சான்று (ITR / Income Doc)',
     'TRANSFER_CERTIFICATE': 'பள்ளி / கல்லூரி மாற்றுச் சான்றிதழ் (School / College TC)',
     'SCHOOL_TC': 'பள்ளி மாற்றுச் சான்றிதழ் (School TC)',
     'GAS_BOOK': 'எரிவாயு நுகர்வோர் அட்டை (Gas Book)',

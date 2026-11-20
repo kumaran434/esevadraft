@@ -37,7 +37,7 @@ function mapParentStatusCode(statusText, natureCode) {
     if (/psu|public sector/.test(s)) return 'public_sector_undertakings';
     if (/armed|army|navy|air|para/.test(s)) return 'armed_forces_slash_para_military_forces';
     if (/prof|doctor|lawyer|engineer|ca/.test(s)) return 'professional_class';
-    if (/agri|land/.test(s)) return 'agricultural_land_holdingowned_by_mother_father_minor_child';
+    if (/agri|farmer|விவசாய|உழவ|land/.test(s)) return 'agricultural_land_holdingowned_by_mother_father_minor_child';
     if (/income|wealth|property|tax/.test(s)) return 'income_slash_wealth_property_owners';
     return 'others';
 }
@@ -70,23 +70,59 @@ async function ensureObcPassportPhotoSize(inputPath, outDir, mobileClean) {
         fs.mkdirSync(outDir, { recursive: true });
         const outPath = path.join(outDir, `obc_photo_200x240_${mobileClean || Date.now()}.jpg`);
         // TNeGA OBC uploadDocs.xhtml strictly enforces width < 250px AND height < 250px AND <= 50KB
-        let buf = await sharp(inputPath)
-            .rotate()
-            .resize(200, 240, { fit: 'cover', position: 'attention' })
-            .jpeg({ quality: 82 })
-            .toBuffer();
-        if (buf.length > 46 * 1024) {
-            buf = await sharp(inputPath)
+        const steps = [
+            { w: 200, h: 240, q: 82 },
+            { w: 200, h: 240, q: 68 },
+            { w: 180, h: 220, q: 56 },
+            { w: 160, h: 196, q: 44 }
+        ];
+        for (const st of steps) {
+            const buf = await sharp(inputPath)
                 .rotate()
-                .resize(180, 220, { fit: 'cover', position: 'attention' })
-                .jpeg({ quality: 70 })
+                .resize(st.w, st.h, { fit: 'cover', position: 'attention' })
+                .jpeg({ quality: st.q })
                 .toBuffer();
+            if (buf.length <= 46 * 1024 || st === steps[steps.length - 1]) {
+                fs.writeFileSync(outPath, buf);
+                break;
+            }
         }
-        fs.writeFileSync(outPath, buf);
         return outPath;
     } catch (_) {
         return inputPath;
     }
+}
+
+async function selectGwtOptionSmart(page, selectId, preferredCode, hints = []) {
+    const chosen = await page.evaluate(({ id, code, hintList }) => {
+        const sel = document.getElementById(id);
+        if (!sel || sel.disabled) return null;
+        const opts = Array.from(sel.options).filter(o => o.value && o.value !== '0' && !/select/i.test(o.value));
+        if (!opts.length) return null;
+        const exactVal = opts.find(o => o.value.toLowerCase() === String(code || '').toLowerCase());
+        if (exactVal) return exactVal.value;
+        const exactText = opts.find(o => o.text.trim().toLowerCase() === String(code || '').toLowerCase());
+        if (exactText) return exactText.value;
+        for (const h of hintList) {
+            const tok = String(h || '').trim().toLowerCase();
+            if (!tok) continue;
+            const m = opts.find(o => o.text.toLowerCase().includes(tok) || o.value.toLowerCase().includes(tok));
+            if (m) return m.value;
+        }
+        return null;
+    }, { id: selectId, code: preferredCode, hintList: hints }).catch(() => null);
+
+    if (!chosen) return false;
+    await page.locator(`#${selectId}`).selectOption(chosen).catch(() => {});
+    await page.evaluate((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+    }, selectId).catch(() => {});
+    return true;
 }
 
 async function fillVerifiedInput(page, selector, val) {
@@ -156,8 +192,8 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
     const motherOcc = citizenProfile.motherOccupation || subData.motherOccupation || 'Homemaker';
     const fatherNature = mapParentEmploymentNature(citizenProfile.fatherEmploymentNature || subData.fatherEmploymentNature, fatherOcc);
     const motherNature = mapParentEmploymentNature(citizenProfile.motherEmploymentNature || subData.motherEmploymentNature, motherOcc);
-    const fatherStatus = mapParentStatusCode(citizenProfile.fatherStatus || subData.fatherStatus, fatherNature);
-    const motherStatus = mapParentStatusCode(citizenProfile.motherStatus || subData.motherStatus, motherNature);
+    const fatherStatus = mapParentStatusCode(citizenProfile.fatherStatus || subData.fatherStatus || fatherOcc, fatherNature);
+    const motherStatus = mapParentStatusCode(citizenProfile.motherStatus || subData.motherStatus || motherOcc, motherNature);
     const annualIncome = String(citizenProfile.annualIncome || subData.annualIncome || '72000').replace(/\D+/g, '') || '72000';
     const motherIncome = String(citizenProfile.motherAnnualIncome || subData.motherAnnualIncome || '0').replace(/\D+/g, '') || '0';
 
@@ -557,17 +593,23 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                     if (isFatherAlive) {
                         await clickGwtRadio('gwt-uid-9', 'gwt-uid-10', 'faNature');
                         if (await tnegaPage.locator('#faNature').isVisible().catch(() => false)) {
-                            await tnegaPage.locator('#faNature').selectOption(fatherNature).catch(() => {});
-                            await tnegaPage.waitForTimeout(350);
+                            await selectGwtOptionSmart(tnegaPage, 'faNature', fatherNature, [fatherNature, 'self', 'employed', 'unemployed']);
+                            await tnegaPage.waitForTimeout(450);
                         }
                         if (await tnegaPage.locator('#status').isVisible().catch(() => false)) {
-                            const isDis = await tnegaPage.locator('#status').isDisabled().catch(() => false);
-                            if (!isDis) {
-                                await tnegaPage.locator('#status').selectOption(fatherStatus).catch(() => {});
-                                await tnegaPage.waitForTimeout(450);
-                            }
+                            await tnegaPage.waitForFunction(() => {
+                                const s = document.getElementById('status');
+                                return s && !s.disabled && s.options.length > 1;
+                            }, { timeout: 1500 }).catch(() => {});
+                            await selectGwtOptionSmart(tnegaPage, 'status', fatherStatus, [fatherStatus, 'agri', 'farmer', 'others', 'other']);
+                            await tnegaPage.waitForTimeout(500);
                         }
-                        await fillVerifiedInput(tnegaPage, '#commDesignation', fatherOcc);
+                        const faDesigTag = await tnegaPage.evaluate(() => document.getElementById('commDesignation')?.tagName || '').catch(() => '');
+                        if (faDesigTag === 'SELECT') {
+                            await selectGwtOptionSmart(tnegaPage, 'commDesignation', fatherOcc, [fatherOcc, 'farmer', 'agriculture', 'self', 'others', 'other']);
+                        } else {
+                            await fillVerifiedInput(tnegaPage, '#commDesignation', fatherOcc);
+                        }
                         await fillVerifiedInput(tnegaPage, '#commPayofscale', annualIncome);
                         await fillVerifiedInput(tnegaPage, '#iwAnnual', annualIncome);
                     } else {
@@ -578,17 +620,23 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                     if (isMotherAlive) {
                         await clickGwtRadio('gwt-uid-18', 'gwt-uid-11', 'moNature');
                         if (await tnegaPage.locator('#moNature').isVisible().catch(() => false)) {
-                            await tnegaPage.locator('#moNature').selectOption(motherNature).catch(() => {});
-                            await tnegaPage.waitForTimeout(350);
+                            await selectGwtOptionSmart(tnegaPage, 'moNature', motherNature, [motherNature, 'unemployed', 'homemaker', 'self', 'employed']);
+                            await tnegaPage.waitForTimeout(450);
                         }
                         if (await tnegaPage.locator('#motherStatus').isVisible().catch(() => false)) {
-                            const isDis = await tnegaPage.locator('#motherStatus').isDisabled().catch(() => false);
-                            if (!isDis) {
-                                await tnegaPage.locator('#motherStatus').selectOption(motherStatus).catch(() => {});
-                                await tnegaPage.waitForTimeout(450);
-                            }
+                            await tnegaPage.waitForFunction(() => {
+                                const s = document.getElementById('motherStatus');
+                                return s && !s.disabled && s.options.length > 1;
+                            }, { timeout: 1500 }).catch(() => {});
+                            await selectGwtOptionSmart(tnegaPage, 'motherStatus', motherStatus, [motherStatus, 'others', 'other', 'unemployed']);
+                            await tnegaPage.waitForTimeout(500);
                         }
-                        await fillVerifiedInput(tnegaPage, '#commDesignationmo', motherOcc);
+                        const moDesigTag = await tnegaPage.evaluate(() => document.getElementById('commDesignationmo')?.tagName || '').catch(() => '');
+                        if (moDesigTag === 'SELECT') {
+                            await selectGwtOptionSmart(tnegaPage, 'commDesignationmo', motherOcc, [motherOcc, 'homemaker', 'house', 'unemployed', 'others', 'other']);
+                        } else {
+                            await fillVerifiedInput(tnegaPage, '#commDesignationmo', motherOcc);
+                        }
                         await fillVerifiedInput(tnegaPage, '#commPayofscalemo', motherIncome);
                         await fillVerifiedInput(tnegaPage, '#moIwAnnualInc', motherIncome);
                     } else {
@@ -678,28 +726,33 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
 
                     const obcGoldenDir = path.join(process.cwd(), 'data', 'golden_samples', 'obc');
                     let photoRaw = await pickDoc(['profilePhoto', 'photo', 'headPhoto'], path.join(obcGoldenDir, 'applicant_photo.jpg'));
-                    let addrRaw = await pickDoc(['headAadhaar', 'aadhaar', 'smartCard', 'rationCard'], path.join(obcGoldenDir, 'applicant_aadhaar.jpg'));
-                    let commRaw = await pickDoc(['communityCertificate', 'fatherCommunityCertificate', 'casteCertificate'], path.join(obcGoldenDir, 'community_certificate.jpg'));
+                    let aadhaarRaw = await pickDoc(['headAadhaar', 'aadhaar'], path.join(obcGoldenDir, 'applicant_aadhaar.jpg'));
+                    let smartCardRaw = await pickDoc(['smartCard', 'rationCard', 'smartCardDocPath', 'rationCardDocPath'], null);
+                    let commRaw = await pickDoc(['communityCertificate', 'communityProof', 'fatherCommunityCertificate', 'casteCertificate'], path.join(obcGoldenDir, 'community_certificate.jpg'));
                     let itrRaw = await pickDoc(['incomeTaxReturn', 'incomeCertificate', 'salarySlip', 'incomeProof'], path.join(obcGoldenDir, 'income_tax_return.jpg'));
 
-                    // Strict Portal Size & Pixel Guards (Golden Rule 6)
+                    // Strict Portal Size & Pixel Guards (<50KB Photo, <180KB for ALL docs including PDFs)
                     const photoPath = await ensureObcPassportPhotoSize(photoRaw, tempDir, mobileNumber);
-                    const ensureUnder200KB = async (src, nameHint) => {
+                    const ensureUnder200KB = async (src) => {
                         if (!src || !fs.existsSync(src)) return src;
-                        if (src.toLowerCase().endsWith('.pdf') || fs.statSync(src).size <= 190 * 1024) return src;
-                        const out = await produceCompliantDocument(src, path.join(tempDir, `${nameHint}.jpg`), 185).catch(() => src);
+                        if (fs.statSync(src).size <= 185 * 1024) return src;
+                        const out = await produceCompliantDocument(src, { maxKb: 180 }).catch(() => src);
                         return (out && fs.existsSync(out)) ? out : src;
                     };
-                    const addrPath = await ensureUnder200KB(addrRaw, 'obc_address_proof');
-                    const commPath = await ensureUnder200KB(commRaw, 'obc_community_cert');
-                    const itrPath = await ensureUnder200KB(itrRaw, 'obc_itr_income');
+                    const aadhaarPath = await ensureUnder200KB(aadhaarRaw);
+                    const smartCardPath = await ensureUnder200KB(smartCardRaw);
+                    const commPath = await ensureUnder200KB(commRaw);
+                    const itrPath = await ensureUnder200KB(itrRaw);
 
-                    // NEVER auto-upload 'Self-Declaration of Applicant' (383) — operator must collect citizen signature first!
+                    // Mandatory 5 OBC Supporting Docs (Self-Declaration '383' NEVER auto-uploaded — operator signature gate!)
+                    // 1. Photo | 2. Any Address Proof #1 (Aadhaar) | 3. Any Address Proof #2 (Smart Ration Card)
+                    // 4. Community Certificate | 5. Income Certificate / Income Tax (Others)
                     const uploadQueue = [
-                        { code: '21', label: 'Photo', docNum: 'PHOTO-01', file: photoPath },
-                        { code: '18', label: 'Any Address Proof', docNum: aadhaar || 'ADDR-01', file: addrPath },
-                        { code: '17', label: 'Community Certificate', docNum: citizenProfile.communityCertNumber || 'COMM-01', file: commPath },
-                        { code: '20', label: 'Income Tax Return', docNum: `INC-${annualIncome}`, file: itrPath }
+                        { code: '21', label: 'Photo', docNum: '1', file: photoPath, occurrenceIndex: 0 },
+                        { code: '18', label: 'Any Address Proof', displayName: 'Any Address Proof #1 (Aadhaar)', docNum: '1', file: aadhaarPath, occurrenceIndex: 0 },
+                        { code: '18', label: 'Any Address Proof', displayName: 'Any Address Proof #2 (Smart Ration Card)', docNum: '2', file: smartCardPath, occurrenceIndex: 1 },
+                        { code: '17', label: 'Community Certificate', docNum: citizenProfile.communityCertNumber || '1', file: commPath, occurrenceIndex: 0 },
+                        { code: '358', fallbackCode: '20', label: 'Others', docNameHint: 'Income Certificate', displayName: 'Income Certificate / Income Tax (Others)', docNum: citizenProfile.incomeCertNumber || `INC-${annualIncome}`, file: itrPath, occurrenceIndex: 0 }
                     ];
 
                     const existingDocNames = await tnegaPage.evaluate(() =>
@@ -714,33 +767,57 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
 
                     const uploadedDocs = [];
                     for (const item of uploadQueue) {
+                        const friendlyLabel = item.displayName || item.label;
                         if (!item.file || !fs.existsSync(item.file)) {
-                            onProgress(`⚠️ [ஆவணம் இல்லை] ${item.label} கோப்பு கிடைக்கவில்லை; தவிர்க்கப்படுகிறது.`);
+                            onProgress(`⚠️ [ஆவணம் இல்லை] ${friendlyLabel} கோப்பு கிடைக்கவில்லை; தவிர்க்கப்படுகிறது.`);
                             continue;
                         }
-                        if (existingDocNames.some(n => n.includes(item.label.toLowerCase().slice(0, 10)))) {
-                            onProgress(`✅ [ஏற்கனவே உள்ளது] ${item.label} ஏற்கனவே பதிவேற்றப்பட்டுள்ளது.`);
-                            uploadedDocs.push(item.label);
+                        const matchKey = item.label.toLowerCase().slice(0, 10);
+                        const existingCount = existingDocNames.filter(n => n.includes(matchKey) || (item.label === 'Others' && (n.includes('income') || n.includes('other')))).length;
+                        if (existingCount > (item.occurrenceIndex || 0)) {
+                            onProgress(`✅ [ஏற்கனவே உள்ளது] ${friendlyLabel} ஏற்கனவே பதிவேற்றப்பட்டுள்ளது.`);
+                            uploadedDocs.push(friendlyLabel);
                             continue;
                         }
 
                         const prevCount = await getDataRowCount();
-                        onProgress(`📤 [பதிவேற்றம் ${uploadedDocs.length + 1}] ${item.label} (${path.basename(item.file)})...`);
+                        const szKbDisp = (fs.statSync(item.file).size / 1024).toFixed(1);
+                        onProgress(`📤 [பதிவேற்றம் ${uploadedDocs.length + 1}/5] ${friendlyLabel} (${szKbDisp} KB - ${path.basename(item.file)})...`);
 
-                        const matchedCode = await tnegaPage.evaluate(({ code, label }) => {
+                        const matchedCode = await tnegaPage.evaluate(({ code, fallbackCode, label }) => {
                             const sel = document.getElementById('ss:do');
                             if (!sel) return code;
                             const opts = Array.from(sel.options);
+                            if (label === 'Others') {
+                                const incExact = opts.find(o => {
+                                    const t = o.text.toLowerCase();
+                                    return t.includes('income certificate') || (t.includes('income tax') && !t.includes('return'));
+                                });
+                                if (incExact) return incExact.value;
+                                const othOpt = opts.find(o => o.value === '358' || /\bothers?\b/i.test(o.text));
+                                if (othOpt) return othOpt.value;
+                                const fb = fallbackCode ? opts.find(o => o.value === fallbackCode) : null;
+                                if (fb) return fb.value;
+                            }
                             const byVal = opts.find(o => o.value === code);
                             if (byVal) return byVal.value;
                             const byTxt = opts.find(o => o.text.toLowerCase().includes(label.toLowerCase()));
-                            return byTxt ? byTxt.value : code;
-                        }, { code: item.code, label: item.label }).catch(() => item.code);
+                            return byTxt ? byTxt.value : (fallbackCode || code);
+                        }, { code: item.code, fallbackCode: item.fallbackCode, label: item.label }).catch(() => item.code);
 
                         const waitDoAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
                         await tnegaPage.locator('#ss\\:do').selectOption(matchedCode, { timeout: 3000 }).catch(() => {});
                         await waitDoAjax;
                         await tnegaPage.waitForTimeout(450);
+
+                        if (item.docNameHint) {
+                            const othInput = tnegaPage.locator('input[id*="oth" i]:visible, input[id*="docName" i]:visible, input[name*="other" i]:visible').first();
+                            if (await othInput.count() > 0) {
+                                await othInput.fill(item.docNameHint).catch(() => {});
+                                await othInput.press('Tab').catch(() => {});
+                                await tnegaPage.waitForTimeout(300);
+                            }
+                        }
 
                         const waitNumAjax = tnegaPage.waitForResponse(r => r.url().includes('uploadDocs.xhtml'), { timeout: 5000 }).catch(() => null);
                         const numInp = tnegaPage.locator('#ss\\:dscnum').first();
@@ -770,7 +847,7 @@ async function startTnegaObcCertificateFlow(citizenProfile = {}, onProgress = ()
                             { timeout: 14000 }
                         ).catch(() => {});
                         await tnegaPage.waitForTimeout(500);
-                        uploadedDocs.push(item.label);
+                        uploadedDocs.push(friendlyLabel);
                     }
 
                     // Verify Pre-Submit Gate (Self-Declaration is intentionally left for operator signature + upload!)
