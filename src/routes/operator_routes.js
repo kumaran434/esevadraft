@@ -263,10 +263,16 @@ router.post('/api/operator/new-customer', async (req, res) => {
         sess.chatHistory = [];
         handleServiceSelection('முகவரி மாற்றம்', sess);
     } else if (isNewRation) {
+        sess.service = 'ரேஷன் கார்டு';
         sess.subService = 'NEW_CARD';
+        sess.targetService = null;
+        sess.serviceId = null;
         sess.subServiceData = null;
         if (sess.citizenProfile) {
+            sess.citizenProfile.service = 'ரேஷன் கார்டு';
             sess.citizenProfile.subService = 'NEW_CARD';
+            sess.citizenProfile.targetService = null;
+            sess.citizenProfile.serviceId = null;
             sess.citizenProfile.subServiceData = null;
         }
         sess.chatHistory = [];

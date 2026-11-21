@@ -58,7 +58,7 @@ function getPortalDocumentPolicy(identifier) {
     if (!identifier) return PORTAL_DOCUMENT_POLICIES.TNPDS;
     const clean = String(identifier).trim().toUpperCase();
 
-    if (clean.includes('TNPDS') || clean.includes('RATION') || clean.includes('ADD_MEMBER') || clean.includes('CHANGE_ADDRESS')) {
+    if (clean.includes('TNPDS') || clean.includes('RATION') || clean.includes('NEW_CARD') || clean.includes('ADD_MEMBER') || clean.includes('CHANGE_ADDRESS') || clean === 'RESIDENCE_PROOF_TYPE' || clean === 'RESIDENCE_PROOF_DOC') {
         return PORTAL_DOCUMENT_POLICIES.TNPDS;
     }
     if (clean.includes('TNEGA') || clean.includes('INCOME') || clean.includes('COMMUNITY') || clean.includes('RESIDENCE') || clean.includes('REV-')) {

@@ -5,6 +5,7 @@ const { saveCitizenProfile } = require('../../../database');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument } = require('../../../photo_studio');
+const { applyExtractedGasDetails } = require('../../services/profile_helpers');
 
 const { persistSessions } = storageService;
 
@@ -20,6 +21,7 @@ async function handleResidenceProof(ctx, req, res) {
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.residenceProofType = text || 'எரிவாயு நுகர்வோர் அட்டை';
         sess.intakeState = 'RESIDENCE_PROOF_DOC';
+        persistSessions();
         if (!uploadedFile) {
             sess.chatHistory.push({
                 sender: 'bot',
@@ -103,33 +105,23 @@ async function handleResidenceProof(ctx, req, res) {
 
         let gasNotice = '';
         if (isGasDoc) {
-            const gas = extracted?.gasDetails || {};
-            const co = gas.oilCompany || 'IOC';
-            const coDisplay = gas.oilCompanyDisplay || (co === 'IOC' ? 'Indane Gas (IOCL)' : (co === 'HPC' ? 'HP Gas (HPC)' : 'Bharat Gas (BPCL)'));
-            const consumerNo = String(gas.consumerNumber || '').trim();
-            const agency = gas.agencyName || '';
-            const cylinders = String(gas.cylinders || '1');
-            const consumerName = gas.consumerName || sess.citizenProfile.fullNameTam || '';
+            const normalizedGas = applyExtractedGasDetails(sess.citizenProfile, extracted, optDoc, true) || {};
+            const coDisplay = normalizedGas.oilCompanyDisplay || 'Indane Gas (IOCL)';
+            const consumerNo = normalizedGas.consumerNumber || '';
+            const agency = normalizedGas.agencyName || '';
+            const cylinders = normalizedGas.cylinders || '1';
+            const consumerName = normalizedGas.consumerName || sess.citizenProfile.fullNameTam || '';
 
-            sess.citizenProfile.gasDetails = {
-                hasGas: true,
-                consumerName: consumerName,
-                oilCompany: co,
-                oilCompanyDisplay: coDisplay,
-                consumerNumber: consumerNo,
-                agencyName: agency,
-                cylinders: cylinders,
-                gasBookPath: optDoc
-            };
-
-            if (consumerNo) {
+            if (consumerNo || agency) {
                 gasNotice = `\n🔥 **எரிவாயு இணைப்பு விவரங்கள் (AI மூலம் துல்லியமாகப் பெறப்பட்டது):**\n` +
                     `• நிறுவனம்: **${coDisplay}**\n` +
                     `• ஏஜென்சி: **${agency || '—'}**\n` +
-                    `• நுகர்வோர் எண் (LPG No): **${consumerNo}**\n` +
+                    `• நுகர்வோர் எண் (LPG No): **${consumerNo || 'படிவத்தில் உள்ளிடவும்'}**\n` +
                     `• சிலிண்டர் எண்ணிக்கை: **${cylinders} சிலிண்டர்**\n` +
                     `• பதிவு பெற்றவர் பெயர்: **${consumerName}** ✅\n`;
             }
+        } else {
+            applyExtractedGasDetails(sess.citizenProfile, extracted, null, false);
         }
 
         try {
@@ -151,6 +143,15 @@ async function handleResidenceProof(ctx, req, res) {
             }
         } catch (_) {}
 
+        sess.service = sess.service || 'ரேஷன் கார்டு';
+        sess.subService = sess.subService || 'NEW_CARD';
+        sess.targetService = null;
+        if (sess.citizenProfile) {
+            sess.citizenProfile.service = 'ரேஷன் கார்டு';
+            sess.citizenProfile.subService = sess.subService;
+            sess.citizenProfile.targetService = null;
+        }
+        sess.intakeState = 'AADHAAR_MOBILE_CONFIRM';
         saveCitizenProfile(activeMobile, sess.citizenProfile);
         if (activeMobile) {
             try {
@@ -158,6 +159,9 @@ async function handleResidenceProof(ctx, req, res) {
                     operatorUid: sess.operatorUid || null,
                     operatorName: sess.operatorName || null,
                     operatorMobile: sess.operatorMobile || null,
+                    service: sess.service,
+                    subService: sess.subService,
+                    targetService: null,
                     citizenProfile: sess.citizenProfile,
                     documents: sess.tempUploads || {},
                     base64Docs: sess.base64Docs || {},
@@ -167,8 +171,7 @@ async function handleResidenceProof(ctx, req, res) {
                 });
             } catch (_) {}
         }
-
-        sess.intakeState = 'AADHAAR_MOBILE_CONFIRM';
+        persistSessions();
         sess.chatHistory.push({
             sender: 'bot',
             text: `✅ **குடியிருப்புச் சான்று அரசு A4 PDF-ஆக உகந்ததாக்கப்பட்டு சேமிக்கப்பட்டது!** 📄\n` +
@@ -190,6 +193,32 @@ async function handleResidenceProof(ctx, req, res) {
     // STATE 12: AADHAAR_MOBILE_CONFIRM
     if (sess.intakeState === 'AADHAAR_MOBILE_CONFIRM') {
         sess.intakeState = 'READY_TO_APPLY';
+        sess.step = 'READY';
+        sess.service = sess.service || 'ரேஷன் கார்டு';
+        sess.subService = sess.subService || 'NEW_CARD';
+        sess.targetService = null;
+        if (sess.citizenProfile) {
+            sess.citizenProfile.service = 'ரேஷன் கார்டு';
+            sess.citizenProfile.subService = sess.subService;
+            sess.citizenProfile.targetService = null;
+        }
+        persistSessions();
+        if (activeMobile) {
+            saveCitizenDraft(activeMobile, {
+                operatorUid: sess.operatorUid || null,
+                operatorName: sess.operatorName || null,
+                operatorMobile: sess.operatorMobile || null,
+                service: sess.service,
+                subService: sess.subService,
+                targetService: null,
+                citizenProfile: sess.citizenProfile,
+                documents: sess.tempUploads || {},
+                base64Docs: sess.base64Docs || {},
+                chatHistory: sess.chatHistory || [],
+                intakeState: 'READY_TO_APPLY',
+                step: 'READY'
+            }).catch(() => {});
+        }
 
         let membersSummary = '';
         sess.citizenProfile.members.forEach((m, idx) => {

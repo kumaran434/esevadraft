@@ -268,10 +268,20 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     };
 
     const explicitSub = draftData?.subService || draftData?.citizenProfile?.subService;
+    const explicitSubUpper = String(explicitSub || '').toUpperCase();
     const targetServiceHint = String(draftData?.targetService || draftData?.citizenProfile?.targetService || '').toUpperCase();
     const serviceHint = String(draftData?.service || draftData?.citizenProfile?.service || '').toUpperCase();
     const serviceIdHint = String(draftData?.serviceId || draftData?.citizenProfile?.serviceId || '').toUpperCase();
     const intakeStateHint = String(draftData?.intakeState || draftData?.citizenProfile?.intakeState || '').toUpperCase();
+
+    const isExplicitTnpdsRationSub = [
+        'NEW_CARD', 'NEW_RATION_CARD', 'NEW_CARD_REGISTER', 'NEW_SMART_CARD', 'RATION',
+        'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE',
+        'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_OF_MOBILE_NUMBER',
+        'CHANGE_HEAD', 'FAMILY_HEAD_MEMBER_CHANGE'
+    ].includes(explicitSubUpper) ||
+        intakeStateHint === 'RESIDENCE_PROOF_TYPE' ||
+        intakeStateHint === 'RESIDENCE_PROOF_DOC';
 
     const hasCan = Boolean(
         (draftData?.canNumber && /^\d{11,15}$/.test(String(draftData.canNumber).trim())) ||
@@ -279,7 +289,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     );
 
     // 1. High-Priority Certificate Service Detection (Golden Rule 6 & 11)
-    const isWidow = Boolean(
+    // Explicitly locked OFF whenever a TNPDS Ration Card service is active so stale caste/income/residenceProof never hijack Ration Card!
+    const isWidow = !isExplicitTnpdsRationSub && Boolean(
         explicitSub === 'WIDOW' ||
         explicitSub === 'WIDOW_CERTIFICATE' ||
         explicitSub === 'TNEGA_WIDOW' ||
@@ -294,7 +305,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         intakeStateHint.includes('WIDOW')
     );
 
-    const isLegalHeir = !isWidow && Boolean(
+    const isLegalHeir = !isExplicitTnpdsRationSub && !isWidow && Boolean(
         explicitSub === 'LEGAL_HEIR' ||
         explicitSub === 'LEGAL_HEIR_CERTIFICATE' ||
         explicitSub === 'TNEGA_LEGAL_HEIR' ||
@@ -307,7 +318,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         intakeStateHint.includes('LEGAL_HEIR')
     );
 
-    const isObc = !isWidow && !isLegalHeir && Boolean(
+    const isObc = !isExplicitTnpdsRationSub && !isWidow && !isLegalHeir && Boolean(
         explicitSub === 'OBC' ||
         explicitSub === 'OBC_CERTIFICATE' ||
         explicitSub === 'TNEGA_OBC' ||
@@ -322,7 +333,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         intakeStateHint.includes('OBC')
     );
 
-    const isCommunity = !isWidow && !isLegalHeir && !isObc && Boolean(
+    const isCommunity = !isExplicitTnpdsRationSub && !isWidow && !isLegalHeir && !isObc && Boolean(
         explicitSub === 'COMMUNITY' ||
         explicitSub === 'COMMUNITY_CERTIFICATE' ||
         targetServiceHint === 'COMMUNITY' ||
@@ -332,10 +343,15 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         serviceHint.includes('சாதி') ||
         serviceHint.includes('COMMUNITY') ||
         intakeStateHint.includes('COMMUNITY') ||
-        Boolean(draftData?.citizenProfile?.caste || draftData?.caste)
+        (!explicitSubUpper && Boolean(draftData?.citizenProfile?.caste || draftData?.caste))
     );
 
-    const isResidence = !isWidow && !isLegalHeir && !isObc && !isCommunity && Boolean(
+    const isTnegaResidenceIntake = Boolean(
+        (intakeStateHint.startsWith('RESIDENCE_') && intakeStateHint !== 'RESIDENCE_PROOF_TYPE' && intakeStateHint !== 'RESIDENCE_PROOF_DOC') ||
+        intakeStateHint === 'READY_TO_APPLY_RESIDENCE' ||
+        intakeStateHint.includes('NATIVITY')
+    );
+    const isResidence = !isExplicitTnpdsRationSub && !isWidow && !isLegalHeir && !isObc && !isCommunity && Boolean(
         explicitSub === 'RESIDENCE' ||
         explicitSub === 'RESIDENCE_CERTIFICATE' ||
         explicitSub === 'NATIVITY' ||
@@ -347,11 +363,10 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         serviceIdHint === 'TNEGA_RESIDENCE' ||
         serviceHint.includes('இருப்பிடம்') ||
         serviceHint.includes('RESIDENCE') ||
-        intakeStateHint.includes('RESIDENCE') ||
-        intakeStateHint.includes('NATIVITY')
+        isTnegaResidenceIntake
     );
 
-    const isIncome = !isWidow && !isLegalHeir && !isObc && !isCommunity && !isResidence && Boolean(
+    const isIncome = !isExplicitTnpdsRationSub && !isWidow && !isLegalHeir && !isObc && !isCommunity && !isResidence && Boolean(
         explicitSub === 'INCOME' ||
         explicitSub === 'INCOME_CERTIFICATE' ||
         targetServiceHint === 'INCOME' ||
@@ -361,10 +376,10 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         serviceHint.includes('வருமானம்') ||
         serviceHint.includes('INCOME') ||
         intakeStateHint.includes('INCOME') ||
-        Boolean(draftData?.citizenProfile?.annualIncome || draftData?.annualIncome)
+        (!explicitSubUpper && Boolean(draftData?.citizenProfile?.annualIncome || draftData?.annualIncome))
     );
 
-    const isFirstGraduate = !isWidow && !isLegalHeir && !isObc && !isCommunity && !isResidence && !isIncome && Boolean(
+    const isFirstGraduate = !isExplicitTnpdsRationSub && !isWidow && !isLegalHeir && !isObc && !isCommunity && !isResidence && !isIncome && Boolean(
         explicitSub === 'FIRST_GRADUATE' ||
         explicitSub === 'FIRST_GRADUATE_CERTIFICATE' ||
         targetServiceHint === 'FIRST_GRADUATE' ||
@@ -374,7 +389,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         serviceHint.includes('முதல் பட்டதாரி') ||
         serviceHint.includes('FIRST_GRADUATE') ||
         intakeStateHint.includes('FIRST_GRADUATE') ||
-        Boolean(draftData?.citizenProfile?.currentCourse || draftData?.currentCourse)
+        (!explicitSubUpper && Boolean(draftData?.citizenProfile?.currentCourse || draftData?.currentCourse))
     );
 
     // 2. CAN Operations Detection (ONLY if no target certificate goal is active, and NOT already having a CAN)

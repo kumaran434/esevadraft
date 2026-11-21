@@ -500,18 +500,20 @@
                 setVal('editVillage', prof.village);
 
                 const gas = prof.gasDetails;
-                if (gas && (gas.hasGas || gas.consumerNumber)) {
+                if (gas && (gas.hasGas || gas.consumerNumber || gas.agencyName || gas.oilCompany || gas.gasBookPath)) {
                     const chk = document.getElementById('editHasGas');
                     if (chk) {
                         chk.checked = true;
                         if (typeof toggleGasFields === 'function') toggleGasFields(true);
                     }
-                    if (gas.oilCompany) {
-                        const coEl = document.getElementById('editGasCompany');
-                        if (coEl) {
-                            coEl.value = gas.oilCompany;
-                            flash(coEl);
-                        }
+                    const coEl = document.getElementById('editGasCompany');
+                    if (coEl) {
+                        const rawCo = `${gas.oilCompany || ''} ${gas.oilCompanyDisplay || ''} ${gas.agencyName || ''}`.toLowerCase();
+                        let mappedCo = 'IOC';
+                        if (/\bhp\b|hp\s*gas|hindustan|hpcl|\bhpc\b/.test(rawCo)) mappedCo = 'HPC';
+                        else if (/bharat|bpcl|\bbpc\b/.test(rawCo)) mappedCo = 'BPC';
+                        coEl.value = mappedCo;
+                        flash(coEl);
                     }
                     setVal('editGasNo', gas.consumerNumber);
                     setVal('editGasAgency', gas.agencyName);
@@ -868,55 +870,66 @@
             pendingDocUploads = {};
 
             // Subservice mode determination: strictly based on active citizen subService state, NEVER scraping chat text DOM!
-            const localActiveSvc = String(localStorage.getItem('eseva_active_service') || window.pendingSelectedService || window.lastSubService || '').toUpperCase();
+            const rawExplicitSub = String(data.subService || '').toUpperCase();
+            const localActiveSvc = rawExplicitSub || String(data.targetService || localStorage.getItem('eseva_active_service') || window.pendingSelectedService || window.lastSubService || '').toUpperCase();
             const serviceStr = String(data.service || data.serviceId || localActiveSvc || '').toUpperCase();
-            const curSub = String(data.subService || data.targetService || localActiveSvc || '').toUpperCase();
+            const curSub = rawExplicitSub || String(data.targetService || localActiveSvc || '').toUpperCase();
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
-            const isWidowMode = !forceMasterProfile && (
+            const isRationProofIntake = curIntake === 'RESIDENCE_PROOF_TYPE' || curIntake === 'RESIDENCE_PROOF_DOC';
+            const isExplicitRationNewCard = !forceMasterProfile && (
+                curSub === 'NEW_CARD' || curSub === 'NEW_RATION_CARD' ||
+                isRationProofIntake ||
+                curIntake === 'MEMBER_COUNT' || curIntake === 'MOBILE_NUMBER' || curIntake === 'ADDRESS_CHOICE' || curIntake === 'AADHAAR_MOBILE_CONFIRM' || curIntake === 'READY_TO_APPLY' ||
+                curIntake.startsWith('HEAD_') || curIntake.startsWith('MEMBER_')
+            );
+            const isExplicitRationAny = isExplicitRationNewCard || ['ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(curSub) || curIntake.startsWith('RATION_');
+
+            const isWidowMode = !forceMasterProfile && !isExplicitRationAny && (
                 curSub === 'WIDOW' || curSub === 'WIDOW_CERTIFICATE' || curSub === 'TNEGA_WIDOW' || curSub.includes('REV-109') || curSub.includes('REV_109') ||
                 curIntake.includes('WIDOW') || curIntake.includes('REV-109') ||
                 serviceStr.includes('WIDOW') || serviceStr.includes('விதவை') || serviceStr.includes('REV-109') ||
                 sData?.targetService === 'WIDOW' || sData?.serviceType === 'WIDOW'
             );
-            const isLegalHeirMode = !forceMasterProfile && !isWidowMode && (
+            const isLegalHeirMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && (
                 curSub === 'LEGAL_HEIR' || curSub === 'LEGAL_HEIR_CERTIFICATE' || curSub.includes('REV-114') || curSub.includes('REV_114') ||
                 curIntake.includes('LEGAL_HEIR') || curIntake.includes('REV-114') ||
                 serviceStr.includes('LEGAL_HEIR') || serviceStr.includes('வாரிசு') || serviceStr.includes('REV-114') ||
                 sData?.targetService === 'LEGAL_HEIR' || sData?.serviceType === 'LEGAL_HEIR'
             );
-            const isObcMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && (
+            const isObcMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && (
                 curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
                 curIntake.includes('OBC') || curIntake.includes('REV-115') ||
                 serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
                 sData?.targetService === 'OBC' || sData?.serviceType === 'OBC'
             );
-            const isCommunityMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && (
+            const isCommunityMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && (
                 curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
                 curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
                 serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
                 sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
             );
-            const isResidenceMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (
+            const isTnegaResIntake = Boolean(curIntake.startsWith('RESIDENCE_') && !isRationProofIntake) || curIntake === 'READY_TO_APPLY_RESIDENCE';
+            const isResidenceMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (
                 curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
-                curIntake.includes('RESIDENCE') || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
+                isTnegaResIntake || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
                 serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
                 sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
             );
-            const isIncomeMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (
+            const isIncomeMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (
                 curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
                 curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
                 serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
                 sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
             );
-            const isFirstGraduateMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
+            const isFirstGraduateMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
                 curSub === 'FIRST_GRADUATE' || curSub === 'FIRST_GRADUATE_CERTIFICATE' || curSub.includes('REV-104') || curSub.includes('REV_104') ||
                 curIntake.includes('FIRST_GRADUATE') || curIntake.includes('REV-104') ||
                 serviceStr.includes('FIRST_GRADUATE') || serviceStr.includes('முதல் பட்டதாரி') || serviceStr.includes('REV-104') || serviceStr.includes('REV_104') || serviceStr.includes('REV104') ||
                 sData?.targetService === 'FIRST_GRADUATE' || sData?.serviceType === 'FIRST_GRADUATE'
             );
-            const isCanMode = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
+            const isCanMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
                 curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
             );
 
@@ -1918,7 +1931,11 @@
                     : '';
                 safeSetVal('editLhDeceasedParents', parentsPair);
                 
-                const hasGas = !!(data.gasDetails && data.gasDetails.hasGas && data.gasDetails.consumerNumber);
+                const hasGas = Boolean(
+                    (data.gasDetails && (data.gasDetails.hasGas || data.gasDetails.consumerNumber || data.gasDetails.agencyName || data.gasDetails.gasBookPath)) ||
+                    data.residenceProof?.type === 'GAS_BOOK' ||
+                    data.documents?.gasBook
+                );
                 const editHasGasEl = document.getElementById('editHasGas');
                 if (editHasGasEl) editHasGasEl.checked = hasGas;
                 if (typeof toggleGasFields === 'function') {
@@ -1928,7 +1945,11 @@
                     if (wrap) wrap.style.display = hasGas ? 'grid' : 'none';
                 }
 
-                safeSetVal('editGasCompany', data.gasDetails?.oilCompany || 'IOC');
+                const rawOpenCo = `${data.gasDetails?.oilCompany || ''} ${data.gasDetails?.oilCompanyDisplay || ''} ${data.gasDetails?.agencyName || ''}`.toLowerCase();
+                let mappedOpenCo = 'IOC';
+                if (/\bhp\b|hp\s*gas|hindustan|hpcl|\bhpc\b/.test(rawOpenCo)) mappedOpenCo = 'HPC';
+                else if (/bharat|bpcl|\bbpc\b/.test(rawOpenCo)) mappedOpenCo = 'BPC';
+                safeSetVal('editGasCompany', mappedOpenCo);
                 safeSetVal('editGasNo', data.gasDetails?.consumerNumber || '');
                 safeSetVal('editGasAgency', data.gasDetails?.agencyName || '');
                 safeSetVal('editGasCyl', data.gasDetails?.cylinders || '1');
@@ -2532,15 +2553,17 @@
                     deceasedFatherNameEng: lhDecFaEng,
                     deceasedMotherNameEng: lhDecMoEng,
                     members: existingMembers,
-                    gasDetails: {
-                        ...(currentCitizenData ? currentCitizenData.gasDetails : {}),
-                        hasGas: hasGas,
-                        oilCompany: hasGas ? gasCo : '',
-                        oilCompanyDisplay: hasGas ? gasCoDisplay : '',
-                        consumerNumber: hasGas ? document.getElementById('editGasNo').value.trim() : '',
-                        agencyName: hasGas ? document.getElementById('editGasAgency').value.trim() : '',
-                        cylinders: hasGas ? document.getElementById('editGasCyl').value.trim() : '0'
-                    }
+                    gasDetails: (document.getElementById('editGasToggleWrap')?.style.display !== 'none')
+                        ? {
+                            ...(currentCitizenData ? currentCitizenData.gasDetails : {}),
+                            hasGas: hasGas,
+                            oilCompany: hasGas ? gasCo : '',
+                            oilCompanyDisplay: hasGas ? gasCoDisplay : '',
+                            consumerNumber: hasGas ? document.getElementById('editGasNo').value.trim() : '',
+                            agencyName: hasGas ? document.getElementById('editGasAgency').value.trim() : '',
+                            cylinders: hasGas ? document.getElementById('editGasCyl').value.trim() : '0'
+                        }
+                        : (currentCitizenData?.gasDetails || undefined)
                 };
             }
 

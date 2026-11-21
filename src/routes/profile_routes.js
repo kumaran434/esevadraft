@@ -304,9 +304,10 @@ router.post('/api/profile/update', async (req, res) => {
 
                 // Re-evaluate State Gate for TNeGA Services
                 const isPhotoPresent = Boolean(photoDocPath && fs.existsSync(photoDocPath));
-                const isCommService = sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY'));
-                const isIncService = sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME'));
-                const isResService = sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE'));
+                const isRationFlow = ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(sess.subService) || sess.intakeState === 'RESIDENCE_PROOF_TYPE' || sess.intakeState === 'RESIDENCE_PROOF_DOC';
+                const isCommService = !isRationFlow && (sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY')));
+                const isIncService = !isRationFlow && (sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
+                const isResService = !isRationFlow && (sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.startsWith('RESIDENCE_') && sess.intakeState !== 'RESIDENCE_PROOF_TYPE' && sess.intakeState !== 'RESIDENCE_PROOF_DOC'));
 
                 if (isCommService && (!isPhotoPresent || !hasCommProof)) {
                     sess.subService = 'COMMUNITY';

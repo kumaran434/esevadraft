@@ -127,7 +127,12 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
 - Street Name in English and pure Tamil (e.g. "மேட்டு தெரு", not "மெட்டு ஸ்ட்ரீட்").
 - Area / Village in English and pure Tamil.
 - District, Taluk, Pincode (6 digits).
-- If Gas Book / LPG Receipt: LPG Consumer Number (e.g. 622601 or 10-digit consumer no), Oil Company ("HPC" for HP Gas, "IOC" for Indane, "BPC" for Bharat Gas), Gas Agency Name (e.g. RAJAM GAS AGENCY). Note: On Gas Books, the customer address is under NAME/ADDRESS and the distributor's office address is under DISTRIBUTOR'S NAME/ADDRESS—always extract the CUSTOMER'S address for street/area/pincode, and the DISTRIBUTOR'S name for agencyName!
+- If Gas Book / LPG Receipt / Subscription Voucher (SV) / Gas Passbook / Refill Cash Memo:
+  * Set "documentType": "GAS_BOOK", "residenceProofCategory": "GAS_BOOK", and "gasDetails.hasGas": true ALWAYS when ANY Gas / LPG document is detected.
+  * Extract LPG Consumer Number (look for Consumer No / Cons. No / Reg. No / Subscription Voucher No / BP No / 10-digit Consumer No / 17-digit LPG ID) into "gasDetails.consumerNumber" (do not confuse distributor phone number with Consumer No).
+  * Normalize "gasDetails.oilCompany" strictly to "IOC" (Indane / IndianOil / IOCL), "HPC" (HP Gas / Hindustan Petroleum / HPCL), or "BPC" (Bharat Gas / Bharat Petroleum / BPCL), and set "gasDetails.oilCompanyDisplay" to "Indane Gas (IOCL)", "HP Gas (HPC)", or "Bharat Gas (BPCL)".
+  * Extract Distributor / Gas Agency Name into "gasDetails.agencyName" (e.g. "RAJAM GAS AGENCY"), and cylinder count ("1" or "2") into "gasDetails.cylinders".
+  * Note: On Gas Books, the customer address is under NAME/ADDRESS and the distributor's office address is under DISTRIBUTOR'S NAME/ADDRESS—always extract the CUSTOMER'S address for street/area/pincode, and the DISTRIBUTOR'S name for agencyName!
 - Face / Passport Portrait Detection & Exact Document Boundary Detection:
   * "documentBoundingBox": [ymin, xmin, ymax, xmax] (normalized integers from 0 to 1000 tightly bounding the full physical document page/card edges, excluding only outer table/desk background. Never crop inside the document page!).
   * If this document contains a person's photo / face portrait (such as on an Aadhaar front card or e-Aadhaar):

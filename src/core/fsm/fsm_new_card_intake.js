@@ -8,7 +8,14 @@ const { getVerifiedRationCardDocs } = require('../../services/profile_helpers');
 function handleNewRationCardIntake(sess) {
     sess.service = 'ரேஷன் கார்டு';
     sess.subService = 'NEW_CARD';
-    if (sess.citizenProfile) sess.citizenProfile.subService = 'NEW_CARD';
+    sess.targetService = null;
+    sess.serviceId = null;
+    if (sess.citizenProfile) {
+        sess.citizenProfile.subService = 'NEW_CARD';
+        sess.citizenProfile.service = 'ரேஷன் கார்டு';
+        sess.citizenProfile.targetService = null;
+        sess.citizenProfile.serviceId = null;
+    }
     const prof = sess.citizenProfile || {};
     const existingMembers = Array.isArray(prof.members) ? prof.members : [];
     const existingCount = existingMembers.length || 1;

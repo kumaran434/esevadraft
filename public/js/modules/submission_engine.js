@@ -20,19 +20,42 @@
                 } catch (_) {}
             }
 
-            const isTnegaActive = Boolean(
+            const rawSubCheck = String(currentCitizenData?.subService || '').toUpperCase();
+            const rawIntakeCheck = String(currentCitizenData?.intakeState || '').toUpperCase();
+            const isExplicitRationFlowTop = [
+                'NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER',
+                'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
+            ].includes(rawSubCheck) ||
+                rawIntakeCheck === 'RESIDENCE_PROOF_TYPE' ||
+                rawIntakeCheck === 'RESIDENCE_PROOF_DOC' ||
+                rawIntakeCheck === 'MEMBER_COUNT' ||
+                rawIntakeCheck === 'MOBILE_NUMBER' ||
+                rawIntakeCheck === 'ADDRESS_CHOICE' ||
+                rawIntakeCheck === 'AADHAAR_MOBILE_CONFIRM' ||
+                rawIntakeCheck === 'READY_TO_APPLY' ||
+                rawIntakeCheck.startsWith('HEAD_') ||
+                rawIntakeCheck.startsWith('MEMBER_') ||
+                rawIntakeCheck.startsWith('RATION_');
+
+            const isTnegaResStateTop = Boolean(
+                rawIntakeCheck &&
+                rawIntakeCheck.startsWith('RESIDENCE_') &&
+                rawIntakeCheck !== 'RESIDENCE_PROOF_TYPE' &&
+                rawIntakeCheck !== 'RESIDENCE_PROOF_DOC'
+            ) || rawIntakeCheck === 'READY_TO_APPLY_RESIDENCE' || rawIntakeCheck.includes('NATIVITY');
+
+            const isTnegaActive = !isExplicitRationFlowTop && Boolean(
                 currentCitizenData && (
-                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(currentCitizenData.subService) ||
-                    (currentCitizenData.intakeState && (
-                        currentCitizenData.intakeState.includes('INCOME') ||
-                        currentCitizenData.intakeState.includes('RESIDENCE') ||
-                        currentCitizenData.intakeState.includes('NATIVITY') ||
-                        currentCitizenData.intakeState.includes('COMMUNITY') ||
-                        currentCitizenData.intakeState.includes('FIRST_GRADUATE') ||
-                        currentCitizenData.intakeState.includes('OBC') ||
-                        currentCitizenData.intakeState.includes('LEGAL_HEIR') ||
-                        currentCitizenData.intakeState.includes('WIDOW') ||
-                        currentCitizenData.intakeState.includes('CAN')
+                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(rawSubCheck) ||
+                    (rawIntakeCheck && (
+                        rawIntakeCheck.includes('INCOME') ||
+                        isTnegaResStateTop ||
+                        rawIntakeCheck.includes('COMMUNITY') ||
+                        rawIntakeCheck.includes('FIRST_GRADUATE') ||
+                        rawIntakeCheck.includes('OBC') ||
+                        rawIntakeCheck.includes('LEGAL_HEIR') ||
+                        rawIntakeCheck.includes('WIDOW') ||
+                        (rawIntakeCheck.includes('CAN') && !rawIntakeCheck.includes('RATION'))
                     ))
                 )
             );
@@ -271,6 +294,7 @@
                             if (fTam && !fEng) fEng = fTam;
 
                             const activeExplicitServices = [
+                                'NEW_CARD', 'NEW_RATION_CARD',
                                 'INCOME', 'INCOME_CERTIFICATE',
                                 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE',
                                 'COMMUNITY', 'COMMUNITY_CERTIFICATE',
@@ -285,34 +309,46 @@
                                 ? draftData.subService
                                 : (dJson.draft.subService || prof.subService || draftData.subService);
 
-                            // Golden Rule 6 & 11: Promote CAN_REGISTER to target certificate service if CAN is present or certificate details exist
-                            const knownCan = draftData.canNumber || dJson.draft?.canNumber || prof.canNumber;
+                            // Golden Rule 6 & 11: Explicit TNPDS Ration subservices MUST NEVER be hijacked into TNeGA Revenue Certificates!
+                            const effSubUpper = String(effectiveSubService || '').toUpperCase();
+                            const isExplicitTnpdsSub = [
+                                'NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER',
+                                'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
+                            ].includes(effSubUpper);
+
                             const targetServiceHint = String(draftData.targetService || dJson.draft?.targetService || prof.targetService || draftData.service || dJson.draft?.service || prof.service || draftData.serviceId || dJson.draft?.serviceId || prof.serviceId || '').toUpperCase();
                             const intakeHint = String(draftData.intakeState || dJson.draft?.intakeState || prof.intakeState || '').toUpperCase();
+                            const isTnegaResIntake = Boolean(
+                                (intakeHint.startsWith('RESIDENCE_') && intakeHint !== 'RESIDENCE_PROOF_TYPE' && intakeHint !== 'RESIDENCE_PROOF_DOC') ||
+                                intakeHint === 'READY_TO_APPLY_RESIDENCE' ||
+                                intakeHint.includes('NATIVITY')
+                            );
 
-                            let resolvedTargetService = draftData.targetService || dJson.draft?.targetService || prof.targetService || '';
+                            let resolvedTargetService = isExplicitTnpdsSub ? '' : (draftData.targetService || dJson.draft?.targetService || prof.targetService || '');
 
-                            if (effectiveSubService === 'WIDOW' || effectiveSubService === 'WIDOW_CERTIFICATE' || targetServiceHint.includes('WIDOW') || targetServiceHint.includes('விதவை') || intakeHint.includes('WIDOW')) {
-                                effectiveSubService = 'WIDOW';
-                                resolvedTargetService = 'WIDOW';
-                            } else if (effectiveSubService === 'LEGAL_HEIR' || effectiveSubService === 'LEGAL_HEIR_CERTIFICATE' || targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeHint.includes('LEGAL_HEIR')) {
-                                effectiveSubService = 'LEGAL_HEIR';
-                                resolvedTargetService = 'LEGAL_HEIR';
-                            } else if (effectiveSubService === 'OBC' || effectiveSubService === 'OBC_CERTIFICATE' || targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeHint.includes('OBC')) {
-                                effectiveSubService = 'OBC';
-                                resolvedTargetService = 'OBC';
-                            } else if (effectiveSubService === 'FIRST_GRADUATE' || effectiveSubService === 'FIRST_GRADUATE_CERTIFICATE' || targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeHint.includes('FIRST_GRADUATE') || (!effectiveSubService && (prof.currentCourse || draftData.currentCourse))) {
-                                effectiveSubService = 'FIRST_GRADUATE';
-                                resolvedTargetService = 'FIRST_GRADUATE';
-                            } else if (effectiveSubService === 'RESIDENCE' || effectiveSubService === 'RESIDENCE_CERTIFICATE' || effectiveSubService === 'NATIVITY' || targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || intakeHint.includes('RESIDENCE') || intakeHint.includes('NATIVITY')) {
-                                effectiveSubService = 'RESIDENCE';
-                                resolvedTargetService = 'RESIDENCE';
-                            } else if (effectiveSubService === 'INCOME' || effectiveSubService === 'INCOME_CERTIFICATE' || targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
-                                effectiveSubService = 'INCOME';
-                                resolvedTargetService = 'INCOME';
-                            } else if (effectiveSubService === 'COMMUNITY' || effectiveSubService === 'COMMUNITY_CERTIFICATE' || targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || (!effectiveSubService && (prof.caste || draftData.caste))) {
-                                effectiveSubService = 'COMMUNITY';
-                                resolvedTargetService = 'COMMUNITY';
+                            if (!isExplicitTnpdsSub) {
+                                if (effectiveSubService === 'WIDOW' || effectiveSubService === 'WIDOW_CERTIFICATE' || targetServiceHint.includes('WIDOW') || targetServiceHint.includes('விதவை') || intakeHint.includes('WIDOW')) {
+                                    effectiveSubService = 'WIDOW';
+                                    resolvedTargetService = 'WIDOW';
+                                } else if (effectiveSubService === 'LEGAL_HEIR' || effectiveSubService === 'LEGAL_HEIR_CERTIFICATE' || targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeHint.includes('LEGAL_HEIR')) {
+                                    effectiveSubService = 'LEGAL_HEIR';
+                                    resolvedTargetService = 'LEGAL_HEIR';
+                                } else if (effectiveSubService === 'OBC' || effectiveSubService === 'OBC_CERTIFICATE' || targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeHint.includes('OBC')) {
+                                    effectiveSubService = 'OBC';
+                                    resolvedTargetService = 'OBC';
+                                } else if (effectiveSubService === 'FIRST_GRADUATE' || effectiveSubService === 'FIRST_GRADUATE_CERTIFICATE' || targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeHint.includes('FIRST_GRADUATE') || (!effectiveSubService && (prof.currentCourse || draftData.currentCourse))) {
+                                    effectiveSubService = 'FIRST_GRADUATE';
+                                    resolvedTargetService = 'FIRST_GRADUATE';
+                                } else if (effectiveSubService === 'RESIDENCE' || effectiveSubService === 'RESIDENCE_CERTIFICATE' || effectiveSubService === 'NATIVITY' || targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || isTnegaResIntake) {
+                                    effectiveSubService = 'RESIDENCE';
+                                    resolvedTargetService = 'RESIDENCE';
+                                } else if (effectiveSubService === 'INCOME' || effectiveSubService === 'INCOME_CERTIFICATE' || targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
+                                    effectiveSubService = 'INCOME';
+                                    resolvedTargetService = 'INCOME';
+                                } else if (effectiveSubService === 'COMMUNITY' || effectiveSubService === 'COMMUNITY_CERTIFICATE' || targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || (!effectiveSubService && (prof.caste || draftData.caste))) {
+                                    effectiveSubService = 'COMMUNITY';
+                                    resolvedTargetService = 'COMMUNITY';
+                                }
                             }
 
                             const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
@@ -416,7 +452,10 @@
                     }
                 }
 
-                const isResService = draftData.subService === 'RESIDENCE' || (draftData.intakeState && draftData.intakeState.includes('RESIDENCE'));
+                const isExplicitTnpdsSubFinal = ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(String(draftData.subService || '').toUpperCase());
+                const draftIntakeUp = String(draftData.intakeState || '').toUpperCase();
+                const isTnegaResDraft = Boolean(draftIntakeUp.startsWith('RESIDENCE_') && draftIntakeUp !== 'RESIDENCE_PROOF_TYPE' && draftIntakeUp !== 'RESIDENCE_PROOF_DOC');
+                const isResService = !isExplicitTnpdsSubFinal && (draftData.subService === 'RESIDENCE' || draftData.subService === 'RESIDENCE_CERTIFICATE' || isTnegaResDraft);
                 if (isResService) {
                     const hasResDoc = Boolean(draftData.residenceProof?.docPath || draftData.documents?.residenceProof || draftData.documents?.gasBook || draftData.base64Docs?.residenceProofBase64 || draftData.base64Docs?.gasBookBase64);
                     if (!hasResDoc) {
@@ -438,8 +477,10 @@
                 const pBar = document.getElementById('automationProgressBar');
                 if (pBar) pBar.classList.add('active');
 
-                const isTnegaFlow = ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
-                                    (draftData.intakeState && (draftData.intakeState.includes('INCOME') || draftData.intakeState.includes('RESIDENCE') || draftData.intakeState.includes('COMMUNITY') || draftData.intakeState.includes('FIRST_GRADUATE') || draftData.intakeState.includes('OBC') || draftData.intakeState.includes('CAN')));
+                const isTnegaFlow = !isExplicitTnpdsSubFinal && (
+                    ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
+                    (draftIntakeUp && (draftIntakeUp.includes('INCOME') || isTnegaResDraft || draftIntakeUp.includes('COMMUNITY') || draftIntakeUp.includes('FIRST_GRADUATE') || draftIntakeUp.includes('OBC') || draftIntakeUp.includes('LEGAL_HEIR') || draftIntakeUp.includes('WIDOW') || (draftIntakeUp.includes('CAN') && !draftIntakeUp.includes('RATION'))))
+                );
                 const portalLabel = isTnegaFlow ? 'TNeGA' : 'TNPDS';
 
                 appendLiveAutomationStep(`🚀 **நேரலை முறை** — Chrome சாளரம் திறக்கப்படுகிறது...\n\n${portalLabel} போர்ட்டல் தோன்றும்.`);

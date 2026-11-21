@@ -320,6 +320,73 @@ function applyExtractedIncomeDetails(targetProfile, extracted) {
     }
 }
 
+/**
+ * Normalizes any oil company name/brand variation to canonical portal codes ('IOC' | 'HPC' | 'BPC').
+ */
+function normalizeOilCompanyCode(rawCompany = '', rawDisplay = '', fallbackAgency = '') {
+    const combined = `${rawCompany} ${rawDisplay} ${fallbackAgency}`.toLowerCase();
+    if (/indane|iocl|indian\s*oil|\bioc\b/.test(combined)) {
+        return { code: 'IOC', display: 'Indane Gas (IOCL)' };
+    }
+    if (/\bhp\b|hp\s*gas|hindustan|hpcl|\bhpc\b/.test(combined)) {
+        return { code: 'HPC', display: 'HP Gas (HPC)' };
+    }
+    if (/bharat|bpcl|\bbpc\b/.test(combined)) {
+        return { code: 'BPC', display: 'Bharat Gas (BPCL)' };
+    }
+    return { code: 'IOC', display: 'Indane Gas (IOCL)' };
+}
+
+/**
+ * Normalizes and applies extracted LPG Gas Book & residence address fields onto citizenProfile.
+ */
+function applyExtractedGasDetails(targetProfile, extracted, gasBookPath = null, isGasDoc = false) {
+    if (!targetProfile) return null;
+    const prevGas = targetProfile.gasDetails || {};
+    const gas = extracted?.gasDetails || {};
+    const rawNo = String(gas.consumerNumber || gas.consumerNo || gas.lpgId || prevGas.consumerNumber || '').trim();
+    const agency = String(gas.agencyName || prevGas.agencyName || '').trim();
+    const { code, display } = normalizeOilCompanyCode(
+        gas.oilCompany || prevGas.oilCompany || '',
+        gas.oilCompanyDisplay || prevGas.oilCompanyDisplay || '',
+        agency
+    );
+    const cylDigits = String(gas.cylinders || prevGas.cylinders || '1').replace(/\D/g, '') || '1';
+    const consumerName = String(gas.consumerName || extracted?.fullNameTam || prevGas.consumerName || targetProfile.fullNameTam || '').trim();
+    const hasGas = Boolean(isGasDoc || gas.hasGas || rawNo || agency || prevGas.hasGas);
+
+    if (hasGas || rawNo) {
+        targetProfile.gasDetails = {
+            ...prevGas,
+            hasGas: true,
+            consumerName,
+            oilCompany: code,
+            oilCompanyDisplay: display,
+            consumerNumber: rawNo,
+            agencyName: agency,
+            cylinders: cylDigits,
+            ...(gasBookPath ? { gasBookPath } : {})
+        };
+    }
+
+    if (extracted && extracted.isQualityAcceptable !== false) {
+        if (extracted.doorNo && !targetProfile.doorNo) targetProfile.doorNo = extracted.doorNo;
+        if (extracted.streetTam && !targetProfile.streetTam) targetProfile.streetTam = extracted.streetTam;
+        if (extracted.streetEng && !targetProfile.streetEng) targetProfile.streetEng = extracted.streetEng;
+        if (extracted.areaTam && !targetProfile.areaTam) targetProfile.areaTam = extracted.areaTam;
+        if (extracted.areaEng && !targetProfile.areaEng) targetProfile.areaEng = extracted.areaEng;
+        if (extracted.pincode && !targetProfile.pincode) targetProfile.pincode = extracted.pincode;
+        if (extracted.district && !targetProfile.district) targetProfile.district = extracted.district;
+        if (extracted.districtTam && !targetProfile.districtTam) targetProfile.districtTam = extracted.districtTam;
+        if (extracted.taluk && !targetProfile.taluk) targetProfile.taluk = extracted.taluk;
+        if (extracted.talukTam && !targetProfile.talukTam) targetProfile.talukTam = extracted.talukTam;
+        if (extracted.village && !targetProfile.village) targetProfile.village = extracted.village;
+        if (extracted.villageTam && !targetProfile.villageTam) targetProfile.villageTam = extracted.villageTam;
+    }
+
+    return targetProfile.gasDetails || null;
+}
+
 module.exports = {
     syncFatherOrHusband,
     isValidAadhaarVerhoeff,
@@ -329,5 +396,7 @@ module.exports = {
     normalizeDobWithYearFallback,
     applyExtractedAadhaarRelationsAndDob,
     applyExtractedSmartCardDetails,
-    applyExtractedIncomeDetails
+    applyExtractedIncomeDetails,
+    normalizeOilCompanyCode,
+    applyExtractedGasDetails
 };

@@ -4,7 +4,7 @@ const fs = require('fs');
 const { produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument, extractFacePassportFromDocument } = require('../../photo_studio');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 const { validateUploadedDocument } = require('./document_validator');
-const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails, applyExtractedIncomeDetails } = require('./profile_helpers');
+const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails, applyExtractedIncomeDetails, applyExtractedGasDetails } = require('./profile_helpers');
 
 async function processUploadedDocument(sess, docType, uploadedFile, memberIndex, targetMobile) {
     let optimizedPath = uploadedFile.path;
@@ -297,42 +297,9 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex,
                 }
             }
 
-            const gas = extracted?.gasDetails || {};
-            const co = gas.oilCompany || sess.citizenProfile.gasDetails?.oilCompany || 'IOC';
-            const coDisplay = gas.oilCompanyDisplay || (co === 'IOC' ? 'Indane Gas (IOCL)' : (co === 'HPC' ? 'HP Gas (HPC)' : 'Bharat Gas (BPCL)'));
-            const consumerNo = String(gas.consumerNumber || '').trim();
-            const agency = String(gas.agencyName || '').trim();
-            const cylinders = String(gas.cylinders || sess.citizenProfile.gasDetails?.cylinders || '1');
-            const consumerName = gas.consumerName || extracted.fullNameTam || sess.citizenProfile.fullNameTam || '';
-
-            if (isGasDoc || consumerNo) {
-                sess.citizenProfile.gasDetails = {
-                    ...(sess.citizenProfile.gasDetails || {}),
-                    hasGas: true,
-                    consumerName: consumerName || sess.citizenProfile.gasDetails?.consumerName || '',
-                    oilCompany: co,
-                    oilCompanyDisplay: coDisplay,
-                    consumerNumber: consumerNo || sess.citizenProfile.gasDetails?.consumerNumber || '',
-                    agencyName: agency || sess.citizenProfile.gasDetails?.agencyName || '',
-                    cylinders: cylinders,
-                    gasBookPath: optimizedPath
-                };
-            }
-
+            applyExtractedGasDetails(sess.citizenProfile, extracted, isGasDoc ? optimizedPath : null, isGasDoc);
             if (extracted.isQualityAcceptable !== false) {
                 extractedData = extracted;
-                if (extracted.doorNo) sess.citizenProfile.doorNo = extracted.doorNo;
-                if (extracted.streetTam) sess.citizenProfile.streetTam = extracted.streetTam;
-                if (extracted.streetEng) sess.citizenProfile.streetEng = extracted.streetEng;
-                if (extracted.areaTam) sess.citizenProfile.areaTam = extracted.areaTam;
-                if (extracted.areaEng) sess.citizenProfile.areaEng = extracted.areaEng;
-                if (extracted.pincode) sess.citizenProfile.pincode = extracted.pincode;
-                if (extracted.district) sess.citizenProfile.district = extracted.district;
-                if (extracted.districtTam) sess.citizenProfile.districtTam = extracted.districtTam;
-                if (extracted.taluk) sess.citizenProfile.taluk = extracted.taluk;
-                if (extracted.talukTam) sess.citizenProfile.talukTam = extracted.talukTam;
-                if (extracted.village) sess.citizenProfile.village = extracted.village;
-                if (extracted.villageTam) sess.citizenProfile.villageTam = extracted.villageTam;
             }
         } else {
             sess.citizenProfile.gasDetails = {

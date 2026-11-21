@@ -62,6 +62,43 @@ function extractIncomeAndProfession(inputStr) {
 
 async function handleTnegaIntake(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
+    if (!sess) return false;
+
+    const rationOnlySubServices = ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'];
+    const rationOnlyStates = [
+        'RESIDENCE_PROOF_TYPE',
+        'RESIDENCE_PROOF_DOC',
+        'MEMBER_COUNT',
+        'HEAD_PHOTO',
+        'HEAD_AADHAAR_FRONT',
+        'HEAD_AADHAAR_BACK',
+        'HEAD_DETAILS_VERIFY',
+        'MEMBER_AADHAAR_FRONT',
+        'MEMBER_AADHAAR_BACK',
+        'MEMBER_RELATIONSHIP',
+        'MEMBER_DETAILS_VERIFY',
+        'ADDRESS_CHOICE',
+        'MOBILE_NUMBER',
+        'AADHAAR_MOBILE_CONFIRM'
+    ];
+    const isExplicitTnegaCmd = text && (
+        text === 'CAN_REGISTER_PROMPT' ||
+        text === 'CAN_SEARCH_PROMPT' ||
+        text === 'CAN_DIRECT_INPUT' ||
+        text === 'CAN_DIRECT' ||
+        text === 'என்னிடம் CAN உள்ளது' ||
+        text.startsWith('START_CAN_') ||
+        text.startsWith('LAUNCH_CAN_') ||
+        text.startsWith('CAN_SEARCH')
+    );
+    const isActiveRationSession = !isExplicitTnegaCmd && (
+        rationOnlyStates.includes(sess.intakeState) ||
+        (sess.intakeState && sess.intakeState.startsWith('RATION_')) ||
+        (rationOnlySubServices.includes(sess.subService) && sess.intakeState === 'READY_TO_APPLY')
+    );
+    if (isActiveRationSession) {
+        return false;
+    }
 
     // -------------------------------------------------------------------------
     // CAN DIRECT INPUT / SEARCH / REGISTRATION GATEWAY
@@ -2599,8 +2636,9 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
 
     // -------------------------------------------------------------------------
     // RESIDENCE PROOF DOCUMENT UPLOAD GATE (TNeGA REV-102)
+    // Strictly ONLY RESIDENCE_PROOF_WAIT — NEVER intercept TNPDS RESIDENCE_PROOF_DOC!
     // -------------------------------------------------------------------------
-    if (sess.intakeState === 'RESIDENCE_PROOF_WAIT' || sess.intakeState === 'RESIDENCE_PROOF_DOC') {
+    if (sess.intakeState === 'RESIDENCE_PROOF_WAIT') {
         if (uploadedFile) {
             let extracted = null;
             try {

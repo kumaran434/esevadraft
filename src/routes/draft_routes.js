@@ -633,11 +633,13 @@ router.post('/api/drafts/delete-document', async (req, res) => {
             const isPhotoDoc = docType === 'headPhoto' || docType === 'profilePhoto';
             const isAadhaarDoc = docType === 'headAadhaar';
 
-            const isObcService = isObcDoc || sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.includes('OBC'));
-            const isCommunityService = !isObcService && (isCommunityDoc || sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY')));
-            const isIncomeService = !isObcService && !isCommunityDoc && (isIncomeDoc || sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
-            const isResidenceService = !isObcService && !isCommunityDoc && !isIncomeDoc && (isResidenceDoc || sess.subService === 'RESIDENCE' || (sess.intakeState && sess.intakeState.includes('RESIDENCE')));
-            const isFirstGraduateService = !isObcService && !isCommunityService && !isIncomeService && !isResidenceService && (isFirstGraduateDoc || sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.includes('FIRST_GRADUATE')));
+            const isExplicitRationSession = !sess.subService || ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(sess.subService) || sess.service === 'ரேஷன் கார்டு' || sess.intakeState === 'RESIDENCE_PROOF_TYPE' || sess.intakeState === 'RESIDENCE_PROOF_DOC';
+            const isTnegaResState = Boolean(sess.intakeState && sess.intakeState.startsWith('RESIDENCE_') && sess.intakeState !== 'RESIDENCE_PROOF_TYPE' && sess.intakeState !== 'RESIDENCE_PROOF_DOC');
+            const isObcService = !isExplicitRationSession && (isObcDoc || sess.subService === 'OBC' || (sess.intakeState && sess.intakeState.includes('OBC')));
+            const isCommunityService = !isExplicitRationSession && !isObcService && (isCommunityDoc || sess.subService === 'COMMUNITY' || (sess.intakeState && sess.intakeState.includes('COMMUNITY')));
+            const isIncomeService = !isExplicitRationSession && !isObcService && !isCommunityDoc && (isIncomeDoc || sess.subService === 'INCOME' || (sess.intakeState && sess.intakeState.includes('INCOME')));
+            const isResidenceService = !isExplicitRationSession && !isObcService && !isCommunityDoc && !isIncomeDoc && (sess.subService === 'RESIDENCE' || isTnegaResState);
+            const isFirstGraduateService = !isExplicitRationSession && !isObcService && !isCommunityService && !isIncomeService && !isResidenceService && (isFirstGraduateDoc || sess.subService === 'FIRST_GRADUATE' || (sess.intakeState && sess.intakeState.includes('FIRST_GRADUATE')));
 
             // 🛡️ SANITIZE CHAT HISTORY: Purge any stale "100% Ready" or "Start Application" messages
             if (Array.isArray(sess.chatHistory)) {
@@ -862,6 +864,25 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                     options: flowStep.options
                 });
                 storageService.persistSessions();
+            } else if (isResidenceDoc) {
+                sess.subService = sess.subService || 'NEW_CARD';
+                sess.intakeState = 'RESIDENCE_PROOF_DOC';
+                if (sess.citizenProfile) {
+                    delete sess.citizenProfile.residenceProof;
+                    if (sess.citizenProfile.gasDetails) {
+                        delete sess.citizenProfile.gasDetails.gasBookPath;
+                        sess.citizenProfile.gasDetails.hasGas = false;
+                    }
+                }
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `🗑️ **குடியிருப்புச் சான்று / கேஸ் புக் ஆவணம் நீக்கப்பட்டது!**\n\nதயவுசெய்து புதிய குடியிருப்புச் சான்று (கேஸ் புக் / EB ரசீது) ஆவணத்தைப் பதிவேற்றவும்:`,
+                    options: [
+                        { label: "📷 கேஸ் புக் / குடியிருப்புச் சான்று பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                        { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+                    ]
+                });
+                storageService.persistSessions();
             } else if (isPhotoDoc) {
                 sess.intakeState = 'HEAD_PHOTO';
                 if (sess.citizenProfile) {
@@ -883,6 +904,9 @@ router.post('/api/drafts/delete-document', async (req, res) => {
                 operatorUid: sess.operatorUid || null,
                 operatorName: sess.operatorName || null,
                 operatorMobile: sess.operatorMobile || null,
+                service: sess.service || null,
+                subService: sess.subService || null,
+                targetService: sess.targetService || null,
                 citizenProfile: sess.citizenProfile || {},
                 documents: sess.tempUploads || sess.citizenProfile?.documents || {},
                 deletedDocTypes: [docType],

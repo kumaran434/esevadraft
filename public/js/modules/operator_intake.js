@@ -185,7 +185,7 @@
             // SMART RESUME: Only resume directly if same ration service target specifically requested
             const existingDraft = allOperatorDrafts.find(d => d.mobileNumber === mob);
             const isRationTarget = targetService && (targetService === 'புதிய ரேஷன் கார்டு' || targetService === 'NEW_RATION_CARD');
-            if (existingDraft && isRationTarget && existingDraft.status === 'READY_TO_APPLY') {
+            if (existingDraft && isRationTarget && existingDraft.status === 'READY_TO_APPLY' && (!existingDraft.subService || existingDraft.subService === 'NEW_CARD')) {
                 closeNewCustomerModal();
                 await resumeCustomerSession(mob);
                 return;

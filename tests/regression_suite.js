@@ -4567,6 +4567,99 @@ async function runTests() {
             passedCount += 9;
         }
 
+        // TEST 70: New Ration Card Zero-TNeGA-Hijack, RESIDENCE_PROOF_DOC Isolation & Gas Extraction Normalization
+        console.log('\n[TEST 70] 🛡️ Verifying New Ration Card RESIDENCE_PROOF_DOC Isolation & Gas Extraction Normalization...');
+        {
+            const { handleTnegaIntake } = require('../src/routes/chat/chat_tnega_intake');
+            const { handleResidenceProof } = require('../src/routes/chat/chat_residence_proof');
+            const { applyExtractedGasDetails, normalizeOilCompanyCode } = require('../src/services/profile_helpers');
+            const { getPortalDocumentPolicy } = require('../src/services/govt_document_policy');
+
+            // 1. handleTnegaIntake MUST NEVER intercept New Ration Card RESIDENCE_PROOF_TYPE / RESIDENCE_PROOF_DOC
+            const rationUploadSess = {
+                service: 'ரேஷன் கார்டு',
+                subService: 'NEW_CARD',
+                intakeState: 'RESIDENCE_PROOF_DOC',
+                citizenProfile: { fullNameTam: 'குமரன்', members: [] },
+                chatHistory: []
+            };
+            let tnegaHandledRation = true;
+            tnegaHandledRation = await handleTnegaIntake(
+                { text: '', uploadedFile: { path: path.join(__dirname, '../uploads/test_sample_doc.jpg') }, sess: rationUploadSess },
+                { headers: {} },
+                { json: () => {} }
+            );
+            assert(tnegaHandledRation === false, 'handleTnegaIntake returns false cleanly for New Ration Card RESIDENCE_PROOF_DOC without hijacking into TNeGA Residence Cert');
+            assert(rationUploadSess.subService === 'NEW_CARD' && rationUploadSess.intakeState === 'RESIDENCE_PROOF_DOC', 'New Ration Card session stays NEW_CARD / RESIDENCE_PROOF_DOC');
+
+            // 2. RESIDENCE_PROOF_TYPE -> RESIDENCE_PROOF_DOC stays in Ration flow and persists Gas choice
+            const resProofTypeSess = {
+                mobileNumber: '9876500070',
+                service: 'ரேஷன் கார்டு',
+                subService: 'NEW_CARD',
+                intakeState: 'RESIDENCE_PROOF_TYPE',
+                citizenProfile: { fullNameTam: 'குமரன்', members: [{ nameTam: 'குமரன்', aadhaarNumber: '575567662931' }] },
+                chatHistory: [],
+                tempUploads: {}
+            };
+            let capturedStep = null;
+            await handleResidenceProof(
+                { text: 'எரிவாயு நுகர்வோர் அட்டை', uploadedFile: null, sess: resProofTypeSess, targetMobile: '9876500070' },
+                { headers: {} },
+                { json: (payload) => { capturedStep = payload.step; } }
+            );
+            assert(capturedStep === 'RESIDENCE_PROOF_DOC' && resProofTypeSess.intakeState === 'RESIDENCE_PROOF_DOC', 'RESIDENCE_PROOF_TYPE transitions cleanly to RESIDENCE_PROOF_DOC');
+
+            // 3. Oil Company Normalization & Gas Extraction Helper
+            assert(normalizeOilCompanyCode('IndianOil / Indane', '', '').code === 'IOC', 'Normalizes Indane / IOCL cleanly to IOC');
+            assert(normalizeOilCompanyCode('HPCL', '', 'Sri HP Gas').code === 'HPC', 'Normalizes HP Gas / HPCL cleanly to HPC');
+            assert(normalizeOilCompanyCode('', 'Bharat Gas', '').code === 'BPC', 'Normalizes Bharat Gas cleanly to BPC');
+
+            const gasProf = { fullNameTam: 'குமரன்' };
+            const gasOut = applyExtractedGasDetails(gasProf, {
+                isQualityAcceptable: true,
+                doorNo: '216',
+                streetTam: 'மேட்டு தெரு',
+                pincode: '632510',
+                gasDetails: { hasGas: true, oilCompany: 'Bharat Gas', consumerNumber: '4455667788', agencyName: 'SRI MURUGAN GAS', cylinders: '1' }
+            }, '/compressed/test_gas.pdf', true);
+            assert(gasOut && gasOut.hasGas === true && gasOut.oilCompany === 'BPC' && gasOut.consumerNumber === '4455667788' && gasOut.agencyName === 'SRI MURUGAN GAS', 'applyExtractedGasDetails persists normalized Gas details + address fields');
+
+            // 4. Delete gasBook on NEW_CARD keeps subService NEW_CARD (never converts to TNeGA RESIDENCE)
+            const test70Mob = '9999900070';
+            const test70Hdr = { 'x-session-mobile': test70Mob, 'x-operator-uid': 'test_suite_operator_uid' };
+            await request('POST', '/api/drafts/save', {
+                mobileNumber: test70Mob,
+                operatorUid: 'test_suite_operator_uid',
+                service: 'ரேஷன் கார்டு',
+                subService: 'NEW_CARD',
+                intakeState: 'READY_TO_APPLY',
+                citizenProfile: {
+                    subService: 'NEW_CARD',
+                    headAadhaar: '575567662931',
+                    headPhotoPath: '/uploads/test_sample_doc.jpg',
+                    documents: { profilePhoto: '/uploads/test_sample_doc.jpg', headAadhaar: '/uploads/test_sample_doc.jpg', gasBook: '/uploads/test_sample_doc.jpg', residenceProof: '/uploads/test_sample_doc.jpg' }
+                }
+            }, test70Hdr);
+            const del70Res = await request('POST', '/api/drafts/delete-document', { mobile: test70Mob, docType: 'gasBook' }, test70Hdr);
+            assert(del70Res.status === 200 && del70Res.body.intakeState === 'RESIDENCE_PROOF_DOC', 'Deleting gasBook on NEW_CARD returns to RESIDENCE_PROOF_DOC instead of TNeGA RESIDENCE_PROOF_WAIT');
+            await request('DELETE', `/api/drafts/${test70Mob}`, null, test70Hdr);
+
+            // 5. Govt Doc Policy, Submission Engine, Edit Modal, Sidebar & Desktop Runner isolation checks
+            assert(getPortalDocumentPolicy('RESIDENCE_PROOF_DOC').portalName.includes('TNPDS'), 'RESIDENCE_PROOF_DOC resolves to TNPDS policy rather than TNeGA');
+            const subEngineSrc70 = fs.readFileSync(path.join(__dirname, '../public/js/modules/submission_engine.js'), 'utf8');
+            const editMgrSrc70 = fs.readFileSync(path.join(__dirname, '../public/js/modules/edit_modal_manager.js'), 'utf8');
+            const docViewerSrc70 = fs.readFileSync(path.join(__dirname, '../public/js/modules/document_viewer.js'), 'utf8');
+            const runnerSrc70 = fs.readFileSync(path.join(__dirname, '../desktop/automation_runner.js'), 'utf8');
+
+            assert(subEngineSrc70.includes("'NEW_CARD', 'NEW_RATION_CARD'") && subEngineSrc70.includes('!isExplicitRationFlowTop') && subEngineSrc70.includes('isExplicitTnpdsSub'), 'submission_engine.js explicitly isolates NEW_CARD from Smart Card gate & TNeGA Residence diversion');
+            assert(editMgrSrc70.includes('isExplicitRationNewCard') && editMgrSrc70.includes('isTnegaResIntake') && editMgrSrc70.includes('document.getElementById(\'editGasToggleWrap\')?.style.display !== \'none\''), 'edit_modal_manager.js keeps RESIDENCE_PROOF_DOC in New Ration Card mode and preserves Gas details');
+            assert(docViewerSrc70.includes('isTnegaResStateViewer'), 'document_viewer.js excludes RESIDENCE_PROOF_TYPE / RESIDENCE_PROOF_DOC from Residence Certificate sidebar');
+            assert(runnerSrc70.includes('isExplicitTnpdsRationSub') && runnerSrc70.includes('isTnegaResidenceIntake'), 'desktop/automation_runner.js locks NEW_CARD & RESIDENCE_PROOF_DOC strictly to TNPDS automation');
+
+            passedCount += 11;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');
