@@ -54,6 +54,7 @@ const { handleMemberVerification } = require('./chat_member_verification');
 const { handleAddressAndMobile } = require('./chat_address_and_mobile');
 const { handleResidenceProof } = require('./chat_residence_proof');
 const { handleFallbackResponse } = require('./chat_fallback_responder');
+const { resolveServicePlugin } = require('../../../public/js/modules/service_plugins');
 
 router.post('/api/chat', (req, res, next) => {
     upload.any()(req, res, (err) => {
@@ -76,14 +77,26 @@ router.post('/api/chat', (req, res, next) => {
         if (await handleAutomationStarter(ctx, req, res)) return;
         if (await handleServiceSelector(ctx, req, res)) return;
         if (await handleDraftResume(ctx, req, res)) return;
-        if (await handleTnegaIntake(ctx, req, res)) return;
-        if (await handleMemberCount(ctx, req, res)) return;
-        if (await handleHeadPhoto(ctx, req, res)) return;
-        if (await handleHeadAadhaar(ctx, req, res)) return;
-        if (await handleMemberAadhaar(ctx, req, res)) return;
-        if (await handleMemberVerification(ctx, req, res)) return;
-        if (await handleAddressAndMobile(ctx, req, res)) return;
-        if (await handleResidenceProof(ctx, req, res)) return;
+
+        // Hard Portal Plugin Firewall: TNPDS and TNeGA NEVER share or fall through into each other's step handlers!
+        const activePlugin = resolveServicePlugin(ctx.sess, { overrideHint: text });
+        if (activePlugin && ctx.sess) {
+            ctx.sess.pluginId = activePlugin.id;
+        }
+        const activePortal = activePlugin ? activePlugin.portal : null;
+
+        if (activePortal !== 'TNPDS') {
+            if (await handleTnegaIntake(ctx, req, res)) return;
+        }
+        if (activePortal !== 'TNEGA') {
+            if (await handleMemberCount(ctx, req, res)) return;
+            if (await handleHeadPhoto(ctx, req, res)) return;
+            if (await handleHeadAadhaar(ctx, req, res)) return;
+            if (await handleMemberAadhaar(ctx, req, res)) return;
+            if (await handleMemberVerification(ctx, req, res)) return;
+            if (await handleAddressAndMobile(ctx, req, res)) return;
+            if (await handleResidenceProof(ctx, req, res)) return;
+        }
 
         return handleFallbackResponse(ctx, req, res);
     } catch (err) {

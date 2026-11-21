@@ -869,7 +869,7 @@
 
             pendingDocUploads = {};
 
-            // Subservice mode determination: strictly based on active citizen subService state, NEVER scraping chat text DOM!
+            // Authoritative A-to-Z Service Plugin Resolution (Zero substring cross-contamination)
             const rawExplicitSub = String(data.subService || '').toUpperCase();
             const localActiveSvc = rawExplicitSub || String(data.targetService || localStorage.getItem('eseva_active_service') || window.pendingSelectedService || window.lastSubService || '').toUpperCase();
             const serviceStr = String(data.service || data.serviceId || localActiveSvc || '').toUpperCase();
@@ -877,65 +877,71 @@
             const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
+            const resolvedPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                ? window.ESEVA_PLUGINS.resolveServicePlugin(data, { localActiveSvc })
+                : null;
+            const pMode = resolvedPlugin?.editModal?.layoutMode || '';
+
             const isRationProofIntake = curIntake === 'RESIDENCE_PROOF_TYPE' || curIntake === 'RESIDENCE_PROOF_DOC';
             const isExplicitRationNewCard = !forceMasterProfile && (
+                pMode === 'NEW_CARD' ||
                 curSub === 'NEW_CARD' || curSub === 'NEW_RATION_CARD' ||
                 isRationProofIntake ||
                 curIntake === 'MEMBER_COUNT' || curIntake === 'MOBILE_NUMBER' || curIntake === 'ADDRESS_CHOICE' || curIntake === 'AADHAAR_MOBILE_CONFIRM' || curIntake === 'READY_TO_APPLY' ||
                 curIntake.startsWith('HEAD_') || curIntake.startsWith('MEMBER_')
             );
-            const isExplicitRationAny = isExplicitRationNewCard || ['ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(curSub) || curIntake.startsWith('RATION_');
+            const isExplicitRationAny = isExplicitRationNewCard || (resolvedPlugin?.portal === 'TNPDS') || ['ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(curSub) || curIntake.startsWith('RATION_');
 
-            const isWidowMode = !forceMasterProfile && !isExplicitRationAny && (
+            const isWidowMode = !forceMasterProfile && !isExplicitRationAny && (pMode === 'WIDOW' || (!resolvedPlugin && (
                 curSub === 'WIDOW' || curSub === 'WIDOW_CERTIFICATE' || curSub === 'TNEGA_WIDOW' || curSub.includes('REV-109') || curSub.includes('REV_109') ||
                 curIntake.includes('WIDOW') || curIntake.includes('REV-109') ||
                 serviceStr.includes('WIDOW') || serviceStr.includes('விதவை') || serviceStr.includes('REV-109') ||
                 sData?.targetService === 'WIDOW' || sData?.serviceType === 'WIDOW'
-            );
-            const isLegalHeirMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && (
+            )));
+            const isLegalHeirMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && (pMode === 'LEGAL_HEIR' || (!resolvedPlugin && (
                 curSub === 'LEGAL_HEIR' || curSub === 'LEGAL_HEIR_CERTIFICATE' || curSub.includes('REV-114') || curSub.includes('REV_114') ||
                 curIntake.includes('LEGAL_HEIR') || curIntake.includes('REV-114') ||
                 serviceStr.includes('LEGAL_HEIR') || serviceStr.includes('வாரிசு') || serviceStr.includes('REV-114') ||
                 sData?.targetService === 'LEGAL_HEIR' || sData?.serviceType === 'LEGAL_HEIR'
-            );
-            const isObcMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && (
+            )));
+            const isObcMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && (pMode === 'OBC' || (!resolvedPlugin && (
                 curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
                 curIntake.includes('OBC') || curIntake.includes('REV-115') ||
                 serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
                 sData?.targetService === 'OBC' || sData?.serviceType === 'OBC'
-            );
-            const isCommunityMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && (
+            )));
+            const isCommunityMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && (pMode === 'COMMUNITY' || (!resolvedPlugin && (
                 curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
                 curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
                 serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
                 sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
-            );
+            )));
             const isTnegaResIntake = Boolean(curIntake.startsWith('RESIDENCE_') && !isRationProofIntake) || curIntake === 'READY_TO_APPLY_RESIDENCE';
-            const isResidenceMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (
+            const isResidenceMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (pMode === 'RESIDENCE' || (!resolvedPlugin && (
                 curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
                 isTnegaResIntake || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
                 serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
                 sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
-            );
-            const isIncomeMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (
+            )));
+            const isIncomeMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (pMode === 'INCOME' || (!resolvedPlugin && (
                 curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
                 curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
                 serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
                 sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
-            );
-            const isFirstGraduateMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (
+            )));
+            const isFirstGraduateMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (pMode === 'FIRST_GRADUATE' || (!resolvedPlugin && (
                 curSub === 'FIRST_GRADUATE' || curSub === 'FIRST_GRADUATE_CERTIFICATE' || curSub.includes('REV-104') || curSub.includes('REV_104') ||
                 curIntake.includes('FIRST_GRADUATE') || curIntake.includes('REV-104') ||
                 serviceStr.includes('FIRST_GRADUATE') || serviceStr.includes('முதல் பட்டதாரி') || serviceStr.includes('REV-104') || serviceStr.includes('REV_104') || serviceStr.includes('REV104') ||
                 sData?.targetService === 'FIRST_GRADUATE' || sData?.serviceType === 'FIRST_GRADUATE'
-            );
-            const isCanMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (
+            )));
+            const isCanMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (pMode === 'CAN' || (!resolvedPlugin && (
                 curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
-            );
+            )));
 
-            const isAddMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const isAddMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (pMode === 'ADD_MEMBER' || curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
+            const isRemoveMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (pMode === 'REMOVE_MEMBER' || curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
+            const isChangeAddress = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (pMode === 'CHANGE_ADDRESS' || curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
             const hasActiveSub = Boolean(isWidowMode || isLegalHeirMode || isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
 
             const titleEl = document.getElementById('editModalTitle');
@@ -2108,7 +2114,7 @@
 
                 // 2. Direct portal submit to physical visible Chrome (ONLY allowed from Edit Modal!)
                 const runRealLive = mode === 'dryRun' ? 'dryRun' : true;
-                proceedConfirmedSubmit(runRealLive, { fromEditModal: true });
+                await proceedConfirmedSubmit(runRealLive, { fromEditModal: true });
             } catch (e) {
                 alert('பிழை: ' + e.message);
             } finally {
@@ -2588,16 +2594,16 @@
                     },
                     body: JSON.stringify({ 
                         ...updated, 
-                        headPhotoPath: currentCitizenData?.headPhotoPath || null,
-                        profilePhoto: currentCitizenData?.headPhotoPath || null,
-                        incomeProof: (currentCitizenData?.incomeProof || currentCitizenData?.salaryCertificatePath || (safeIncVal ? 'SELF_DECLARATION' : null)),
+                        headPhotoPath: currentCitizenData?.headPhotoPath || currentCitizenData?.documents?.profilePhoto || currentCitizenData?.documents?.headPhoto || null,
+                        profilePhoto: currentCitizenData?.headPhotoPath || currentCitizenData?.documents?.profilePhoto || currentCitizenData?.documents?.headPhoto || null,
+                        incomeProof: (currentCitizenData?.incomeProof || currentCitizenData?.salaryCertificatePath || currentCitizenData?.documents?.incomeProof || currentCitizenData?.documents?.salaryCertificate || (safeIncVal ? 'SELF_DECLARATION' : null)),
                         incomeProofType: (currentCitizenData?.incomeProofType || (safeIncVal ? 'SELF_DECLARATION' : null)),
-                        salaryCertificatePath: currentCitizenData?.salaryCertificatePath || null,
-                        communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof || currentCitizenData?.communityCertificate) || null,
-                        communityCertificate: currentCitizenData?.communityCertificate || currentCitizenData?.communityCertificatePath || null,
-                        communityCertificatePath: currentCitizenData?.communityCertificatePath || currentCitizenData?.communityCertificate || null,
-                        familyCommunityProofPath: currentCitizenData?.familyCommunityProofPath || null,
-                        incomeTaxReturn: currentCitizenData?.incomeTaxReturn || currentCitizenData?.incomeProof || null,
+                        salaryCertificatePath: currentCitizenData?.salaryCertificatePath || currentCitizenData?.documents?.salaryCertificate || null,
+                        communityProof: (currentCitizenData?.communityCertificatePath || currentCitizenData?.familyCommunityProofPath || currentCitizenData?.communityProof || currentCitizenData?.communityCertificate || currentCitizenData?.documents?.communityProof || currentCitizenData?.documents?.communityCertificate || currentCitizenData?.documents?.familyCommunityProof) || null,
+                        communityCertificate: currentCitizenData?.communityCertificate || currentCitizenData?.communityCertificatePath || currentCitizenData?.documents?.communityCertificate || currentCitizenData?.documents?.communityProof || null,
+                        communityCertificatePath: currentCitizenData?.communityCertificatePath || currentCitizenData?.communityCertificate || currentCitizenData?.documents?.communityCertificate || currentCitizenData?.documents?.communityProof || null,
+                        familyCommunityProofPath: currentCitizenData?.familyCommunityProofPath || currentCitizenData?.documents?.familyCommunityProof || null,
+                        incomeTaxReturn: currentCitizenData?.incomeTaxReturn || currentCitizenData?.incomeProof || currentCitizenData?.documents?.incomeTaxReturn || currentCitizenData?.documents?.incomeProof || null,
                         mobileNumber: targetMob, 
                         oldMobileNumber: isMobileChanged ? originalEditingMobile : undefined,
                         fromEditModal: true, 

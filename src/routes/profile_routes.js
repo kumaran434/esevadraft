@@ -194,7 +194,7 @@ router.post('/api/profile/update', async (req, res) => {
                 }
 
                 // Golden Rule 15 & 19: Strict Physical File Verification for All Service Documents
-                const commPath = sess.citizenProfile?.communityCertificatePath || sess.citizenProfile?.familyCommunityProofPath || sess.citizenProfile?.communityProof || sess.tempUploads?.communityProof;
+                const commPath = sess.citizenProfile?.communityCertificatePath || sess.citizenProfile?.familyCommunityProofPath || sess.citizenProfile?.communityProof || sess.citizenProfile?.communityCertificate || sess.citizenProfile?.documents?.communityProof || sess.citizenProfile?.documents?.communityCertificate || sess.tempUploads?.communityProof;
                 const hasCommProof = Boolean(commPath && typeof commPath === 'string' && fs.existsSync(commPath));
                 if (!hasCommProof) {
                     delete docsToSave.communityProof;

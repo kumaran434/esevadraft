@@ -167,6 +167,40 @@ function loadTnegaAutomationModule() {
     return null;
 }
 
+function loadServicePluginManifest() {
+    const candidates = [
+        path.join(__dirname, '..', 'public', 'js', 'modules', 'service_plugins.js'),
+        path.join(process.resourcesPath || '', 'public', 'js', 'modules', 'service_plugins.js'),
+        path.join(app ? app.getPath('userData') : '', 'public', 'js', 'modules', 'service_plugins.js'),
+        path.join('d:', 'downloads', 'ai assitant 2', 'public', 'js', 'modules', 'service_plugins.js')
+    ];
+    for (const c of candidates) {
+        if (c && fs.existsSync(c)) {
+            try { return require(c); } catch (_) {}
+        }
+    }
+    return null;
+}
+
+function resolveAutomationTarget(draftData = {}) {
+    const pluginManifest = loadServicePluginManifest();
+    const resolvedPlugin = pluginManifest?.resolveServicePlugin ? pluginManifest.resolveServicePlugin(draftData) : null;
+    if (resolvedPlugin) {
+        return {
+            pluginId: resolvedPlugin.id,
+            portal: resolvedPlugin.portal,
+            subService: resolvedPlugin.subService,
+            runnerName: resolvedPlugin.runner
+        };
+    }
+    return {
+        pluginId: 'TNPDS_NEW_CARD',
+        portal: 'TNPDS',
+        subService: 'NEW_CARD',
+        runnerName: 'startTnpdsRationCardFlow'
+    };
+}
+
 function resolveStorageService() {
     const candidates = [
         path.join(process.resourcesPath || '', 'src', 'services', 'storage_service.js'),
@@ -267,6 +301,10 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         }
     };
 
+    const pluginManifest = loadServicePluginManifest();
+    const resolvedPlugin = pluginManifest?.resolveServicePlugin ? pluginManifest.resolveServicePlugin(draftData) : null;
+    const resolvedPid = resolvedPlugin?.id || '';
+
     const explicitSub = draftData?.subService || draftData?.citizenProfile?.subService;
     const explicitSubUpper = String(explicitSub || '').toUpperCase();
     const targetServiceHint = String(draftData?.targetService || draftData?.citizenProfile?.targetService || '').toUpperCase();
@@ -274,7 +312,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     const serviceIdHint = String(draftData?.serviceId || draftData?.citizenProfile?.serviceId || '').toUpperCase();
     const intakeStateHint = String(draftData?.intakeState || draftData?.citizenProfile?.intakeState || '').toUpperCase();
 
-    const isExplicitTnpdsRationSub = [
+    const isExplicitTnpdsRationSub = (resolvedPlugin?.portal === 'TNPDS') || [
         'NEW_CARD', 'NEW_RATION_CARD', 'NEW_CARD_REGISTER', 'NEW_SMART_CARD', 'RATION',
         'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE',
         'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_OF_MOBILE_NUMBER',
@@ -1074,6 +1112,8 @@ module.exports = {
     resolveDiskDraftAndGas,
     loadAutomationModule,
     resolveStorageService,
+    resolveAutomationTarget,
+    loadServicePluginManifest,
     stopActiveAutomation,
     finalizeMidRunTelemetryIfNeeded,
     reportMidRunStopIfNeeded

@@ -130,7 +130,14 @@ function applyProfileUpdates(sess, updated) {
         sess.tempUploads.profilePhoto = updated.headPhotoPath;
     }
 
-    if (updated.communityProof === null || updated.communityProof === '' || updated.communityCertificatePath === null || updated.familyCommunityProofPath === null) {
+    const resolvedCommPath = updated.communityProof || updated.communityCertificatePath || updated.familyCommunityProofPath || updated.communityCertificate;
+    const isExplicitCommDelete = !resolvedCommPath && (
+        updated.communityProof === null ||
+        updated.communityProof === '' ||
+        updated.communityCertificatePath === null ||
+        updated.familyCommunityProofPath === null
+    );
+    if (isExplicitCommDelete) {
         delete sess.citizenProfile.communityProof;
         delete sess.citizenProfile.communityCertificatePath;
         delete sess.citizenProfile.familyCommunityProofPath;
@@ -150,8 +157,8 @@ function applyProfileUpdates(sess, updated) {
             delete sess.base64Docs.communityCertificateBase64;
             delete sess.base64Docs.communityCertificateName;
         }
-    } else if (updated.communityProof !== undefined || updated.communityCertificatePath !== undefined || updated.familyCommunityProofPath !== undefined) {
-        const commPath = updated.communityProof || updated.communityCertificatePath || updated.familyCommunityProofPath;
+    } else if (resolvedCommPath) {
+        const commPath = resolvedCommPath;
         sess.citizenProfile.communityProof = commPath;
         sess.citizenProfile.communityCertificatePath = commPath;
         sess.citizenProfile.familyCommunityProofPath = commPath;

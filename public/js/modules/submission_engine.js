@@ -20,9 +20,12 @@
                 } catch (_) {}
             }
 
+            const resolvedSubmitPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
+                : null;
             const rawSubCheck = String(currentCitizenData?.subService || '').toUpperCase();
             const rawIntakeCheck = String(currentCitizenData?.intakeState || '').toUpperCase();
-            const isExplicitRationFlowTop = [
+            const isExplicitRationFlowTop = (resolvedSubmitPlugin?.portal === 'TNPDS') || [
                 'NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER',
                 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
             ].includes(rawSubCheck) ||
@@ -45,6 +48,7 @@
             ) || rawIntakeCheck === 'READY_TO_APPLY_RESIDENCE' || rawIntakeCheck.includes('NATIVITY');
 
             const isTnegaActive = !isExplicitRationFlowTop && Boolean(
+                (resolvedSubmitPlugin?.portal === 'TNEGA') || (
                 currentCitizenData && (
                     ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(rawSubCheck) ||
                     (rawIntakeCheck && (
@@ -57,7 +61,7 @@
                         rawIntakeCheck.includes('WIDOW') ||
                         (rawIntakeCheck.includes('CAN') && !rawIntakeCheck.includes('RATION'))
                     ))
-                )
+                ))
             );
             const isAddMember = !isTnegaActive && Boolean(
                 currentCitizenData && (
@@ -96,7 +100,10 @@
                     window._tempUploads?.smartCard ||
                     window._tempUploads?.smartCardFront
                 );
-                const isRevCert = ['OBC', 'COMMUNITY', 'INCOME', 'RESIDENCE', 'NATIVITY', 'FIRST_GRADUATE', 'WIDOW', 'LEGAL_HEIR'].some(k => curSub.includes(k));
+                const curPluginPre = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                    ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
+                    : null;
+                const isRevCert = curPluginPre ? Boolean(curPluginPre.preSubmit?.requireSmartCard) : (!isExplicitRationFlowTop && ['OBC', 'COMMUNITY', 'INCOME', 'RESIDENCE', 'NATIVITY', 'FIRST_GRADUATE', 'WIDOW', 'LEGAL_HEIR'].some(k => curSub === k || curSub.startsWith(k + '_')));
                 if (isRevCert && !hasSmartCard) {
                     alert('⚠️ அனைத்து வருவாய்த் துறை சேவைகளுக்கும் குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) கட்டாயம் தேவை.\n\nதயவுசெய்து ரேஷன் கார்டு (முழு அட்டை OR முன்பக்கம்+பின்பக்கம்) பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
                     if (typeof openEditModal === 'function') openEditModal(activeMob);
@@ -355,7 +362,7 @@
 
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
                                 subService: effectiveSubService,
-                                targetService: resolvedTargetService || draftData.targetService,
+                                targetService: isExplicitTnpdsSub ? '' : (resolvedTargetService || draftData.targetService),
                                 subServiceData: draftData.subServiceData || dJson.draft.subServiceData || prof.subServiceData,
                                 intakeState: effectiveIntakeState,
                                 fullNameEng: prof.fullNameEng || draftData.fullNameEng,
@@ -452,10 +459,17 @@
                     }
                 }
 
-                const isExplicitTnpdsSubFinal = ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(String(draftData.subService || '').toUpperCase());
+                const draftPluginFinal = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                    ? window.ESEVA_PLUGINS.resolveServicePlugin(draftData)
+                    : null;
+                if (draftPluginFinal) {
+                    draftData.pluginId = draftPluginFinal.id;
+                    draftData.portal = draftPluginFinal.portal;
+                }
+                const isExplicitTnpdsSubFinal = (draftPluginFinal?.portal === 'TNPDS') || ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(String(draftData.subService || '').toUpperCase());
                 const draftIntakeUp = String(draftData.intakeState || '').toUpperCase();
                 const isTnegaResDraft = Boolean(draftIntakeUp.startsWith('RESIDENCE_') && draftIntakeUp !== 'RESIDENCE_PROOF_TYPE' && draftIntakeUp !== 'RESIDENCE_PROOF_DOC');
-                const isResService = !isExplicitTnpdsSubFinal && (draftData.subService === 'RESIDENCE' || draftData.subService === 'RESIDENCE_CERTIFICATE' || isTnegaResDraft);
+                const isResService = !isExplicitTnpdsSubFinal && (draftPluginFinal?.id === 'TNEGA_RESIDENCE' || draftData.subService === 'RESIDENCE' || draftData.subService === 'RESIDENCE_CERTIFICATE' || isTnegaResDraft);
                 if (isResService) {
                     const hasResDoc = Boolean(draftData.residenceProof?.docPath || draftData.documents?.residenceProof || draftData.documents?.gasBook || draftData.base64Docs?.residenceProofBase64 || draftData.base64Docs?.gasBookBase64);
                     if (!hasResDoc) {
@@ -478,10 +492,11 @@
                 if (pBar) pBar.classList.add('active');
 
                 const isTnegaFlow = !isExplicitTnpdsSubFinal && (
+                    (draftPluginFinal?.portal === 'TNEGA') ||
                     ['INCOME', 'INCOME_CERTIFICATE', 'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE', 'COMMUNITY', 'COMMUNITY_CERTIFICATE', 'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE', 'OBC', 'OBC_CERTIFICATE', 'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE', 'WIDOW', 'WIDOW_CERTIFICATE', 'CAN_REGISTER', 'CAN_SEARCH'].includes(draftData.subService) ||
                     (draftIntakeUp && (draftIntakeUp.includes('INCOME') || isTnegaResDraft || draftIntakeUp.includes('COMMUNITY') || draftIntakeUp.includes('FIRST_GRADUATE') || draftIntakeUp.includes('OBC') || draftIntakeUp.includes('LEGAL_HEIR') || draftIntakeUp.includes('WIDOW') || (draftIntakeUp.includes('CAN') && !draftIntakeUp.includes('RATION'))))
                 );
-                const portalLabel = isTnegaFlow ? 'TNeGA' : 'TNPDS';
+                const portalLabel = draftPluginFinal ? draftPluginFinal.portalLabel : (isTnegaFlow ? 'TNeGA' : 'TNPDS');
 
                 appendLiveAutomationStep(`🚀 **நேரலை முறை** — Chrome சாளரம் திறக்கப்படுகிறது...\n\n${portalLabel} போர்ட்டல் தோன்றும்.`);
 

@@ -4660,6 +4660,120 @@ async function runTests() {
             passedCount += 11;
         }
 
+        // TEST 71: Full-Stack A-to-Z Service Plugin Architecture & Real Playwright Browser UI E2E Gate
+        console.log('\n[TEST 71] 🧩 Verifying A-to-Z Service Plugin Firewall & Real Playwright Browser UI E2E New Ration Card Submission...');
+        {
+            const pluginReg = require('../public/js/modules/service_plugins');
+            const { resolveAutomationTarget } = require('../desktop/automation_runner');
+            const { chromium } = require('playwright');
+
+            // 1. Disjoint State Ownership across ALL 15 plugins
+            const allStateSets = new Set();
+            let totalStates = 0;
+            for (const p of pluginReg.SERVICE_PLUGINS) {
+                for (const st of (p.ownedStates || [])) {
+                    totalStates++;
+                    assert(!allStateSets.has(st), `State ${st} is strictly owned by single plugin ${p.id}`);
+                    allStateSets.add(st);
+                }
+            }
+            assert(pluginReg.SERVICE_PLUGINS.length === 15 && totalStates > 80, 'Service Plugin Manifest registers all 15 TNPDS + TNeGA plugins with disjoint ownedStates');
+            assert(pluginReg.resolveServicePlugin({ intakeState: 'RESIDENCE_PROOF_DOC', caste: 'Vanniyar', annualIncome: '72000' }).id === 'TNPDS_NEW_CARD', 'RESIDENCE_PROOF_DOC + stale caste/income resolves strictly to TNPDS_NEW_CARD');
+            assert(pluginReg.resolveServicePlugin({ subService: 'NEW_CARD', targetService: 'RESIDENCE', intakeState: 'RESIDENCE_PROOF_DOC' }).id === 'TNPDS_NEW_CARD', 'Explicit NEW_CARD overrides stale targetService=RESIDENCE strictly to TNPDS_NEW_CARD');
+            assert(pluginReg.resolveServicePlugin({ subService: 'RESIDENCE', intakeState: 'RESIDENCE_PROOF_WAIT' }).id === 'TNEGA_RESIDENCE', 'TNeGA RESIDENCE_PROOF_WAIT resolves strictly to TNEGA_RESIDENCE');
+
+            // 2. Smart Card Mandate Isolation Check across all plugins
+            assert(pluginReg.getPluginById('TNPDS_NEW_CARD').preSubmit.requireSmartCard === false, 'TNPDS_NEW_CARD NEVER requires Smart Ration Card');
+            for (const revId of ['TNEGA_COMMUNITY', 'TNEGA_RESIDENCE', 'TNEGA_INCOME', 'TNEGA_FIRST_GRADUATE', 'TNEGA_OBC', 'TNEGA_LEGAL_HEIR', 'TNEGA_WIDOW']) {
+                assert(pluginReg.getPluginById(revId).preSubmit.requireSmartCard === true, `${revId} strictly enforces Smart Ration Card`);
+            }
+
+            // 3. Real Playwright Browser UI + Edit Modal + Submit -> TNPDS Runner E2E Test
+            const test71Mob = '9999900071';
+            const test71Hdr = { 'x-session-mobile': test71Mob, 'x-operator-uid': 'test_suite_operator_uid' };
+            await request('POST', '/api/drafts/save', {
+                mobileNumber: test71Mob,
+                operatorUid: 'test_suite_operator_uid',
+                service: 'ரேஷன் கார்டு',
+                subService: 'NEW_CARD',
+                intakeState: 'RESIDENCE_PROOF_DOC',
+                citizenProfile: {
+                    subService: 'NEW_CARD',
+                    fullNameTam: 'குமரன் கி',
+                    fullNameEng: 'Kumaran K',
+                    headAadhaar: '575567662931',
+                    headPhotoPath: '/uploads/test_sample_doc.jpg',
+                    caste: 'Vanniakula Kshatriya',
+                    annualIncome: '72000',
+                    gasDetails: {
+                        hasGas: true,
+                        oilCompany: 'IOC',
+                        oilCompanyDisplay: 'Indane Gas (IOCL)',
+                        consumerNumber: '9876543210',
+                        agencyName: 'RAJAM GAS AGENCY',
+                        cylinders: '1'
+                    },
+                    documents: {
+                        profilePhoto: '/uploads/test_sample_doc.jpg',
+                        headAadhaar: '/uploads/test_sample_doc.jpg',
+                        gasBook: '/uploads/test_sample_doc.jpg',
+                        residenceProof: '/uploads/test_sample_doc.jpg'
+                    }
+                }
+            }, test71Hdr);
+
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const alerts = [];
+            page.on('dialog', async (d) => { alerts.push(d.message()); await d.dismiss(); });
+
+            await page.goto(`${BASE_URL}/index.html`);
+            await page.waitForTimeout(800);
+
+            const uiOutcome = await page.evaluate(async (mob) => {
+                localStorage.setItem('eseva_user_role', 'operator');
+                localStorage.setItem('eseva_operator_uid', 'test_suite_operator_uid');
+                localStorage.setItem('eseva_active_customer_mobile', mob);
+                localStorage.setItem('eseva_active_service', 'INCOME'); // Deliberately stale localStorage service!
+
+                let capturedDraft = null;
+                window.esevaDesktopBridge = {
+                    isDesktopApp: true,
+                    startLiveAutomation: async (payload) => {
+                        capturedDraft = payload;
+                        return { success: true };
+                    },
+                    onAutomationUpdate: () => {},
+                    onAutomationFinished: () => {}
+                };
+
+                await openEditModal(mob, false);
+                const modalTitle = document.getElementById('editModalTitle')?.innerText || '';
+                const smartCardBoxDisplay = document.getElementById('editSmartCardBox')?.style.display || '';
+                const gasWrapDisplay = document.getElementById('editGasToggleWrap')?.style.display || '';
+                const gasNoVal = document.getElementById('editGasNo')?.value || '';
+                const submitBtnText = document.getElementById('btnSubmitFromEditModal')?.innerText || '';
+
+                await submitDirectlyFromEditModal();
+                return { modalTitle, smartCardBoxDisplay, gasWrapDisplay, gasNoVal, submitBtnText, capturedDraft };
+            }, test71Mob);
+
+            await browser.close();
+            await request('DELETE', `/api/drafts/${test71Mob}`, null, test71Hdr);
+
+            assert(alerts.length === 0, `Zero Smart Card alerts raised on New Ration Card submit (got: ${alerts.join('; ')})`);
+            assert(uiOutcome.modalTitle.includes('புதிய குடும்ப அட்டை') && !uiOutcome.modalTitle.includes('இருப்பிடச் சான்றிதழ்'), 'Edit Modal title strictly displays New Ration Card even at RESIDENCE_PROOF_DOC with stale localStorage');
+            assert(uiOutcome.smartCardBoxDisplay === 'none', 'Smart Ration Card upload box is strictly HIDDEN on New Ration Card Edit Modal');
+            assert(uiOutcome.gasWrapDisplay === 'block' && uiOutcome.gasNoVal === '9876543210', 'LPG Gas toggle & extracted consumer number remain visible and populated in Edit Modal');
+            assert(!uiOutcome.submitBtnText.includes('இருப்பிடச் சான்றிதழ்'), 'Submit button does NOT turn into Residence Certificate');
+            assert(uiOutcome.capturedDraft && uiOutcome.capturedDraft.subService === 'NEW_CARD' && uiOutcome.capturedDraft.pluginId === 'TNPDS_NEW_CARD', `Desktop IPC receives strictly subService=NEW_CARD & pluginId=TNPDS_NEW_CARD (got: ${JSON.stringify({ subService: uiOutcome.capturedDraft?.subService, pluginId: uiOutcome.capturedDraft?.pluginId })})`);
+
+            const runnerDecision = resolveAutomationTarget(uiOutcome.capturedDraft);
+            assert(runnerDecision.portal === 'TNPDS' && runnerDecision.runnerName === 'startTnpdsRationCardFlow', 'Desktop automation_runner routes captured New Ration Card payload strictly to startTnpdsRationCardFlow');
+
+            passedCount += 12;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');
