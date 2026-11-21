@@ -539,6 +539,7 @@ function syncDraftToCloudInBackground(endpoint, method, payload = null, customHe
 
 let activePort = null;
 let activeServerUrl = null;
+let activeHttpServer = null;
 let serverReadyResolve = null;
 const serverReadyPromise = new Promise((resolve) => { serverReadyResolve = resolve; });
 
@@ -1803,6 +1804,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
             });
         });
 
+        activeHttpServer = localServer;
         localServer.listen(currentPort, '0.0.0.0');
 
         return localServer;
@@ -1812,8 +1814,21 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
     }
 }
 
+function stopLocalServer() {
+    if (activeHttpServer) {
+        try {
+            if (typeof activeHttpServer.closeAllConnections === 'function') {
+                activeHttpServer.closeAllConnections();
+            }
+            activeHttpServer.close();
+        } catch (_) {}
+        activeHttpServer = null;
+    }
+}
+
 module.exports = {
     startLocalServer,
+    stopLocalServer,
     resolveLocalFile,
     getActivePort,
     getActiveServerUrl,

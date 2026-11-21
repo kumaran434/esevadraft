@@ -208,16 +208,26 @@ async function cleanupAutomation() {
 app.on('before-quit', () => {
     flushAllBrowserStorage();
     cleanupAutomation();
+    try {
+        const { stopLocalServer } = require('./local_server');
+        if (typeof stopLocalServer === 'function') stopLocalServer();
+    } catch (_) {}
 });
 
 app.on('window-all-closed', () => {
     flushAllBrowserStorage();
     try { cleanupAutomation(); } catch (_) {}
+    try {
+        const { stopLocalServer } = require('./local_server');
+        if (typeof stopLocalServer === 'function') stopLocalServer();
+    } catch (_) {}
     if (process.platform !== 'darwin') {
         app.quit();
-        setTimeout(() => {
-            process.exit(0);
-        }, 1200);
+        if (!global.__esevaUpdating) {
+            setTimeout(() => {
+                if (!global.__esevaUpdating) process.exit(0);
+            }, 1200);
+        }
     }
 });
 

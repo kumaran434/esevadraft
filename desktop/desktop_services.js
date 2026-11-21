@@ -315,14 +315,29 @@ function setupAutoUpdater(getMainWindow) {
     if (autoUpdater) {
         autoUpdater.autoDownload = true;
         autoUpdater.autoInstallOnAppQuit = true;
+        autoUpdater.disableWebInstaller = true;
 
         autoUpdater.on('update-available', (info) => {
             updateDownloading = true;
             console.log('[AutoUpdater] New update found on GitHub, downloading silently:', info?.version);
         });
 
+        autoUpdater.on('download-progress', (progressObj) => {
+            const pct = typeof progressObj?.percent === 'number' ? Math.max(0, Math.min(100, progressObj.percent)) : 0;
+            try {
+                const mainWindow = getMainWindow ? getMainWindow() : null;
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.setProgressBar(pct / 100);
+                }
+            } catch (_) {}
+        });
+
         autoUpdater.on('error', (err) => {
             updateDownloading = false;
+            try {
+                const mainWindow = getMainWindow ? getMainWindow() : null;
+                if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1);
+            } catch (_) {}
             console.warn('[AutoUpdater] Updater error:', err?.message || err);
             if (!promptShown) {
                 checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
@@ -335,6 +350,7 @@ function setupAutoUpdater(getMainWindow) {
             promptShown = true;
             const mainWindow = getMainWindow ? getMainWindow() : null;
             if (mainWindow && !mainWindow.isDestroyed()) {
+                try { mainWindow.setProgressBar(-1); } catch (_) {}
                 dialog.showMessageBox(mainWindow, {
                     type: 'info',
                     title: 'புதிய பதிப்பு தயார் (Update Ready)',
@@ -345,7 +361,14 @@ function setupAutoUpdater(getMainWindow) {
                     cancelId: 1
                 }).then((result) => {
                     if (result.response === 0) {
-                        autoUpdater.quitAndInstall();
+                        global.__esevaUpdating = true;
+                        try {
+                            const { stopLocalServer } = require('./local_server');
+                            if (typeof stopLocalServer === 'function') stopLocalServer();
+                        } catch (_) {}
+                        setImmediate(() => {
+                            autoUpdater.quitAndInstall(false, true);
+                        });
                     }
                 });
             }

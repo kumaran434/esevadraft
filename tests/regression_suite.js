@@ -4543,6 +4543,30 @@ async function runTests() {
             passedCount += 10;
         }
 
+        // TEST 69: Desktop Auto-Updater Hyphenated Artifact Name & Clean NSIS Shutdown Guards
+        console.log('\n[TEST 69] 🔄 Verifying Desktop Auto-Updater Hyphenated Artifact Name, NSIS Installer Hooks & Clean Shutdown Guards...');
+        {
+            const desktopPkg69 = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/package.json'), 'utf8'));
+            const rootPkg69 = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+            const installerNsh69 = fs.readFileSync(path.join(__dirname, '../desktop/build/installer.nsh'), 'utf8');
+            const localSrvSrc69 = fs.readFileSync(path.join(__dirname, '../desktop/local_server.js'), 'utf8');
+            const deskSvcSrc69 = fs.readFileSync(path.join(__dirname, '../desktop/desktop_services.js'), 'utf8');
+            const deskMainSrc69 = fs.readFileSync(path.join(__dirname, '../desktop/main.js'), 'utf8');
+            const firebaseCfg69 = fs.readFileSync(path.join(__dirname, '../firebase.json'), 'utf8');
+
+            assert(desktopPkg69.version === rootPkg69.version, 'desktop/package.json version matches root package.json version');
+            assert(desktopPkg69.build?.win?.artifactName === 'eSevaDraft-Desktop-Setup-${version}.${ext}', 'desktop/package.json win.artifactName uses exact hyphens to match latest.yml');
+            assert(desktopPkg69.build?.nsis?.artifactName === 'eSevaDraft-Desktop-Setup-${version}.${ext}', 'desktop/package.json nsis.artifactName uses exact hyphens to match latest.yml');
+            assert(desktopPkg69.build?.nsis?.include === 'build/installer.nsh' && desktopPkg69.build?.nsis?.runAfterFinish === true, 'desktop/package.json wires build/installer.nsh and runAfterFinish');
+            assert(installerNsh69.includes('!macro customCheckAppRunning') && installerNsh69.includes('taskkill.exe') && installerNsh69.includes('${APP_EXECUTABLE_FILENAME}'), 'installer.nsh cleanly closes running eSevaDraft Desktop instances before file replacement');
+            assert(localSrvSrc69.includes('function stopLocalServer()') && localSrvSrc69.includes('closeAllConnections') && localSrvSrc69.includes('stopLocalServer,'), 'desktop/local_server.js exports stopLocalServer closing keep-alive HTTP connections');
+            assert(deskSvcSrc69.includes('disableWebInstaller = true') && deskSvcSrc69.includes("autoUpdater.on('download-progress'") && deskSvcSrc69.includes('global.__esevaUpdating = true') && deskSvcSrc69.includes('autoUpdater.quitAndInstall(false, true)'), 'desktop_services.js enforces full installer download, progress bar, stopLocalServer, and quitAndInstall(false, true)');
+            assert(deskMainSrc69.includes('!global.__esevaUpdating') && deskMainSrc69.includes('stopLocalServer()'), 'desktop/main.js stops local server and skips 1200ms hard process.exit during active updater handoff');
+            assert(firebaseCfg69.includes(`eSevaDraft-Desktop-Setup-${rootPkg69.version}.exe`), 'firebase.json redirect points to current hyphenated installer release');
+
+            passedCount += 9;
+        }
+
         console.log('\n======================================================');
         console.log(`🎉 ALL ${passedCount} REGRESSION CHECKS PASSED WITH 100% SUCCESS!`);
         console.log('======================================================\n');
