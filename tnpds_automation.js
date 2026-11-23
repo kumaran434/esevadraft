@@ -205,27 +205,18 @@ async function resendOtp() {
     }
 }
 
-function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', activePage = null) {
-    const p = activePage || page;
-    if (cachedUserOtp && (Date.now() - cachedOtpTimestamp) < 120000) {
-        const c = cachedUserOtp;
-        cachedUserOtp = '';
-        return Promise.resolve(c);
-    }
-    isWaitingForOtp = true;
-    currentOtpType = otpType;
+function createOtpWaitPromise({ p, promptMsg, otpType, onProgress, onSetWaiting, onResolveHook }) {
     onProgress(promptMsg);
     return new Promise((resolve) => {
         let settled = false;
         const cleanup = (val) => {
             if (settled) return;
             settled = true;
-            isWaitingForOtp = false;
-            currentOtpType = '';
+            onSetWaiting(false);
             clearInterval(poll);
             resolve(val);
         };
-        pendingOtpResolver = cleanup;
+        onResolveHook(cleanup);
         let radwareTick = 0;
         let missingOtpTicks = 0;
         const poll = setInterval(async () => {
@@ -281,10 +272,11 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                     if (u.includes('perfdrive') || u.includes('validate.') || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha')) {
                         return '__RADWARE_ACTIVE__';
                     }
-                    const isModalVisible = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
+                    const visibleModals = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).filter(m => {
                         const s = window.getComputedStyle(m);
-                        return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show')) && s.visibility !== 'hidden';
+                        return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show')) && s.visibility !== 'hidden' && (m.offsetWidth > 0 || m.offsetHeight > 0);
                     });
+                    const isModalVisible = visibleModals.length > 0;
                     const isSubmittingOnPortal = Boolean(document.querySelector('.spinner-border, .loading'));
                     if (isSubmittingOnPortal && !isModalVisible && type === 'mobile_login') return 'ALREADY_VERIFIED_ON_PORTAL';
                     if (type !== 'aadhaar_otp' && !isModalVisible && u.includes('newsmartcard')) {
@@ -299,20 +291,54 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                     if (type !== 'aadhaar_otp' && !u.includes('/auth/login') && (u.includes('/pages/service-request') || u.includes('/dashboard') || Boolean(document.querySelector('#btnLogout, a[href*="logout"], .user-profile')))) {
                         return 'ALREADY_VERIFIED_ON_PORTAL';
                     }
-                    const inputs = Array.from(document.querySelectorAll('input[placeholder*="OTP" i], input[formcontrolname*="otp" i], input[name*="otp" i], #otp'));
+
+                    const modalOtpInputs = [];
+                    for (const modal of visibleModals) {
+                        for (const inp of Array.from(modal.querySelectorAll('input:not([disabled]):not([readonly]):not([type="hidden"])'))) {
+                            const fcn = (inp.getAttribute('formcontrolname') || inp.name || inp.id || '').toLowerCase();
+                            const tp = (inp.type || '').toLowerCase();
+                            if (tp === 'checkbox' || tp === 'radio' || tp === 'button' || tp === 'submit') continue;
+                            if ((fcn.includes('mob') && !fcn.includes('otp')) || inp.getAttribute('maxlength') === '10') continue;
+                            modalOtpInputs.push(inp);
+                        }
+                    }
+                    const pageOtpInputs = Array.from(document.querySelectorAll('input[placeholder*="OTP" i], input[placeholder*="கடவு"], input[formcontrolname*="otp" i], input[name*="otp" i], #otp'))
+                        .filter(inp => !inp.disabled && !inp.readOnly);
+                    const inputs = Array.from(new Set([...modalOtpInputs, ...pageOtpInputs]));
+
                     const visibleOtpInputs = inputs.filter(inp => inp.offsetWidth > 0 || inp.offsetHeight > 0);
-                    if (type !== 'aadhaar_otp' && visibleOtpInputs.length === 0) {
+                    if (type !== 'aadhaar_otp' && type !== 'new_card_mobile_otp' && visibleOtpInputs.length === 0) {
                         const hasInitialLoginOrHome = Boolean(
                             document.querySelector('input[formcontrolname="mobNumber"]:not([disabled]), input#captcha, input[formcontrolname="captcha"], a[href*="service-request"]')
                         ) || u.includes('/pages/home');
                         if (hasInitialLoginOrHome) return '__MISSING_OTP_BOX__';
                     }
+
+                    const isNewCardMobileOtp = type === 'new_card_mobile_otp';
+                    const isAadhaarModalOtp = type === 'aadhaar_otp';
+                    const isSixDigitModalOtp = isNewCardMobileOtp || isAadhaarModalOtp;
                     for (const inp of inputs) {
                         const val = (inp.value || '').replace(/\D/g, '');
-                        if (type === 'aadhaar_otp') {
-                            if (val.length === 6) return val;
+                        if (isNewCardMobileOtp) {
+                            if (val.length === 6) {
+                                try {
+                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                } catch (_) {}
+                                return val;
+                            }
+                        } else if (isAadhaarModalOtp) {
+                            // Aadhaar OTP can be 6 or 7 digits: accept 7 immediately, or 6 after brief debounce/maxlength=6
+                            if (val.length >= 7) {
+                                return val.slice(0, 7);
+                            } else if (val.length === 6) {
+                                if (inp.maxLength === 6) return val;
+                                const now = Date.now();
+                                if (!inp._firstAadhaar6At) inp._firstAadhaar6At = now;
+                                else if (now - inp._firstAadhaar6At >= 1800) return val;
+                            }
                         } else {
-                            // Strict Invariant: Login OTP is strictly 7 digits (6-digit check abolished)
+                            // Strict Invariant: Login OTP is strictly 7 digits
                             if (val.length === 7 || val.length > 7) {
                                 try {
                                     const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'));
@@ -333,7 +359,7 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                                 const now = Date.now();
                                 if (!inp._firstSeen6Len) inp._firstSeen6Len = now;
                                 else if (now - inp._firstSeen6Len > 3500) {
-                                    // Anti-collision grace period tracked
+                                    // Anti-collision grace period tracked for 7-digit login OTP
                                 }
                             }
                         }
@@ -343,6 +369,7 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                     sessionLog(20, 'OTP_WATCH_ERROR', String(err));
                     return null;
                 });
+
                 if (detected === '__RADWARE_ACTIVE__') {
                     radwareTick++;
                     if (radwareTick % 5 === 1) {
@@ -367,6 +394,22 @@ function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', act
                 sessionLog(20, 'OTP_WATCH_ERROR', String(e));
             }
         }, 500);
+    });
+}
+
+function requestOtpFromUser(promptMsg, onProgress, otpType = 'mobile_login', activePage = null) {
+    const p = activePage || page;
+    if (cachedUserOtp && (Date.now() - cachedOtpTimestamp) < 120000) {
+        const c = cachedUserOtp;
+        cachedUserOtp = '';
+        return Promise.resolve(c);
+    }
+    isWaitingForOtp = true;
+    currentOtpType = otpType;
+    return createOtpWaitPromise({
+        p, promptMsg, otpType, onProgress,
+        onSetWaiting: (waiting) => { isWaitingForOtp = waiting; if (!waiting) currentOtpType = ''; },
+        onResolveHook: (fn) => { pendingOtpResolver = fn; }
     });
 }
 
@@ -445,164 +488,22 @@ function createScopedSessionContext(sessionId = 'default') {
             isWaitingForOtp = true;
             sessionOtpType = oType;
             currentOtpType = oType;
-            onProg(promptMsg);
-            return new Promise((resolve) => {
-                let settled = false;
-                const cleanup = (val) => {
-                    if (settled) return;
-                    settled = true;
-                    sessionWaitingForOtp = false;
-                    isWaitingForOtp = false;
-                    sessionOtpType = '';
-                    currentOtpType = '';
-                    sessionOtpResolver = null;
-                    pendingOtpResolver = null;
-                    clearInterval(poll);
-                    resolve(val);
-                };
-                sessionOtpResolver = cleanup;
-                pendingOtpResolver = cleanup;
-                let radwareTick = 0;
-                let missingOtpTicks = 0;
-                const poll = setInterval(async () => {
-                    if (!p || p.isClosed()) return cleanup('CLOSED');
-                    try {
-                        // Auto-dismiss accidental exit modal immediately
-                        await p.evaluate(() => {
-                            const modals = Array.from(document.querySelectorAll('.modal, div[role="dialog"]'));
-                            for (const m of modals) {
-                                const txt = (m.innerText || '').trim();
-                                if (txt.includes('வெளியேற விரும்புகிறீர்களா') || txt.includes('நீங்கள் வெளியேற')) {
-                                    const noBtn = Array.from(m.querySelectorAll('button, a')).find(b => {
-                                        const bt = (b.innerText || '').trim();
-                                        return bt === 'இல்லை' || bt === 'No' || bt.includes('இல்லை');
-                                    });
-                                    if (noBtn) noBtn.click();
-                                }
-                            }
-                        }).catch(() => {});
-
-                        // Check Channel 3: Disk IPC file (data/pending_otp.txt)
-                        const pendingOtpCandidatePaths = [
-                            path.join(__dirname, 'data', 'pending_otp.txt'),
-                            path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'data', 'pending_otp.txt'),
-                            path.join(process.env.APPDATA || '', 'esevadraft-desktop', 'pending_otp.txt')
-                        ];
-                        for (const pPath of pendingOtpCandidatePaths) {
-                            if (fs.existsSync(pPath)) {
-                                try {
-                                    const diskVal = fs.readFileSync(pPath, 'utf8').trim().replace(/\D/g, '');
-                                    if (diskVal.length >= 6) {
-                                        try { fs.unlinkSync(pPath); } catch (_) {}
-                                        sessionLog(20, 'OTP_WATCH_DISK', `Detected disk OTP: ${diskVal}`);
-                                        cleanup(diskVal);
-                                        return;
-                                    }
-                                } catch (_) {}
-                            }
-                        }
-
-                        const curUrlLower = (p.url() || '').toLowerCase();
-                        if (curUrlLower.includes('perfdrive') || curUrlLower.includes('validate.')) {
-                            radwareTick++;
-                            if (radwareTick % 5 === 1) {
-                                await captchaHelper.tryAutoClickCaptcha(p).catch(() => {});
-                            }
-                            return;
-                        }
-
-                        const detected = await p.evaluate((type) => {
-                            const u = window.location.href.toLowerCase();
-                            const bt = (document.body && document.body.innerText) || '';
-                            if (u.includes('perfdrive') || u.includes('validate.') || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha')) {
-                                return '__RADWARE_ACTIVE__';
-                            }
-                            const isModalVisible = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
-                                const s = window.getComputedStyle(m);
-                                return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show')) && s.visibility !== 'hidden';
-                            });
-                            const isSubmittingOnPortal = Boolean(document.querySelector('.spinner-border, .loading'));
-                            if (isSubmittingOnPortal && !isModalVisible && type === 'mobile_login') return 'ALREADY_VERIFIED_ON_PORTAL';
-                            if (type !== 'aadhaar_otp' && !isModalVisible && u.includes('newsmartcard')) {
-                                const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
-                                const isDobVisible = dobInp && (dobInp.offsetParent !== null || window.getComputedStyle(dobInp).display !== 'none');
-                                const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));
-                                const isAddMemVisible = addMemBtn && (addMemBtn.offsetParent !== null || window.getComputedStyle(addMemBtn).display !== 'none');
-                                if (isDobVisible || isAddMemVisible) {
-                                    return 'ALREADY_VERIFIED_ON_PORTAL';
-                                }
-                            }
-                            if (type !== 'aadhaar_otp' && !u.includes('/auth/login') && (u.includes('/pages/service-request') || u.includes('/dashboard') || Boolean(document.querySelector('#btnLogout, a[href*="logout"], .user-profile')))) {
-                                return 'ALREADY_VERIFIED_ON_PORTAL';
-                            }
-                            const inputs = Array.from(document.querySelectorAll('input[placeholder*="OTP" i], input[formcontrolname*="otp" i], input[name*="otp" i], #otp'));
-                            const visibleOtpInputs = inputs.filter(inp => inp.offsetWidth > 0 || inp.offsetHeight > 0);
-                            if (type !== 'aadhaar_otp' && visibleOtpInputs.length === 0) {
-                                const hasInitialLoginOrHome = Boolean(
-                                    document.querySelector('input[formcontrolname="mobNumber"]:not([disabled]), input#captcha, input[formcontrolname="captcha"], a[href*="service-request"]')
-                                ) || u.includes('/pages/home');
-                                if (hasInitialLoginOrHome) return '__MISSING_OTP_BOX__';
-                            }
-                            for (const inp of inputs) {
-                                const val = (inp.value || '').replace(/\D/g, '');
-                                if (type === 'aadhaar_otp') {
-                                    if (val.length === 6) return val;
-                                } else {
-                                    // Strict Invariant: Login OTP is strictly 7 digits (6-digit check abolished)
-                                    if (val.length === 7 || val.length > 7) {
-                                        try {
-                                            const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'));
-                                            const loginBtn = btns.find(b => {
-                                                const t = (b.innerText || b.value || '').trim();
-                                                const id = (b.id || '').toLowerCase();
-                                                return (t.includes('உள்நுழைக') || id === 'btnlogin' || b.classList.contains('subbtn')) && id !== 'btnsendotp' && !t.includes('பதிவு செய்ய');
-                                            });
-                                            if (loginBtn) {
-                                                loginBtn.removeAttribute('disabled');
-                                                loginBtn.disabled = false;
-                                                loginBtn.click();
-                                                return 'ALREADY_VERIFIED_ON_PORTAL';
-                                            }
-                                        } catch (_) {}
-                                        return val.slice(0, 7);
-                                    } else if (val.length === 6) {
-                                        const now = Date.now();
-                                        if (!inp._firstSeen6Len) inp._firstSeen6Len = now;
-                                        else if (now - inp._firstSeen6Len > 3500) {
-                                            // Anti-collision grace period tracked
-                                        }
-                                    }
-                                }
-                            }
-                            return null;
-                        }, oType).catch((err) => {
-                            sessionLog(20, 'OTP_WATCH_ERROR', String(err));
-                            return null;
-                        });
-                        if (detected === '__RADWARE_ACTIVE__') {
-                            radwareTick++;
-                            if (radwareTick % 5 === 1) {
-                                await captchaHelper.tryAutoClickCaptcha(p).catch(() => {});
-                            }
-                            return;
-                        }
-                        if (detected === '__MISSING_OTP_BOX__') {
-                            missingOtpTicks++;
-                            if (missingOtpTicks >= 4) {
-                                sessionLog(20, 'OTP_WATCH', 'Page refreshed back to login/home during OTP wait -> PAGE_REFRESHED_TO_LOGIN');
-                                cleanup('PAGE_REFRESHED_TO_LOGIN');
-                            }
-                            return;
-                        }
-                        missingOtpTicks = 0;
-                        if (detected) {
-                            sessionLog(20, 'OTP_WATCH', `Detected OTP: ${detected}`);
-                            cleanup(detected);
-                        }
-                    } catch (e) {
-                        sessionLog(20, 'OTP_WATCH_ERROR', String(e));
+            return createOtpWaitPromise({
+                p, promptMsg, otpType: oType, onProgress: onProg,
+                onSetWaiting: (waiting) => {
+                    sessionWaitingForOtp = waiting;
+                    isWaitingForOtp = waiting;
+                    if (!waiting) {
+                        sessionOtpType = '';
+                        currentOtpType = '';
+                        sessionOtpResolver = null;
+                        pendingOtpResolver = null;
                     }
-                }, 500);
+                },
+                onResolveHook: (fn) => {
+                    sessionOtpResolver = fn;
+                    pendingOtpResolver = fn;
+                }
             });
         },
         clearStaleOtpState: () => {

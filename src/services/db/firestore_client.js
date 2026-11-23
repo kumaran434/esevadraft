@@ -14,6 +14,51 @@ const APPDATA_DRAFTS_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\A
 if (!fs.existsSync(APPDATA_DRAFTS_DIR)) {
     try { fs.mkdirSync(APPDATA_DRAFTS_DIR, { recursive: true }); } catch (_) {}
 }
+const APPDATA_SUITE_DRAFTS_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-suite', 'data', 'drafts');
+
+const _deletedDraftFence = new Map();
+
+function normalizeFenceKeys(keyOrKeys) {
+    const rawList = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+    const out = new Set();
+    for (const item of rawList) {
+        if (!item) continue;
+        const s = String(item).trim();
+        if (s) out.add(s);
+        const digits = s.replace(/\D/g, '').slice(-10);
+        if (digits) out.add(digits);
+    }
+    return Array.from(out);
+}
+
+/**
+ * Records deletion timestamp so any in-flight save/cloud-sync started before delete
+ * cannot resurrect the draft on local disk or Firestore.
+ */
+function markDraftDeleted(keyOrKeys) {
+    const now = Date.now();
+    for (const k of normalizeFenceKeys(keyOrKeys)) {
+        _deletedDraftFence.set(k, now);
+    }
+    if (_deletedDraftFence.size > 500) {
+        const cutoff = now - 300000;
+        for (const [k, ts] of _deletedDraftFence.entries()) {
+            if (ts < cutoff) _deletedDraftFence.delete(k);
+        }
+    }
+    return now;
+}
+
+function isDraftStaleDueToDelete(mobileOrKey, operationStartedAtMs) {
+    if (!mobileOrKey || !operationStartedAtMs) return false;
+    for (const k of normalizeFenceKeys(mobileOrKey)) {
+        const delTs = _deletedDraftFence.get(k);
+        if (delTs && operationStartedAtMs <= delTs) {
+            return true;
+        }
+    }
+    return false;
+}
 
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0792225149';
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'gen-lang-client-0792225149.firebasestorage.app';
@@ -161,13 +206,29 @@ function syncFatherOrHusband(prof) {
     if (tam) prof.fatherNameTam = tam;
 }
 
+async function deleteStoragePrefix(prefix) {
+    if (!storageAvailable || !storageInstance || !prefix) return false;
+    try {
+        const bucket = storageInstance.bucket(STORAGE_BUCKET);
+        await bucket.deleteFiles({ prefix, force: true });
+        return true;
+    } catch (e) {
+        console.warn(`Storage delete prefix warning (${prefix}):`, e.message);
+        return false;
+    }
+}
+
 module.exports = {
     LOCAL_DRAFTS_DIR,
     APPDATA_DRAFTS_DIR,
+    APPDATA_SUITE_DRAFTS_DIR,
     PROJECT_ID,
     STORAGE_BUCKET,
     COLLECTION_NAME,
     normalizeOperatorUid,
+    markDraftDeleted,
+    isDraftStaleDueToDelete,
+    deleteStoragePrefix,
     uploadDocToStorage,
     downloadDocFromStorage,
     fileToBase64,

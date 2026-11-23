@@ -137,19 +137,25 @@ async function startTnpdsChangeHeadFlow(citizenProfile = {}, onProgress = () => 
         // ---------------------------------------------------------------------
         // Module 3: Form Filling & Document Upload (Steps 4 to 9)
         // ---------------------------------------------------------------------
-        const formRes = await executePageBlockWithRadwareRestart(
-            page,
-            () => executeChangeHeadFormSteps({
+        const formRes = await executePageBlockWithRadwareRestart(page, {
+            pageName: 'குடும்பத் தலைவர் மாற்ற படிவப் பக்கம் (service-request)',
+            firstStepName: 'படி 4/10 (குடும்பத் தலைவர் மாற்றம் சேவை தேர்வு)',
+            onProgress,
+            saveCookies: sharedContext.saveTnpdsCookies,
+            onSessionExpiredReLogin: async (p) => {
+                if ((p.url() || '').toLowerCase().includes('/auth/login')) {
+                    await executeChangeHeadLoginSteps({ page: p, userMobile, onProgress, options, sharedContext });
+                }
+            },
+            runPageStepsFromStart: async () => executeChangeHeadFormSteps({
                 page,
                 subData,
                 citizenProfile,
                 options,
                 onProgress,
                 sharedContext
-            }),
-            onProgress,
-            'படிவ விவரங்கள் பூர்த்தி செய்தல்'
-        );
+            })
+        });
 
         if (!formRes || !formRes.success) {
             return formRes || { success: false, message: 'படிவ விவரங்கள் பூர்த்தி செய்வதில் பிழை ஏற்பட்டது.' };

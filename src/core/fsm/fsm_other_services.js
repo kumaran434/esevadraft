@@ -1,128 +1,22 @@
 /**
- * eSevaDraft FSM Non-Ration Service Selection Handlers
- * Handles Income, Residence, Voter ID, and general service fallback dialogs.
+ * eSevaDraft Non-Ration Service Selection Facade
+ * Dispatches all 7 TNeGA Revenue Certificates & CAN Register strictly via isolated Cartridges.
+ * Keeps ONLY Voter ID / unknown service placeholders here.
  */
 
-const { advanceTnegaIncomeFlow, advanceTnegaResidenceFlow, advanceTnegaCommunityFlow, advanceTnegaFirstGraduateFlow, advanceTnegaObcFlow, advanceTnegaLegalHeirFlow, advanceTnegaWidowFlow } = require('./tnega_flow_engine');
-
 function handleNonRationServiceSelection(text, sess) {
-    if (text.includes('விதவை') || text.toLowerCase().includes('widow') || text.includes('REV-109') || text === 'WIDOW' || text === 'WIDOW_CERTIFICATE') {
-        sess.subService = 'WIDOW';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'WIDOW';
-        }
-        const flowStep = advanceTnegaWidowFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('வாரிசு') || text.toLowerCase().includes('legal heir') || text.includes('REV-114') || text === 'LEGAL_HEIR' || text === 'LEGAL_HEIR_CERTIFICATE') {
-        sess.subService = 'LEGAL_HEIR';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'LEGAL_HEIR';
-        }
-        const flowStep = advanceTnegaLegalHeirFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('OBC') || text.includes('obc') || text.includes('இதர பிற்படுத்தப்பட்டோர்') || text.includes('REV-115')) {
-        sess.subService = 'OBC';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'OBC';
-        }
-        const flowStep = advanceTnegaObcFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('வருமான') || text.toLowerCase().includes('income')) {
-        sess.subService = 'INCOME';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'INCOME';
-            delete sess.citizenProfile.familyMemberCount;
-            delete sess.citizenProfile.annualIncome;
-            delete sess.citizenProfile.profession;
-            delete sess.citizenProfile.incomeMembers;
-            delete sess.citizenProfile.incomeMembersConfirmed;
-            delete sess.citizenProfile.incomeSelectedIndices;
-            delete sess.citizenProfile.incomeExtraAddedMembers;
-            delete sess.citizenProfile.salaryProofPrompted;
-        }
-        delete sess.annualIncome;
-        delete sess.profession;
-        delete sess.familyMemberCount;
-        delete sess.incomeMembers;
-        const flowStep = advanceTnegaIncomeFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('இருப்பிட') || text.toLowerCase().includes('residence') || text.includes('பிறப்பிட') || text.toLowerCase().includes('nativity')) {
-        sess.subService = 'RESIDENCE';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'RESIDENCE';
-            delete sess.citizenProfile.yearsOfResidence;
-            delete sess.citizenProfile.purposeOfCertificate;
-        }
-        delete sess.yearsOfResidence;
-        delete sess.purposeOfCertificate;
-        const flowStep = advanceTnegaResidenceFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (!text.startsWith('COMMUNITY_') && !text.startsWith('RELIGION_') && (text.includes('சாதி') || text.toLowerCase().includes('community'))) {
-        sess.subService = 'COMMUNITY';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'COMMUNITY';
-            delete sess.citizenProfile.caste;
-            delete sess.citizenProfile.communityProof;
-            delete sess.citizenProfile.communityProofSkipped;
-        }
-        delete sess.caste;
-        delete sess.communityProof;
-        delete sess.communityProofSkipped;
-        const flowStep = advanceTnegaCommunityFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('முதல் பட்டதாரி') || text.toLowerCase().includes('first graduate')) {
-        sess.subService = 'FIRST_GRADUATE';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'FIRST_GRADUATE';
-            delete sess.citizenProfile.currentCourse;
-            delete sess.citizenProfile.institutionName;
-            delete sess.citizenProfile.fatherEducation;
-            delete sess.citizenProfile.motherEducation;
-            delete sess.citizenProfile.familyGraduateConfirmed;
-        }
-        delete sess.currentCourse;
-        delete sess.institutionName;
-        delete sess.fatherEducation;
-        delete sess.motherEducation;
-        delete sess.familyGraduateConfirmed;
-        const flowStep = advanceTnegaFirstGraduateFlow(sess);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-        return true;
-    } else if (text.includes('வாக்காளர்') || text.toLowerCase().includes('voter')) {
+    if (!text) return false;
+    if (text === 'CONTINUE_INTAKE' || text === 'CONFIRM_SUBMIT' || text === 'TRIGGER_EDIT_MODAL' || text === 'CHANGE_HEAD_PHOTO') {
+        return false;
+    }
+
+    const { resolveCartridgeForSelection } = require('../../cartridges');
+    const matched = resolveCartridgeForSelection(text, sess);
+    if (matched && matched.portal === 'TNEGA' && matched.flow && typeof matched.flow.enterService === 'function') {
+        return matched.flow.enterService(sess);
+    }
+
+    if (text.includes('வாக்காளர்') || text.toLowerCase().includes('voter')) {
         sess.intakeState = 'VOTER_INTAKE';
         const hasAadhaar = !!(sess.citizenProfile?.headAadhaar || sess.citizenProfile?.aadhaarNumber);
         const aadhDisp = (sess.citizenProfile?.headAadhaar || sess.citizenProfile?.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim();
@@ -141,30 +35,21 @@ function handleNonRationServiceSelection(text, sess) {
             ];
         } else {
             welcomeText += `விண்ணப்பதாரரின் ஆதார் அட்டை அல்லது பிறப்புச் சான்றிதழைப் பதிவேற்றவும்:`;
-            options = [
-                { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }
-            ];
+            options = [{ label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }];
         }
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: welcomeText,
-            options
-        });
-        return true;
-    } else if (text === 'CONTINUE_INTAKE' || text === 'CONFIRM_SUBMIT' || text === 'TRIGGER_EDIT_MODAL' || text === 'CHANGE_HEAD_PHOTO') {
-        return false;
-    } else if (text) {
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `ℹ️ **${text} சேவை விரைவில் முழுமையாக இணைக்கப்படவுள்ளது!**\n\nதற்போது **புதிய ரேஷன் கார்டு (New Ration Card)** விண்ணப்பம் 100% நேரலையில் பயன்பாட்டில் உள்ளது. அதைத் தொடங்க விரும்புகிறீர்களா?`,
-            options: [
-                { label: "🏛️ புதிய ரேஷன் கார்டு தொடங்கவும்", value: "புதிய ரேஷன் கார்டு" },
-                { label: "🔄 மீண்டும் சேவைகளைத் தேர்ந்தெடு", value: "reset" }
-            ]
-        });
+        sess.chatHistory.push({ sender: 'bot', text: welcomeText, options });
         return true;
     }
-    return false;
+
+    sess.chatHistory.push({
+        sender: 'bot',
+        text: `ℹ️ **${text} சேவை விரைவில் முழுமையாக இணைக்கப்படவுள்ளது!**\n\nதற்போது **புதிய ரேஷன் கார்டு (New Ration Card)** விண்ணப்பம் 100% நேரலையில் பயன்பாட்டில் உள்ளது. அதைத் தொடங்க விரும்புகிறீர்களா?`,
+        options: [
+            { label: "🏛️ புதிய ரேஷன் கார்டு தொடங்கவும்", value: "புதிய ரேஷன் கார்டு" },
+            { label: "🔄 மீண்டும் சேவைகளைத் தேர்ந்தெடு", value: "reset" }
+        ]
+    });
+    return true;
 }
 
 module.exports = { handleNonRationServiceSelection };

@@ -22,12 +22,27 @@ async function selectDateInMatCalendar(targetPage, dobStr, isAdditional = false)
     }
 
     try {
+        // Self-Heal: If the member form was accidentally toggled closed, re-open it once so dateOfBirth is visible
+        await targetPage.evaluate(() => {
+            const dobEl = document.querySelector('input[formcontrolname="dateOfBirth"], input[formcontrolname="date"]');
+            if (dobEl && (dobEl.offsetWidth > 0 || dobEl.offsetHeight > 0)) return;
+            const addBtn = Array.from(document.querySelectorAll('button')).find(b => {
+                const t = (b.innerText || '').trim().toLowerCase();
+                return t.includes('உறுப்பினரை சேர்க்க') || t.includes('add member');
+            });
+            if (addBtn) {
+                addBtn.disabled = false;
+                addBtn.removeAttribute('disabled');
+                addBtn.click();
+            }
+        }).catch(() => {});
+
         const toggleBtn = isAdditional 
             ? targetPage.locator('mat-form-field:has(input[formcontrolname="dateOfBirth"], input[formcontrolname="date"], input#mat-input-0) mat-datepicker-toggle button, mat-datepicker-toggle button, button[aria-label="Open calendar"], .mat-datepicker-toggle-default-icon, button:has(.fa-calendar), span.input-group-addon').last()
             : targetPage.locator('mat-form-field:has(input[formcontrolname="dateOfBirth"], input[formcontrolname="date"], input#mat-input-0) mat-datepicker-toggle button, mat-datepicker-toggle button, button[aria-label="Open calendar"], .mat-datepicker-toggle-default-icon, button:has(.fa-calendar), span.input-group-addon').first();
-        await toggleBtn.scrollIntoViewIfNeeded().catch(() => {});
-        await toggleBtn.click({ force: true });
-        await targetPage.waitForSelector('mat-calendar, .mat-calendar', { timeout: 6000 });
+        await toggleBtn.scrollIntoViewIfNeeded({ timeout: 2500 }).catch(() => {});
+        await toggleBtn.click({ force: true, timeout: 3000 });
+        await targetPage.waitForSelector('mat-calendar, .mat-calendar', { timeout: 5000 });
 
         const periodBtn = targetPage.locator('.mat-calendar-period-button').last();
         if (await periodBtn.count() > 0) {
@@ -114,10 +129,14 @@ async function selectDateInMatCalendar(targetPage, dobStr, isAdditional = false)
             : targetPage.locator('input[formcontrolname="dateOfBirth"], input[formcontrolname="date"], input#mat-input-0, input[placeholder*="DD/MM"]').first();
         if (await targetDobInput.count() > 0) {
             const jsDate = new Date(year, month - 1, day);
-            await targetDobInput.evaluate(el => el.removeAttribute('readonly')).catch(() => {});
-            await targetDobInput.click({ force: true }).catch(() => {});
-            await targetDobInput.fill('').catch(() => {});
-            await targetDobInput.pressSequentially(cleanDob, { delay: 40 }).catch(() => {});
+            await targetDobInput.evaluate(el => {
+                el.disabled = false;
+                el.removeAttribute('disabled');
+                el.removeAttribute('readonly');
+            }).catch(() => {});
+            await targetDobInput.click({ force: true, timeout: 2500 }).catch(() => {});
+            await targetDobInput.fill('', { timeout: 2500 }).catch(() => {});
+            await targetDobInput.pressSequentially(cleanDob, { delay: 40, timeout: 3000 }).catch(() => {});
             await targetDobInput.evaluate((el, { cleanDob, jsDateIso }) => {
                 el.value = cleanDob;
                 el.dispatchEvent(new Event('input', { bubbles: true }));

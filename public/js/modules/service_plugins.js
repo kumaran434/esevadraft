@@ -11,11 +11,11 @@
 // =============================================================================
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory();
+        module.exports = factory(root);
     } else {
-        root.ESEVA_PLUGINS = factory();
+        root.ESEVA_PLUGINS = factory(root);
     }
-}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
     'use strict';
 
     const MENU_ONLY_STATES = new Set([
@@ -176,6 +176,8 @@
                 'CHANGE_OF_MOBILE_NUMBER', 'கைபேசி எண் மாற்றம்'
             ],
             ownedStates: [
+                'RATION_CHANGE_MOBILE',
+                'RATION_CHANGE_MOBILE_INPUT',
                 'RATION_CHANGE_MOBILE_NUMBER',
                 'RATION_CHANGE_MOBILE_CARD',
                 'RATION_CHANGE_MOBILE_VERIFY'
@@ -196,6 +198,8 @@
                 'TNPDS_CHANGE_HEAD', 'CHANGE_HEAD', 'FAMILY_HEAD_MEMBER_CHANGE', 'குடும்பத் தலைவர் மாற்றம்'
             ],
             ownedStates: [
+                'RATION_CHANGE_HEAD',
+                'RATION_CHANGE_HEAD_REASON',
                 'RATION_CHANGE_HEAD_NAME',
                 'RATION_CHANGE_HEAD_DOC',
                 'RATION_CHANGE_HEAD_VERIFY'
@@ -562,6 +566,20 @@
     const PLUGIN_BY_STATE = new Map();
 
     for (const plugin of SERVICE_PLUGINS) {
+        // Bind Per-Service UI Cartridge cleanly (Browser globals or Node require)
+        let uiCartridge = (root && root.ESEVA_UI_CARTRIDGES && root.ESEVA_UI_CARTRIDGES[plugin.id]) || null;
+        if (!uiCartridge && typeof module === 'object' && typeof require === 'function') {
+            try {
+                uiCartridge = require(`../cartridges/${plugin.id.toLowerCase()}.js`);
+            } catch (_) {}
+        }
+        if (uiCartridge) {
+            plugin.uiCartridge = uiCartridge;
+            if (uiCartridge.editModal) {
+                plugin.editModal = Object.assign({}, plugin.editModal || {}, uiCartridge.editModal);
+            }
+        }
+
         PLUGIN_BY_ID.set(plugin.id, plugin);
         PLUGIN_BY_ALIAS.set(plugin.id.toUpperCase(), plugin);
         if (plugin.subService) PLUGIN_BY_ALIAS.set(plugin.subService.toUpperCase(), plugin);

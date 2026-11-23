@@ -3,6 +3,35 @@
  */
 
 const { renderSubserviceReadySummary } = require('./fsm_summary_formatter');
+const { maybePromptSubserviceAadhaarBack, completeSubserviceAadhaarBack } = require('./fsm_member_doc_upload');
+
+function pushSonRelationPrompt(sess, isRealExtracted, mergedDualSided = false) {
+    sess.intakeState = 'RATION_ADD_MEMBER_SON_RELATION';
+    const ssd = sess.subServiceData || {};
+    const nameDisplay = ssd.memberNameTam && ssd.memberNameEng
+        ? `${ssd.memberNameTam} (${ssd.memberNameEng})`
+        : (ssd.memberName || 'உறுப்பினர்');
+    const aadhaarDisplay = ssd.aadhaarNo
+        ? `\n• 🪪 **ஆதார் எண்:** ${(ssd.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()}`
+        : '';
+    const dobDisplay = ssd.dob ? `\n• 📅 **பிறந்த தேதி:** ${ssd.dob}` : '';
+    const successPrefix = mergedDualSided
+        ? '✅ **ஆதார் அட்டை (முன்பக்கம் + பின்பக்கம்) 2-in-1 A4 PDF-ஆக இணைக்கப்பட்டது!** 📄'
+        : (isRealExtracted ? '✅ **ஆதார் அட்டை AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **ஆதார் அட்டை பெறப்பட்டது!** 🪪');
+
+    sess.chatHistory.push({
+        sender: 'bot',
+        text: `${successPrefix}\n\n` +
+              `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}\n\n` +
+              `குடும்பத் தலைவருடன் இவரின் உறவுமுறை என்ன?\n\n` +
+              `கீழே உள்ள விருப்பத்தைத் தேர்வு செய்யவும்:`,
+        options: [
+            { label: "👦 மகன் (Son)", value: "REL_SON" },
+            { label: "👧 மகள் (Daughter)", value: "REL_DAUGHTER" },
+            { label: "🔙 பின்செல்ல", value: "ADD_MEMBER_SON_DAUGHTER" }
+        ]
+    });
+}
 
 function inheritExistingProfile(sess) {
     if (!sess || !sess.subServiceData) return;
@@ -222,29 +251,30 @@ function handleAddMemberChild(text, sess, currentState, uploadedDoc, extractedDo
             }
         }
 
-        const nameDisplay = sess.subServiceData.memberNameTam && sess.subServiceData.memberNameEng
-            ? `${sess.subServiceData.memberNameTam} (${sess.subServiceData.memberNameEng})`
-            : (sess.subServiceData.memberName || 'உறுப்பினர்');
+        if (text !== 'SON_AADHAAR_CONFIRMED' && text !== 'DEMO_ADULT_AADHAAR' && maybePromptSubserviceAadhaarBack({
+            sess,
+            uploadedDoc,
+            extractedDoc,
+            backWaitState: 'RATION_ADD_MEMBER_SON_AADHAAR_BACK',
+            skipValue: 'SON_AADHAAR_SKIP_BACK',
+            isRealExtracted
+        })) {
+            return true;
+        }
 
-        const aadhaarDisplay = sess.subServiceData.aadhaarNo
-            ? `\n• 🪪 **ஆதார் எண்:** ${(sess.subServiceData.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()}`
-            : '';
-        const dobDisplay = sess.subServiceData.dob ? `\n• 📅 **பிறந்த தேதி:** ${sess.subServiceData.dob}` : '';
-        const successPrefix = isRealExtracted ? '✅ **ஆதார் அட்டை AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **ஆதார் அட்டை பெறப்பட்டது!** 🪪';
-
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `${successPrefix}\n\n` +
-                  `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}\n\n` +
-                  `குடும்பத் தலைவருடன் இவரின் உறவுமுறை என்ன?\n\n` +
-                  `கீழே உள்ள விருப்பத்தைத் தேர்வு செய்யவும்:`,
-            options: [
-                { label: "👦 மகன் (Son)", value: "REL_SON" },
-                { label: "👧 மகள் (Daughter)", value: "REL_DAUGHTER" },
-                { label: "🔙 பின்செல்ல", value: "ADD_MEMBER_SON_DAUGHTER" }
-            ]
-        });
+        pushSonRelationPrompt(sess, isRealExtracted, false);
         return true;
+    }
+
+    if (currentState === 'RATION_ADD_MEMBER_SON_AADHAAR_BACK') {
+        return completeSubserviceAadhaarBack({
+            text, sess, uploadedDoc, extractedDoc,
+            skipValue: 'SON_AADHAAR_SKIP_BACK'
+        }).then((res) => {
+            if (!res.done) return true;
+            pushSonRelationPrompt(sess, true, res.merged);
+            return true;
+        });
     }
 
     if (currentState === 'RATION_ADD_MEMBER_SON_RELATION') {

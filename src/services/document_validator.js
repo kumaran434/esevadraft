@@ -217,8 +217,67 @@ function validateUploadedDocument(slotName, extracted) {
     return { valid: true, detectedType: docType, detectedNameTamil };
 }
 
+/**
+ * Determine whether a double-sided identity/ration card upload already contains BOTH Front and Back sides
+ * (e.g., e-Aadhaar, combined 2-in-1 page scan, or multi-page PDF) vs only ONE side.
+ *
+ * @param {object|null} extracted - AI extraction JSON from ai_document_extractor
+ * @param {string} [filePath] - Uploaded file path (.pdf / .jpg / .png)
+ * @param {'aadhaar'|'smartCard'|'rationCard'|'doubleSided'} [kind='aadhaar']
+ * @returns {boolean}
+ */
+function isDoubleSidedCardComplete(extracted, filePath = '', kind = 'aadhaar') {
+    const isPdf = /\.pdf$/i.test(String(filePath || ''));
+    const docType = String(extracted?.documentType || '').toUpperCase();
+
+    if (kind === 'smartCard' || kind === 'rationCard') {
+        const hasMembers = Array.isArray(extracted?.smartCardMembers) && extracted.smartCardMembers.length > 0;
+        const hasFrontId = Boolean(extracted?.smartCardNumber || extracted?.fullNameEng || extracted?.fullNameTam);
+        if (docType === 'SMART_CARD_BACK' && !extracted?.isFullSmartCard) return false;
+        if (docType === 'SMART_CARD_FRONT' && !extracted?.isFullSmartCard && !hasMembers) return false;
+        return Boolean(
+            extracted?.isFullSmartCard ||
+            (isPdf && docType !== 'SMART_CARD_FRONT' && docType !== 'SMART_CARD_BACK') ||
+            (hasMembers && docType !== 'SMART_CARD_BACK' && hasFrontId)
+        );
+    }
+
+    // Aadhaar / generic double-sided card
+    if (docType === 'BIRTH_CERTIFICATE') return true;
+    if (docType === 'AADHAAR_BACK' && !extracted?.isFullAadhaar) return false;
+
+    const hasAddress = Boolean(
+        extracted?.hasAddress ||
+        extracted?.address ||
+        (extracted?.doorNo && extracted?.pincode) ||
+        extracted?.streetTam ||
+        extracted?.streetEng
+    );
+    if (docType === 'AADHAAR_FRONT' && !extracted?.isFullAadhaar && !hasAddress) return false;
+
+    const hasIdentity = Boolean(
+        extracted?.fullNameEng ||
+        extracted?.fullNameTam ||
+        String(extracted?.aadhaarNumber || '').replace(/\D/g, '').length >= 12
+    );
+    const hasRelation = Boolean(
+        extracted?.fatherNameEng ||
+        extracted?.fatherNameTam ||
+        extracted?.spouseNameEng ||
+        extracted?.spouseNameTam
+    );
+
+    return Boolean(
+        extracted?.isFullAadhaar ||
+        docType === 'AADHAAR_FULL' ||
+        (isPdf && docType !== 'AADHAAR_FRONT' && docType !== 'AADHAAR_BACK') ||
+        (hasAddress && (hasIdentity || hasRelation))
+    );
+}
+
 module.exports = {
     validateUploadedDocument,
+    isDoubleSidedCardComplete,
     getDocNameTamil,
     DOC_NAMES_TAMIL
 };

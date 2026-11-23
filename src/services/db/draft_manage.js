@@ -6,9 +6,12 @@ const path = require('path');
 const {
     LOCAL_DRAFTS_DIR,
     APPDATA_DRAFTS_DIR,
-    STORAGE_BUCKET,
+    APPDATA_SUITE_DRAFTS_DIR,
     COLLECTION_NAME,
     normalizeOperatorUid,
+    markDraftDeleted,
+    isDraftStaleDueToDelete,
+    deleteStoragePrefix,
     getFirestoreInstance,
     isFirestoreAvailable,
     isStorageAvailable
@@ -91,6 +94,7 @@ function extractDraftServiceName(d) {
 }
 
 async function listAllDrafts(operatorUid = null) {
+    const syncStartedAt = Date.now();
     const drafts = [];
     const seenMobiles = new Set();
     const targetUid = operatorUid ? String(operatorUid).trim() : null;
@@ -105,7 +109,7 @@ async function listAllDrafts(operatorUid = null) {
     const isDesktopLocal = !process.env.K_SERVICE && !process.env.GAE_SERVICE;
 
     // 1. FAST LOCAL DISK FIRST (0ms Latency - Instant Operator Desk & Search)
-    const localDirs = [APPDATA_DRAFTS_DIR, LOCAL_DRAFTS_DIR].filter(d => d && fs.existsSync(d));
+    const localDirs = [APPDATA_DRAFTS_DIR, APPDATA_SUITE_DRAFTS_DIR, LOCAL_DRAFTS_DIR].filter(d => d && fs.existsSync(d));
     for (const dir of localDirs) {
         try {
             const files = fs.readdirSync(dir);
@@ -164,18 +168,19 @@ async function listAllDrafts(operatorUid = null) {
         } catch (_) {}
     }
 
-    // 2. CLOUD FIRESTORE FALLBACK (Only when local disk is empty e.g. new PC login, or running on pure web cloud)
+    // 2. CLOUD FIRESTORE FALLBACK (When local disk is empty e.g. new PC login, or running on pure web cloud)
     const shouldFetchCloudSync = (!isDesktopLocal) || (drafts.length === 0);
     const firestore = getFirestoreInstance();
 
     if (shouldFetchCloudSync && isFirestoreAvailable() && firestore) {
         try {
             const col = firestore.collection(COLLECTION_NAME);
-            const fetchPromise = col.get();
+            const queryRef = normTarget ? col.where('operatorUid', '==', normTarget) : col;
+            const fetchPromise = queryRef.get();
             const snapshot = isDesktopLocal 
                 ? await Promise.race([
                     fetchPromise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud sync timeout in desktop local mode')), 1500))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud sync timeout in desktop local mode')), 8000))
                   ])
                 : await fetchPromise;
             snapshot.forEach(doc => {
@@ -189,13 +194,14 @@ async function listAllDrafts(operatorUid = null) {
                 if (normTarget) {
                     if (!normDocOp || normDocOp !== normTarget) return;
                 }
+                if (isDraftStaleDueToDelete(d.mobileNumber || doc.id, syncStartedAt)) return;
 
                 // Ensure Cloud draft is also cached to the local disk directory ONLY IF owned by target operator!
                 if (!d.isDeleted && d.status !== 'TRASHED' && d.mobileNumber) {
                     const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
                     const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
                     const localTargetFile = path.join(targetLocalDir, `${d.mobileNumber}.json`);
-                    if (!fs.existsSync(localTargetFile)) {
+                    if (!fs.existsSync(localTargetFile) && !isDraftStaleDueToDelete(d.mobileNumber, syncStartedAt)) {
                         try { fs.writeFileSync(localTargetFile, JSON.stringify(d, null, 2), 'utf8'); } catch (_) {}
                     }
                 }
@@ -227,14 +233,16 @@ async function listAllDrafts(operatorUid = null) {
             console.warn('Failed to list Firestore drafts:', e.message);
         }
     } else if (isFirestoreAvailable() && firestore) {
-        // WhatsApp Desktop Standard: Local drafts returned immediately; silent background sync to local disk
+        // WhatsApp Desktop Standard: Local drafts returned immediately; silent background sync for this operator ONLY
         setImmediate(async () => {
             try {
                 const col = firestore.collection(COLLECTION_NAME);
-                const snapshot = await col.get();
+                const queryRef = normTarget ? col.where('operatorUid', '==', normTarget) : col;
+                const snapshot = await queryRef.get();
                 snapshot.forEach(doc => {
                     const d = doc.data();
                     if (d && !d.isDeleted && d.status !== 'TRASHED' && d.mobileNumber) {
+                        if (isDraftStaleDueToDelete(d.mobileNumber || doc.id, syncStartedAt)) return;
                         const normDocOp = normalizeOperatorUid(d.operatorUid);
                         // STRICT TENANT BOUNDARY: NEVER cache another operator's draft to local disk!
                         if (normTarget && normDocOp !== normTarget) return;
@@ -242,7 +250,7 @@ async function listAllDrafts(operatorUid = null) {
                         const isDesktopApp = !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
                         const targetLocalDir = (isDesktopApp && APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) ? APPDATA_DRAFTS_DIR : LOCAL_DRAFTS_DIR;
                         const localTargetFile = path.join(targetLocalDir, `${d.mobileNumber}.json`);
-                        if (!fs.existsSync(localTargetFile)) {
+                        if (!fs.existsSync(localTargetFile) && !isDraftStaleDueToDelete(d.mobileNumber, syncStartedAt)) {
                             try { fs.writeFileSync(localTargetFile, JSON.stringify(d, null, 2), 'utf8'); } catch (_) {}
                         }
                     }
@@ -348,15 +356,38 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
         `91${cleanDigits}`
     ].filter(Boolean)));
 
+    // Immediately fence off any in-flight saveCitizenDraft / listAllDrafts background sync
+    markDraftDeleted(keysToClean);
+
+    // Purge in-memory sessions IMMEDIATELY before async I/O so polling/saves cannot re-persist
+    try {
+        const storageService = require('../storage_service');
+        if (storageService && typeof storageService.purgeSession === 'function') {
+            for (const k of keysToClean) storageService.purgeSession(k);
+        }
+    } catch (_) {}
+
     const firestore = getFirestoreInstance();
     if (isFirestoreAvailable() && firestore) {
+        const col = firestore.collection(COLLECTION_NAME);
         for (const k of keysToClean) {
             try {
-                await firestore.collection(COLLECTION_NAME).doc(k).delete();
+                await col.doc(k).delete();
             } catch (e) {
                 console.warn(`Firestore delete error: ${e.message}`);
             }
         }
+        try {
+            const matchSnap = await col.where('mobileNumber', 'in', keysToClean.slice(0, 10)).get();
+            for (const doc of matchSnap.docs) {
+                await doc.ref.delete().catch(() => {});
+            }
+        } catch (_) {}
+    }
+
+    if (isStorageAvailable() && cleanDigits && !options?.preserveUploads) {
+        await deleteStoragePrefix(`drafts/${cleanDigits}/`).catch(() => {});
+        await deleteStoragePrefix(`citizens/${cleanDigits}/`).catch(() => {});
     }
 
     // 0. Collect all physical document and photo file paths owned by this customer before deleting JSON
@@ -364,9 +395,11 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
     const draftDirCandidates = [
         LOCAL_DRAFTS_DIR,
         APPDATA_DRAFTS_DIR,
+        APPDATA_SUITE_DRAFTS_DIR,
         path.join(__dirname, '..', '..', '..', 'data', 'drafts'),
         path.join(process.cwd(), 'data', 'drafts'),
         path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts'),
+        path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-suite', 'data', 'drafts'),
         path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'data', 'drafts')
     ].filter(Boolean);
 
@@ -416,10 +449,11 @@ async function deleteCitizenDraft(mobileNumber, options = {}) {
     }
 
     // 1b. Delete all Citizen JSON files across every known disk location
-    const citizenDirCandidates = [
+        const citizenDirCandidates = [
         path.join(__dirname, '..', '..', '..', 'data', 'citizens'),
         path.join(process.cwd(), 'data', 'citizens'),
         path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'citizens'),
+        path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-suite', 'data', 'citizens'),
         path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'data', 'citizens')
     ].filter(Boolean);
 

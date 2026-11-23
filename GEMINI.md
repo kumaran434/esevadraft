@@ -247,6 +247,19 @@
   `படி 3: முன்-தேவைகள் & விடுபட்ட கேள்விகள் (Prerequisites like CAN + Missing Bucket B Fields)` ➡️
   `படி 4: ஆபரேட்டர் சரிபார்ப்பு & 1-கிளிக் ஆட்டோமேஷன் (Review & 1-Click Launch)`.
 
+### 🧩 Golden Rule 21: Zero-Mixing Isolated Service Cartridge Law (இனி வரும் அனைத்து சேவைகளுக்கும் 100% தனித்தனி Cartridge கட்டாய விதி)
+- **Never Regrow Shared Service `if/else` Ladders (பொது கோடுகளில் கலப்பு முழுத் தடை)**:
+  - **Every new or existing government service (#15..#50+) MUST live 100% inside its own isolated Backend Cartridge (`src/cartridges/<service>/`) and UI Cartridge (`public/js/cartridges/<service>.js`) — built from `src/cartridges/_template/` & `public/js/cartridges/_template.js`.**
+  - Each service Cartridge MUST independently own ALL 7 stages:
+    1. `manifest.js`: disjoint `id`, `aliases`, `ownedStates`.
+    2. `flow.js`: `enterService`, `advanceFlow` / `handleFlow`, `onDocumentDeleted`.
+    3. `intake.js`: Chat turn handling & document persistence scoped ONLY to this service.
+    4. `extractor.js`: `processEditModalUpload` & `applyDocumentUpload` scoped ONLY to this service's slots.
+    5. `automation.js`: `startFromChat`, `run`, `chatStartTriggers`, `readyStates`.
+    6. UI Cartridge (`public/js/cartridges/<service>.js`): `ownedDocTypes`, `renderDynamicEditFields` (zero static HTML bloat in `public/index.html`), `collectEditFields`, `renderDynamicSidebar`, `syncFromUpload`, `validatePreSubmit`.
+- **Frozen Core Tools Only**: Only pure stateless tools (`photo_studio.js`, `ai_document_extractor.js`, `doc_upload_primitives.js`, `tn_district_mapper.js`, `tnega_browser_manager.js`, `storage_service.js`) and thin switchboards (`<= 120 lines`) remain shared.
+- **Automated Gate**: Enforce via `node scripts/preflight_check.js` and `tests/regression_suite.js` on every change.
+
 ---
 
 ## 3. Lean 2-Tier Working Model (எளிய 2-அடுக்கு பணி மாதிரி)

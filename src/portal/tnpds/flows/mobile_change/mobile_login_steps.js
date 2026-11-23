@@ -2,6 +2,7 @@
 // TNPDS Change Mobile — Login & Authentication Steps (Steps 1, 2, 3)
 // =========================================================================
 const { performEarlyStep1RadwareWarmup } = require('../../../common/universal_radware_resumption');
+const { waitForMobileChangeLoginOtp } = require('./mobile_change_otp_config');
 
 async function executeMobileChangeLoginSteps({ page, userMobile, onProgress, options, sharedContext }) {
     const {
@@ -197,7 +198,7 @@ async function executeMobileChangeLoginSteps({ page, userMobile, onProgress, opt
             if (otpAppeared) {
                 onProgress(`📱 [படி 3/10] அரசு TNPDS உங்கள் கைபேசிக்கு (+91 ${userMobile}) அனுப்பிய அரசு 7-இலக்க SMS OTP-க்காகக் காத்திருக்கிறது...`);
                 onProgress('👉 7-இலக்க Login OTP எண்ணை சாட்டிலோ அல்லது உங்கள் கண்முன்னே தெரியும் Google Chrome உலாவியிலோ உள்ளிடலாம்.');
-                const otpVal = await requestOtpFromUser(`📱 உங்கள் கைபேசிக்கு (+91 ${userMobile}) வந்த அரசு 7-இலக்க Login SMS OTP எண்ணை உள்ளிடவும் (Step 3):`, onProgress, 'login_otp', page);
+                const otpVal = await waitForMobileChangeLoginOtp(page, userMobile, onProgress, requestOtpFromUser);
                 if (otpVal === 'PAGE_REFRESHED_TO_LOGIN') {
                     onProgress('🔄 [Login Page Recover] OTP காத்திருப்பின்போது TNPDS தளம் Login முகப்பிற்கு திரும்பியதால் மீண்டும் தானாக தொடங்கப்படுகிறது...');
                     continue;

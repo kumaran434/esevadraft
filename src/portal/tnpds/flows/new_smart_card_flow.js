@@ -89,6 +89,7 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
     }
 
     // 0. Prepare Documents
+    onProgress('🖼️ [படி 1/51] ஆவணங்கள் மற்றும் புகைப்படங்கள் தயார்படுத்தப்பட்டு Google Chrome தொடங்கப்படுகிறது...');
     const docPrep = await prepareNewCardDocuments(citizenProfile, options, isMock);
 
     // 1. Launch Browser
@@ -132,6 +133,7 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
         return await executePageBlockWithRadwareRestart(page, {
             pageName: 'புதிய மின்னணு அட்டை பக்கம் (newsmartcard)',
             firstStepName: 'படி 1/51 (குடும்பத் தலைவர் தலைப்பு & விவரங்கள்)',
+            checkPageIntactFn: isNewCardPageIntact,
             onProgress,
             saveCookies: sharedContext.saveTnpdsCookies,
             runPageStepsFromStart: async () => {
@@ -174,20 +176,29 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
                     // 3. Demographics (Steps 1 to 13 — First step group of this page)
                     await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 1, { stage: 'demographics' });
                     const demoRes = await executeApplicantDemographics(page, citizenProfile, sanitizedProfile, docPrep, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                    if (!demoRes || !demoRes.success) return demoRes || { success: false, message: 'படிகள் 1-13 தோல்வி.' };
+                    if (!demoRes || !demoRes.success) {
+                        await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 1-13 (குடும்பத் தலைவர் விவரங்கள்)');
+                        return demoRes || { success: false, message: 'படிகள் 1-13 தோல்வி.' };
+                    }
 
                     // 4. Jurisdiction (Steps 14 to 20)
                     await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 14-20 (மண்டல விவரங்கள் & OTP)');
                     await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 14, { stage: 'jurisdiction' });
                     const jurRes = await executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                    if (!jurRes || !jurRes.success) return jurRes || { success: false, message: 'படிகள் 14-20 தோல்வி.' };
+                    if (!jurRes || !jurRes.success) {
+                        await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 14-20 (மண்டல விவரங்கள் & OTP)');
+                        return jurRes || { success: false, message: 'படிகள் 14-20 தோல்வி.' };
+                    }
                     receivedOtp = jurRes.receivedOtp;
 
                     // 5. Head Member (Steps 21 to 34)
                     await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 21-34 (குடும்பத் தலைவர் விவரங்கள்)');
                     await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 21, { stage: 'head_member' });
                     const headRes = await executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, docPrep, receivedOtp, options, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                    if (!headRes || !headRes.success) return headRes || { success: false, message: 'படிகள் 21-34 தோல்வி.' };
+                    if (!headRes || !headRes.success) {
+                        await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 21-34 (குடும்பத் தலைவர் விவரங்கள்)');
+                        return headRes || { success: false, message: 'படிகள் 21-34 தோல்வி.' };
+                    }
                 } else if (isHeadModalOpen) {
                     onProgress('⚡ [நேரலை மீட்பு] திரையில் ஆதார் OTP சாளரம் ஏற்கனவே திறந்துள்ளது! நேரடியாகப் படி 35 ஆதார் OTP சரிபார்ப்புக்குத் தாவுகிறது...');
                 } else if (isHeadAlreadyInTable) {
@@ -199,20 +210,29 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
                     await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 35-36 (குடும்பத் தலைவர் ஆதார் OTP)');
                     await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 35, { stage: 'head_aadhaar_otp' });
                     const headOtpRes = await executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                    if (!headOtpRes || !headOtpRes.success) return headOtpRes || { success: false, message: 'படிகள் 35-36 தோல்வி.' };
+                    if (!headOtpRes || !headOtpRes.success) {
+                        await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 35-36 (குடும்பத் தலைவர் ஆதார் OTP)');
+                        return headOtpRes || { success: false, message: 'படிகள் 35-36 தோல்வி.' };
+                    }
                 }
 
                 // 7. Additional Family Members Loop
                 await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படி 36 (கூடுதல் உறுப்பினர்கள்)');
                 await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 36, { stage: 'family_members' });
                 const famRes = await executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                if (!famRes || !famRes.success) return famRes || { success: false, message: 'படி 36 கூடுதல் உறுப்பினர்கள் தோல்வி.' };
+                if (!famRes || !famRes.success) {
+                    await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படி 36 (கூடுதல் உறுப்பினர்கள்)');
+                    return famRes || { success: false, message: 'படி 36 கூடுதல் உறுப்பினர்கள் தோல்வி.' };
+                }
 
                 // 8. Commodities & Gas (Steps 37 to 46)
                 await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 37-46 (அட்டை வகை & எரிவாயு விவரங்கள்)');
                 await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 37, { stage: 'commodities_gas' });
                 const gasRes = await executeCommoditiesAndGasSteps(page, citizenProfile, docPrep, options, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
-                if (!gasRes || !gasRes.success) return gasRes || { success: false, message: 'படிகள் 37-46 தோல்வி.' };
+                if (!gasRes || !gasRes.success) {
+                    await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 37-46 (அட்டை வகை & எரிவாயு விவரங்கள்)');
+                    return gasRes || { success: false, message: 'படிகள் 37-46 தோல்வி.' };
+                }
 
                 // 9. Declaration & Final Submit (Steps 47 to 51)
                 await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 47-51 (ஆவணப் பதிவேற்றம் & சமர்ப்பிப்பு)');

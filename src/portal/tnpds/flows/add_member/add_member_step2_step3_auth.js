@@ -1,6 +1,7 @@
 /**
  * TNPDS Add Member - Steps 2 & 3: Mobile, Captcha, Radware & Login OTP Verification
  */
+const { waitForAddMemberLoginOtp } = require('./add_member_otp_config');
 
 async function executeSteps2And3Auth(page, userMobile, options, onProgress, sharedContext, captureTelemetry) {
     const {
@@ -251,7 +252,7 @@ async function executeSteps2And3Auth(page, userMobile, options, onProgress, shar
         if (otpAppeared) {
             onProgress(`📱 [படி 3/12] அரசு TNPDS உங்கள் கைபேசிக்கு (+91 ${userMobile}) 7-இலக்க SMS OTP அனுப்பியுள்ளது.`);
             await showBrowserHud('[படி 3/12] 7-இலக்க OTP உள்ளிடவும்', `உங்கள் போனுக்கு வந்த 7-இலக்க OTP-ஐ Chrome-ல் அல்லது Chat-ல் உள்ளிடவும்`, 'info');
-            otpVal = await requestOtpFromUser(`📱 உங்கள் கைபேசிக்கு (+91 ${userMobile}) வந்த அரசு 7-இலக்க SMS OTP எண்ணை உள்ளிடவும் (Step 3 Login OTP):`, onProgress, 'login_otp', page);
+            otpVal = await waitForAddMemberLoginOtp(page, userMobile, onProgress, requestOtpFromUser);
             await showBrowserHud('[படி 3/12] OTP சரிபார்க்கப்படுகிறது', `OTP: ${otpVal}`);
             if (otpVal === 'PAGE_REFRESHED_TO_LOGIN') {
                 onProgress('🔄 [Radware மீட்சி] பாதுகாப்பு சோதனைக்குப் பின் தளம் புதுப்பிக்கப்பட்டது — கைபேசி எண் மற்றும் கேப்ட்சா மீண்டும் தானாக உள்ளிடப்படுகிறது...');

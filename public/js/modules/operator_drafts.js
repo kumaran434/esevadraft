@@ -340,8 +340,10 @@
             if (!confirmed) return;
 
             try {
-                const res = await fetch(`/api/drafts/${mobile}?permanent=true`, {
-                    method: 'DELETE'
+                const opUid = localStorage.getItem('eseva_operator_uid') || '';
+                const res = await fetch(`/api/drafts/${encodeURIComponent(mobile)}?permanent=true`, {
+                    method: 'DELETE',
+                    headers: opUid ? { 'x-operator-uid': opUid } : {}
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -379,7 +381,7 @@
                     allOperatorDrafts = allOperatorDrafts.filter(d => (d.mobileNumber || '').replace(/\D/g, '').slice(-10) !== targetMob);
                     window.allOperatorDrafts = allOperatorDrafts;
                     renderOperatorDrafts();
-                    fetchOperatorDrafts();
+                    await fetchOperatorDrafts();
                 } else {
                     showInAppToast('பிழை: ' + (data.error || 'நிரந்தரமாக நீக்க முடியவில்லை'), true);
                 }
@@ -409,8 +411,12 @@
 
             showCustomerLoading('வரைவுகள் அழிக்கப்படுகின்றன...', 'Firebase மற்றும் கம்ப்யூட்டரிலிருந்து நீக்கப்படுகிறது');
             try {
+                const opUid = localStorage.getItem('eseva_operator_uid') || '';
                 for (const d of [...allOperatorDrafts]) {
-                    await fetch(`/api/drafts/${d.mobileNumber}?permanent=true`, { method: 'DELETE' }).catch(() => {});
+                    await fetch(`/api/drafts/${encodeURIComponent(d.mobileNumber)}?permanent=true`, {
+                        method: 'DELETE',
+                        headers: opUid ? { 'x-operator-uid': opUid } : {}
+                    }).catch(() => {});
                 }
                 if (typeof clearAutomationScreenSession === 'function') {
                     clearAutomationScreenSession();

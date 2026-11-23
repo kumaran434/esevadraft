@@ -579,32 +579,12 @@
                 if (Array.isArray(prof.smartCardMembers) && prof.smartCardMembers.length > 0 && currentCitizenData) {
                     currentCitizenData.smartCardMembers = prof.smartCardMembers;
                 }
-            } else if (docType === 'incomeTaxReturn' || docType === 'incomeProof' || docType === 'salarySlip' || docType === 'salaryCertificate' || docType === 'communityCertificate' || docType === 'communityProof' || docType === 'familyCommunityProof') {
-                if (prof.annualIncome) {
-                    setVal('editObcAnnualIncome', prof.annualIncome);
-                    setVal('editAnnualIncome', prof.annualIncome);
-                    setVal('editMonthlyIncome', prof.monthlyIncome || String(Math.round(Number(prof.annualIncome) / 12)));
-                }
-                if (prof.caste) {
-                    setVal('editObcCaste', prof.caste);
-                    setVal('editCaste', prof.caste);
-                }
-                if (prof.community) setVal('editCommunity', prof.community);
-                if (prof.fatherOccupation) setVal('editObcFatherOccupation', prof.fatherOccupation);
-                if (prof.motherOccupation) setVal('editObcMotherOccupation', prof.motherOccupation);
-                const appOcc = prof.applicantOccupation || prof.occupation || '';
-                if (appOcc) {
-                    setVal('editOccupation', appOcc);
-                    const obcSel = document.getElementById('editObcOccupation');
-                    if (obcSel) {
-                        const lowOcc = String(appOcc).toLowerCase();
-                        let mappedVal = 'Service';
-                        if (/student|மாணவ/i.test(lowOcc)) mappedVal = 'Student';
-                        else if (/agri|farmer|விவசாய/i.test(lowOcc)) mappedVal = 'Agriculture';
-                        else if (/busi|வியாபார/i.test(lowOcc)) mappedVal = 'Business';
-                        obcSel.value = mappedVal;
-                        flash(obcSel);
-                    }
+            } else {
+                const syncPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                    ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData || prof)
+                    : null;
+                if (typeof syncPlugin?.uiCartridge?.syncFromUpload === 'function') {
+                    syncPlugin.uiCartridge.syncFromUpload(docType, prof, { setVal, flash });
                 }
             }
         }
@@ -869,369 +849,72 @@
 
             pendingDocUploads = {};
 
-            // Authoritative A-to-Z Service Plugin Resolution (Zero substring cross-contamination)
+            // Authoritative A-to-Z Service Plugin + Cartridge Resolution (Zero cross-service guesswork)
             const rawExplicitSub = String(data.subService || '').toUpperCase();
             const localActiveSvc = rawExplicitSub || String(data.targetService || localStorage.getItem('eseva_active_service') || window.pendingSelectedService || window.lastSubService || '').toUpperCase();
-            const serviceStr = String(data.service || data.serviceId || localActiveSvc || '').toUpperCase();
-            const curSub = rawExplicitSub || String(data.targetService || localActiveSvc || '').toUpperCase();
-            const curIntake = String(data.intakeState || '').toUpperCase();
             const sData = data.subServiceData || window.lastSubServiceData || {};
 
             const resolvedPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
                 ? window.ESEVA_PLUGINS.resolveServicePlugin(data, { localActiveSvc })
                 : null;
-            const pMode = resolvedPlugin?.editModal?.layoutMode || '';
-
-            const isRationProofIntake = curIntake === 'RESIDENCE_PROOF_TYPE' || curIntake === 'RESIDENCE_PROOF_DOC';
-            const isExplicitRationNewCard = !forceMasterProfile && (
-                pMode === 'NEW_CARD' ||
-                curSub === 'NEW_CARD' || curSub === 'NEW_RATION_CARD' ||
-                isRationProofIntake ||
-                curIntake === 'MEMBER_COUNT' || curIntake === 'MOBILE_NUMBER' || curIntake === 'ADDRESS_CHOICE' || curIntake === 'AADHAAR_MOBILE_CONFIRM' || curIntake === 'READY_TO_APPLY' ||
-                curIntake.startsWith('HEAD_') || curIntake.startsWith('MEMBER_')
-            );
-            const isExplicitRationAny = isExplicitRationNewCard || (resolvedPlugin?.portal === 'TNPDS') || ['ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(curSub) || curIntake.startsWith('RATION_');
-
-            const isWidowMode = !forceMasterProfile && !isExplicitRationAny && (pMode === 'WIDOW' || (!resolvedPlugin && (
-                curSub === 'WIDOW' || curSub === 'WIDOW_CERTIFICATE' || curSub === 'TNEGA_WIDOW' || curSub.includes('REV-109') || curSub.includes('REV_109') ||
-                curIntake.includes('WIDOW') || curIntake.includes('REV-109') ||
-                serviceStr.includes('WIDOW') || serviceStr.includes('விதவை') || serviceStr.includes('REV-109') ||
-                sData?.targetService === 'WIDOW' || sData?.serviceType === 'WIDOW'
-            )));
-            const isLegalHeirMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && (pMode === 'LEGAL_HEIR' || (!resolvedPlugin && (
-                curSub === 'LEGAL_HEIR' || curSub === 'LEGAL_HEIR_CERTIFICATE' || curSub.includes('REV-114') || curSub.includes('REV_114') ||
-                curIntake.includes('LEGAL_HEIR') || curIntake.includes('REV-114') ||
-                serviceStr.includes('LEGAL_HEIR') || serviceStr.includes('வாரிசு') || serviceStr.includes('REV-114') ||
-                sData?.targetService === 'LEGAL_HEIR' || sData?.serviceType === 'LEGAL_HEIR'
-            )));
-            const isObcMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && (pMode === 'OBC' || (!resolvedPlugin && (
-                curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub === 'TNEGA_OBC' || curSub.includes('REV-115') || curSub.includes('REV_115') ||
-                curIntake.includes('OBC') || curIntake.includes('REV-115') ||
-                serviceStr.includes('OBC') || serviceStr.includes('இதர பிற்படுத்தப்பட்டோர்') || serviceStr.includes('REV-115') ||
-                sData?.targetService === 'OBC' || sData?.serviceType === 'OBC'
-            )));
-            const isCommunityMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && (pMode === 'COMMUNITY' || (!resolvedPlugin && (
-                curSub === 'COMMUNITY' || curSub === 'COMMUNITY_CERTIFICATE' || curSub.includes('REV-101') || curSub.includes('REV_101') ||
-                curIntake.includes('COMMUNITY') || curIntake.includes('REV-101') || 
-                serviceStr.includes('COMMUNITY') || serviceStr.includes('சாதி') || serviceStr.includes('REV-101') || serviceStr.includes('REV_101') || serviceStr.includes('REV101') ||
-                sData?.targetService === 'COMMUNITY' || sData?.serviceType === 'COMMUNITY'
-            )));
-            const isTnegaResIntake = Boolean(curIntake.startsWith('RESIDENCE_') && !isRationProofIntake) || curIntake === 'READY_TO_APPLY_RESIDENCE';
-            const isResidenceMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && (pMode === 'RESIDENCE' || (!resolvedPlugin && (
-                curSub === 'RESIDENCE' || curSub === 'RESIDENCE_CERTIFICATE' || curSub === 'NATIVITY' || curSub === 'NATIVITY_CERTIFICATE' || curSub.includes('REV-116') || curSub.includes('REV-102') ||
-                isTnegaResIntake || curIntake.includes('NATIVITY') || curIntake.includes('REV-116') || curIntake.includes('REV-102') ||
-                serviceStr.includes('RESIDENCE') || serviceStr.includes('NATIVITY') || serviceStr.includes('இருப்பிடம்') || serviceStr.includes('REV-116') || serviceStr.includes('REV-102') ||
-                sData?.targetService === 'RESIDENCE' || sData?.serviceType === 'RESIDENCE'
-            )));
-            const isIncomeMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && (pMode === 'INCOME' || (!resolvedPlugin && (
-                curSub === 'INCOME' || curSub === 'INCOME_CERTIFICATE' || curSub.includes('REV-103') || curSub.includes('REV_103') ||
-                curIntake.includes('INCOME') || curIntake.includes('REV-103') || 
-                serviceStr.includes('INCOME') || serviceStr.includes('வருமானம்') || serviceStr.includes('REV-103') || serviceStr.includes('REV_103') || serviceStr.includes('REV103') ||
-                sData?.targetService === 'INCOME' || sData?.serviceType === 'INCOME'
-            )));
-            const isFirstGraduateMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && (pMode === 'FIRST_GRADUATE' || (!resolvedPlugin && (
-                curSub === 'FIRST_GRADUATE' || curSub === 'FIRST_GRADUATE_CERTIFICATE' || curSub.includes('REV-104') || curSub.includes('REV_104') ||
-                curIntake.includes('FIRST_GRADUATE') || curIntake.includes('REV-104') ||
-                serviceStr.includes('FIRST_GRADUATE') || serviceStr.includes('முதல் பட்டதாரி') || serviceStr.includes('REV-104') || serviceStr.includes('REV_104') || serviceStr.includes('REV104') ||
-                sData?.targetService === 'FIRST_GRADUATE' || sData?.serviceType === 'FIRST_GRADUATE'
-            )));
-            const isCanMode = !forceMasterProfile && !isExplicitRationAny && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isIncomeMode && !isResidenceMode && !isFirstGraduateMode && (pMode === 'CAN' || (!resolvedPlugin && (
-                curSub === 'CAN_REGISTER' || curIntake.includes('CAN') || serviceStr.includes('CAN')
-            )));
-
-            const isAddMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && (pMode === 'ADD_MEMBER' || curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER'));
-            const isRemoveMember = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && (pMode === 'REMOVE_MEMBER' || curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isWidowMode && !isLegalHeirMode && !isObcMode && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isFirstGraduateMode && !isCanMode && !isAddMember && !isRemoveMember && (pMode === 'CHANGE_ADDRESS' || curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
-            const hasActiveSub = Boolean(isWidowMode || isLegalHeirMode || isObcMode || isCommunityMode || isResidenceMode || isIncomeMode || isFirstGraduateMode || isCanMode || isAddMember || isChangeAddress || isRemoveMember);
+            const defaultNewCardPlugin = window.ESEVA_PLUGINS?.getPluginById ? window.ESEVA_PLUGINS.getPluginById('TNPDS_NEW_CARD') : null;
+            const activePlugin = forceMasterProfile ? null : (resolvedPlugin || defaultNewCardPlugin);
+            const modalCfg = activePlugin?.editModal || {};
+            const hasActiveSub = Boolean(resolvedPlugin && resolvedPlugin.id !== 'TNPDS_NEW_CARD');
 
             const titleEl = document.getElementById('editModalTitle');
             const subTitleEl = document.getElementById('editModalSubtitle');
             const btnMaster = document.getElementById('btnSwitchToMasterProfile');
             const btnSubSvc = document.getElementById('btnSwitchToSubService');
             const submitBtn = document.getElementById('btnSubmitFromEditModal');
-            if (submitBtn) {
-                if (isWidowMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 விதவைச் சான்றிதழ் விண்ணப்பிக்க (Start Widow Apply)';
-                } else if (isLegalHeirMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வாரிசு சான்றிதழ் விண்ணப்பிக்க (Start Legal Heir Apply)';
-                } else if (isCommunityMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)';
-                } else if (isResidenceMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 இருப்பிடச் சான்றிதழ் விண்ணப்பிக்க (Start Residence Apply)';
-                } else if (isIncomeMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)';
-                } else if (isObcMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 OBC சான்றிதழ் விண்ணப்பிக்க (Start OBC Apply)';
-                } else if (isFirstGraduateMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 முதல் பட்டதாரி விண்ணப்பிக்க (Start First Graduate Apply)';
-                } else if (isCanMode) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 புதிய CAN பதிவு தொடங்க (Start CAN Automation)';
-                } else if (isAddMember) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-user-plus"></i> 🚀 குடும்ப உறுப்பினர் சேர்க்க (Add Member in TNPDS)';
-                } else if (isRemoveMember) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-user-minus"></i> 🚀 குடும்ப உறுப்பினர் நீக்க (Remove Member in TNPDS)';
-                } else if (isChangeAddress) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-map-location-dot"></i> 🚀 முகவரி மாற்றம் செய்ய (Change Address in TNPDS)';
-                } else if (forceMasterProfile && !curSub) {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 💾 மாற்றங்களைச் சேமி (Save Changes)';
-                } else {
-                    submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 🚀 அரசு போர்ட்டலில் சமர்ப்பி (Submit Application)';
-                }
-            }
 
-            if (isAddMember) {
-                // Configure UI elements for Add Member mode
-                if (titleEl) titleEl.innerHTML = '✏️ சேர்க்கப்படும் குடும்ப உறுப்பினர் விவரங்கள் (Add Member Details)';
-                if (subTitleEl) subTitleEl.innerText = 'ஸ்மார்ட் கார்டு எண் & புதிய உறுப்பினர் விவரங்களை மட்டும் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
+            if (forceMasterProfile) {
+                if (titleEl) titleEl.innerHTML = '👤 வாடிக்கையாளர் மாஸ்டர் சுயவிவரம் (Citizen Master Profile Vault)';
+                if (subTitleEl) subTitleEl.innerText = 'வாடிக்கையாளரின் நிரந்தர சுயவிவரம் மற்றும் அனைத்து அசல் ஆவணங்கள்';
+                if (btnMaster) btnMaster.style.display = 'none';
+                if (btnSubSvc) btnSubSvc.style.display = hasActiveSub ? 'inline-flex' : 'none';
+                if (submitBtn) {
+                    submitBtn.innerHTML = (!rawExplicitSub && !hasActiveSub)
+                        ? '<i class="fa-solid fa-floppy-disk"></i> 💾 மாற்றங்களைச் சேமி (Save Changes)'
+                        : '<i class="fa-solid fa-play"></i> 🚀 அரசு போர்ட்டலில் சமர்ப்பி (Submit Application)';
+                }
+            } else {
+                if (titleEl && modalCfg.title) titleEl.innerHTML = modalCfg.title;
+                if (subTitleEl && modalCfg.subtitle) subTitleEl.innerText = modalCfg.subtitle;
+                if (btnMaster) btnMaster.style.display = modalCfg.showMasterButton ? 'inline-flex' : 'none';
                 if (btnSubSvc) btnSubSvc.style.display = 'none';
-
-                if (document.getElementById('editNewCardDocBoxesWrap')) document.getElementById('editNewCardDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberDocBoxesWrap')) document.getElementById('editAddMemberDocBoxesWrap').style.display = 'grid';
-                if (document.getElementById('editRemoveMemberDocBoxesWrap')) document.getElementById('editRemoveMemberDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editChangeAddressDocBoxesWrap')) document.getElementById('editChangeAddressDocBoxesWrap').style.display = 'none';
-
-                if (document.getElementById('editNewCardFieldsWrap')) document.getElementById('editNewCardFieldsWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'grid';
-                if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'none';
-                if (document.getElementById('editChangeAddressFieldsWrap')) document.getElementById('editChangeAddressFieldsWrap').style.display = 'none';
-
-                // Resolve member Aadhaar and proof documents
-                let memAadhaarPath = sData.aadhaarDocPath || sData.docPath || data.tempMember?.docPath || data.documents?.memberAadhaar || '';
-                const headAadhDoc = data.citizenProfile?.headAadhaarDocPath || data.headAadhaarDocPath || data.documents?.headAadhaar || '';
-                if (!sData.docPath && !data.documents?.memberAadhaar && memAadhaarPath && headAadhDoc && memAadhaarPath === headAadhDoc) {
-                    memAadhaarPath = '';
-                }
-                let proofPath = sData.proofDocPath || sData.birthDocPath || sData.surrenderDocPath || data.documents?.birthCertificate || data.documents?.surrenderProof || '';
-
-                if ((!memAadhaarPath || !proofPath) && activeCustMob) {
-                    try {
-                        const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list`);
-                        const docListJson = await docListRes.json();
-                        if (docListJson && docListJson.documents && Array.isArray(docListJson.documents)) {
-                            const foundAadh = docListJson.documents.find(d => d.type === 'memberAadhaar');
-                            if (foundAadh && !memAadhaarPath) memAadhaarPath = foundAadh.previewUrl;
-                            const foundProof = docListJson.documents.find(d => d.type === 'birthCertificate' || d.type === 'surrenderProof');
-                            if (foundProof && !proofPath) proofPath = foundProof.previewUrl;
-                        }
-                    } catch (e) {
-                        console.warn('Failed to fetch doc list for Add Member preview:', e);
-                    }
-                }
-
-                renderDocPreview(memAadhaarPath, 'editAddMemberAadhaarPreview', 'editAddMemberAadhaarPlaceholder', 'editAddMemberAadhaarPdfBadge', 'editAddMemberAadhaarStatus', 'editAddMemberAadhaarViewBtn', 'உறுப்பினர் ஆதார் அட்டை தேவை', 'editAddMemberAadhaarDeleteBtn');
-                const memDocStr = String(memAadhaarPath || '');
-                const hasMemBack = Boolean(sData.aadhaarBackPath || memDocStr.includes('merged') || memDocStr.includes('dual') || memDocStr.includes('2in1') || memDocStr.endsWith('.pdf'));
-                const hasMemFront = Boolean(memAadhaarPath);
-                updateDualSideButtonStates('memberAadhaar', hasMemFront, hasMemBack);
-
-                const proofBox = document.getElementById('editAddMemberProofBox');
-                if (proofBox) {
-                    const proofTitle = document.getElementById('editAddMemberProofTitle');
-                    if (proofTitle) {
-                        proofTitle.innerText = sData.isChild ? '📄 குழந்தையின் பிறப்புச் சான்றிதழ்' : '📄 உறவுமுறை / நீக்கல் சான்று';
-                    }
-                    renderDocPreview(proofPath, 'editAddMemberProofPreview', 'editAddMemberProofPlaceholder', 'editAddMemberProofPdfBadge', 'editAddMemberProofStatus', 'editAddMemberProofViewBtn', sData.isChild ? 'பிறப்புச் சான்றிதழ் தேவை' : 'உறவுமுறை சான்று தேவை', 'editAddMemberProofDeleteBtn');
-                }
-
-                // Populate Add Member input fields
-                const cardEl = document.getElementById('editAddMemberCardNo');
-                if (cardEl) cardEl.value = data.smartCardNumber || data.rationCardNo || sData.smartCardNumber || '';
-
-                const relEl = document.getElementById('editAddMemberRel');
-                if (relEl) {
-                    const relVal = sData.relationshipTam || sData.relationship || 'மகன்';
-                    relEl.value = relVal;
-                    if (!relEl.value && relVal) {
-                        for (let opt of relEl.options) {
-                            if (opt.text.includes(relVal) || opt.value.includes(relVal)) {
-                                relEl.value = opt.value;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                const nameTamEl = document.getElementById('editAddMemberNameTam');
-                if (nameTamEl) nameTamEl.value = sData.memberNameTam || '';
-
-                const nameEngEl = document.getElementById('editAddMemberNameEng');
-                if (nameEngEl) nameEngEl.value = sData.memberNameEng || '';
-
-                const fatTamEl = document.getElementById('editAddMemberFatherTam');
-                if (fatTamEl) fatTamEl.value = sData.fatherNameTam || '';
-
-                const fatEngEl = document.getElementById('editAddMemberFatherEng');
-                if (fatEngEl) fatEngEl.value = sData.fatherNameEng || '';
-
-                const dobEl = document.getElementById('editAddMemberDob');
-                if (dobEl) dobEl.value = sData.dob || '';
-
-                const genEl = document.getElementById('editAddMemberGender');
-                if (genEl) genEl.value = sData.gender || 'Male';
-
-                const aadhEl = document.getElementById('editAddMemberAadhaar');
-                if (aadhEl) {
-                    const rawAadh = sData.aadhaarNo || '';
-                    aadhEl.value = rawAadh ? rawAadh.replace(/(\d{4})/g, '$1 ').trim() : '';
-                }
-
-                document.getElementById('editModal').style.display = 'flex';
-                return;
+                if (submitBtn) submitBtn.innerHTML = modalCfg.submitButtonHtml || '<i class="fa-solid fa-play"></i> 🚀 அரசு போர்ட்டலில் சமர்ப்பி (Submit Application)';
             }
 
-            if (isChangeAddress) {
-                // Configure UI elements for Change Address mode
-                if (titleEl) titleEl.innerHTML = '✏️ குடும்ப அட்டை புதிய முகவரி விவரங்கள் (Change Address Details)';
-                if (subTitleEl) subTitleEl.innerText = 'புதிய முகவரி மற்றும் முகவரிச் சான்றை மட்டும் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
+            const wrapMode = forceMasterProfile ? 'newCard' : (modalCfg.customWrapMode || 'newCard');
+            const setWrap = (id, displayVal) => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = displayVal;
+            };
+            setWrap('editNewCardDocBoxesWrap', wrapMode === 'newCard' ? 'grid' : 'none');
+            setWrap('editAddMemberDocBoxesWrap', wrapMode === 'addMember' ? 'grid' : 'none');
+            setWrap('editRemoveMemberDocBoxesWrap', wrapMode === 'removeMember' ? 'grid' : 'none');
+            setWrap('editChangeAddressDocBoxesWrap', wrapMode === 'changeAddress' ? 'grid' : 'none');
+            setWrap('editNewCardFieldsWrap', wrapMode === 'newCard' ? 'contents' : 'none');
+            setWrap('editAddMemberFieldsWrap', wrapMode === 'addMember' ? 'grid' : 'none');
+            setWrap('editRemoveMemberFieldsWrap', wrapMode === 'removeMember' ? 'grid' : 'none');
+            setWrap('editChangeAddressFieldsWrap', wrapMode === 'changeAddress' ? 'grid' : 'none');
 
-                if (document.getElementById('editNewCardDocBoxesWrap')) document.getElementById('editNewCardDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberDocBoxesWrap')) document.getElementById('editAddMemberDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editRemoveMemberDocBoxesWrap')) document.getElementById('editRemoveMemberDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editChangeAddressDocBoxesWrap')) document.getElementById('editChangeAddressDocBoxesWrap').style.display = 'grid';
-
-                if (document.getElementById('editNewCardFieldsWrap')) document.getElementById('editNewCardFieldsWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'none';
-                if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'none';
-                if (document.getElementById('editChangeAddressFieldsWrap')) document.getElementById('editChangeAddressFieldsWrap').style.display = 'grid';
-
-                // Populate Change Address fields
-                const cardEl = document.getElementById('editAddressCardNo');
-                if (cardEl) cardEl.value = data.smartCardNumber || data.rationCardNo || sData.smartCardNumber || '';
-
-                const proofTypeEl = document.getElementById('editAddressProofType');
-                if (proofTypeEl) {
-                    const val = sData.proofType || data.residenceProof?.typeTam || '';
-                    if (val) {
-                        proofTypeEl.value = val;
-                        if (!proofTypeEl.value) {
-                            for (let opt of proofTypeEl.options) {
-                                if (opt.value.includes(val) || opt.text.includes(val)) {
-                                    proofTypeEl.value = opt.value;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+            if (!forceMasterProfile && activePlugin?.uiCartridge && typeof activePlugin.uiCartridge.renderCustomView === 'function') {
+                const handled = await activePlugin.uiCartridge.renderCustomView({
+                    data,
+                    sData,
+                    activeCustMob,
+                    renderDocPreview,
+                    updateDualSideButtonStates
+                });
+                if (handled) {
+                    document.getElementById('editModal').style.display = 'flex';
+                    return;
                 }
-
-                const doorEl = document.getElementById('editAddressDoorNo');
-                if (doorEl) doorEl.value = sData.doorNo || sData.newDoorNo || data.doorNo || '';
-
-                const stTamEl = document.getElementById('editAddressStreetTam');
-                if (stTamEl) stTamEl.value = sData.streetTam || sData.newStreet || data.streetTam || data.streetEng || '';
-
-                const stEngEl = document.getElementById('editAddressStreetEng');
-                if (stEngEl) stEngEl.value = sData.streetEng || data.streetEng || '';
-
-                const areaEl = document.getElementById('editAddressAreaTam');
-                if (areaEl) areaEl.value = sData.areaTam || data.areaTam || data.village || '';
-
-                const pinEl = document.getElementById('editAddressPin');
-                if (pinEl) pinEl.value = sData.pincode || sData.newPincode || data.pincode || '';
-
-                const distEl = document.getElementById('editAddressDistrict');
-                if (distEl) distEl.value = sData.district || sData.newDistrict || data.district || '';
-
-                const talukEl = document.getElementById('editAddressTaluk');
-                if (talukEl) talukEl.value = sData.taluk || sData.newTaluk || data.taluk || '';
-
-                const villEl = document.getElementById('editAddressVillage');
-                if (villEl) villEl.value = sData.village || sData.newVillage || data.village || '';
-
-                // Address proof document preview
-                let addrDocPath = sData.docPath || data.residenceProof?.docPath || data.gasDetails?.gasBookPath || data.documents?.residenceProof || data.documents?.gasBook || '';
-                if (!addrDocPath && activeCustMob) {
-                    try {
-                        const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list`);
-                        const docListJson = await docListRes.json();
-                        if (docListJson && docListJson.documents && Array.isArray(docListJson.documents)) {
-                            const foundDoc = docListJson.documents.find(d => d.type === 'gasBook' || d.type === 'residenceProof' || d.type === 'headAadhaar');
-                            if (foundDoc) addrDocPath = foundDoc.previewUrl;
-                        }
-                    } catch (e) {
-                        console.warn('Failed to fetch doc list for Change Address preview:', e);
-                    }
-                }
-
-                renderDocPreview(addrDocPath, 'editAddressProofPreview', 'editAddressProofPlaceholder', 'editAddressProofPdfBadge', 'editAddressProofStatus', 'editAddressProofViewBtn', 'முகவரிச் சான்று தேவை', 'editAddressProofDeleteBtn');
-
-                document.getElementById('editModal').style.display = 'flex';
-                return;
             }
 
-            if (isRemoveMember) {
-                // Configure UI elements for Remove Member mode
-                if (titleEl) titleEl.innerHTML = '✏️ நீக்கப்படும் குடும்ப உறுப்பினர் விவரங்கள் (Remove Member Details)';
-                if (subTitleEl) subTitleEl.innerText = 'குடும்ப அட்டை எண் & நீக்கப்படும் உறுப்பினர் விவரங்களை மட்டும் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-
-                if (document.getElementById('editNewCardDocBoxesWrap')) document.getElementById('editNewCardDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberDocBoxesWrap')) document.getElementById('editAddMemberDocBoxesWrap').style.display = 'none';
-                if (document.getElementById('editRemoveMemberDocBoxesWrap')) document.getElementById('editRemoveMemberDocBoxesWrap').style.display = 'grid';
-                if (document.getElementById('editChangeAddressDocBoxesWrap')) document.getElementById('editChangeAddressDocBoxesWrap').style.display = 'none';
-
-                if (document.getElementById('editNewCardFieldsWrap')) document.getElementById('editNewCardFieldsWrap').style.display = 'none';
-                if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'none';
-                if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'grid';
-                if (document.getElementById('editChangeAddressFieldsWrap')) document.getElementById('editChangeAddressFieldsWrap').style.display = 'none';
-
-                let proofPath = sData.docPath || sData.removeProofDocPath || data.documents?.removeProof || '';
-                renderDocPreview(proofPath, 'editRemoveMemberProofPreview', 'editRemoveMemberProofPlaceholder', 'editRemoveMemberProofPdfBadge', 'editRemoveMemberProofStatus', 'editRemoveMemberProofViewBtn', 'நீக்கல் சான்றிதழ் தேவை', 'editRemoveMemberProofDeleteBtn');
-
-                const proofTitle = document.getElementById('editRemoveMemberProofTitle');
-                if (proofTitle) {
-                    proofTitle.innerText = `📄 ${sData.docType || 'நீக்கல் சான்றிதழ் / ஆவணம்'}`;
-                }
-
-                // Populate fields
-                const cardEl = document.getElementById('editRemoveMemberCardNo');
-                if (cardEl) cardEl.value = data.smartCardNumber || data.rationCardNo || sData.smartCardNumber || '';
-
-                const reasonEl = document.getElementById('editRemoveMemberReason');
-                if (reasonEl && sData.reason) {
-                    reasonEl.value = sData.reason;
-                    if (!reasonEl.value) {
-                        for (let opt of reasonEl.options) {
-                            if (opt.text.includes(sData.reason) || opt.value.includes(sData.reason)) {
-                                reasonEl.value = opt.value;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                const nameTamEl = document.getElementById('editRemoveMemberNameTam');
-                if (nameTamEl) nameTamEl.value = sData.memberNameTam || sData.memberName || '';
-
-                const nameEngEl = document.getElementById('editRemoveMemberNameEng');
-                if (nameEngEl) nameEngEl.value = sData.memberNameEng || sData.memberName || '';
-
-                const docTypeEl = document.getElementById('editRemoveMemberDocType');
-                if (docTypeEl && sData.docType) {
-                    docTypeEl.value = sData.docType;
-                    if (!docTypeEl.value) {
-                        for (let opt of docTypeEl.options) {
-                            if (opt.text.includes(sData.docType) || opt.value.includes(sData.docType)) {
-                                docTypeEl.value = opt.value;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                const aadhEl = document.getElementById('editRemoveMemberAadhaar');
-                if (aadhEl) {
-                    const rawAadh = sData.aadhaarNo || '';
-                    aadhEl.value = rawAadh ? rawAadh.replace(/(\d{4})/g, '$1 ').trim() : '';
-                }
-
-                document.getElementById('editModal').style.display = 'flex';
-                return;
-            }
+            // Custom sub-service layouts handled above by activePlugin.uiCartridge.renderCustomView
 
             // Physical disk document verification: single source of truth from backend documents-list
             let verifiedPhysicalDocs = [];
@@ -1248,72 +931,7 @@
             }
             const getVerifiedDoc = (type) => verifiedPhysicalDocs.find(d => d.type === type);
 
-            // Subservice vs Master vs New Ration Card Mode Dynamic Labeling
-            const isRationHead = !forceMasterProfile && !isCommunityMode && !isResidenceMode && !isIncomeMode && !isCanMode && !isAddMember && !isRemoveMember && !isChangeAddress && (
-                String(data.service || '').toLowerCase().includes('ration') || 
-                String(data.service || '').includes('ரேஷன்') || 
-                String(data.service || '').includes('smart_card') ||
-                curSub === 'NEW_CARD' || curSub === 'NEW_RATION_CARD' || curIntake.startsWith('RATION_') ||
-                !hasActiveSub
-            );
-
-            if (forceMasterProfile) {
-                if (titleEl) titleEl.innerHTML = '👤 வாடிக்கையாளர் மாஸ்டர் சுயவிவரம் (Citizen Master Profile Vault)';
-                if (subTitleEl) subTitleEl.innerText = 'வாடிக்கையாளரின் நிரந்தர சுயவிவரம் மற்றும் அனைத்து அசல் ஆவணங்கள்';
-                if (hasActiveSub) {
-                    if (btnMaster) btnMaster.style.display = 'none';
-                    if (btnSubSvc) btnSubSvc.style.display = 'inline-flex';
-                } else {
-                    if (btnMaster) btnMaster.style.display = 'none';
-                    if (btnSubSvc) btnSubSvc.style.display = 'none';
-                }
-            } else if (isCommunityMode) {
-                if (titleEl) titleEl.innerHTML = '📜 சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Community Certificate)';
-                if (subTitleEl) subTitleEl.innerText = 'சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isResidenceMode) {
-                if (titleEl) titleEl.innerHTML = '🏠 இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Residence Certificate)';
-                if (subTitleEl) subTitleEl.innerText = 'இருப்பிடச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isIncomeMode) {
-                if (titleEl) titleEl.innerHTML = '💰 வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Income Certificate)';
-                if (subTitleEl) subTitleEl.innerText = 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isWidowMode) {
-                if (titleEl) titleEl.innerHTML = '🕊️ விதவைச் சான்றிதழ் விண்ணப்ப விவரங்கள் (Widow Certificate - REV-109)';
-                if (subTitleEl) subTitleEl.innerText = 'கணவர் விவரங்கள், இறப்புச் சான்றிதழ் & 4 கட்டாய ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isLegalHeirMode) {
-                if (titleEl) titleEl.innerHTML = '👨‍👩‍👧‍👦 சட்ட வாரிசு சான்றிதழ் விண்ணப்ப விவரங்கள் (Legal Heir Certificate - REV-114)';
-                if (subTitleEl) subTitleEl.innerText = 'இறந்தவர் விவரங்கள், வாரிசுதாரர்கள் மற்றும் 4 ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isObcMode) {
-                if (titleEl) titleEl.innerHTML = '📜 OBC சான்றிதழ் விண்ணப்ப விவரங்கள் (Other Backward Classes - REV-115)';
-                if (subTitleEl) subTitleEl.innerText = 'OBC சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isFirstGraduateMode) {
-                if (titleEl) titleEl.innerHTML = '🎓 முதல் பட்டதாரி விண்ணப்ப விவரங்கள் (First Graduate Certificate - REV-104)';
-                if (subTitleEl) subTitleEl.innerText = 'முதல் பட்டதாரி விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else if (isCanMode) {
-                if (titleEl) titleEl.innerHTML = '📝 புதிய CAN பதிவு விவரங்கள் (New CAN Registration)';
-                if (subTitleEl) subTitleEl.innerText = 'CAN பதிவிற்கான விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்';
-                if (btnMaster) btnMaster.style.display = 'inline-flex';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            } else {
-                if (titleEl) titleEl.innerHTML = '✏️ புதிய குடும்ப அட்டை விண்ணப்ப விவரங்கள் (New Ration Card)';
-                if (subTitleEl) subTitleEl.innerText = 'அனைத்து விவரங்களையும் சரிபார்த்து திருத்தவும்';
-                if (btnMaster) btnMaster.style.display = 'none';
-                if (btnSubSvc) btnSubSvc.style.display = 'none';
-            }
-
+            const isRationHead = !forceMasterProfile && Boolean(modalCfg.isRationHead);
             const photoLabelEl = document.getElementById('editPhotoLabel');
             if (photoLabelEl) {
                 photoLabelEl.innerHTML = isRationHead ? '📸 குடும்பத் தலைவர் புகைப்படம்' : '📸 விண்ணப்பதாரர் புகைப்படம் (Applicant Photo)';
@@ -1329,24 +947,14 @@
 
             const gasToggleWrap = document.getElementById('editGasToggleWrap');
             if (gasToggleWrap) {
-                gasToggleWrap.style.display = isRationHead ? 'block' : 'none';
+                gasToggleWrap.style.display = (forceMasterProfile || modalCfg.showGasToggle) ? 'block' : 'none';
             }
             const gasFieldsWrap = document.getElementById('gasFieldsWrap');
-            if (gasFieldsWrap && !isRationHead) {
+            if (gasFieldsWrap && !forceMasterProfile && !modalCfg.showGasToggle) {
                 gasFieldsWrap.style.display = 'none';
             }
 
-            // Normal New Ration Card Mode or Master Profile Vault Mode
-            if (document.getElementById('editNewCardDocBoxesWrap')) document.getElementById('editNewCardDocBoxesWrap').style.display = 'grid';
-            if (document.getElementById('editAddMemberDocBoxesWrap')) document.getElementById('editAddMemberDocBoxesWrap').style.display = 'none';
-            if (document.getElementById('editRemoveMemberDocBoxesWrap')) document.getElementById('editRemoveMemberDocBoxesWrap').style.display = 'none';
-            if (document.getElementById('editChangeAddressDocBoxesWrap')) document.getElementById('editChangeAddressDocBoxesWrap').style.display = 'none';
-            if (document.getElementById('editNewCardFieldsWrap')) document.getElementById('editNewCardFieldsWrap').style.display = 'contents';
-            if (document.getElementById('editAddMemberFieldsWrap')) document.getElementById('editAddMemberFieldsWrap').style.display = 'none';
-            if (document.getElementById('editRemoveMemberFieldsWrap')) document.getElementById('editRemoveMemberFieldsWrap').style.display = 'none';
-            if (document.getElementById('editChangeAddressFieldsWrap')) document.getElementById('editChangeAddressFieldsWrap').style.display = 'none';
-
-            // Service-Scoped Document Boxes Visibility Control
+            // Service-Scoped Document Boxes Visibility Control (Pure Cartridge Schema)
             const photoDocBox = document.getElementById('editPhotoDocBox');
             const headAadhaarDocBox = document.getElementById('editHeadAadhaarDocBox');
             const residenceDocBox = document.getElementById('editResidenceDocBox');
@@ -1363,195 +971,35 @@
                 if (smartCardDocBox) smartCardDocBox.style.display = hasSmartCardOnRecord ? 'flex' : 'none';
                 if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
                 if (membersAadhaarContainer) membersAadhaarContainer.style.display = (data.members && data.members.length > 1) ? 'flex' : 'none';
-            } else if (isCommunityMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isIncomeMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isWidowMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isLegalHeirMode) {
-                if (photoDocBox) photoDocBox.style.display = 'none';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isObcMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isFirstGraduateMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'grid';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isResidenceMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'flex';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'flex';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
-            } else if (isCanMode) {
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'none';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'none';
             } else {
-                // New Ration Card Mode
-                if (photoDocBox) photoDocBox.style.display = 'flex';
-                if (headAadhaarDocBox) headAadhaarDocBox.style.display = 'flex';
-                if (residenceDocBox) residenceDocBox.style.display = 'flex';
-                if (smartCardDocBox) smartCardDocBox.style.display = 'none';
-                if (universalDocsContainer) universalDocsContainer.style.display = 'none';
-                if (membersAadhaarContainer) membersAadhaarContainer.style.display = 'flex';
+                const db = modalCfg.docBoxes || {};
+                if (photoDocBox) photoDocBox.style.display = db.photo === false ? 'none' : 'flex';
+                if (headAadhaarDocBox) headAadhaarDocBox.style.display = db.headAadhaar === false ? 'none' : 'flex';
+                if (residenceDocBox) residenceDocBox.style.display = db.residence ? 'flex' : 'none';
+                if (smartCardDocBox) smartCardDocBox.style.display = db.smartCard ? 'flex' : 'none';
+                if (universalDocsContainer) universalDocsContainer.style.display = db.universalDocs ? 'grid' : 'none';
+                if (membersAadhaarContainer) membersAadhaarContainer.style.display = db.membersAadhaar ? 'flex' : 'none';
             }
 
-            // Service-Scoped Form Fields Visibility Control
-            const commFieldsWrap = document.getElementById('editCommunityFieldsWrap');
-            const incFieldsWrap = document.getElementById('editIncomeFieldsWrap');
-            const resFieldsWrap = document.getElementById('editResidenceFieldsWrap');
-            const firstGradFieldsWrap = document.getElementById('editFirstGraduateFieldsWrap');
-            const obcFieldsWrap = document.getElementById('editObcFieldsWrap');
-            const legalHeirFieldsWrap = document.getElementById('editLegalHeirFieldsWrap');
-            const widowFieldsWrap = document.getElementById('editWidowFieldsWrap');
-            const rationFieldsWrap = document.getElementById('editRationFieldsWrap');
-            const smartCardNoWrap = document.getElementById('editSmartCardNoWrap');
-            const canNoWrap = document.getElementById('editCanNumberWrap');
-
-            if (forceMasterProfile) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'grid';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isCommunityMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isIncomeMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'grid';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isResidenceMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'grid';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isWidowMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'grid';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isLegalHeirMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'grid';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isObcMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'grid';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isFirstGraduateMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'grid';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'block';
-                if (canNoWrap) canNoWrap.style.display = 'block';
-            } else if (isCanMode) {
-                if (commFieldsWrap) commFieldsWrap.style.display = 'grid';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'none';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'none';
-            } else {
-                // New Ration Card Mode
-                if (commFieldsWrap) commFieldsWrap.style.display = 'none';
-                if (incFieldsWrap) incFieldsWrap.style.display = 'none';
-                if (resFieldsWrap) resFieldsWrap.style.display = 'none';
-                if (firstGradFieldsWrap) firstGradFieldsWrap.style.display = 'none';
-                if (obcFieldsWrap) obcFieldsWrap.style.display = 'none';
-                if (legalHeirFieldsWrap) legalHeirFieldsWrap.style.display = 'none';
-                if (widowFieldsWrap) widowFieldsWrap.style.display = 'none';
-                if (rationFieldsWrap) rationFieldsWrap.style.display = 'contents';
-                if (smartCardNoWrap) smartCardNoWrap.style.display = 'none';
-                if (canNoWrap) canNoWrap.style.display = 'none';
+            // Service-Scoped Form Fields Visibility Control (Pure Cartridge Schema)
+            const fwMap = {
+                editCommunityFieldsWrap: ['community', 'grid'],
+                editIncomeFieldsWrap: ['income', 'grid'],
+                editResidenceFieldsWrap: ['residence', 'grid'],
+                editFirstGraduateFieldsWrap: ['firstGraduate', 'grid'],
+                editObcFieldsWrap: ['obc', 'grid'],
+                editLegalHeirFieldsWrap: ['legalHeir', 'grid'],
+                editWidowFieldsWrap: ['widow', 'grid'],
+                editRationFieldsWrap: ['ration', 'contents'],
+                editSmartCardNoWrap: ['smartCardNo', 'block'],
+                editCanNumberWrap: ['canNo', 'block']
+            };
+            const fwCfg = modalCfg.fieldWraps || {};
+            for (const [elId, [key, visDisplay]] of Object.entries(fwMap)) {
+                const el = document.getElementById(elId);
+                if (el) {
+                    el.style.display = (forceMasterProfile || fwCfg[key]) ? visDisplay : 'none';
+                }
             }
 
             // 1. Photo (Strict Physical Disk Verification)
@@ -1586,116 +1034,11 @@
             const hasScFront = Boolean(foundSmartCard || dMap.smartCardFront || dMap.smartCard || currentCitizenData?.smartCardDocPath);
             updateDualSideButtonStates('smartCard', hasScFront, hasScBack);
 
-            // 5. Universal / Dynamic Additional Documents (Community Proof, Income Proof, School TC, etc.)
+            // 5. Universal / Dynamic Additional Documents (Declared purely by active UI Cartridge)
             const universalContainer = document.getElementById('editUniversalDocsContainer');
             if (universalContainer) {
                 universalContainer.innerHTML = '';
-                const dynamicDocTypesToShow = [];
-
-                if (isCommunityMode) {
-                    dynamicDocTypesToShow.push({
-                        type: 'communityProof',
-                        title: '📜 குடும்ப சாதிச் சான்றிதழ் (தந்தை/தாய்/TC)',
-                        titleEng: 'Family Community Certificate / TC',
-                        icon: 'fa-certificate',
-                        defaultPrompt: 'சாதிச் சான்றிதழ் அல்லது பள்ளி TC தேவை'
-                    });
-                }
-                if (isIncomeMode) {
-                    dynamicDocTypesToShow.push({
-                        type: 'incomeProof',
-                        title: '💰 வருமானச் சான்று / சம்பள ரசீது (Income Proof)',
-                        titleEng: 'Income Proof / Salary Slip',
-                        icon: 'fa-receipt',
-                        defaultPrompt: 'வருமானச் சான்று அல்லது சம்பள ரசீது தேவை'
-                    });
-                }
-                if (isWidowMode) {
-                    dynamicDocTypesToShow.push(
-                        {
-                            type: 'deathCertificate',
-                            title: '📜 கணவரின் இறப்புச் சான்றிதழ் (Death Certificate of Husband)',
-                            titleEng: 'Death Certificate of Husband',
-                            icon: 'fa-file-medical',
-                            defaultPrompt: 'கணவரின் இறப்புச் சான்றிதழ் தேவை'
-                        },
-                        {
-                            type: 'marriageProof',
-                            title: '💍 திருமண ஆதாரம் (Marriage Proof / Smart Card)',
-                            titleEng: 'Marriage Registration Certificate / Proof',
-                            icon: 'fa-ring',
-                            defaultPrompt: 'திருமணச் சான்றிதழ் அல்லது ஸ்மார்ட் கார்டு தேவை'
-                        }
-                    );
-                }
-                if (isLegalHeirMode) {
-                    dynamicDocTypesToShow.push(
-                        {
-                            type: 'deathCertificate',
-                            title: '📜 இறப்புச் சான்றிதழ் (Death Certificate of Deceased)',
-                            titleEng: 'Death Certificate',
-                            icon: 'fa-file-medical',
-                            defaultPrompt: 'இறப்புச் சான்றிதழ் தேவை'
-                        },
-                        {
-                            type: 'deceasedAddressProof',
-                            title: '🏠 இறந்தவரின் முகவரிச் சான்று (Deceased Address Proof)',
-                            titleEng: 'Address Proof of Deceased',
-                            icon: 'fa-house-user',
-                            defaultPrompt: 'இறந்தவர் முகவரிச் சான்று தேவை'
-                        },
-                        {
-                            type: 'birthCertificate',
-                            title: '🎓 வாரிசுகளின் பிறப்புச் சான்றிதழ் / பள்ளி TC',
-                            titleEng: 'Birth Certificate / Transfer Certificate',
-                            icon: 'fa-graduation-cap',
-                            defaultPrompt: 'பிறப்புச் சான்றிதழ் அல்லது பள்ளி TC தேவை'
-                        }
-                    );
-                }
-                if (isObcMode) {
-                    dynamicDocTypesToShow.push(
-                        {
-                            type: 'communityCertificate',
-                            title: '📜 சாதிச் சான்றிதழ் (Community Certificate)',
-                            titleEng: 'Community Certificate',
-                            icon: 'fa-certificate',
-                            defaultPrompt: 'சாதிச் சான்றிதழ் தேவை'
-                        },
-                        {
-                            type: 'incomeTaxReturn',
-                            title: '💰 வருமானச் சான்றிதழ் / வருமான வரி (Income Cert / ITR)',
-                            titleEng: 'Income Certificate / Income Tax Return',
-                            icon: 'fa-file-invoice-dollar',
-                            defaultPrompt: 'வருமானச் சான்றிதழ் / ITR சான்று தேவை'
-                        }
-                    );
-                }
-                if (isFirstGraduateMode) {
-                    dynamicDocTypesToShow.push(
-                        {
-                            type: 'applicantEducationProof',
-                            title: '🎓 மாணவர் 12-ஆம் வகுப்பு TC (Applicant 12th TC)',
-                            titleEng: 'Applicant Transfer Certificate',
-                            icon: 'fa-graduation-cap',
-                            defaultPrompt: 'மாணவர் 12th TC தேவை'
-                        },
-                        {
-                            type: 'fatherEducationProof',
-                            title: '👨 தந்தை பள்ளி மாற்றுச் சான்றிதழ் (Father TC)',
-                            titleEng: 'Father Transfer Certificate',
-                            icon: 'fa-file-lines',
-                            defaultPrompt: 'தந்தையின் TC அல்லது கல்வி ஆவணம் தேவை'
-                        },
-                        {
-                            type: 'motherEducationProof',
-                            title: '👩 தாய் பள்ளி மாற்றுச் சான்றிதழ் (Mother TC)',
-                            titleEng: 'Mother Transfer Certificate',
-                            icon: 'fa-file-lines',
-                            defaultPrompt: 'தாயின் TC அல்லது கல்வி ஆவணம் தேவை'
-                        }
-                    );
-                }
+                const dynamicDocTypesToShow = forceMasterProfile ? [] : [...(modalCfg.dynamicDocs || [])];
 
                 if (forceMasterProfile) {
                     const standardTypes = new Set(['profilePhoto', 'headPhoto', 'headAadhaar', 'residenceProof', 'gasBook', 'smartCard', 'rationCard', 'applicationPdf']);
@@ -1889,53 +1232,17 @@
                 safeSetVal('editAadhaar', data.headAadhaar);
                 safeSetVal('editSmartCardNo', data.smartCardNumber || data.rationCardNumber || data.rationCardNo);
                 safeSetVal('editCanNumber', data.canNumber);
-                safeSetVal('editReligion', data.religion || 'Hindu');
-                safeSetVal('editCommunity', data.community || 'MBC');
-                safeSetVal('editCaste', data.caste || '');
-                safeSetVal('editFatherCaste', data.fatherCaste || data.caste || '');
-                safeSetVal('editMotherCaste', data.motherCaste || data.caste || '');
-                const resolvedAnnInc = data.annualIncome || (data.monthlyIncome ? String(Number(data.monthlyIncome) * 12) : '');
-                const resolvedMonInc = data.monthlyIncome || (data.annualIncome ? String(Math.round(Number(data.annualIncome) / 12)) : '');
-                safeSetVal('editAnnualIncome', resolvedAnnInc);
-                safeSetVal('editMonthlyIncome', resolvedMonInc);
-                safeSetVal('editOccupation', data.profession || data.occupation || '');
-                const resolvedFamCnt = String(data.familyMemberCount || (Array.isArray(data.incomeMembers) && data.incomeMembers.length > 0 ? data.incomeMembers.length + 1 : '1'));
-                safeSetVal('editFamilyMemberCount', resolvedFamCnt);
-                if (typeof window.renderEditIncomeMembersList === 'function') {
-                    window.renderEditIncomeMembersList(resolvedFamCnt, Array.isArray(data.incomeMembers) ? data.incomeMembers : []);
+
+                // Service-Specific Fields Population (Strictly Delegated to UI Cartridges)
+                if (forceMasterProfile && window.ESEVA_PLUGINS?.SERVICE_PLUGINS) {
+                    for (const p of window.ESEVA_PLUGINS.SERVICE_PLUGINS) {
+                        if (typeof p.uiCartridge?.populateEditFields === 'function') {
+                            p.uiCartridge.populateEditFields(data, { safeSetVal });
+                        }
+                    }
+                } else if (activePlugin?.uiCartridge && typeof activePlugin.uiCartridge.populateEditFields === 'function') {
+                    activePlugin.uiCartridge.populateEditFields(data, { safeSetVal });
                 }
-                safeSetVal('editResidenceYears', data.residenceYears || '10');
-                safeSetVal('editResidencePurpose', data.residencePurpose || 'கல்வி / வேலைவாய்ப்பு');
-                safeSetVal('editFirstGraduateCourse', data.currentCourse || data.degreeCourse || '');
-                safeSetVal('editFirstGraduateCollege', data.institutionName || data.collegeName || '');
-                safeSetVal('editFirstGraduateFatherEdu', data.fatherEducation || '10th Standard');
-                safeSetVal('editFirstGraduateMotherEdu', data.motherEducation || '8th Standard');
-                safeSetVal('editFirstGraduateYop', data.yearOfPassing || '2024');
-                safeSetVal('editFirstGraduateCollegeAdd', data.institutionAddress || 'Coimbatore Tamil Nadu');
-                safeSetVal('editObcCaste', data.caste || data.subCaste || '');
-                const rawObcOcc = String(data.occupation || data.applicantOccupation || 'Service').toLowerCase();
-                let mappedObcOcc = 'Service';
-                if (/student|மாணவ/i.test(rawObcOcc)) mappedObcOcc = 'Student';
-                else if (/agri|farmer|விவசாய/i.test(rawObcOcc)) mappedObcOcc = 'Agriculture';
-                else if (/busi|வியாபார/i.test(rawObcOcc)) mappedObcOcc = 'Business';
-                safeSetVal('editObcOccupation', mappedObcOcc);
-                safeSetVal('editObcFatherOccupation', data.fatherOccupation || '');
-                safeSetVal('editObcMotherOccupation', data.motherOccupation || '');
-                safeSetVal('editObcAnnualIncome', resolvedAnnInc);
-                safeSetVal('editLhDeceasedNameEng', data.deceasedNameEng || data.fatherNameEng || '');
-                safeSetVal('editLhDeceasedNameTam', data.deceasedNameTam || data.fatherNameTam || '');
-                safeSetVal('editLhDateOfDeath', data.dateOfDeath || '');
-                safeSetVal('editLhPlaceOfDeath', data.placeOfDeath || data.taluk || '');
-                safeSetVal('editLhDeathCertNo', data.deathCertificateNo || '');
-            safeSetVal('editWidowSpouseNameEng', data.spouseNameEng || data.husbandNameEng || data.fatherNameEng || '');
-            safeSetVal('editWidowSpouseNameTam', data.spouseNameTam || data.husbandNameTam || data.fatherNameTam || '');
-            safeSetVal('editWidowDateOfDeath', data.dateOfDeath || '');
-            safeSetVal('editWidowDeathCertNo', data.deathCertificateNo || '');
-            safeSetVal('editWidowDateOfMarriage', data.dateOfMarriage || '');
-                const parentsPair = (data.deceasedFatherNameEng || data.deceasedMotherNameEng)
-                    ? `${data.deceasedFatherNameEng || 'Ramasamy'} / ${data.deceasedMotherNameEng || 'Lakshmi'}`
-                    : '';
-                safeSetVal('editLhDeceasedParents', parentsPair);
                 
                 const hasGas = Boolean(
                     (data.gasDetails && (data.gasDetails.hasGas || data.gasDetails.consumerNumber || data.gasDetails.agencyName || data.gasDetails.gasBookPath)) ||
@@ -1981,7 +1288,10 @@
                         return !standardKeySet.has(k) && v !== undefined && v !== null && typeof v !== 'object' && String(v).trim() !== '';
                     });
 
-                    if (forceMasterProfile && customEntries.length > 0) {
+                    if (!forceMasterProfile && activePlugin?.uiCartridge && typeof activePlugin.uiCartridge.renderDynamicEditFields === 'function') {
+                        customWrap.style.display = 'grid';
+                        activePlugin.uiCartridge.renderDynamicEditFields(customWrap, data, { safeSetVal });
+                    } else if (forceMasterProfile && customEntries.length > 0) {
                         customWrap.style.display = 'grid';
                         let cHtml = `<div style="grid-column: span 2; font-weight: 700; color: #1e293b; font-size: 12px; display: flex; align-items: center; gap: 6px;">
                             <i class="fa-solid fa-layer-group" style="color: #0284c7;"></i> கூடுதல் மாஸ்டர் விவரங்கள் (Additional Accumulated Profile Details):
@@ -2074,11 +1384,12 @@
         }
         window.openEditModalForDoc = openEditModalForDoc;
 
-        function closeEditModal() {
+        function closeEditModal(opts = {}) {
             const modalEl = document.getElementById('editModal');
             if (modalEl) modalEl.style.display = 'none';
             currentEditModalIsMasterProfile = false;
             window.forceMasterProfile = false;
+            if (opts && opts.skipHistoryRefresh) return;
             const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || '';
             if (activeCustMob) {
                 fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}`)
@@ -2100,9 +1411,9 @@
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சேமித்து சமர்ப்பிக்கப்படுகிறது...';
             }
             try {
-                // 1. Save all edited fields & pending uploads silently
+                // 1. Save all edited fields & pending uploads silently (without re-thrashing chat DOM before submit)
                 await saveEditedProfile(true);
-                closeEditModal();
+                closeEditModal({ skipHistoryRefresh: true });
 
                 // If purely Master Profile Vault (no active application flow), do not launch portal automation
                 if (currentEditModalIsMasterProfile && !currentCitizenData?.subService) {
@@ -2174,155 +1485,23 @@
                 pendingDocUploads = {};
             }
 
-            // 2. Update profile details
-            const curSub = String(currentCitizenData?.subService || window.lastSubService || '').toUpperCase();
-            const curIntake = String(currentCitizenData?.intakeState || '').toUpperCase();
+            // 2. Update profile details strictly via Active Service UI Cartridge
             const sData = (currentCitizenData && currentCitizenData.subServiceData) || window.lastSubServiceData || {};
-            const isAddMember = !forceMasterProfile && (curSub === 'ADD_MEMBER' || curIntake.startsWith('RATION_ADD_MEMBER')) && 
-                                Boolean(sData.memberName || sData.memberNameTam || sData.aadhaarNo || sData.relationship || sData.smartCardNumber || currentCitizenData.tempMember);
-            const isRemoveMember = !forceMasterProfile && !isAddMember && (curSub === 'REMOVE_MEMBER' || curIntake.startsWith('RATION_REMOVE_MEMBER'));
-            const isChangeAddress = !forceMasterProfile && !isAddMember && !isRemoveMember && (curSub === 'CHANGE_ADDRESS' || curSub === 'ADDRESS_CHANGE' || curIntake.startsWith('RATION_CHANGE_ADDRESS'));
+            const resolvedPlugin = (!forceMasterProfile && window.ESEVA_PLUGINS?.resolveServicePlugin)
+                ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData || {}, { localActiveSvc: window.lastSubService })
+                : null;
+            const defaultNewCardPlugin = window.ESEVA_PLUGINS?.getPluginById ? window.ESEVA_PLUGINS.getPluginById('TNPDS_NEW_CARD') : null;
+            const activePlugin = forceMasterProfile ? null : (resolvedPlugin || defaultNewCardPlugin);
+
+            const cartridgeCollected = (!forceMasterProfile && activePlugin?.uiCartridge && typeof activePlugin.uiCartridge.collectEditFields === 'function')
+                ? activePlugin.uiCartridge.collectEditFields({ data: currentCitizenData, sData, forceMasterProfile })
+                : null;
 
             let updated = {};
-            if (isAddMember) {
-                const memCard = document.getElementById('editAddMemberCardNo')?.value.trim() || '';
-                const memRel = document.getElementById('editAddMemberRel')?.value || 'மகன்';
-                const memNameTam = document.getElementById('editAddMemberNameTam')?.value.trim() || '';
-                const memNameEng = document.getElementById('editAddMemberNameEng')?.value.trim() || '';
-                const memFatherTam = document.getElementById('editAddMemberFatherTam')?.value.trim() || '';
-                const memFatherEng = document.getElementById('editAddMemberFatherEng')?.value.trim() || '';
-                const memDob = document.getElementById('editAddMemberDob')?.value.trim() || '';
-                const memGender = document.getElementById('editAddMemberGender')?.value || 'Male';
-                const memAadhaar = (document.getElementById('editAddMemberAadhaar')?.value || '').replace(/\s+/g, '');
-
-                const updatedSubServiceData = {
-                    ...sData,
-                    smartCardNumber: memCard,
-                    relationshipTam: memRel,
-                    relationship: memRel,
-                    memberNameTam: memNameTam,
-                    memberNameEng: memNameEng,
-                    fatherNameTam: memFatherTam,
-                    fatherNameEng: memFatherEng,
-                    dob: memDob,
-                    gender: memGender,
-                    aadhaarNo: memAadhaar
-                };
-
-                const updatedMember = {
-                    nameTam: memNameTam,
-                    nameEng: memNameEng,
-                    name: memNameEng || memNameTam,
-                    fatherNameTam: memFatherTam,
-                    fatherNameEng: memFatherEng,
-                    dob: memDob,
-                    gender: memGender,
-                    relationshipTam: memRel,
-                    relationship: memRel,
-                    aadhaarNumber: memAadhaar,
-                    docPath: sData.aadhaarDocPath || sData.docPath || ''
-                };
-
-                let existingMembers = (currentCitizenData && Array.isArray(currentCitizenData.members)) ? [...currentCitizenData.members] : [];
-                if (existingMembers.length > 0) {
-                    const foundIdx = existingMembers.findIndex((m, idx) => idx > 0 && ((m.aadhaarNumber && m.aadhaarNumber === memAadhaar) || (m.nameEng && m.nameEng === memNameEng)));
-                    if (foundIdx !== -1) {
-                        existingMembers[foundIdx] = { ...existingMembers[foundIdx], ...updatedMember };
-                    } else {
-                        existingMembers.push(updatedMember);
-                    }
-                } else {
-                    existingMembers = [updatedMember];
-                }
-
-                updated = {
-                    subService: 'ADD_MEMBER',
-                    smartCardNumber: memCard,
-                    rationCardNo: memCard,
-                    fullNameTam: memNameTam,
-                    fullNameEng: memNameEng,
-                    subServiceData: updatedSubServiceData,
-                    members: existingMembers
-                };
-            } else if (isChangeAddress) {
-                const cardNo = document.getElementById('editAddressCardNo')?.value.trim() || '';
-                const proofType = document.getElementById('editAddressProofType')?.value || 'எரிவாயு நுகர்வோர் அட்டை';
-                const doorNo = document.getElementById('editAddressDoorNo')?.value.trim() || '';
-                const streetTam = document.getElementById('editAddressStreetTam')?.value.trim() || '';
-                const streetEng = document.getElementById('editAddressStreetEng')?.value.trim() || '';
-                const areaTam = document.getElementById('editAddressAreaTam')?.value.trim() || '';
-                const pin = document.getElementById('editAddressPin')?.value.trim() || '';
-                const district = document.getElementById('editAddressDistrict')?.value.trim() || '';
-                const taluk = document.getElementById('editAddressTaluk')?.value.trim() || '';
-                const village = document.getElementById('editAddressVillage')?.value.trim() || '';
-
-                const updatedSubServiceData = {
-                    ...sData,
-                    subService: 'CHANGE_ADDRESS',
-                    smartCardNumber: cardNo,
-                    rationCardNo: cardNo,
-                    proofType: proofType,
-                    doorNo: doorNo,
-                    newDoorNo: doorNo,
-                    streetTam: streetTam,
-                    streetEng: streetEng,
-                    newStreet: streetEng || streetTam,
-                    areaTam: areaTam,
-                    pincode: pin,
-                    newPincode: pin,
-                    district: district,
-                    newDistrict: district,
-                    taluk: taluk,
-                    newTaluk: taluk,
-                    village: village,
-                    newVillage: village
-                };
-
-                updated = {
-                    subService: 'CHANGE_ADDRESS',
-                    smartCardNumber: cardNo,
-                    rationCardNo: cardNo,
-                    doorNo: doorNo,
-                    streetTam: streetTam,
-                    streetEng: streetEng,
-                    areaTam: areaTam,
-                    pincode: pin,
-                    district: district,
-                    taluk: taluk,
-                    village: village,
-                    subServiceData: updatedSubServiceData
-                };
-            } else if (isRemoveMember) {
-                const cardNo = document.getElementById('editRemoveMemberCardNo')?.value.trim() || '';
-                const reason = document.getElementById('editRemoveMemberReason')?.value || 'இறப்பு (Death of Member)';
-                const nameTam = document.getElementById('editRemoveMemberNameTam')?.value.trim() || '';
-                const nameEng = document.getElementById('editRemoveMemberNameEng')?.value.trim() || '';
-                const docType = document.getElementById('editRemoveMemberDocType')?.value || 'இறப்புச் சான்றிதழ் (Death Certificate)';
-                const aadhaarNo = (document.getElementById('editRemoveMemberAadhaar')?.value || '').replace(/\s+/g, '');
-
-                const updatedSubServiceData = {
-                    ...sData,
-                    subService: 'REMOVE_MEMBER',
-                    smartCardNumber: cardNo,
-                    rationCardNo: cardNo,
-                    reason: reason,
-                    memberNameTam: nameTam,
-                    memberNameEng: nameEng,
-                    memberName: nameEng || nameTam,
-                    docType: docType,
-                    aadhaarNo: aadhaarNo
-                };
-
-                updated = {
-                    subService: 'REMOVE_MEMBER',
-                    smartCardNumber: cardNo,
-                    rationCardNo: cardNo,
-                    fullNameTam: nameTam,
-                    fullNameEng: nameEng,
-                    subServiceData: updatedSubServiceData
-                };
+            if (cartridgeCollected && cartridgeCollected.overrideUpdated) {
+                updated = cartridgeCollected.overrideUpdated;
             } else {
-                const hasGas = document.getElementById('editHasGas').checked;
+                const hasGas = document.getElementById('editHasGas')?.checked || false;
                 const gasCo = document.getElementById('editGasCompany')?.value || 'IOC';
                 const gasCoDisplay = document.getElementById('editGasCompany')?.options[document.getElementById('editGasCompany')?.selectedIndex]?.text || 'Indane Gas (IOCL)';
 
@@ -2368,123 +1547,18 @@
                     }
                 }
 
-                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : (currentCitizenData?.subService || window.lastSubService || null);
-                let keepSubData = forceMasterProfile ? (currentCitizenData?.subServiceData || null) : (currentCitizenData?.subServiceData || window.lastSubServiceData || null);
+                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : (cartridgeCollected?.subService || currentCitizenData?.subService || window.lastSubService || null);
+                const keepSubData = forceMasterProfile ? (currentCitizenData?.subServiceData || null) : (cartridgeCollected?.subServiceData || currentCitizenData?.subServiceData || window.lastSubServiceData || null);
 
-                const commVal = document.getElementById('editCommunity')?.value || currentCitizenData?.community || 'MBC';
-                const casteVal = document.getElementById('editCaste')?.value?.trim() || currentCitizenData?.caste || '';
-                const fatCasteVal = document.getElementById('editFatherCaste')?.value?.trim() || currentCitizenData?.fatherCaste || casteVal;
-                const motCasteVal = document.getElementById('editMotherCaste')?.value?.trim() || currentCitizenData?.motherCaste || casteVal;
-                const relVal = document.getElementById('editReligion')?.value || currentCitizenData?.religion || 'Hindu';
-                const incVal = document.getElementById('editAnnualIncome')?.value?.trim() || currentCitizenData?.annualIncome || '';
-                const occVal = document.getElementById('editOccupation')?.value?.trim() || currentCitizenData?.profession || '';
-                const famCountVal = document.getElementById('editFamilyMemberCount')?.value || currentCitizenData?.familyMemberCount || '1';
-                const incomeMembersVal = (typeof window.collectEditIncomeMembers === 'function' && Number(famCountVal) > 1)
-                    ? window.collectEditIncomeMembers()
-                    : (Number(famCountVal) === 1 ? [] : (currentCitizenData?.incomeMembers || []));
-                const monIncVal = document.getElementById('editMonthlyIncome')?.value?.trim() || (incVal ? String(Math.round(Number(incVal) / 12)) : '');
-                const resYearsVal = document.getElementById('editResidenceYears')?.value?.trim() || currentCitizenData?.residenceYears || '';
-                const resPurpVal = document.getElementById('editResidencePurpose')?.value?.trim() || currentCitizenData?.residencePurpose || '';
-                const courseVal = document.getElementById('editFirstGraduateCourse')?.value?.trim() || currentCitizenData?.currentCourse || '';
-                const collegeVal = document.getElementById('editFirstGraduateCollege')?.value?.trim() || currentCitizenData?.institutionName || '';
-                const fEduVal = document.getElementById('editFirstGraduateFatherEdu')?.value || currentCitizenData?.fatherEducation || '10th Standard';
-                const mEduVal = document.getElementById('editFirstGraduateMotherEdu')?.value || currentCitizenData?.motherEducation || '8th Standard';
-                const yopVal = document.getElementById('editFirstGraduateYop')?.value?.trim() || currentCitizenData?.yearOfPassing || '2024';
-                const collegeAddVal = document.getElementById('editFirstGraduateCollegeAdd')?.value?.trim() || currentCitizenData?.institutionAddress || 'Coimbatore Tamil Nadu';
-                const obcModeSave = (keepSub === 'OBC' || keepSub === 'OBC_CERTIFICATE');
-                const obcCasteVal = document.getElementById('editObcCaste')?.value?.trim() || casteVal;
-                const obcOccVal = document.getElementById('editObcOccupation')?.value || currentCitizenData?.occupation || 'Service';
-                const obcFaOccVal = document.getElementById('editObcFatherOccupation')?.value?.trim() || currentCitizenData?.fatherOccupation || '';
-                const obcMoOccVal = document.getElementById('editObcMotherOccupation')?.value?.trim() || currentCitizenData?.motherOccupation || '';
-                const obcIncVal = document.getElementById('editObcAnnualIncome')?.value?.trim() || incVal;
-                const lhDecEngVal = document.getElementById('editLhDeceasedNameEng')?.value?.trim() || currentCitizenData?.deceasedNameEng || '';
-                const lhDecTamVal = document.getElementById('editLhDeceasedNameTam')?.value?.trim() || currentCitizenData?.deceasedNameTam || lhDecEngVal;
-                const lhDodVal = document.getElementById('editLhDateOfDeath')?.value?.trim() || currentCitizenData?.dateOfDeath || '';
-                const lhPodVal = document.getElementById('editLhPlaceOfDeath')?.value?.trim() || currentCitizenData?.placeOfDeath || '';
-                const lhDcNoVal = document.getElementById('editLhDeathCertNo')?.value?.trim() || currentCitizenData?.deathCertificateNo || '';
-                const lhParentsRaw = document.getElementById('editLhDeceasedParents')?.value?.trim() || '';
-                const lhParentsSplit = lhParentsRaw.split('/').map(s => s.trim()).filter(Boolean);
-                const lhDecFaEng = lhParentsSplit[0] || currentCitizenData?.deceasedFatherNameEng || 'Ramasamy';
-                const lhDecMoEng = lhParentsSplit[1] || currentCitizenData?.deceasedMotherNameEng || 'Lakshmi';
-                const widowModeSave = (keepSub === 'WIDOW' || keepSub === 'WIDOW_CERTIFICATE');
-                const widowSpouseEngVal = document.getElementById('editWidowSpouseNameEng')?.value?.trim() || currentCitizenData?.spouseNameEng || '';
-                const widowSpouseTamVal = document.getElementById('editWidowSpouseNameTam')?.value?.trim() || currentCitizenData?.spouseNameTam || widowSpouseEngVal;
-                const widowDodVal = document.getElementById('editWidowDateOfDeath')?.value?.trim() || currentCitizenData?.dateOfDeath || '';
-                const widowDcNoVal = document.getElementById('editWidowDeathCertNo')?.value?.trim() || currentCitizenData?.deathCertificateNo || '';
-                const widowMarDateVal = document.getElementById('editWidowDateOfMarriage')?.value?.trim() || currentCitizenData?.dateOfMarriage || '';
-                const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
-
-                if (keepSub === 'COMMUNITY' || keepSub === 'COMMUNITY_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        community: commVal,
-                        caste: casteVal,
-                        fatherCaste: fatCasteVal,
-                        motherCaste: motCasteVal,
-                        religion: relVal,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'INCOME' || keepSub === 'INCOME_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        annualIncome: incVal,
-                        monthlyIncome: monIncVal,
-                        profession: occVal,
-                        familyMemberCount: famCountVal,
-                    incomeMembers: incomeMembersVal,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'RESIDENCE' || keepSub === 'RESIDENCE_CERTIFICATE' || keepSub === 'NATIVITY') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        residenceYears: resYearsVal,
-                        residencePurpose: resPurpVal,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'OBC' || keepSub === 'OBC_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        caste: obcCasteVal,
-                        occupation: obcOccVal,
-                        fatherOccupation: obcFaOccVal,
-                        motherOccupation: obcMoOccVal,
-                        annualIncome: obcIncVal,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'WIDOW' || keepSub === 'WIDOW_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        spouseNameEng: widowSpouseEngVal,
-                        spouseNameTam: widowSpouseTamVal,
-                        dateOfDeath: widowDodVal,
-                        deathCertificateNo: widowDcNoVal,
-                        dateOfMarriage: widowMarDateVal,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'LEGAL_HEIR' || keepSub === 'LEGAL_HEIR_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        deceasedNameEng: lhDecEngVal,
-                        deceasedNameTam: lhDecTamVal,
-                        dateOfDeath: lhDodVal,
-                        placeOfDeath: lhPodVal,
-                        deathCertificateNo: lhDcNoVal,
-                        deceasedFatherNameEng: lhDecFaEng,
-                        deceasedMotherNameEng: lhDecMoEng,
-                        canNumber: canVal
-                    };
-                } else if (keepSub === 'FIRST_GRADUATE' || keepSub === 'FIRST_GRADUATE_CERTIFICATE') {
-                    keepSubData = {
-                        ...(keepSubData || {}),
-                        currentCourse: courseVal,
-                        institutionName: collegeVal,
-                        fatherEducation: fEduVal,
-                        motherEducation: mEduVal,
-                        yearOfPassing: yopVal,
-                        institutionAddress: collegeAddVal,
-                        familyGraduateConfirmed: true,
-                        canNumber: canVal
-                    };
+                // Collect Master Vault extension fields cleanly ONLY when forceMasterProfile is true
+                const vaultMergedFields = {};
+                if (forceMasterProfile && window.ESEVA_PLUGINS?.SERVICE_PLUGINS) {
+                    for (const p of window.ESEVA_PLUGINS.SERVICE_PLUGINS) {
+                        if (!p.uiCartridge?.renderCustomView && typeof p.uiCartridge?.collectEditFields === 'function') {
+                            const cRes = p.uiCartridge.collectEditFields({ data: currentCitizenData, sData, forceMasterProfile });
+                            if (cRes && cRes.fields) Object.assign(vaultMergedFields, cRes.fields);
+                        }
+                    }
                 }
 
                 const relSelectVal = document.getElementById('editRelationship')?.value || currentCitizenData?.relationship || 'Father';
@@ -2492,10 +1566,12 @@
                 const normDobSave = /^\d{4}$/.test(rawDobSave) ? `01/01/${rawDobSave}` : rawDobSave;
                 const fTamSave = document.getElementById('editFatherTam').value.trim();
                 const fEngSave = document.getElementById('editFatherEng').value.trim();
+                const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
 
                 updated = {
                     subService: keepSub,
                     subServiceData: keepSubData,
+                    pluginId: activePlugin?.id || currentCitizenData?.pluginId || undefined,
                     fullNameTam: document.getElementById('editNameTam').value.trim(),
                     fullNameEng: document.getElementById('editNameEng').value.trim(),
                     relationship: relSelectVal,
@@ -2524,40 +1600,8 @@
                     smartCardNumber: document.getElementById('editSmartCardNo')?.value.trim() || currentCitizenData?.smartCardNumber || '',
                     rationCardNo: document.getElementById('editSmartCardNo')?.value.trim() || currentCitizenData?.rationCardNo || '',
                     canNumber: canVal,
-                    religion: relVal,
-                    community: commVal,
-                    caste: obcModeSave ? obcCasteVal : casteVal,
-                    fatherCaste: fatCasteVal,
-                    motherCaste: motCasteVal,
-                    annualIncome: obcModeSave ? obcIncVal : incVal,
-                    monthlyIncome: monIncVal,
-                    profession: occVal,
-                    occupation: obcModeSave ? obcOccVal : (currentCitizenData?.occupation || occVal),
-                    fatherOccupation: obcFaOccVal,
-                    motherOccupation: obcMoOccVal,
-                    familyMemberCount: famCountVal,
-                    incomeMembers: incomeMembersVal,
-                    residenceYears: resYearsVal,
-                    residencePurpose: resPurpVal,
-                    currentCourse: courseVal,
-                    degreeCourse: courseVal,
-                    institutionName: collegeVal,
-                    collegeName: collegeVal,
-                    fatherEducation: fEduVal,
-                    motherEducation: mEduVal,
-                    yearOfPassing: yopVal,
-                    institutionAddress: collegeAddVal,
-                    familyGraduateConfirmed: true,
-                    deceasedNameEng: lhDecEngVal,
-                    deceasedNameTam: lhDecTamVal,
-                    spouseNameEng: widowSpouseEngVal,
-                    spouseNameTam: widowSpouseTamVal,
-                    dateOfDeath: widowModeSave ? widowDodVal : lhDodVal,
-                    placeOfDeath: lhPodVal,
-                    deathCertificateNo: widowModeSave ? widowDcNoVal : lhDcNoVal,
-                    dateOfMarriage: widowMarDateVal,
-                    deceasedFatherNameEng: lhDecFaEng,
-                    deceasedMotherNameEng: lhDecMoEng,
+                    ...vaultMergedFields,
+                    ...(cartridgeCollected?.fields || {}),
                     members: existingMembers,
                     gasDetails: (document.getElementById('editGasToggleWrap')?.style.display !== 'none')
                         ? {
@@ -2627,7 +1671,7 @@
                     currentCitizenData = data.citizenProfile;
                     updateSidebar(data);
                 }
-                if (data.chatHistory && typeof renderMessages === 'function') {
+                if (!silent && data.chatHistory && typeof renderMessages === 'function') {
                     renderMessages(data.chatHistory, true);
                 }
                 fetchOperatorDrafts();

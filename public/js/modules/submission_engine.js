@@ -77,141 +77,39 @@
                 return;
             }
 
-            // Golden Rule 19: Strict Pre-Flight Client Guard for TNeGA Services
-            if (isTnegaActive && currentCitizenData) {
-                const curSub = String(currentCitizenData.subService || currentCitizenData.intakeState || '').toUpperCase();
-                const docs = currentCitizenData.documents || {};
+            // Golden Rule 19: Authoritative Per-Cartridge Pre-Submit Audit (Zero shared service if/else ladders)
+            function evaluateCartridgePreSubmit(plugin, dataObj) {
+                if (!plugin || !dataObj) return { valid: true };
+                const docs = dataObj.documents || {};
+                const b64 = dataObj.base64Docs || {};
                 const hasPhoto = Boolean(
-                    currentCitizenData.headPhotoPath || 
-                    docs.profilePhoto || 
-                    docs.headPhoto || 
-                    docs.photo || 
-                    currentCitizenData.profilePhoto || 
-                    currentCitizenData.photo
+                    dataObj.headPhotoPath || docs.profilePhoto || docs.headPhoto || docs.photo ||
+                    dataObj.profilePhoto || dataObj.photo || b64.profilePhotoBase64 || b64.headPhotoBase64
                 );
                 const hasSmartCard = Boolean(
-                    currentCitizenData.smartCard ||
-                    currentCitizenData.rationCard ||
-                    currentCitizenData.smartCardPath ||
-                    currentCitizenData.rationCardPath ||
-                    docs.smartCard ||
-                    docs.rationCard ||
-                    docs.smartCardFront ||
-                    window._tempUploads?.smartCard ||
-                    window._tempUploads?.smartCardFront
+                    dataObj.smartCard || dataObj.rationCard || dataObj.smartCardPath || dataObj.rationCardPath ||
+                    docs.smartCard || docs.rationCard || docs.smartCardFront ||
+                    window._tempUploads?.smartCard || window._tempUploads?.smartCardFront ||
+                    b64.smartCardBase64 || b64.rationCardBase64
                 );
-                const curPluginPre = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
-                    ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
-                    : null;
-                const isRevCert = curPluginPre ? Boolean(curPluginPre.preSubmit?.requireSmartCard) : (!isExplicitRationFlowTop && ['OBC', 'COMMUNITY', 'INCOME', 'RESIDENCE', 'NATIVITY', 'FIRST_GRADUATE', 'WIDOW', 'LEGAL_HEIR'].some(k => curSub === k || curSub.startsWith(k + '_')));
-                if (isRevCert && !hasSmartCard) {
-                    alert('⚠️ அனைத்து வருவாய்த் துறை சேவைகளுக்கும் குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) கட்டாயம் தேவை.\n\nதயவுசெய்து ரேஷன் கார்டு (முழு அட்டை OR முன்பக்கம்+பின்பக்கம்) பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
+                if (plugin.uiCartridge && typeof plugin.uiCartridge.validatePreSubmit === 'function') {
+                    return plugin.uiCartridge.validatePreSubmit(dataObj, docs, { hasPhoto, hasSmartCard });
+                }
+                if (plugin.preSubmit?.requireSmartCard && !hasSmartCard) {
+                    return {
+                        valid: false,
+                        errorMessage: '⚠️ அனைத்து வருவாய்த் துறை சேவைகளுக்கும் குடும்ப ஸ்மார்ட் ரேஷன் கார்டு (Smart Card) கட்டாயம் தேவை.'
+                    };
+                }
+                return { valid: true };
+            }
+
+            if (isTnegaActive && currentCitizenData && resolvedSubmitPlugin) {
+                const preRes = evaluateCartridgePreSubmit(resolvedSubmitPlugin, currentCitizenData);
+                if (preRes && preRes.valid === false) {
+                    alert(preRes.errorMessage || '⚠️ தேவையான ஆவணங்கள் விடுபட்டுள்ளன.');
                     if (typeof openEditModal === 'function') openEditModal(activeMob);
                     return;
-                }
-
-                if (curSub === 'OBC' || curSub === 'OBC_CERTIFICATE' || curSub.includes('OBC')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் (<250x250px, <50KB) கட்டாயம் தேவை.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasCommProof = Boolean(docs.communityCertificate || docs.communityProof || currentCitizenData.communityCertificate || currentCitizenData.communityCertificatePath || currentCitizenData.communityProof);
-                    if (!hasCommProof) {
-                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க சாதிச் சான்றிதழ் (Community Certificate) கட்டாயம் தேவை.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasItrProof = Boolean(docs.incomeTaxReturn || docs.incomeProof || docs.salarySlip || currentCitizenData.incomeTaxReturn || currentCitizenData.incomeProof);
-                    if (!hasItrProof) {
-                        alert('⚠️ OBC சான்றிதழ் (REV-115) விண்ணப்பிக்க வருமான வரி (ITR) அல்லது வருமானச் சான்று கட்டாயம் தேவை.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('COMMUNITY')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasComm = Boolean(currentCitizenData.communityProof || currentCitizenData.communityCertificatePath || currentCitizenData.familyCommunityProofPath || docs.communityProof);
-                    if (!hasComm) {
-                        alert('⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க "குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC" ஆவணம் கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('INCOME')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasIncome = Boolean(
-                        currentCitizenData.incomeProof || 
-                        currentCitizenData.salaryCertificatePath || 
-                        docs.incomeProof ||
-                        currentCitizenData.incomeProof === 'SELF_DECLARATION' ||
-                        currentCitizenData.incomeProofType === 'SELF_DECLARATION' ||
-                        currentCitizenData.salaryProofType === 'SELF_DECLARATION' ||
-                        (currentCitizenData.annualIncome && currentCitizenData.profession) ||
-                        (currentCitizenData.monthlyIncome && currentCitizenData.profession) ||
-                        currentCitizenData.annualIncome ||
-                        currentCitizenData.monthlyIncome
-                    );
-                    if (!hasIncome) {
-                        alert('⚠️ வருமானச் சான்றிதழ் (REV-103) விண்ணப்பிக்க வருமான விவரங்கள் (தொழில் மற்றும் மாத/ஆண்டு வருமானம்) அல்லது வருமான ஆதாரம் உள்ளிடப்பட வேண்டும்.\n\nதயவுசெய்து படிவத்தில் பூர்த்தி செய்யவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('RESIDENCE') || curSub.includes('NATIVITY')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasRes = Boolean(currentCitizenData.residenceProof?.docPath || currentCitizenData.residenceProof || docs.residenceProof || docs.gasBook);
-                    if (!hasRes) {
-                        alert('⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க இருப்பிட ஆதாரம் (மின் கட்டணம்/கேஸ்/வரி ரசீது) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணங்களைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('FIRST_GRADUATE')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasApplicantProof = Boolean(currentCitizenData.applicantEducationProof || currentCitizenData.studentTc || docs.applicantEducationProof || docs.studentTc);
-                    if (!hasApplicantProof) {
-                        alert('⚠️ முதல் பட்டதாரி சான்றிதழ் (REV-104) விண்ணப்பிக்க மாணவரின் 12-ஆம் வகுப்பு மாற்றுச் சான்றிதழ் (TC) அல்லது மதிப்பெண் பட்டியல் கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('WIDOW')) {
-                    if (!hasPhoto) {
-                        alert('⚠️ விதவைச் சான்றிதழ் (REV-109) விண்ணப்பிக்க விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் (<50KB) கட்டாயம் தேவை.\n\nதயவுசெய்து புகைப்படத்தைப் பதிவேற்றவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasDeathCert = Boolean(currentCitizenData.deathCertificate?.docPath || currentCitizenData.deathCertificate || docs.deathCertificate);
-                    if (!hasDeathCert) {
-                        alert('⚠️ விதவைச் சான்றிதழ் (REV-109) விண்ணப்பிக்க கணவரின் இறப்புச் சான்றிதழ் (Death Certificate <200KB) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                } else if (curSub.includes('LEGAL_HEIR')) {
-                    const hasDeathCert = Boolean(currentCitizenData.deathCertificate?.docPath || currentCitizenData.deathCertificate || docs.deathCertificate);
-                    if (!hasDeathCert) {
-                        alert('⚠️ வாரிசு சான்றிதழ் (REV-114) விண்ணப்பிக்க இறப்புச் சான்றிதழ் (Death Certificate <200KB) கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
-                    const hasBirthOrTc = Boolean(currentCitizenData.birthCertificate?.docPath || currentCitizenData.birthCertificate || docs.birthCertificate || currentCitizenData.studentTc || docs.studentTc);
-                    if (!hasBirthOrTc) {
-                        alert('⚠️ வாரிசு சான்றிதழ் (REV-114) விண்ணப்பிக்க வாரிசுகளின் பிறப்புச் சான்றிதழ் அல்லது பள்ளி TC கட்டாயம் தேவை.\n\nதயவுசெய்து ஆவணத்தைப் பதிவேற்றிய பிறகு விண்ணப்பிக்கவும்.');
-                        if (typeof openEditModal === 'function') openEditModal(activeMob);
-                        return;
-                    }
                 }
             }
 
@@ -300,64 +198,20 @@
                             if (fEng && !fTam) fTam = fEng;
                             if (fTam && !fEng) fEng = fTam;
 
-                            const activeExplicitServices = [
-                                'NEW_CARD', 'NEW_RATION_CARD',
-                                'INCOME', 'INCOME_CERTIFICATE',
-                                'RESIDENCE', 'RESIDENCE_CERTIFICATE', 'NATIVITY', 'NATIVITY_CERTIFICATE',
-                                'COMMUNITY', 'COMMUNITY_CERTIFICATE',
-                                'FIRST_GRADUATE', 'FIRST_GRADUATE_CERTIFICATE',
-                                'OBC', 'OBC_CERTIFICATE',
-                                'LEGAL_HEIR', 'LEGAL_HEIR_CERTIFICATE',
-                                'WIDOW', 'WIDOW_CERTIFICATE',
-                                'CAN_REGISTER', 'CAN_SEARCH',
-                                'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
-                            ];
-                            let effectiveSubService = (draftData.subService && activeExplicitServices.includes(draftData.subService))
-                                ? draftData.subService
-                                : (dJson.draft.subService || prof.subService || draftData.subService);
-
-                            // Golden Rule 6 & 11: Explicit TNPDS Ration subservices MUST NEVER be hijacked into TNeGA Revenue Certificates!
-                            const effSubUpper = String(effectiveSubService || '').toUpperCase();
-                            const isExplicitTnpdsSub = [
-                                'NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER',
-                                'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'
-                            ].includes(effSubUpper);
-
-                            const targetServiceHint = String(draftData.targetService || dJson.draft?.targetService || prof.targetService || draftData.service || dJson.draft?.service || prof.service || draftData.serviceId || dJson.draft?.serviceId || prof.serviceId || '').toUpperCase();
-                            const intakeHint = String(draftData.intakeState || dJson.draft?.intakeState || prof.intakeState || '').toUpperCase();
-                            const isTnegaResIntake = Boolean(
-                                (intakeHint.startsWith('RESIDENCE_') && intakeHint !== 'RESIDENCE_PROOF_TYPE' && intakeHint !== 'RESIDENCE_PROOF_DOC') ||
-                                intakeHint === 'READY_TO_APPLY_RESIDENCE' ||
-                                intakeHint.includes('NATIVITY')
-                            );
-
-                            let resolvedTargetService = isExplicitTnpdsSub ? '' : (draftData.targetService || dJson.draft?.targetService || prof.targetService || '');
-
-                            if (!isExplicitTnpdsSub) {
-                                if (effectiveSubService === 'WIDOW' || effectiveSubService === 'WIDOW_CERTIFICATE' || targetServiceHint.includes('WIDOW') || targetServiceHint.includes('விதவை') || intakeHint.includes('WIDOW')) {
-                                    effectiveSubService = 'WIDOW';
-                                    resolvedTargetService = 'WIDOW';
-                                } else if (effectiveSubService === 'LEGAL_HEIR' || effectiveSubService === 'LEGAL_HEIR_CERTIFICATE' || targetServiceHint.includes('LEGAL_HEIR') || targetServiceHint.includes('வாரிசு') || intakeHint.includes('LEGAL_HEIR')) {
-                                    effectiveSubService = 'LEGAL_HEIR';
-                                    resolvedTargetService = 'LEGAL_HEIR';
-                                } else if (effectiveSubService === 'OBC' || effectiveSubService === 'OBC_CERTIFICATE' || targetServiceHint.includes('OBC') || targetServiceHint.includes('இதர பிற்படுத்தப்பட்டோர்') || intakeHint.includes('OBC')) {
-                                    effectiveSubService = 'OBC';
-                                    resolvedTargetService = 'OBC';
-                                } else if (effectiveSubService === 'FIRST_GRADUATE' || effectiveSubService === 'FIRST_GRADUATE_CERTIFICATE' || targetServiceHint.includes('FIRST_GRADUATE') || targetServiceHint.includes('முதல் பட்டதாரி') || intakeHint.includes('FIRST_GRADUATE') || (!effectiveSubService && (prof.currentCourse || draftData.currentCourse))) {
-                                    effectiveSubService = 'FIRST_GRADUATE';
-                                    resolvedTargetService = 'FIRST_GRADUATE';
-                                } else if (effectiveSubService === 'RESIDENCE' || effectiveSubService === 'RESIDENCE_CERTIFICATE' || effectiveSubService === 'NATIVITY' || targetServiceHint.includes('RESIDENCE') || targetServiceHint.includes('NATIVITY') || targetServiceHint.includes('இருப்பிடம்') || isTnegaResIntake) {
-                                    effectiveSubService = 'RESIDENCE';
-                                    resolvedTargetService = 'RESIDENCE';
-                                } else if (effectiveSubService === 'INCOME' || effectiveSubService === 'INCOME_CERTIFICATE' || targetServiceHint.includes('INCOME') || targetServiceHint.includes('வருமானம்') || intakeHint.includes('INCOME')) {
-                                    effectiveSubService = 'INCOME';
-                                    resolvedTargetService = 'INCOME';
-                                } else if (effectiveSubService === 'COMMUNITY' || effectiveSubService === 'COMMUNITY_CERTIFICATE' || targetServiceHint.includes('COMMUNITY') || targetServiceHint.includes('சாதி') || intakeHint.includes('COMMUNITY') || (!effectiveSubService && (prof.caste || draftData.caste))) {
-                                    effectiveSubService = 'COMMUNITY';
-                                    resolvedTargetService = 'COMMUNITY';
-                                }
-                            }
-
+                            // Authoritative Per-Cartridge Draft Service Resolution (Zero cross-service guesswork)
+                            const payloadPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                                ? window.ESEVA_PLUGINS.resolveServicePlugin({
+                                    ...dJson.draft,
+                                    ...prof,
+                                    ...draftData,
+                                    intakeState: draftData.intakeState || dJson.draft.intakeState || prof.intakeState || ''
+                                })
+                                : null;
+                            const isExplicitTnpdsSub = payloadPlugin
+                                ? (payloadPlugin.portal === 'TNPDS')
+                                : ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(String(draftData.subService || dJson.draft.subService || prof.subService || '').toUpperCase());
+                            const effectiveSubService = payloadPlugin ? payloadPlugin.subService : (draftData.subService || dJson.draft.subService || prof.subService || 'NEW_CARD');
+                            const resolvedTargetService = isExplicitTnpdsSub ? '' : (payloadPlugin?.portal === 'TNEGA' ? payloadPlugin.subService : (draftData.targetService || dJson.draft?.targetService || prof.targetService || ''));
                             const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
 
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
@@ -436,29 +290,7 @@
                     });
                 }
 
-                // 🛡️ CLIENT PRE-FLIGHT MANDATORY AUDIT (Golden Rule 6 & 14)
-                const isObcSvcCheck = draftData.subService === 'OBC' || draftData.subService === 'OBC_CERTIFICATE' || (draftData.intakeState && draftData.intakeState.includes('OBC'));
-                const isFgSvcCheck = !isObcSvcCheck && (draftData.subService === 'FIRST_GRADUATE' || draftData.subService === 'FIRST_GRADUATE_CERTIFICATE' || (draftData.intakeState && draftData.intakeState.includes('FIRST_GRADUATE')));
-                const isCommService = !isObcSvcCheck && !isFgSvcCheck && (draftData.subService === 'COMMUNITY' || (draftData.intakeState && draftData.intakeState.includes('COMMUNITY')));
-                if (isCommService) {
-                    const hasCommDoc = Boolean(draftData.communityProof || draftData.communityCertificatePath || draftData.familyCommunityProofPath || draftData.documents?.communityProof || draftData.base64Docs?.communityProofBase64);
-                    if (!hasCommDoc) {
-                        const errMsg = '⚠️ சாதிச் சான்றிதழ் (REV-101) விண்ணப்பிக்க "குடும்ப சாதிச் சான்றிதழ் அல்லது பள்ளி TC" ஆவணம் கட்டாயம் தேவை!\n\nஇந்த ஆவணம் இல்லாமல் போர்ட்டலில் விண்ணப்பம் சமர்ப்பிக்க முடியாது. தயவுசெய்து ஆவணத்தைப் பதிவேற்றவும்.';
-                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
-                        alert(errMsg);
-                        if (typeof openEditModal === 'function') openEditModal();
-                        return;
-                    }
-                    const hasPhotoDoc = Boolean(draftData.headPhotoPath || draftData.documents?.profilePhoto || draftData.base64Docs?.profilePhotoBase64);
-                    if (!hasPhotoDoc) {
-                        const errMsg = '⚠️ விண்ணப்பதாரரின் பாஸ்போர்ட் புகைப்படம் விடுபட்டுள்ளது!\n\nபுகைப்படத்தைப் பதிவேற்றிய பின்பே விண்ணப்பிக்க முடியும்.';
-                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
-                        alert(errMsg);
-                        if (typeof openEditModal === 'function') openEditModal();
-                        return;
-                    }
-                }
-
+                // 🛡️ CLIENT PRE-FLIGHT MANDATORY AUDIT (Strictly Delegated to Active UI Cartridge)
                 const draftPluginFinal = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
                     ? window.ESEVA_PLUGINS.resolveServicePlugin(draftData)
                     : null;
@@ -466,20 +298,17 @@
                     draftData.pluginId = draftPluginFinal.id;
                     draftData.portal = draftPluginFinal.portal;
                 }
+                const finalAudit = evaluateCartridgePreSubmit(draftPluginFinal, draftData);
+                if (finalAudit && finalAudit.valid === false) {
+                    const errMsg = finalAudit.errorMessage || '⚠️ தேவையான ஆவணங்கள் விடுபட்டுள்ளன.';
+                    if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
+                    alert(errMsg);
+                    if (typeof openEditModal === 'function') openEditModal();
+                    return;
+                }
                 const isExplicitTnpdsSubFinal = (draftPluginFinal?.portal === 'TNPDS') || ['NEW_CARD', 'NEW_RATION_CARD', 'ADD_MEMBER', 'REMOVE_MEMBER', 'CHANGE_ADDRESS', 'ADDRESS_CHANGE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'CHANGE_HEAD'].includes(String(draftData.subService || '').toUpperCase());
                 const draftIntakeUp = String(draftData.intakeState || '').toUpperCase();
                 const isTnegaResDraft = Boolean(draftIntakeUp.startsWith('RESIDENCE_') && draftIntakeUp !== 'RESIDENCE_PROOF_TYPE' && draftIntakeUp !== 'RESIDENCE_PROOF_DOC');
-                const isResService = !isExplicitTnpdsSubFinal && (draftPluginFinal?.id === 'TNEGA_RESIDENCE' || draftData.subService === 'RESIDENCE' || draftData.subService === 'RESIDENCE_CERTIFICATE' || isTnegaResDraft);
-                if (isResService) {
-                    const hasResDoc = Boolean(draftData.residenceProof?.docPath || draftData.documents?.residenceProof || draftData.documents?.gasBook || draftData.base64Docs?.residenceProofBase64 || draftData.base64Docs?.gasBookBase64);
-                    if (!hasResDoc) {
-                        const errMsg = '⚠️ இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்பிக்க "குடியிருப்புச் சான்று" (Gas Book / EB Bill / Property Tax) கட்டாயம் தேவை!';
-                        if (typeof showEsevaToast === 'function') showEsevaToast(errMsg, 'error');
-                        alert(errMsg);
-                        if (typeof openEditModal === 'function') openEditModal();
-                        return;
-                    }
-                }
 
                 // Immediately show Stop Automation and Delete buttons, and activate progress bar
                 const headerStop = document.getElementById('btnStopAutomationHeader');
@@ -510,11 +339,17 @@
                         if (typeof window.reportUiError === 'function') {
                             window.reportUiError('AUTOMATION_LAUNCH_FAIL', errMsg, { serviceName: draftData?.subService || portalLabel, step: 'DESKTOP_IPC_START' });
                         }
+                        if (typeof handleAutomationFinished === 'function') {
+                            handleAutomationFinished({ success: false, stopped: true, wasRunning: true, error: errMsg, message: `Chrome திறக்க முடியவில்லை: ${errMsg}` });
+                        }
                     }
                 } catch (e) {
                     appendLiveAutomationStep(`⚠️ பிழை: ${e.message}`);
                     if (typeof window.reportUiError === 'function') {
                         window.reportUiError('AUTOMATION_LAUNCH_EXCEPTION', e.message, { serviceName: draftData?.subService || portalLabel, step: 'DESKTOP_IPC_EXCEPTION', stack: e.stack });
+                    }
+                    if (typeof handleAutomationFinished === 'function') {
+                        handleAutomationFinished({ success: false, stopped: true, wasRunning: true, error: e.message, message: `ஆட்டோமேஷன் தொடங்க முடியவில்லை: ${e.message}` });
                     }
                 }
             } else if (runAsRealLive) {
@@ -1055,5 +890,16 @@
                 });
             }
 
+            const activeDocPlugin = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
+                ? window.ESEVA_PLUGINS.resolveServicePlugin(prof)
+                : null;
+            const allowedDocTypes = activeDocPlugin?.uiCartridge?.ownedDocTypes;
+            if (Array.isArray(allowedDocTypes) && allowedDocTypes.length > 0 && (prof.subService || prof.service || prof.pluginId)) {
+                return docs.filter(d => {
+                    const t = String(d?.type || '');
+                    if (t.startsWith('memberAadhaar')) return allowedDocTypes.includes('memberAadhaar');
+                    return allowedDocTypes.includes(t);
+                });
+            }
             return docs;
         }

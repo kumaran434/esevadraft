@@ -28,19 +28,33 @@
         const card = document.createElement('div');
         card.className = 'compact-otp-card';
         card.id = 'globalOtpCardContainer';
-        card.style.cssText = 'background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; margin-top: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);';
+        const dotPlaceholder = Array(numDigits).fill('•').join(' ');
 
         card.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                <span style="font-size: 12px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px;">
-                    <i class="fa-solid fa-key" style="color: #d97706;"></i> ${cardTitle} (${numDigits} இலக்கங்கள்)
-                </span>
-                <span id="compactOtpTimer" style="font-size: 11px; font-weight: 700; color: #dc2626; font-family: monospace; background: #ffffff; padding: 2px 6px; border-radius: 4px; border: 1px solid #fecaca;">01:00</span>
+            <div class="compact-otp-header">
+                <div class="compact-otp-title-wrap">
+                    <span class="compact-otp-icon-badge" aria-hidden="true">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </span>
+                    <div class="compact-otp-title-meta">
+                        <span class="compact-otp-title">${cardTitle}</span>
+                        <span class="compact-otp-digit-pill">${numDigits} இலக்க குறியீடு</span>
+                    </div>
+                </div>
+                <div class="compact-otp-timer-group">
+                    <span id="compactOtpTimer" class="compact-otp-timer">01:00</span>
+                </div>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <input type="text" id="compactOtpInput" inputmode="numeric" pattern="[0-9]*" maxlength="${numDigits}" placeholder="• • • • • •" autocomplete="one-time-code" style="height: 32px; width: 130px; text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 4px; border: 1.5px solid #94a3b8; border-radius: 6px; outline: none; background: #ffffff; color: #0f172a; transition: border-color 0.2s;" />
-                <button type="button" id="btnSubmitOtpPin" style="height: 32px; padding: 0 16px; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; border: none; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 6px rgba(22,163,74,0.25);">
-                    <i class="fa-solid fa-circle-check"></i> சரிபார்
+            <div class="compact-otp-progress" aria-hidden="true">
+                <div class="compact-otp-progress-fill" style="width: 100%;"></div>
+            </div>
+            <div class="compact-otp-body">
+                <div class="compact-otp-input-wrap">
+                    <i class="fa-solid fa-key compact-otp-input-icon" aria-hidden="true"></i>
+                    <input type="text" id="compactOtpInput" class="compact-otp-input" inputmode="numeric" pattern="[0-9]*" maxlength="${numDigits}" placeholder="${dotPlaceholder}" autocomplete="one-time-code" />
+                </div>
+                <button type="button" id="btnSubmitOtpPin" class="compact-otp-verify-btn">
+                    <i class="fa-solid fa-circle-check"></i> <span>சரிபார்</span>
                 </button>
             </div>
         `;
@@ -80,12 +94,11 @@
             });
 
             input.addEventListener('focus', () => {
-                input.style.borderColor = '#2563eb';
-                input.style.background = '#ffffff';
+                input.closest('.compact-otp-input-wrap')?.classList.add('is-focused');
             });
 
             input.addEventListener('blur', () => {
-                input.style.borderColor = '#94a3b8';
+                input.closest('.compact-otp-input-wrap')?.classList.remove('is-focused');
             });
 
             setTimeout(() => { input.focus(); }, 150);
@@ -98,6 +111,7 @@
         // 60-second countdown timer
         let timeLeft = 60;
         const timerSpan = card.querySelector('#compactOtpTimer');
+        const progressFill = card.querySelector('.compact-otp-progress-fill');
         const interval = setInterval(() => {
             timeLeft--;
             if (!timerSpan || !card.parentNode) {
@@ -108,17 +122,21 @@
                 const m = Math.floor(timeLeft / 60);
                 const s = timeLeft % 60;
                 timerSpan.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                if (progressFill) {
+                    progressFill.style.width = `${Math.max(0, Math.round((timeLeft / 60) * 100))}%`;
+                }
             } else {
                 clearInterval(interval);
                 timerSpan.innerText = 'காலாவதியானது';
-                timerSpan.style.color = '#dc2626';
-                timerSpan.style.background = '#fef2f2';
-                timerSpan.style.borderColor = '#fca5a5';
+                timerSpan.classList.add('is-expired');
+                if (progressFill) {
+                    progressFill.style.width = '0%';
+                }
                 if (!card.querySelector('#btnResendOtpInline')) {
                     const resendBtn = document.createElement('button');
                     resendBtn.id = 'btnResendOtpInline';
                     resendBtn.type = 'button';
-                    resendBtn.style.cssText = 'background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 8px; cursor: pointer; margin-left: 6px;';
+                    resendBtn.className = 'btn-resend-otp-inline';
                     resendBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> மீண்டும் அனுப்பு';
                     resendBtn.onclick = () => {
                         if (typeof onResendCallback === 'function') onResendCallback();
@@ -126,9 +144,10 @@
                         resendBtn.remove();
                         timeLeft = 60;
                         timerSpan.innerText = '01:00';
-                        timerSpan.style.color = '#dc2626';
-                        timerSpan.style.background = '#ffffff';
-                        timerSpan.style.borderColor = '#fecaca';
+                        timerSpan.classList.remove('is-expired');
+                        if (progressFill) {
+                            progressFill.style.width = '100%';
+                        }
                     };
                     timerSpan.parentNode.appendChild(resendBtn);
                 }

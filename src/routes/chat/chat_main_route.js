@@ -46,15 +46,9 @@ const { handleAutomationStarter } = require('./chat_automation_starter');
 const { handleServiceSelector } = require('./chat_service_selector');
 const { handleDraftResume } = require('./chat_draft_resume');
 const { handleTnegaIntake } = require('./chat_tnega_intake');
-const { handleMemberCount } = require('./chat_member_count');
-const { handleHeadPhoto } = require('./chat_head_photo');
-const { handleHeadAadhaar } = require('./chat_head_aadhaar');
-const { handleMemberAadhaar } = require('./chat_member_aadhaar');
-const { handleMemberVerification } = require('./chat_member_verification');
-const { handleAddressAndMobile } = require('./chat_address_and_mobile');
-const { handleResidenceProof } = require('./chat_residence_proof');
 const { handleFallbackResponse } = require('./chat_fallback_responder');
 const { resolveServicePlugin } = require('../../../public/js/modules/service_plugins');
+const { getCartridgeById } = require('../../cartridges');
 
 router.post('/api/chat', (req, res, next) => {
     upload.any()(req, res, (err) => {
@@ -89,13 +83,10 @@ router.post('/api/chat', (req, res, next) => {
             if (await handleTnegaIntake(ctx, req, res)) return;
         }
         if (activePortal !== 'TNEGA') {
-            if (await handleMemberCount(ctx, req, res)) return;
-            if (await handleHeadPhoto(ctx, req, res)) return;
-            if (await handleHeadAadhaar(ctx, req, res)) return;
-            if (await handleMemberAadhaar(ctx, req, res)) return;
-            if (await handleMemberVerification(ctx, req, res)) return;
-            if (await handleAddressAndMobile(ctx, req, res)) return;
-            if (await handleResidenceProof(ctx, req, res)) return;
+            const newCardCart = getCartridgeById('TNPDS_NEW_CARD');
+            if (newCardCart && newCardCart.intake && typeof newCardCart.intake.handleIntake === 'function') {
+                if (await newCardCart.intake.handleIntake(ctx, req, res)) return;
+            }
         }
 
         return handleFallbackResponse(ctx, req, res);

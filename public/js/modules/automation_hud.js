@@ -44,9 +44,10 @@
 
                     // Self-healing Milestone & Stepper Sync:
                     const chatBox = document.getElementById('chatMessages') || chatMessages;
-                    if (chatBox && data.step > 0) {
+                    if (chatBox && data.isRunning && data.step > 0) {
                         const stepper = chatBox.querySelector('#liveAutomationStepperCard');
-                        if (!stepper || stepper.dataset.currentStep !== String(data.step) || (data.step === 21 && !stepper.querySelector('#globalOtpCardContainer'))) {
+                        const msgWantsOtp = Boolean(data.stepMessage && /OTP தேவை|OTP சரிபார்ப்பு|ஆதார் OTP|மொபைல் OTP|SMS OTP/.test(data.stepMessage));
+                        if (!stepper || stepper.dataset.currentStep !== String(data.step) || (data.step === 21 && msgWantsOtp && !stepper.querySelector('#globalOtpCardContainer'))) {
                             appendLiveAutomationStep(data.stepMessage || `[படி ${data.step}/${data.total}]`);
                         }
                     }
@@ -202,7 +203,14 @@
             );
             const isApproval = (stepNum === 48 || msg.includes('ஒப்புதல் தேவை') || msg.includes('CONFIRM_FINAL_PORTAL_SUBMIT'));
             const isCaptcha = (msg.includes('I am human') || msg.includes('Captcha') || msg.includes('மனித சரிபார்ப்பு'));
-            const isError = (msg.includes('ஆட்டோமேஷன் நிறுத்தப்பட்டது') || msg.includes('ஆட்டோமேஷன் பிழையினால்') || msg.includes('Strict Gate Halt'));
+            const isError = (
+                msg.includes('ஆட்டோமேஷன் நிறுத்தப்பட்டது') ||
+                msg.includes('ஆட்டோமேஷன் பிழையினால்') ||
+                msg.includes('Strict Gate Halt') ||
+                msg.includes('⚠️ பிழை:') ||
+                msg.includes('Chrome திறக்க முடியவில்லை') ||
+                msg.includes('❌')
+            );
             const isSuccess = (stepNum === 51 || msg.includes('பதிவு எண் பெறப்பட்டது') || msg.includes('விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது'));
             const isDoneMessage = msg.startsWith('✓') || msg.includes('சரிபார்க்கப்பட்டது!') || msg.includes('பூர்த்தி செய்யப்பட்டது!') || msg.includes('வெற்றிகரமாக');
 
@@ -234,17 +242,21 @@
                 stepperCard = document.createElement('div');
                 stepperCard.id = 'liveAutomationStepperCard';
                 stepperCard.className = 'live-automation-stepper';
-                stepperCard.style.cssText = 'background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; margin: 8px 0; box-shadow: 0 4px 12px rgba(15,23,42,0.06); max-width: 540px;';
                 stepperCard.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 8px;">
-                        <span style="font-weight: 800; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 7px;">
-                            <span class="status-dot-pulse" style="background: #16a34a; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"></span>
-                            ⚡ அரசு போர்ட்டல் நேரலை இயக்கம் (Live Stepper)
-                        </span>
-                        <span id="stepperStepBadge" style="background: #ecfdf5; color: #166534; border: 1px solid #a7f3d0; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;">படி ${stepNum > 0 ? stepNum : 1}/51</span>
+                    <div class="live-stepper-header">
+                        <div class="live-stepper-title-group">
+                            <span class="live-stepper-pulse-ring" aria-hidden="true">
+                                <span class="status-dot-pulse"></span>
+                            </span>
+                            <div class="live-stepper-title-meta">
+                                <span class="live-stepper-heading">அரசு போர்ட்டல் நேரலை இயக்கம்</span>
+                                <span class="live-stepper-sub">Live Stepper Pipeline</span>
+                            </div>
+                        </div>
+                        <span id="stepperStepBadge" class="live-stepper-badge">படி ${stepNum > 0 ? stepNum : 1}/51</span>
                     </div>
-                    <div id="stepperItemsList" style="display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; padding-right: 2px;"></div>
-                    <div id="stepperActionContainer" style="margin-top: 8px;"></div>
+                    <div id="stepperItemsList" class="live-stepper-list"></div>
+                    <div id="stepperActionContainer" class="live-stepper-actions"></div>
                 `;
                 chatBox.appendChild(stepperCard);
             }
@@ -275,32 +287,27 @@
                     let priorRow = itemsList.querySelector(`.stepper-row[data-step-id="${prior.id}"]`);
                     if (!priorRow) {
                         priorRow = document.createElement('div');
-                        priorRow.className = 'stepper-row';
+                        priorRow.className = 'stepper-row is-done';
                         priorRow.dataset.stepId = prior.id;
-                        priorRow.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 6px; border-radius: 6px; background: #f8fafc; font-size: 12px;';
                         priorRow.innerHTML = `
-                            <div style="display: flex; align-items: center; gap: 7px; min-width: 0;">
-                                <span class="stepper-badge" style="width: 18px; height: 18px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; flex-shrink: 0;"><i class="fa-solid fa-check"></i></span>
-                                <span class="stepper-label" style="color: #334155; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${prior.label}</span>
+                            <div class="stepper-row-left">
+                                <span class="stepper-badge"><i class="fa-solid fa-check"></i></span>
+                                <span class="stepper-label">${prior.label}</span>
                             </div>
-                            <span class="stepper-status" style="font-size: 11px; font-weight: 700; color: #16a34a; flex-shrink: 0;">முடிந்தது ✓</span>
+                            <span class="stepper-status">முடிந்தது ✓</span>
                         `;
                         itemsList.appendChild(priorRow);
                     } else {
                         // Ensure prior row is marked completed
+                        priorRow.className = 'stepper-row is-done';
                         const pBadge = priorRow.querySelector('.stepper-badge');
                         const pStatus = priorRow.querySelector('.stepper-status');
                         if (pBadge && !pBadge.innerHTML.includes('fa-check')) {
-                            pBadge.style.background = '#dcfce7';
-                            pBadge.style.color = '#16a34a';
                             pBadge.innerHTML = '<i class="fa-solid fa-check"></i>';
                         }
                         if (pStatus && pStatus.innerText !== 'முடிந்தது ✓') {
                             pStatus.innerText = 'முடிந்தது ✓';
-                            pStatus.style.color = '#16a34a';
                         }
-                        priorRow.style.background = '#f8fafc';
-                        priorRow.style.border = 'none';
                     }
                 }
 
@@ -308,60 +315,39 @@
                 let curRow = itemsList.querySelector(`.stepper-row[data-step-id="${matchedCanonical.id}"]`);
                 const rowLabelText = `${matchedCanonical.label}${detail}`;
                 const rowStatusText = isOtp ? 'OTP தேவை' : (isApproval ? 'ஒப்புதல் தேவை' : (isError ? 'பிழை' : (isDoneMessage || isSuccess ? 'முடிந்தது ✓' : 'இயங்குகிறது...')));
-                const rowStatusColor = isOtp ? '#d97706' : (isApproval ? '#7c3aed' : (isError ? '#dc2626' : (isDoneMessage || isSuccess ? '#16a34a' : '#2563eb')));
-                const rowBgColor = isOtp ? '#fffbeb' : (isApproval ? '#faf5ff' : (isError ? '#fef2f2' : (isDoneMessage || isSuccess ? '#f8fafc' : '#f0f9ff')));
-                const rowBorder = isOtp ? '1px solid #fde68a' : (isApproval ? '1px solid #e9d5ff' : (isError ? '1px solid #fecaca' : 'none'));
+                const rowStateClass = isOtp ? 'is-otp' : (isApproval ? 'is-approval' : (isError ? 'is-error' : (isDoneMessage || isSuccess ? 'is-done' : 'is-running')));
 
                 let badgeHtml = `${matchedCanonical.num}`;
-                let badgeBg = '#e0f2fe';
-                let badgeColor = '#0284c7';
                 if (isOtp) {
                     badgeHtml = '<i class="fa-solid fa-key"></i>';
-                    badgeBg = '#fef3c7';
-                    badgeColor = '#d97706';
                 } else if (isApproval) {
                     badgeHtml = '<i class="fa-solid fa-clipboard-check"></i>';
-                    badgeBg = '#ede9fe';
-                    badgeColor = '#7c3aed';
                 } else if (isDoneMessage || isSuccess) {
                     badgeHtml = '<i class="fa-solid fa-check"></i>';
-                    badgeBg = '#dcfce7';
-                    badgeColor = '#16a34a';
                 } else if (isError) {
                     badgeHtml = '<i class="fa-solid fa-xmark"></i>';
-                    badgeBg = '#fee2e2';
-                    badgeColor = '#dc2626';
                 }
 
                 if (!curRow) {
                     curRow = document.createElement('div');
-                    curRow.className = 'stepper-row';
+                    curRow.className = `stepper-row ${rowStateClass}`;
                     curRow.dataset.stepId = matchedCanonical.id;
-                    curRow.style.cssText = `display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px; border-radius: 6px; background: ${rowBgColor}; border: ${rowBorder}; font-size: 12px;`;
                     curRow.innerHTML = `
-                        <div style="display: flex; align-items: center; gap: 7px; min-width: 0;">
-                            <span class="stepper-badge" style="width: 18px; height: 18px; border-radius: 50%; background: ${badgeBg}; color: ${badgeColor}; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; flex-shrink: 0;">${badgeHtml}</span>
-                            <span class="stepper-label" style="color: #0f172a; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rowLabelText}</span>
+                        <div class="stepper-row-left">
+                            <span class="stepper-badge">${badgeHtml}</span>
+                            <span class="stepper-label">${rowLabelText}</span>
                         </div>
-                        <span class="stepper-status" style="font-size: 11px; font-weight: 700; color: ${rowStatusColor}; flex-shrink: 0;">${rowStatusText}</span>
+                        <span class="stepper-status">${rowStatusText}</span>
                     `;
                     itemsList.appendChild(curRow);
                 } else {
-                    curRow.style.background = rowBgColor;
-                    curRow.style.border = rowBorder;
+                    curRow.className = `stepper-row ${rowStateClass}`;
                     const b = curRow.querySelector('.stepper-badge');
                     const l = curRow.querySelector('.stepper-label');
                     const s = curRow.querySelector('.stepper-status');
-                    if (b) {
-                        b.innerHTML = badgeHtml;
-                        b.style.background = badgeBg;
-                        b.style.color = badgeColor;
-                    }
+                    if (b) b.innerHTML = badgeHtml;
                     if (l && detail) l.innerText = rowLabelText;
-                    if (s) {
-                        s.innerText = rowStatusText;
-                        s.style.color = rowStatusColor;
-                    }
+                    if (s) s.innerText = rowStatusText;
                 }
 
                 // Smooth scroll to keep latest step visible
@@ -398,15 +384,18 @@
             } else if (isApproval && actionContainer) {
                 if (!actionContainer.querySelector('#btnLiveConfirmPortalSubmit')) {
                     actionContainer.innerHTML = `
-                        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;">
-                            <div style="font-size: 11.5px; color: #166534; line-height: 1.4;">
-                                அனைத்து விவரங்கள் மற்றும் ஆவணங்கள் Chrome போர்ட்டலில் சரியாக நிரப்பப்பட்டுள்ளன. இறுதி சமர்ப்பிப்பை முடிக்க உங்கள் ஒப்புதல் தேவை!
+                        <div class="stepper-approval-card">
+                            <div class="stepper-approval-notice">
+                                <span class="stepper-approval-icon" aria-hidden="true"><i class="fa-solid fa-shield-check"></i></span>
+                                <div class="stepper-approval-text">
+                                    அனைத்து விவரங்கள் மற்றும் ஆவணங்கள் Chrome போர்ட்டலில் சரியாக நிரப்பப்பட்டுள்ளன. இறுதி சமர்ப்பிப்பை முடிக்க உங்கள் ஒப்புதல் தேவை!
+                                </div>
                             </div>
-                        </div>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button onclick="approveFinalPortalSubmit()" id="btnLiveConfirmPortalSubmit" style="background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; border: none; padding: 7px 16px; border-radius: 6px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(22,163,74,0.3);">
-                                <i class="fa-solid fa-check-double"></i> ✅ உறுதி செய்து சமர்ப்பிக்கவும்
-                            </button>
+                            <div class="stepper-approval-actions">
+                                <button onclick="approveFinalPortalSubmit()" id="btnLiveConfirmPortalSubmit" class="stepper-confirm-submit-btn">
+                                    <i class="fa-solid fa-check-double"></i> <span>உறுதி செய்து சமர்ப்பிக்கவும்</span>
+                                </button>
+                            </div>
                         </div>
                     `;
                 }
@@ -719,36 +708,38 @@
 
             const stoppedCard = document.createElement('div');
             stoppedCard.className = 'automation-stopped-pill';
-            stoppedCard.style.cssText = 'max-width: 520px; margin: 8px 0;';
             stoppedCard.innerHTML = `
-                <div style="background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; box-shadow: 0 1px 4px rgba(239,68,68,0.08);">
-                    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #991b1b;">
-                        <i class="fa-solid fa-circle-stop" style="color: #dc2626; font-size: 14px;"></i>
-                        <span>🛑 ஆட்டோமேஷன் நிறுத்தப்பட்டது</span>
+                <div class="stopped-banner-box">
+                    <div class="stopped-banner-left">
+                        <span class="stopped-banner-icon" aria-hidden="true">
+                            <i class="fa-solid fa-circle-stop"></i>
+                        </span>
+                        <span class="stopped-banner-title">ஆட்டோமேஷன் நிறுத்தப்பட்டது</span>
                     </div>
-                    <div style="display: flex; gap: 6px;">
-                        <button type="button" onclick="clearAutomationScreenSession()" style="height: 28px; padding: 0 10px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px; font-weight: 700; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                            <i class="fa-solid fa-broom"></i> துடை (Clear)
+                    <div class="stopped-banner-actions">
+                        <button type="button" onclick="clearAutomationScreenSession()" class="stopped-btn stopped-btn-clear">
+                            <i class="fa-solid fa-broom"></i> <span>துடை (Clear)</span>
                         </button>
-                        <button type="button" onclick="startTnpdsAutomationFlow(true)" style="height: 28px; padding: 0 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 11px; font-weight: 700; color: #1d4ed8; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                            <i class="fa-solid fa-rotate-right"></i> மீண்டும் தொடங்கு
+                        <button type="button" onclick="startTnpdsAutomationFlow(true)" class="stopped-btn stopped-btn-restart">
+                            <i class="fa-solid fa-rotate-right"></i> <span>மீண்டும் தொடங்கு</span>
                         </button>
                     </div>
                 </div>
                 ${promptFault ? `
-                <div id="midRunFaultCard_${safeRunId}" class="mid-run-fault-card" style="margin-top:6px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:9px 11px;box-shadow:0 1px 4px rgba(245,158,11,0.1);">
-                    <div style="font-size:11.5px;font-weight:800;color:#92400e;margin-bottom:6px;">
-                        ⚠️ ஆட்டோமேஷன் Pre-Submit நிலையை அடையும் முன் பாதியில் நின்றது — என்ன காரணம்? (விரும்பினால்)
+                <div id="midRunFaultCard_${safeRunId}" class="mid-run-fault-card">
+                    <div class="mid-run-fault-title">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>ஆட்டோமேஷன் Pre-Submit நிலையை அடையும் முன் பாதியில் நின்றது — என்ன காரணம்? (விரும்பினால்)</span>
                     </div>
-                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;">
-                        <button type="button" class="mid-run-chip" data-msg="OTP வரவில்லை" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">OTP வரவில்லை</button>
-                        <button type="button" class="mid-run-chip" data-msg="பக்கம் திறக்கவில்லை / Slow" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">பக்கம் திறக்கவில்லை / Slow</button>
-                        <button type="button" class="mid-run-chip" data-msg="தவறான விவரம் / CAN பிழை" style="background:#ffffff;border:1px solid #f59e0b;color:#78350f;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">தவறான விவரம்</button>
-                        <button type="button" class="mid-run-chip" data-msg="வேலை முடிந்து நானே மூடினேன்" style="background:#ffffff;border:1px solid #cbd5e1;color:#334155;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">வேலை முடிந்து நானே மூடினேன்</button>
+                    <div class="mid-run-chips-row">
+                        <button type="button" class="mid-run-chip" data-msg="OTP வரவில்லை">OTP வரவில்லை</button>
+                        <button type="button" class="mid-run-chip" data-msg="பக்கம் திறக்கவில்லை / Slow">பக்கம் திறக்கவில்லை / Slow</button>
+                        <button type="button" class="mid-run-chip" data-msg="தவறான விவரம் / CAN பிழை">தவறான விவரம்</button>
+                        <button type="button" class="mid-run-chip mid-run-chip-neutral" data-msg="வேலை முடிந்து நானே மூடினேன்">வேலை முடிந்து நானே மூடினேன்</button>
                     </div>
-                    <div style="display:flex;gap:6px;">
-                        <input type="text" id="midRunFaultInput_${safeRunId}" placeholder="வேறு காரணம் இருந்தால் இங்கே தட்டச்சு செய்க..." style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:11.5px;outline:none;">
-                        <button type="button" id="midRunFaultSend_${safeRunId}" style="background:#d97706;color:#ffffff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📤 அனுப்பு</button>
+                    <div class="mid-run-fault-input-row">
+                        <input type="text" id="midRunFaultInput_${safeRunId}" class="mid-run-fault-input" placeholder="வேறு காரணம் இருந்தால் இங்கே தட்டச்சு செய்க...">
+                        <button type="button" id="midRunFaultSend_${safeRunId}" class="mid-run-fault-send"><i class="fa-solid fa-paper-plane"></i> அனுப்பு</button>
                     </div>
                 </div>
                 ` : ''}

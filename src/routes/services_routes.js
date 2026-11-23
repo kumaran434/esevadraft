@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { getAllServices, evaluateServiceChecklist } = require('../core/services_registry');
+const { listCartridges, getCartridgeById } = require('../cartridges');
 const storageService = require('../services/storage_service');
 const { sessions, getActiveMobile } = storageService;
 const { getCitizenDraft } = require('../../firestore_db');
@@ -36,7 +37,50 @@ router.get('/api/desktop/asset/:name', (req, res) => {
 
 // 3. GET /api/services
 router.get('/api/services', (req, res) => {
-    res.json({ success: true, services: getAllServices() });
+    res.json({
+        success: true,
+        services: getAllServices(),
+        cartridges: listCartridges().map(c => ({
+            id: c.id,
+            portal: c.portal,
+            subService: c.subService,
+            code: c.code,
+            folder: c.folder,
+            ownedStates: c.manifest?.ownedStates || [],
+            schema: c.manifest?.schema || null
+        }))
+    });
+});
+
+// 3b. GET /api/cartridges & GET /api/cartridges/:cartridgeId
+router.get('/api/cartridges', (req, res) => {
+    res.json({
+        success: true,
+        cartridges: listCartridges().map(c => ({
+            id: c.id,
+            portal: c.portal,
+            subService: c.subService,
+            code: c.code,
+            folder: c.folder,
+            manifest: c.manifest
+        }))
+    });
+});
+
+router.get('/api/cartridges/:cartridgeId', (req, res) => {
+    const c = getCartridgeById(req.params.cartridgeId);
+    if (!c) return res.status(404).json({ success: false, error: 'Cartridge not found' });
+    res.json({
+        success: true,
+        cartridge: {
+            id: c.id,
+            portal: c.portal,
+            subService: c.subService,
+            code: c.code,
+            folder: c.folder,
+            manifest: c.manifest
+        }
+    });
 });
 
 // 4. GET /api/services/:serviceId/checklist
@@ -125,15 +169,15 @@ router.get('/api/download/desktop-app', (req, res) => {
             return res.download(path.join(distDir, latestExe), latestExe);
         }
     }
-    let latestVer = '1.1.37';
-    try { latestVer = require('../../package.json').version || '1.1.37'; } catch (_) {}
+    let latestVer = '1.1.38';
+    try { latestVer = require('../../package.json').version || '1.1.38'; } catch (_) {}
     return res.redirect(`https://github.com/kumaran434/esevadraft/releases/download/v${latestVer}/eSevaDraft-Desktop-Setup-${latestVer}.exe`);
 });
 
 // 8. GET /api/download/version - Returns latest available desktop application version info
 router.get('/api/download/version', (req, res) => {
-    let latestVer = '1.1.37';
-    try { latestVer = require('../../package.json').version || '1.1.37'; } catch (_) {}
+    let latestVer = '1.1.38';
+    try { latestVer = require('../../package.json').version || '1.1.38'; } catch (_) {}
     res.json({
         success: true,
         latestVersion: latestVer,

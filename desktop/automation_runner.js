@@ -13,6 +13,27 @@ const {
     isPreSubmitReached
 } = require('./desktop_services');
 
+function readDiskDraftOnly(customerMobile) {
+    const mobClean = String(customerMobile || '').replace(/\D/g, '');
+    if (!mobClean) return { diskDraft: null, mobClean };
+    const candidates = [
+        app ? path.join(app.getPath('userData'), 'data', 'drafts', `${mobClean}.json`) : '',
+        path.join(__dirname, '..', 'data', 'drafts', `${mobClean}.json`),
+        path.join(process.cwd(), 'data', 'drafts', `${mobClean}.json`)
+    ].filter(Boolean);
+    for (const p of candidates) {
+        if (fs.existsSync(p)) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+                if (parsed && (parsed.citizenProfile || parsed.gasDetails)) {
+                    return { diskDraft: parsed, mobClean };
+                }
+            } catch (_) {}
+        }
+    }
+    return { diskDraft: null, mobClean };
+}
+
 function resolveDiskDraftAndGas(customerMobile, draftData) {
     const mobClean = customerMobile.replace(/\D/g, '');
     const localMobUploads = path.join(app.getPath('userData'), 'data', 'uploads', mobClean);
@@ -182,19 +203,52 @@ function loadServicePluginManifest() {
     return null;
 }
 
+function loadCartridgesRegistry() {
+    const candidates = [
+        path.join(__dirname, '..', 'src', 'cartridges', 'index.js'),
+        path.join(process.resourcesPath || '', 'src', 'cartridges', 'index.js'),
+        path.join('d:', 'downloads', 'ai assitant 2', 'src', 'cartridges', 'index.js')
+    ];
+    for (const c of candidates) {
+        if (c && fs.existsSync(c)) {
+            try { return require(c); } catch (_) {}
+        }
+    }
+    return null;
+}
+
 function resolveAutomationTarget(draftData = {}) {
     const pluginManifest = loadServicePluginManifest();
     const resolvedPlugin = pluginManifest?.resolveServicePlugin ? pluginManifest.resolveServicePlugin(draftData) : null;
+    const cartridgesReg = loadCartridgesRegistry();
+    const matchedCartridge = cartridgesReg?.getCartridgeById && resolvedPlugin?.id
+        ? cartridgesReg.getCartridgeById(resolvedPlugin.id)
+        : (cartridgesReg?.resolveCartridge ? cartridgesReg.resolveCartridge(draftData) : null);
+
     if (resolvedPlugin) {
         return {
             pluginId: resolvedPlugin.id,
+            cartridgeId: matchedCartridge?.id || resolvedPlugin.id,
+            folder: matchedCartridge?.folder || null,
             portal: resolvedPlugin.portal,
             subService: resolvedPlugin.subService,
-            runnerName: resolvedPlugin.runner
+            runnerName: matchedCartridge?.automation?.runnerName || resolvedPlugin.runner
+        };
+    }
+    if (matchedCartridge) {
+        return {
+            pluginId: matchedCartridge.id,
+            cartridgeId: matchedCartridge.id,
+            folder: matchedCartridge.folder || null,
+            portal: matchedCartridge.portal,
+            subService: matchedCartridge.subService,
+            runnerName: matchedCartridge.automation?.runnerName || 'startTnpdsRationCardFlow'
         };
     }
     return {
         pluginId: 'TNPDS_NEW_CARD',
+        cartridgeId: 'TNPDS_NEW_CARD',
+        folder: 'tnpds_new_card',
         portal: 'TNPDS',
         subService: 'NEW_CARD',
         runnerName: 'startTnpdsRationCardFlow'
@@ -550,6 +604,19 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         stuckWatchdogTimer: null
     };
     activeRunContext = runCtx;
+    try {
+        const storageService = resolveStorageService();
+        const sess = storageService && customerMobile ? storageService.getOrCreateSession(customerMobile) : null;
+        if (sess) {
+            sess.isAutomating = true;
+            sess.isAutomationRunning = true;
+            sess.automationStep = 0;
+            sess.automationTotal = 51;
+            sess.automationCurrentStepMsg = `${serviceName} தொடங்கப்படுகிறது...`;
+            sess.isWaitingForOtp = false;
+            sess.otpType = '';
+        }
+    } catch (_) {}
     writeActiveRunFlight({
         runId: runCtx.runId,
         operatorUid: runCtx.operatorUid,
@@ -752,7 +819,16 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         return { success: false, error: err };
     }
 
-    const resolved = resolveDiskDraftAndGas(customerMobile, draftData);
+    const resolvedTargetInfo = resolveAutomationTarget(draftData);
+    const isTnpdsNewCardTarget = resolvedTargetInfo.cartridgeId === 'TNPDS_NEW_CARD';
+    const resolved = isTnpdsNewCardTarget
+        ? resolveDiskDraftAndGas(customerMobile, draftData)
+        : {
+            ...readDiskDraftOnly(customerMobile),
+            effectiveGasDetails: null,
+            effectiveResidence: null,
+            existingGas: null
+        };
     let tnegaModule = loadTnegaAutomationModule();
     lastActiveTnegaModule = tnegaModule;
     if (tnegaModule?.setTnegaChromiumInstance && playwrightChromium) {
@@ -760,7 +836,18 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }
 
     let runner = null;
-    if (isWidow) {
+    const cartridgesReg = loadCartridgesRegistry();
+    const activeCartridge = cartridgesReg?.getCartridgeById
+        ? cartridgesReg.getCartridgeById(resolvedTargetInfo.cartridgeId || resolvedTargetInfo.pluginId)
+        : null;
+
+    if (activeCartridge && activeCartridge.automation && typeof activeCartridge.automation.run === 'function') {
+        runner = activeCartridge.automation.run;
+    } else if (resolvedTargetInfo.runnerName && tnegaModule && typeof tnegaModule[resolvedTargetInfo.runnerName] === 'function') {
+        runner = tnegaModule[resolvedTargetInfo.runnerName];
+    } else if (resolvedTargetInfo.runnerName && automationModule && typeof automationModule[resolvedTargetInfo.runnerName] === 'function') {
+        runner = automationModule[resolvedTargetInfo.runnerName];
+    } else if (isWidow) {
         if (tnegaModule?.startTnegaWidowFlow) {
             runner = tnegaModule.startTnegaWidowFlow;
         } else {
@@ -884,7 +971,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                     (isChangeAddress ? 'CHANGE_ADDRESS' :
                     (isChangeMobile ? 'UPDATE_MOBILE' :
                     (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))))))),
-        targetService: detectedTargetService || targetProfile?.targetService,
+        targetService: detectedTargetService || draftData?.targetService || draftData?.citizenProfile?.targetService || '',
         subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
         intakeState: draftData?.intakeState || '',
         residenceProof: resolved.effectiveResidence,
@@ -899,6 +986,9 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
 
     const base64Docs = Object.assign({}, draftData?.base64Docs || {}, draftData?.citizenProfile?.base64Docs || {});
     const isRevenueCert = Boolean(isIncome || isResidence || isCommunity || isFirstGraduate || isObc || isLegalHeir || isWidow);
+    const tnpdsSharedContext = (!isRevenueCert && !isCanRegister && !isCanSearch && typeof automationModule?.createScopedSessionContext === 'function')
+        ? automationModule.createScopedSessionContext(targetProfile.mobileNumber || customerMobile || 'default')
+        : undefined;
 
     const runOptions = {
         isMockSandbox: false,
@@ -920,6 +1010,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         serverUrl: process.env.ESEVA_DEV_URL || 'https://esevadraft.in'
     };
 
+    writeLogEntry(`⚡ [இயந்திரம் தயார்] Target=${resolvedTargetInfo.cartridgeId || serviceName}, Runner=${resolvedTargetInfo.runnerName || runner?.name || 'cartridge.run'}`);
+
     runRevenueServiceWithAutoCan({
         isRevenueCert,
         tnegaModule,
@@ -927,6 +1019,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         targetProfile,
         onProgress,
         runOptions,
+        sharedContext: tnpdsSharedContext,
         writeLogEntry
     }).then(res => {
         clearRunningSessionState();
@@ -975,7 +1068,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
  *  - If CAN is missing before launch -> searches portal -> auto-registers CAN if not found -> continues straight to Certificate.
  *  - If certificate still returns { needCanRegister: true } -> auto-registers CAN -> re-enters Certificate up to Pre-Submit Gate.
  */
-async function runRevenueServiceWithAutoCan({ isRevenueCert, tnegaModule, runner, targetProfile, onProgress, runOptions, writeLogEntry }) {
+async function runRevenueServiceWithAutoCan({ isRevenueCert, tnegaModule, runner, targetProfile, onProgress, runOptions, sharedContext, writeLogEntry }) {
     const canRegFn = tnegaModule && (tnegaModule.startTnegaCanRegisterFlow || tnegaModule.registerNewCan);
 
     if (isRevenueCert && !targetProfile.canNumber && typeof canRegFn === 'function') {
@@ -1003,7 +1096,7 @@ async function runRevenueServiceWithAutoCan({ isRevenueCert, tnegaModule, runner
         if (typeof writeLogEntry === 'function') writeLogEntry(msgHandover);
     }
 
-    let certRes = await runner(targetProfile, onProgress, runOptions);
+    let certRes = await runner(targetProfile, onProgress, runOptions, sharedContext);
 
     if (isRevenueCert && certRes && certRes.needCanRegister === true && typeof canRegFn === 'function') {
         const msgFallback = '🔄 [தானியங்கி மீட்பு] போர்ட்டலில் CAN எண் இல்லாததால் தானாகவே "Register Can" பக்கம் சென்று புதிய CAN பதிவு செய்து சான்றிதழைத் தொடர்கிறது...';

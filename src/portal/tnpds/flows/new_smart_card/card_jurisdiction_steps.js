@@ -1,6 +1,7 @@
 /**
  * TNPDS New Smart Card - Steps 14 to 20: Jurisdiction (District, Taluk, Village, Pin) & Mobile OTP
  */
+const { waitForNewCardMobileOtp } = require('./new_card_otp_config');
 let resolveTnDistrict;
 try {
     const dm = require('../../../../tn_district_mapper');
@@ -371,18 +372,14 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         await scanAndBroadcastToasts();
     }
 
-    // Clear any stale cached OTP from previous runs BEFORE requesting Mobile OTP
-    if (typeof sharedContext.clearStaleOtpState === 'function') {
-        sharedContext.clearStaleOtpState();
+    // படி 20: மொபைல் OTP பெறுதல் (புதிய ரேஷன் கார்டுக்கான தனி 6-இலக்க OTP கட்டுப்பாடு — new_card_otp_config.js)
+    const receivedOtp = await waitForNewCardMobileOtp(page, userMobile, onProgress, sharedContext);
+    if (receivedOtp === 'RADWARE_PAGE_REFRESH_DETECTED') {
+        const err = new Error('RADWARE_PAGE_REFRESH_DETECTED:படி 20 மொபைல் OTP');
+        err.isRadwarePageRefresh = true;
+        err.stepLabel = 'படி 20 மொபைல் OTP';
+        throw err;
     }
-
-    // படி 20: மொபைல் OTP பெறுதல்
-    const receivedOtp = await requestOtpFromUser(
-        `📲 **அரசு TNPDS போர்ட்டல் உங்கள் கைபேசி எண்ணிற்கு (${userMobile}) மொபைல் OTP SMS அனுப்பியுள்ளது!**`,
-        onProgress,
-        'new_card_mobile_otp',
-        page
-    );
 
     return { success: true, receivedOtp };
 }

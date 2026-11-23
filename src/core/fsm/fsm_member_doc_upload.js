@@ -4,6 +4,7 @@
 
 const path = require('path');
 const { renderSubserviceReadySummary } = require('./fsm_summary_formatter');
+const { isDoubleSidedCardComplete } = require('../../services/document_validator');
 
 let photoStudio = null;
 try {
@@ -67,10 +68,9 @@ async function handleMemberDocUpload(text, sess, currentState, uploadedDoc, extr
             const dobDisplay = sess.subServiceData.dob ? `\n• 📅 **பிறந்த தேதி:** ${sess.subServiceData.dob}` : '';
             const genderDisplay = sess.subServiceData.genderTam ? `\n• ⚧ **பாலினம்:** ${sess.subServiceData.genderTam}` : '';
 
-            const isPdf = uploadedDoc?.path && uploadedDoc.path.toLowerCase().endsWith('.pdf');
-            const hasBothSides = isPdf || (extractedDoc && (extractedDoc.address || extractedDoc.fatherNameEng || extractedDoc.fatherNameTam));
+            const hasBothSides = isDoubleSidedCardComplete(extractedDoc, uploadedDoc?.path, 'aadhaar');
 
-            if (!hasBothSides && uploadedDoc && !isPdf) {
+            if (!hasBothSides && uploadedDoc) {
                 sess.intakeState = 'RATION_ADD_MEMBER_BACK';
                 const successPrefix = isRealExtracted ? '✅ **ஆதார் அட்டை முன்பக்கம் AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **ஆதார் அட்டை முன்பக்கம் பெறப்பட்டது!** 🪪';
                 sess.chatHistory.push({
@@ -142,7 +142,7 @@ async function handleMemberDocUpload(text, sess, currentState, uploadedDoc, extr
         if (text === 'MEMBER_DOC_COMPLETE' || text.includes('முழு ஆவணம் முடிந்தது')) {
             sess.subServiceData.docPath = sess.tempUploads.memberAadhaarFront || sess.subServiceData.docPath || 'uploads/test_sample_doc.jpg';
             sess.tempUploads.memberAadhaar = sess.subServiceData.docPath;
-        } else if (uploadedDoc || extractedDoc || text === 'TRIGGER_FILE_UPLOAD') {
+        } else if (uploadedDoc || extractedDoc) {
             if (uploadedDoc?.path) {
                 sess.tempUploads.memberAadhaarBack = uploadedDoc.path;
             }
@@ -179,6 +179,18 @@ async function handleMemberDocUpload(text, sess, currentState, uploadedDoc, extr
                     sess.subServiceData.address = extractedDoc.address || `${extractedDoc.doorNo || ''}, ${extractedDoc.streetTam || extractedDoc.streetEng || ''}, ${extractedDoc.pincode || ''}`.trim();
                 }
             }
+        } else {
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🔄 தயவுசெய்து ஆதார் அட்டையின் **பின்பக்கத்தை (முகவரி பகுதி)** பதிவேற்றவும்:`,
+                actionRequired: 'upload',
+                uploadPrompt: 'உறுப்பினர் ஆதார் பின்பக்கம்',
+                options: [
+                    { label: "📷 பின்பக்கம் பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "✅ முழு ஆவணம் முடிந்தது (PDF / ஒற்றைப் பக்கம்)", value: "MEMBER_DOC_COMPLETE" }
+                ]
+            });
+            return true;
         }
 
         const nameDisplay = sess.subServiceData.memberNameTam && sess.subServiceData.memberNameEng
@@ -264,4 +276,116 @@ async function handleMemberDocUpload(text, sess, currentState, uploadedDoc, extr
     return false;
 }
 
-module.exports = { handleMemberDocUpload };
+/**
+ * Check whether an uploaded Aadhaar in an add-member subservice is only the Front side.
+ * When single-sided, records Front path/bounding-box, moves to backWaitState, and prompts for Back.
+ */
+function maybePromptSubserviceAadhaarBack({ sess, uploadedDoc, extractedDoc, backWaitState, skipValue, isRealExtracted }) {
+    if (!uploadedDoc || isDoubleSidedCardComplete(extractedDoc, uploadedDoc.path, 'aadhaar')) {
+        return false;
+    }
+    sess.tempUploads = sess.tempUploads || {};
+    sess.tempUploads.memberAadhaarFront = uploadedDoc.path;
+    sess.tempUploads.memberAadhaarFrontBoundingBox = extractedDoc?.documentBoundingBox || null;
+    sess.intakeState = backWaitState;
+
+    const ssd = sess.subServiceData || {};
+    const nameDisplay = ssd.memberNameTam && ssd.memberNameEng
+        ? `${ssd.memberNameTam} (${ssd.memberNameEng})`
+        : (ssd.memberName || 'உறுப்பினர்');
+    const aadhaarDisplay = ssd.aadhaarNo ? `\n• 🪪 **ஆதார் எண்:** ${String(ssd.aadhaarNo).replace(/(\d{4})/g, '$1 ').trim()}` : '';
+    const dobDisplay = ssd.dob ? `\n• 📅 **பிறந்த தேதி:** ${ssd.dob}` : '';
+    const prefix = isRealExtracted ? '✅ **உறுப்பினர் ஆதார் அட்டை முன்பக்கம் AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **உறுப்பினர் ஆதார் அட்டை முன்பக்கம் பெறப்பட்டது!** 🪪';
+
+    sess.chatHistory.push({
+        sender: 'bot',
+        text: `${prefix}\n\n` +
+              `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}\n\n` +
+              `🔄 **இப்போது ஆதார் அட்டையின் பின்பக்கத்தை (முகவரி பகுதி) பதிவேற்றவும்:**\n` +
+              `*(AI தானாக முன் + பின் பக்கங்களை ஒரே 2-in-1 A4 PDF ஆவணமாக இணைக்கும் ✨)*`,
+        actionRequired: 'upload',
+        uploadPrompt: 'உறுப்பினர் ஆதார் பின்பக்கம்',
+        options: [
+            { label: "📷 ஆதார் பின்பக்கம் பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: skipValue }
+        ]
+    });
+    return true;
+}
+
+/**
+ * Process Aadhaar Back upload (or explicit skip) inside a subservice back-wait state,
+ * merging Front + Back into a compliant 2-in-1 A4 PDF when Back is uploaded.
+ */
+async function completeSubserviceAadhaarBack({ text, sess, uploadedDoc, extractedDoc, skipValue }) {
+    sess.subServiceData = sess.subServiceData || {};
+    sess.tempUploads = sess.tempUploads || {};
+
+    const isSkip = text === skipValue || text === 'MEMBER_DOC_COMPLETE' ||
+        (text && /பின்பக்கம் தேவையில்லை|skip|முழு ஆவணம் முடிந்தது/i.test(text));
+    if (isSkip) {
+        sess.subServiceData.docPath = sess.tempUploads.memberAadhaarFront || sess.subServiceData.docPath || 'uploads/test_sample_doc.jpg';
+        sess.tempUploads.memberAadhaar = sess.subServiceData.docPath;
+        return { done: true, merged: false };
+    }
+
+    if (!uploadedDoc && !extractedDoc) {
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `🔄 தயவுசெய்து ஆதார் அட்டையின் **பின்பக்கத்தை (முகவரி பகுதி)** பதிவேற்றவும்:`,
+            actionRequired: 'upload',
+            uploadPrompt: 'உறுப்பினர் ஆதார் பின்பக்கம்',
+            options: [
+                { label: "📷 ஆதார் பின்பக்கம் பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: skipValue }
+            ]
+        });
+        return { done: false, merged: false };
+    }
+
+    if (uploadedDoc?.path) {
+        sess.tempUploads.memberAadhaarBack = uploadedDoc.path;
+    }
+
+    let finalDoc = sess.tempUploads.memberAadhaarBack || sess.tempUploads.memberAadhaarFront || uploadedDoc?.path || sess.subServiceData.docPath;
+    if (photoStudio && photoStudio.produceDualSidedDocument && sess.tempUploads.memberAadhaarFront && sess.tempUploads.memberAadhaarBack) {
+        try {
+            const mergedPdf = await photoStudio.produceDualSidedDocument(
+                sess.tempUploads.memberAadhaarFront,
+                sess.tempUploads.memberAadhaarBack,
+                null,
+                sess.tempUploads.memberAadhaarFrontBoundingBox || null,
+                extractedDoc?.documentBoundingBox || null
+            );
+            if (mergedPdf) finalDoc = mergedPdf;
+        } catch (_) {}
+    }
+
+    sess.subServiceData.docPath = finalDoc;
+    sess.tempUploads.memberAadhaar = finalDoc;
+    if (sess.citizenProfile) {
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        sess.citizenProfile.documents.memberAadhaar = finalDoc;
+    }
+
+    if (extractedDoc) {
+        if (!sess.subServiceData.memberNameTam && extractedDoc.fullNameTam) sess.subServiceData.memberNameTam = extractedDoc.fullNameTam;
+        if (!sess.subServiceData.memberNameEng && extractedDoc.fullNameEng) sess.subServiceData.memberNameEng = extractedDoc.fullNameEng;
+        if (extractedDoc.aadhaarNumber && !sess.subServiceData.aadhaarNo) sess.subServiceData.aadhaarNo = extractedDoc.aadhaarNumber;
+        if (extractedDoc.fatherNameTam || extractedDoc.fatherNameEng) {
+            sess.subServiceData.fatherNameTam = extractedDoc.fatherNameTam || sess.subServiceData.fatherNameTam || '';
+            sess.subServiceData.fatherNameEng = extractedDoc.fatherNameEng || sess.subServiceData.fatherNameEng || '';
+        }
+        if (extractedDoc.address || extractedDoc.doorNo || extractedDoc.pincode) {
+            sess.subServiceData.address = extractedDoc.address || `${extractedDoc.doorNo || ''}, ${extractedDoc.streetTam || extractedDoc.streetEng || ''}, ${extractedDoc.pincode || ''}`.trim();
+        }
+    }
+
+    return { done: true, merged: true };
+}
+
+module.exports = {
+    handleMemberDocUpload,
+    maybePromptSubserviceAadhaarBack,
+    completeSubserviceAadhaarBack
+};

@@ -121,6 +121,11 @@ async function startTnpdsMobileChangeFlow(citizenProfile = {}, onProgress = () =
             firstStepName: 'படி 4/10 (சேவை தேர்வு)',
             onProgress,
             saveCookies: sharedContext.saveTnpdsCookies,
+            onSessionExpiredReLogin: async (p) => {
+                if ((p.url() || '').toLowerCase().includes('/auth/login')) {
+                    await executeMobileChangeLoginSteps({ page: p, userMobile, onProgress, options, sharedContext });
+                }
+            },
             runPageStepsFromStart: async () => {
                 formResult = await executeMobileChangeFormSteps({
                     page,

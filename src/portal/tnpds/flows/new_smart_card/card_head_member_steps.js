@@ -2,6 +2,16 @@
  * TNPDS New Smart Card - Steps 21 to 34: Head Member OTP Verification & Demographics
  */
 const path = require('path');
+const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+
+async function isHeadStepPageIntact(page) {
+    if (!page || page.isClosed()) return false;
+    return await page.evaluate(() => {
+        const nameEls = Array.from(document.querySelectorAll('input[formcontrolname="NameOfFamilyHead"]'));
+        if (nameEls.length === 0) return true;
+        return nameEls.some(el => el.value && el.value.trim().length > 0);
+    }).catch(() => true);
+}
 
 async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, docPrep, receivedOtp, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
@@ -74,9 +84,11 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     await page.waitForTimeout(500);
 
     // படி 23: பிறந்த தேதி
+    await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 23 (பிறந்த தேதி காலண்டர்)');
     const headDob = citizenProfile.headDob || citizenProfile.dob || '10/06/1993';
     onProgress(`📍 [படி 23/51] பிறந்த தேதி (${headDob}) காலண்டர் மூலம் தேர்வு செய்யப்படுகிறது...`);
     await selectDateInMatCalendar(page, headDob, false);
+    await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 23 (பிறந்த தேதி காலண்டர்)');
     await page.waitForTimeout(500);
 
     // படி 24: பாலினம்
@@ -169,6 +181,7 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
         } catch (_) {}
         await page.waitForTimeout(500);
     } else {
+        await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 32 (ஆதார் ஆவண உள்ளீடு)');
         return { success: false, message: 'குடும்பத் தலைவர் ஆதார் கோப்பு உள்ளீட்டுக் களம் இல்லை.' };
     }
 

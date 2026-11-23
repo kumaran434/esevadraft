@@ -13,12 +13,9 @@ const {
 const {
     SERVICE_OPTIONS,
     REVENUE_DEPARTMENT_SERVICE_OPTIONS,
-    RATION_CARD_SERVICE_OPTIONS,
-    MEMBER_COUNT_OPTIONS,
-    handleServiceSelection
+    RATION_CARD_SERVICE_OPTIONS
 } = require('../core/chat_fsm');
-const { handleNewRationCardIntake } = require('../core/fsm/fsm_new_card_intake');
-const { advanceTnegaIncomeFlow } = require('../core/fsm/tnega_flow_engine');
+const { resolveCartridgeForSelection } = require('../cartridges');
 
 const storageService = require('../services/storage_service');
 const { 
@@ -229,57 +226,21 @@ router.post('/api/operator/new-customer', async (req, res) => {
     const displayName = resolvedName ? `திரு/திருமதி **${resolvedName}**` : `வாடிக்கையாளர்`;
 
     const sLower = (serviceName || '').toLowerCase();
-    const isAddMember = serviceName === 'உறுப்பினர் சேர்க்கை' || serviceName === 'குடும்ப உறுப்பினர் சேர்க்கை' || serviceName === 'ADD_MEMBER' || sLower.includes('add member') || sLower.includes('உறுப்பினர்');
-    const isChangeAddress = serviceName === 'முகவரி மாற்றம்' || serviceName === 'குடும்ப அட்டை முகவரி மாற்றம்' || serviceName === 'CHANGE_ADDRESS' || sLower.includes('change address') || sLower.includes('முகவரி');
-    const isNewRation = !isAddMember && !isChangeAddress && (serviceName === 'புதிய ரேஷன் கார்டு' || serviceName === 'புதிய குடும்ப அட்டை' || sLower.includes('new ration') || (serviceName && serviceName.includes('புதிய ரேஷன்')));
-    const isRationGeneric = !isAddMember && !isChangeAddress && !isNewRation && (serviceName === 'ரேஷன் கார்டு' || sLower === 'ration' || sLower === 'ration card' || (serviceName && serviceName.includes('ரேஷன்')));
-    const isRevenueGeneric = serviceName === 'வருவாய்த் துறை' || serviceName === 'வருவாய்த் துறை சான்றிதழ்கள்' || serviceName === 'வருவாய் துறை' || serviceName === 'REVENUE_DEPARTMENT' || serviceName === 'REVENUE_DEPARTMENT_SERVICES' || sLower.includes('revenue') || (serviceName && serviceName.includes('வருவாய்த் துறை')) || (serviceName && serviceName.includes('வருவாய் துறை'));
-    const isIncome = !isRevenueGeneric && (serviceName === 'வருமானச் சான்றிதழ்' || sLower.includes('income') || (serviceName && serviceName.includes('வருமானம்')));
-    const isResidence = !isRevenueGeneric && (serviceName === 'இருப்பிடச் சான்றிதழ்' || sLower.includes('residence') || (serviceName && serviceName.includes('இருப்பிடம்')));
-    const isObc = !isRevenueGeneric && (serviceName === 'OBC சான்றிதழ்' || serviceName === 'OBC_CERTIFICATE' || serviceName === 'TNEGA_OBC' || serviceName === 'REV-115' || sLower.includes('obc') || (serviceName && serviceName.includes('இதர பிற்படுத்தப்பட்டோர்')));
-    const isLegalHeir = !isRevenueGeneric && (serviceName === 'வாரிசு சான்றிதழ்' || serviceName === 'LEGAL_HEIR_CERTIFICATE' || serviceName === 'LEGAL_HEIR' || serviceName === 'REV-114' || sLower.includes('legal heir') || (serviceName && serviceName.includes('வாரிசு')));
-    const isWidow = !isRevenueGeneric && (serviceName === 'விதவைச் சான்றிதழ்' || serviceName === 'விதவை சான்றிதழ்' || serviceName === 'WIDOW_CERTIFICATE' || serviceName === 'WIDOW' || serviceName === 'REV-109' || sLower.includes('widow') || (serviceName && serviceName.includes('விதவை')));
-    const isCommunity = !isRevenueGeneric && !isObc && !isLegalHeir && !isWidow && (serviceName === 'சாதிச் சான்றிதழ்' || sLower.includes('community') || (serviceName && serviceName.includes('சாதி')));
-    const isFirstGraduate = !isRevenueGeneric && !isObc && (serviceName === 'முதல் பட்டதாரி சான்றிதழ்' || serviceName === 'முதல் பட்டதாரி' || serviceName === 'FIRST_GRADUATE' || serviceName === 'FIRST_GRADUATE_CERTIFICATE' || sLower.includes('first graduate') || sLower.includes('first_graduate') || (serviceName && serviceName.includes('முதல் பட்டதாரி')));
+    const isRevenueGeneric = serviceName === 'வருவாய்த் துறை' || serviceName === 'வருவாய்த் துறை சான்றிதழ்கள்' || serviceName === 'வருவாய் துறை' || serviceName === 'REVENUE_DEPARTMENT' || serviceName === 'REVENUE_DEPARTMENT_SERVICES' || sLower === 'revenue' || sLower === 'revenue department';
+    const isRationGeneric = !isRevenueGeneric && (serviceName === 'ரேஷன் கார்டு' || sLower === 'ration' || sLower === 'ration card');
     const isVoter = serviceName === 'புதிய வாக்காளர் அட்டை' || sLower.includes('voter') || (serviceName && serviceName.includes('வாக்காளர்'));
 
-    const { isProfileDataComplete } = require('../services/profile_helpers');
-    const isProfileComplete = isProfileDataComplete(sess.citizenProfile, sess.tempUploads);
+    const matchedCart = (!isRevenueGeneric && !isRationGeneric && !isVoter)
+        ? resolveCartridgeForSelection(serviceName, sess)
+        : null;
 
-    if (isAddMember) {
-        sess.subService = 'ADD_MEMBER';
-        sess.subServiceData = sess.subServiceData || {};
-        if (sess.citizenProfile?.rationCardNo) {
-            sess.subServiceData.rationCardNo = sess.citizenProfile.rationCardNo;
-        }
-        if (sess.citizenProfile?.district) sess.subServiceData.district = sess.citizenProfile.district;
-        if (sess.citizenProfile?.taluk) sess.subServiceData.taluk = sess.citizenProfile.taluk;
-        if (sess.citizenProfile?.village) sess.subServiceData.village = sess.citizenProfile.village;
-        sess.chatHistory = [];
-        handleServiceSelection('குடும்ப உறுப்பினர் சேர்க்க', sess);
-    } else if (isChangeAddress) {
-        sess.subService = 'CHANGE_ADDRESS';
-        sess.subServiceData = sess.subServiceData || {};
-        sess.chatHistory = [];
-        handleServiceSelection('முகவரி மாற்றம்', sess);
-    } else if (isNewRation) {
-        sess.service = 'ரேஷன் கார்டு';
-        sess.subService = 'NEW_CARD';
-        sess.targetService = null;
-        sess.serviceId = null;
-        sess.subServiceData = null;
-        if (sess.citizenProfile) {
-            sess.citizenProfile.service = 'ரேஷன் கார்டு';
-            sess.citizenProfile.subService = 'NEW_CARD';
-            sess.citizenProfile.targetService = null;
-            sess.citizenProfile.serviceId = null;
-            sess.citizenProfile.subServiceData = null;
-        }
-        sess.chatHistory = [];
-        handleNewRationCardIntake(sess);
-        if (sess.intakeState === 'MEMBER_COUNT' && sess.chatHistory.length > 0) {
-            sess.chatHistory[0].text = `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` + sess.chatHistory[0].text;
-        }
+    if (matchedCart && matchedCart.flow && typeof matchedCart.flow.enterService === 'function') {
+        matchedCart.flow.enterService(sess, {
+            greeting: `வணக்கம் ${displayName}!${phoneDisplay} 🙏`,
+            cleanMobile,
+            isDirectOperator: true,
+            createAppFn: createApplication
+        });
     } else if (isRationGeneric) {
         sess.intakeState = 'RATION_CARD_SERVICES';
         sess.step = 'RATION_CARD_SERVICES';
@@ -302,123 +263,6 @@ router.post('/api/operator/new-customer', async (req, res) => {
                   `கீழே உள்ள சான்றிதழ்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
             options: REVENUE_DEPARTMENT_SERVICE_OPTIONS
         }];
-    } else if (isIncome) {
-        sess.subService = 'INCOME';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'INCOME';
-            delete sess.citizenProfile.familyMemberCount;
-            delete sess.citizenProfile.annualIncome;
-            delete sess.citizenProfile.profession;
-            delete sess.citizenProfile.incomeMembers;
-        }
-        delete sess.annualIncome;
-        delete sess.profession;
-        delete sess.familyMemberCount;
-        delete sess.incomeMembers;
-        sess.intakeState = 'INCOME_INTAKE';
-        try { createApplication(cleanMobile, 'INCOME_CERT', sess.citizenProfile); } catch (_) {}
-        const flowStep = advanceTnegaIncomeFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
-    } else if (isResidence) {
-        sess.subService = 'RESIDENCE';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'RESIDENCE';
-            delete sess.citizenProfile.yearsOfResidence;
-            delete sess.citizenProfile.purposeOfCertificate;
-        }
-        delete sess.yearsOfResidence;
-        delete sess.purposeOfCertificate;
-        sess.intakeState = 'RESIDENCE_INTAKE';
-        try { createApplication(cleanMobile, 'RESIDENCE_CERT', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaResidenceFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaResidenceFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
-    } else if (isCommunity) {
-        sess.subService = 'COMMUNITY';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'COMMUNITY';
-            delete sess.citizenProfile.caste;
-            delete sess.citizenProfile.communityProof;
-            delete sess.citizenProfile.communityProofSkipped;
-        }
-        delete sess.caste;
-        delete sess.communityProof;
-        delete sess.communityProofSkipped;
-        sess.intakeState = 'COMMUNITY_INTAKE';
-        try { createApplication(cleanMobile, 'COMMUNITY_CERT', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaCommunityFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaCommunityFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
-    } else if (isObc) {
-        sess.subService = 'OBC';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'OBC';
-        }
-        sess.intakeState = 'OBC_INTAKE';
-        try { createApplication(cleanMobile, 'OBC_CERTIFICATE', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaObcFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaObcFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        });
-    } else if (isLegalHeir) {
-        sess.subService = 'LEGAL_HEIR';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'LEGAL_HEIR';
-        }
-        sess.intakeState = 'LEGAL_HEIR_INTAKE';
-        try { createApplication(cleanMobile, 'LEGAL_HEIR_CERTIFICATE', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaLegalHeirFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaLegalHeirFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
-    } else if (isWidow) {
-        sess.subService = 'WIDOW';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'WIDOW';
-        }
-        sess.intakeState = 'WIDOW_INTAKE';
-        try { createApplication(cleanMobile, 'WIDOW_CERTIFICATE', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaWidowFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaWidowFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
-    } else if (isFirstGraduate) {
-        sess.subService = 'FIRST_GRADUATE';
-        if (sess.citizenProfile) {
-            sess.citizenProfile.subService = 'FIRST_GRADUATE';
-            delete sess.citizenProfile.familyGraduateConfirmed;
-        }
-        delete sess.familyGraduateConfirmed;
-        sess.intakeState = 'FIRST_GRADUATE_INTAKE';
-        try { createApplication(cleanMobile, 'FIRST_GRADUATE_CERTIFICATE', sess.citizenProfile); } catch (_) {}
-        const { advanceTnegaFirstGraduateFlow } = require('../core/fsm/tnega_flow_engine');
-        const flowStep = advanceTnegaFirstGraduateFlow(sess, `வணக்கம் ${displayName}!${phoneDisplay} 🙏`);
-        sess.chatHistory = [{
-            sender: 'bot',
-            text: flowStep.text,
-            options: flowStep.options
-        }];
     } else if (isVoter) {
         sess.intakeState = 'VOTER_INTAKE';
         sess.chatHistory = [{
@@ -426,9 +270,7 @@ router.post('/api/operator/new-customer', async (req, res) => {
             text: `வணக்கம் ${displayName}!${phoneDisplay} 🙏\n\n` +
                   `🗳️ **புதிய வாக்காளர் அட்டை (New Voter ID) விண்ணப்பத்திற்கு வரவேற்கிறோம்!**\n\n` +
                   `விண்ணப்பதாரரின் ஆதார் அட்டை அல்லது பிறப்புச் சான்றிதழைப் பதிவேற்றவும்:`,
-            options: [
-                { label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }
-            ]
+            options: [{ label: "📷 ஆதார் அட்டை பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" }]
         }];
     } else {
         sess.subService = null;

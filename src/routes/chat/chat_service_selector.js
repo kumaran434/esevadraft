@@ -1,111 +1,66 @@
-const fs = require('fs');
-const path = require('path');
 const storageService = require('../../services/storage_service');
-const { 
-    handleServiceSelection, 
-    handleRationSubserviceWorkflow 
-} = require('../../core/chat_fsm');
-const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
+const { handleServiceSelection, handleRationSubserviceWorkflow } = require('../../core/chat_fsm');
+const { resolveCartridge, getCartridgeById } = require('../../cartridges');
 
 const { persistSessions } = storageService;
+
+const CAN_ACTION_TOKENS = new Set([
+    'CAN_REGISTER_PROMPT', 'CAN_SEARCH_PROMPT', 'CAN_DIRECT_INPUT',
+    'START_CAN_SEARCH', 'START_CAN_REGISTER', 'LAUNCH_CAN_AUTOMATION',
+    'START_INCOME_APPLY', 'START_RESIDENCE_APPLY', 'START_COMMUNITY_APPLY',
+    'START_FIRST_GRADUATE_APPLY', 'START_OBC_APPLY', 'START_LEGAL_HEIR_APPLY',
+    'START_WIDOW_APPLY', 'FIRST_GRADUATE_CONFIRMED', 'FIRST_GRADUATE_INELIGIBLE',
+    'CAN_SEARCH_OTHER', 'என்னிடம் CAN உள்ளது', 'CAN_DIRECT'
+]);
+
+const CAN_ACTION_PREFIXES = [
+    'FIRST_GRADUATE_', 'OBC_', 'LH_', 'LEGAL_HEIR_', 'WD_', 'WIDOW_',
+    'INC_', 'SELECT_MEMBER_', 'COMMUNITY_', 'RELIGION_'
+];
 
 async function handleServiceSelector(ctx, req, res) {
     const { text, uploadedFile, sess } = ctx;
 
-    const isCanAction = text === 'CAN_REGISTER_PROMPT' || 
-                        text === 'CAN_SEARCH_PROMPT' || 
-                        text === 'CAN_DIRECT_INPUT' || 
-                        text === 'START_CAN_SEARCH' || 
-                        text === 'START_CAN_REGISTER' ||
-                        text === 'LAUNCH_CAN_AUTOMATION' ||
-                        text === 'START_INCOME_APPLY' ||
-                        text === 'START_RESIDENCE_APPLY' ||
-                        text === 'START_COMMUNITY_APPLY' ||
-                        text === 'START_FIRST_GRADUATE_APPLY' ||
-                        text === 'START_OBC_APPLY' ||
-                        text === 'START_LEGAL_HEIR_APPLY' ||
-                        text === 'START_WIDOW_APPLY' ||
-                        text === 'FIRST_GRADUATE_CONFIRMED' ||
-                        text === 'FIRST_GRADUATE_INELIGIBLE' ||
-                        (text && text.startsWith('FIRST_GRADUATE_')) ||
-                        (text && text.startsWith('OBC_')) ||
-                        (text && text.startsWith('LH_')) ||
-                        (text && text.startsWith('LEGAL_HEIR_')) ||
-                        (text && text.startsWith('WD_')) ||
-                        (text && text.startsWith('WIDOW_')) ||
-                        (text && text.startsWith('INC_')) ||
-                        (text && text.startsWith('SELECT_MEMBER_')) ||
-                        (text && text.startsWith('COMMUNITY_')) ||
-                        (text && text.startsWith('RELIGION_')) ||
-                        text === 'CAN_SEARCH_OTHER' ||
-                        text === 'என்னிடம் CAN உள்ளது' ||
-                        text === 'CAN_DIRECT';
-    if (isCanAction) {
-        return false;
-    }
+    const isCanAction = CAN_ACTION_TOKENS.has(text) || (text && CAN_ACTION_PREFIXES.some(p => text.startsWith(p)));
+    if (isCanAction) return false;
 
-    // STATE 1: SERVICE_SELECTION OR EXPLICIT SERVICE SWITCH
-    const isExplicitServiceSwitch = text === 'வருவாய்த் துறை' ||
-                                    text === 'வருவாய்த் துறை சான்றிதழ்கள்' ||
-                                    text === 'வருவாய் துறை' ||
-                                    text === 'REVENUE_DEPARTMENT' ||
-                                    text === 'REVENUE_DEPARTMENT_SERVICES' ||
-                                    text === 'MAIN_MENU' ||
-                                    text === 'முதன்மைப் பட்டியல்' ||
-                                    text.includes('முதன்மைப் பட்டியல்') ||
-                                    text === 'வருமானச் சான்றிதழ்' || 
-                                    text === 'இருப்பிடச் சான்றிதழ்' || 
-                                    text === 'புதிய ரேஷன் கார்டு' || 
-                                    text === 'புதிய குடும்ப அட்டை' ||
-                                    text === 'ரேஷன் கார்டு' ||
-                                    text === 'புதிய வாக்காளர் அட்டை' || 
-                                    text === 'சாதிச் சான்றிதழ்' || 
-                                    text === 'முதல் பட்டதாரி சான்றிதழ்' ||
-                                    text === 'முதல் பட்டதாரி' ||
-                                    text.includes('வருமானச் சான்றிதழ்') || 
-                                    text.includes('இருப்பிடச் சான்றிதழ்') || 
-                                    text.includes('புதிய ரேஷன் கார்டு') || 
-                                    text.includes('ரேஷன் கார்டு') ||
-                                    text.includes('புதிய வாக்காளர் அட்டை') || 
-                                    text.includes('சாதிச் சான்றிதழ்') ||
-                                    text.includes('முதல் பட்டதாரி') ||
-                                    text.toLowerCase().includes('first graduate') ||
-                                    (text.toLowerCase() === 'community' || text.toLowerCase() === 'community certificate') ||
-                                    text === 'NEW_RATION_CARD' || 
-                                    text === 'INCOME_CERTIFICATE' || 
-                                    text === 'RESIDENCE_CERTIFICATE' || 
-                                    text === 'COMMUNITY_CERTIFICATE' || 
-                                    text === 'FIRST_GRADUATE_CERTIFICATE' ||
-                                    text === 'FIRST_GRADUATE' ||
-                                    text === 'OBC_CERTIFICATE' ||
-                                    text === 'OBC' ||
-                                    text === 'OBC சான்றிதழ்' ||
-                                    text === 'LEGAL_HEIR_CERTIFICATE' ||
-                                    text === 'LEGAL_HEIR' ||
-                                    text === 'வாரிசு சான்றிதழ்' ||
-                                    text.includes('வாரிசு சான்றிதழ்') ||
-                                    text.toLowerCase().includes('legal heir') ||
-                                    text === 'WIDOW_CERTIFICATE' ||
-                                    text === 'WIDOW' ||
-                                    text === 'விதவைச் சான்றிதழ்' ||
-                                    text === 'விதவை சான்றிதழ்' ||
-                                    text.includes('விதவை') ||
-                                    text.includes('REV-109') ||
-                                    text.toLowerCase().includes('widow') ||
-                                    text === 'VOTER_ID' ||
-                                    text === 'குடும்ப உறுப்பினர் சேர்க்க' ||
-                                    text === 'குடும்ப உறுப்பினர் நீக்க' ||
-                                    text === 'குடும்பத் தலைவர் மாற்றம்' ||
-                                    text === 'முகவரி மாற்றம்' ||
-                                    text === 'குடும்ப அட்டை வகை மாற்றம்' ||
-                                    text === 'கைபேசி எண் மாற்றம்' ||
-                                    text === 'எரிவாயு விவரங்கள் திருத்தம்' ||
-                                    text.startsWith('1.') || text.startsWith('2.') || text.startsWith('3.') ||
-                                    text.startsWith('4.') || text.startsWith('5.') || text.startsWith('6.') ||
-                                    text.startsWith('7.') || text.startsWith('8.');
+    // 1. Service Selection or Category Navigation -> Pure Cartridge Switchboard
+    const isCategorySwitch = text === 'வருவாய்த் துறை' ||
+                             text === 'வருவாய்த் துறை சான்றிதழ்கள்' ||
+                             text === 'வருவாய் துறை' ||
+                             text === 'REVENUE_DEPARTMENT' ||
+                             text === 'REVENUE_DEPARTMENT_SERVICES' ||
+                             text === 'MAIN_MENU' ||
+                             text === 'முதன்மைப் பட்டியல்' ||
+                             (text && text.includes('முதன்மைப் பட்டியல்')) ||
+                             text === 'ரேஷன் கார்டு' ||
+                             text === 'VOTER_ID' ||
+                             text === 'புதிய வாக்காளர் அட்டை' ||
+                             text === 'குடும்ப அட்டை வகை மாற்றம்' ||
+                             text === 'எரிவாயு விவரங்கள் திருத்தம்' ||
+                             (text && /^[1-8]\./.test(text));
 
-    if (sess.intakeState === 'SERVICE_SELECTION' || sess.intakeState === 'RATION_CARD_SERVICES' || sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES' || isExplicitServiceSwitch) {
+    const matchedSelection = require('../../cartridges').resolveCartridgeForSelection(text, sess);
+    if (
+        sess.intakeState === 'SERVICE_SELECTION' ||
+        sess.intakeState === 'RATION_CARD_SERVICES' ||
+        sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES' ||
+        isCategorySwitch ||
+        matchedSelection
+    ) {
         handleServiceSelection(text, sess);
+        try {
+            const matchedCartridge = resolveCartridge({
+                subService: sess.subService,
+                intakeState: sess.intakeState,
+                targetService: sess.citizenProfile?.targetService,
+                service: sess.citizenProfile?.service
+            });
+            if (matchedCartridge) {
+                sess.pluginId = matchedCartridge.id;
+                if (sess.citizenProfile) sess.citizenProfile.pluginId = matchedCartridge.id;
+            }
+        } catch (_) {}
         persistSessions();
         const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
         const isWalkinMenuOnly = (!ctx.targetMobile || /^walkin_/i.test(String(ctx.targetMobile))) &&
@@ -122,123 +77,31 @@ async function handleServiceSelector(ctx, req, res) {
         return true;
     }
 
-    // STATE: RATION CARD SUBSERVICES WORKFLOW
-    if ((sess.intakeState && sess.intakeState.startsWith('RATION_') && sess.intakeState !== 'RATION_CARD_SERVICES') || (text && (text.startsWith('ADD_MEMBER_') || text.startsWith('REMOVE_') || text.startsWith('HEAD_') || text.startsWith('ADDR_') || text === 'CHILD_UNDER_5' || text === 'ADULT_ABOVE_5' || text === 'RATION_ADD_MEMBER_RESET' || text === 'RATION_CHANGE_ADDRESS_RESET'))) {
-        let extractedDoc = null;
-        if (uploadedFile) {
-            try {
-                extractedDoc = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true, subService: sess.subService || 'ADD_MEMBER' });
-            } catch (ocrErr) {
-                console.warn(`⚠️ [Subservice AI OCR] Extraction error:`, ocrErr.message);
-            }
+    // 2. TNPDS Subservice Active Turn -> Route strictly to owning TNPDS Cartridge intake.js
+    const isSubserviceTurn = (sess.intakeState && sess.intakeState.startsWith('RATION_') && sess.intakeState !== 'RATION_CARD_SERVICES') ||
+        (text && (text.startsWith('ADD_MEMBER_') || text.startsWith('REMOVE_') || text.startsWith('HEAD_') || text.startsWith('ADDR_') || text === 'CHILD_UNDER_5' || text === 'ADULT_ABOVE_5' || text === 'RATION_ADD_MEMBER_RESET' || text === 'RATION_CHANGE_ADDRESS_RESET' || text === 'RATION_REMOVE_MEMBER_RESET'));
+
+    if (isSubserviceTurn) {
+        let targetCartridge = null;
+        if (text === 'RATION_ADD_MEMBER_RESET' || (text && text.startsWith('ADD_MEMBER_')) || text === 'CHILD_UNDER_5' || text === 'ADULT_ABOVE_5') {
+            targetCartridge = getCartridgeById('TNPDS_ADD_MEMBER');
+        } else if (text === 'RATION_REMOVE_MEMBER_RESET' || (text && text.startsWith('REMOVE_'))) {
+            targetCartridge = getCartridgeById('TNPDS_REMOVE_MEMBER');
+        } else if (text === 'RATION_CHANGE_ADDRESS_RESET' || (text && text.startsWith('ADDR_'))) {
+            targetCartridge = getCartridgeById('TNPDS_CHANGE_ADDRESS');
+        } else if (text && text.startsWith('HEAD_')) {
+            targetCartridge = getCartridgeById('TNPDS_CHANGE_HEAD');
+        } else {
+            targetCartridge = resolveCartridge({ subService: sess.subService, intakeState: sess.intakeState });
         }
-        const handled = await handleRationSubserviceWorkflow(text, sess, uploadedFile, extractedDoc);
+
+        if (targetCartridge && targetCartridge.portal === 'TNPDS' && targetCartridge.id !== 'TNPDS_NEW_CARD' && targetCartridge.intake && typeof targetCartridge.intake.handleIntake === 'function') {
+            if (await targetCartridge.intake.handleIntake(ctx, req, res)) return true;
+        }
+
+        // Placeholder fallback (CHANGE_CARD_TYPE / LPG_UPDATE)
+        const handled = await handleRationSubserviceWorkflow(text, sess, uploadedFile, null);
         if (handled) {
-            if (uploadedFile) {
-                sess.tempUploads = sess.tempUploads || {};
-                if (sess.intakeState === 'RATION_ADD_MEMBER_CHILD_RELATION' || sess.subServiceData?.isChild) {
-                    sess.tempUploads.birthCertificate = uploadedFile.path;
-                } else if (sess.intakeState === 'RATION_ADD_MEMBER_RELATION' || sess.intakeState === 'RATION_ADD_MEMBER_ADULT_SURRENDER' || sess.intakeState === 'RATION_ADD_MEMBER_SON_RELATION') {
-                    sess.tempUploads.memberAadhaar = sess.subServiceData?.docPath || uploadedFile.path;
-                } else if (sess.intakeState === 'RATION_ADD_MEMBER_ADULT_RELATION') {
-                    sess.tempUploads.surrenderProof = uploadedFile.path;
-                } else if (sess.subService === 'REMOVE_MEMBER') {
-                    sess.tempUploads.removeProof = uploadedFile.path;
-                } else if (sess.subService === 'CHANGE_HEAD') {
-                    sess.tempUploads.headAadhaar = uploadedFile.path;
-                } else if (sess.subService === 'CHANGE_ADDRESS') {
-                    sess.tempUploads.newAddressProof = uploadedFile.path;
-                } else if (sess.subService === 'LPG_UPDATE') {
-                    sess.tempUploads.gasBook = uploadedFile.path;
-                }
-            }
-
-            const isSubAddMember = sess.subService === 'ADD_MEMBER' || (sess.intakeState && sess.intakeState.startsWith('RATION_ADD_MEMBER'));
-            if (isSubAddMember) {
-                if (sess.citizenProfile) {
-                    delete sess.citizenProfile.headPhotoPath;
-                    delete sess.citizenProfile.headAadhaarDocPath;
-                    if (sess.citizenProfile.documents) {
-                        delete sess.citizenProfile.documents.profilePhoto;
-                        delete sess.citizenProfile.documents.headAadhaar;
-                        delete sess.citizenProfile.documents.headAadhaarFront;
-                        delete sess.citizenProfile.documents.headAadhaarBack;
-                    }
-                    if (sess.citizenProfile.base64Docs) {
-                        delete sess.citizenProfile.base64Docs.profilePhotoBase64;
-                        delete sess.citizenProfile.base64Docs.profilePhotoName;
-                        delete sess.citizenProfile.base64Docs.headAadhaarBase64;
-                        delete sess.citizenProfile.base64Docs.headAadhaarName;
-                    }
-                }
-                if (sess.tempUploads) {
-                    delete sess.tempUploads.profilePhoto;
-                    delete sess.tempUploads.headAadhaar;
-                    delete sess.tempUploads.headAadhaarFront;
-                    delete sess.tempUploads.headAadhaarBack;
-                }
-                if (sess.base64Docs) {
-                    delete sess.base64Docs.profilePhotoBase64;
-                    delete sess.base64Docs.profilePhotoName;
-                    delete sess.base64Docs.headAadhaarBase64;
-                    delete sess.base64Docs.headAadhaarName;
-                }
-            }
-
-            sess.citizenProfile = sess.citizenProfile || {};
-            sess.citizenProfile.subService = sess.subService;
-            sess.citizenProfile.subServiceData = sess.subServiceData;
-            sess.citizenProfile.documents = sess.tempUploads || {};
-            if (sess.subServiceData?.docPath) {
-                sess.tempUploads = sess.tempUploads || {};
-                sess.tempUploads.memberAadhaar = sess.subServiceData.docPath;
-                sess.citizenProfile.documents.memberAadhaar = sess.subServiceData.docPath;
-                if (sess.subServiceData.isChild) {
-                    sess.tempUploads.birthCertificate = sess.subServiceData.docPath;
-                }
-                sess.base64Docs = sess.base64Docs || {};
-                sess.citizenProfile.base64Docs = sess.citizenProfile.base64Docs || {};
-                if (fs.existsSync(sess.subServiceData.docPath)) {
-                    try {
-                        const b64 = fs.readFileSync(sess.subServiceData.docPath).toString('base64');
-                        const bName = path.basename(sess.subServiceData.docPath);
-                        sess.base64Docs.memberAadhaarBase64 = b64;
-                        sess.base64Docs.memberAadhaarName = bName;
-                        sess.base64Docs.memberAadhaarsBase64 = [{ name: bName, base64: b64 }];
-                        sess.citizenProfile.base64Docs.memberAadhaarBase64 = b64;
-                        sess.citizenProfile.base64Docs.memberAadhaarName = bName;
-                        sess.citizenProfile.base64Docs.memberAadhaarsBase64 = [{ name: bName, base64: b64 }];
-                    } catch (e) {}
-                }
-            }
-            if (sess.subService === 'ADD_MEMBER' && sess.subServiceData) {
-                sess.citizenProfile.members = [{
-                    nameTam: sess.subServiceData.memberNameTam || sess.subServiceData.memberName,
-                    nameEng: sess.subServiceData.memberNameEng || '',
-                    dob: sess.subServiceData.dob || '',
-                    aadhaarNumber: sess.subServiceData.aadhaarNo || '',
-                    aadhaarNo: sess.subServiceData.aadhaarNo || '',
-                    gender: sess.subServiceData.gender || '',
-                    genderTam: sess.subServiceData.genderTam || '',
-                    relationshipTam: sess.subServiceData.relationshipTam || '',
-                    relationshipEng: sess.subServiceData.relationshipEng || '',
-                    relationship: sess.subServiceData.relationshipTam || '',
-                    docPath: sess.subServiceData.docPath || '',
-                    isChild: Boolean(sess.subServiceData.isChild)
-                }];
-                sess.citizenProfile.tempMember = {
-                    nameTam: sess.subServiceData.memberNameTam || sess.subServiceData.memberName,
-                    nameEng: sess.subServiceData.memberNameEng || '',
-                    dob: sess.subServiceData.dob || '',
-                    aadhaarNo: sess.subServiceData.aadhaarNo || '',
-                    gender: sess.subServiceData.gender || '',
-                    genderTam: sess.subServiceData.genderTam || '',
-                    relationshipTam: sess.subServiceData.relationshipTam || '',
-                    relationshipEng: sess.subServiceData.relationshipEng || '',
-                    docPath: sess.subServiceData.docPath || ''
-                };
-            }
-
             persistSessions();
             const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
             res.json({
@@ -258,6 +121,4 @@ async function handleServiceSelector(ctx, req, res) {
     return false;
 }
 
-module.exports = {
-    handleServiceSelector
-};
+module.exports = { handleServiceSelector };

@@ -1574,11 +1574,14 @@ async function runTests() {
 
         // 20. Smart Fast-Forward & Missing-Field-Only Invariant Law (Case 36)
         const chatFsmCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'chat_fsm.js'), 'utf8');
-        assert(chatFsmCode.includes('memberName && aadhaarNo && relTam'), 'chat_fsm fast-forwards to READY_TO_APPLY when all member details exist');
-        assert(chatFsmCode.includes('memberName && aadhaarNo && !relTam'), 'chat_fsm asks only missing relationship when Aadhaar is present');
-        assert(chatFsmCode.includes('existingMemDoc'), 'chat_fsm checks for existing member document on file before asking for upload');
-        assert(chatFsmCode.includes('doorNo && streetTam'), 'chat_fsm fast-forwards to READY_TO_APPLY when address details exist');
-        assert(chatFsmCode.includes('RATION_ADD_MEMBER_RESET'), 'chat_fsm supports RATION_ADD_MEMBER_RESET for uploading different member');
+        const addMemberFlowCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_add_member', 'flow.js'), 'utf8');
+        const changeAddrFlowCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_change_address', 'flow.js'), 'utf8');
+        assert(chatFsmCode.includes('resolveCartridge'), 'chat_fsm delegates subservice state turns cleanly to isolated cartridges');
+        assert(addMemberFlowCode.includes('memberName && aadhaarNo && relTam'), 'tnpds_add_member cartridge fast-forwards to READY_TO_APPLY when all member details exist');
+        assert(addMemberFlowCode.includes('memberName && aadhaarNo && !relTam'), 'tnpds_add_member cartridge asks only missing relationship when Aadhaar is present');
+        assert(addMemberFlowCode.includes('existingMemDoc'), 'tnpds_add_member cartridge checks for existing member document on file before asking for upload');
+        assert(changeAddrFlowCode.includes('doorNo && streetTam'), 'tnpds_change_address cartridge fast-forwards to READY_TO_APPLY when address details exist');
+        assert(addMemberFlowCode.includes('RATION_ADD_MEMBER_RESET'), 'tnpds_add_member cartridge supports RATION_ADD_MEMBER_RESET for uploading different member');
         
         const localServerCode = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'local_server.js'), 'utf8');
         assert(localServerCode.includes("clean.startsWith('compressed/')"), 'desktop/local_server.js resolves /compressed/ static file requests');
@@ -2091,9 +2094,10 @@ async function runTests() {
         assert(remIndexHtml.includes('editRemoveMemberDocBoxesWrap'), 'index.html contains editRemoveMemberDocBoxesWrap');
         assert(remIndexHtml.includes('editRemoveMemberReason'), 'index.html contains editRemoveMemberReason dropdown');
 
+        const remCartJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnpds_remove_member.js'), 'utf8');
         const remEditModalJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
-        assert(remEditModalJs.includes('isRemoveMember'), 'edit_modal_manager.js supports isRemoveMember');
-        assert(remEditModalJs.includes('editRemoveMemberFieldsWrap'), 'edit_modal_manager.js toggles editRemoveMemberFieldsWrap');
+        assert(remCartJs.includes('TNPDS_REMOVE_MEMBER') && remCartJs.includes('renderCustomView'), 'tnpds_remove_member UI cartridge owns Remove Member Edit Modal layout');
+        assert(remEditModalJs.includes('editRemoveMemberFieldsWrap') && remEditModalJs.includes('renderCustomView'), 'edit_modal_manager.js toggles editRemoveMemberFieldsWrap and delegates to UI cartridge');
 
         const remDocViewerJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
         assert(remDocViewerJs.includes('isSubserviceRemoveMember'), 'document_viewer.js recognizes isSubserviceRemoveMember');
@@ -2227,7 +2231,8 @@ async function runTests() {
         assert(curHtml.includes('sidebarServiceSelectionPromptBox'), 'index.html contains sidebarServiceSelectionPromptBox');
 
         const curDocViewer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
-        assert(curDocViewer.includes('isIncomeService'), 'document_viewer.js identifies isIncomeService for dynamic sidebar');
+        const incomeCartJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_income.js'), 'utf8');
+        assert(curDocViewer.includes('uiCart?.sidebar') && incomeCartJs.includes('sidebarIncomeBox'), 'tnega_income UI cartridge owns sidebarIncomeBox via document_viewer plugin hook');
         assert(curDocViewer.includes('isNewRationCardService'), 'document_viewer.js identifies isNewRationCardService for dynamic sidebar');
         assert(curDocViewer.includes('gasBox.style.display = isNewRationCardService'), 'document_viewer.js hides gas connection box for non-ration services');
 
@@ -3426,13 +3431,15 @@ async function runTests() {
             assert(selectorSrc.includes('START_COMMUNITY_APPLY'), "chat_service_selector excludes START_COMMUNITY_APPLY");
 
             const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
-            assert(starterSrc.includes('startTnegaCommunityFlow'), "chat_automation_starter imports startTnegaCommunityFlow");
-            assert(starterSrc.includes('START_COMMUNITY_APPLY'), "chat_automation_starter recognizes START_COMMUNITY_APPLY");
+            const commAutoSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_community', 'automation.js'), 'utf8');
+            assert(starterSrc.includes('startFromChat') && commAutoSrc.includes('startTnegaCommunityFlow'), "tnega_community cartridge owns startTnegaCommunityFlow while chat_automation_starter delegates via startFromChat");
+            assert(commAutoSrc.includes('START_COMMUNITY_APPLY'), "tnega_community cartridge recognizes START_COMMUNITY_APPLY");
 
-            const intakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_tnega_intake.js'), 'utf8');
-            assert(intakeSrc.includes('COMMUNITY_RELIGION_WAIT'), "chat_tnega_intake handles COMMUNITY_RELIGION_WAIT");
-            assert(intakeSrc.includes('COMMUNITY_CASTE_WAIT'), "chat_tnega_intake handles COMMUNITY_CASTE_WAIT");
-            assert(intakeSrc.includes('advanceTnegaCommunityFlow'), "chat_tnega_intake imports advanceTnegaCommunityFlow");
+            const intakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_community', 'intake.js'), 'utf8');
+            const commFlowSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_community', 'flow.js'), 'utf8');
+            assert(intakeSrc.includes('COMMUNITY_RELIGION_WAIT'), "tnega_community cartridge handles COMMUNITY_RELIGION_WAIT");
+            assert(intakeSrc.includes('COMMUNITY_CASTE_WAIT'), "tnega_community cartridge handles COMMUNITY_CASTE_WAIT");
+            assert(commFlowSrc.includes('COMMUNITY_RELIGION_WAIT') && intakeSrc.includes('advanceFlow'), "tnega_community cartridge binds flow & intake cleanly");
 
             passedCount += 18;
         }
@@ -3446,19 +3453,21 @@ async function runTests() {
             // 1. UI & Route Visibility Checks
             const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
             assert(indexHtml.includes("citizenStartService('முதல் பட்டதாரி சான்றிதழ்')"), "index.html has Citizen card for முதல் பட்டதாரி சான்றிதழ்");
-            assert(indexHtml.includes("startDirectApplyService('முதல் பட்டதாரி சான்றிதழ்')"), "index.html Operator Desk has Quick Service button for முதல் பட்டதாரி சான்றிதழ்");
+            assert(!indexHtml.includes('id="operatorQuickServiceBar"'), "Operator Desk removes redundant 'அரசுத் துறைகள்' quick bar (kept exclusively on Home Page)");
             assert(indexHtml.includes('id="editFirstGraduateFieldsWrap"'), "index.html Edit Modal has editFirstGraduateFieldsWrap");
             assert(indexHtml.includes('id="editFirstGraduateYop"'), "index.html Edit Modal has Year of Passing input");
 
             const chatWfJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'chat_workflow.js'), 'utf8');
             assert(chatWfJs.includes('வருவாய்த் துறை') || chatWfJs.includes('முதல் பட்டதாரி'), "chat_workflow.js renderDefaultWelcomeMessage displays Revenue Department / First Graduate options");
 
+            const fgCartJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_first_graduate.js'), 'utf8');
             const editModalJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
-            assert(editModalJs.includes('else if (isFirstGraduateMode)'), "edit_modal_manager.js controls First Graduate doc boxes visibility");
-            assert(editModalJs.includes("type: 'applicantEducationProof'") && editModalJs.includes("type: 'fatherEducationProof'") && editModalJs.includes("type: 'motherEducationProof'"), "edit_modal_manager.js renders all First Graduate upload slots");
+            assert(fgCartJs.includes('TNEGA_FIRST_GRADUATE') && editModalJs.includes('modalCfg.docBoxes'), "First Graduate UI cartridge & Edit Modal schema control doc boxes visibility");
+            assert(fgCartJs.includes("type: 'applicantEducationProof'") && fgCartJs.includes("type: 'fatherEducationProof'") && fgCartJs.includes("type: 'motherEducationProof'"), "tnega_first_graduate UI cartridge renders all First Graduate upload slots");
 
             const opRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'operator_routes.js'), 'utf8');
-            assert(opRoutesSrc.includes('isFirstGraduate') && opRoutesSrc.includes('advanceTnegaFirstGraduateFlow'), "operator_routes.js handles direct start for First Graduate");
+            const fgFlowSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_first_graduate', 'flow.js'), 'utf8');
+            assert(opRoutesSrc.includes('resolveCartridgeForSelection') && fgFlowSrc.includes('advanceFlow') && fgFlowSrc.includes('enterService'), "operator_routes delegates via resolveCartridgeForSelection to tnega_first_graduate flow");
 
             const fsmOptions = require('../src/core/fsm/fsm_options_registry');
             assert((fsmOptions.REVENUE_DEPARTMENT_SERVICE_OPTIONS || fsmOptions.SERVICE_OPTIONS).some(o => o.value === 'முதல் பட்டதாரி சான்றிதழ்'), "SERVICE_OPTIONS / REVENUE_DEPARTMENT_SERVICE_OPTIONS includes முதல் பட்டதாரி சான்றிதழ்");
@@ -3582,7 +3591,8 @@ async function runTests() {
 
             // 5. Automation Starter Priority Check (existing community field MUST NOT hijack FIRST_GRADUATE!)
             const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
-            assert(starterSrc.includes('isExplicitFirstGrad') && starterSrc.includes('startTnegaFirstGraduateFlow'), "chat_automation_starter enforces strict First Graduate priority over legacy profile community");
+            const fgAutoSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_first_graduate', 'automation.js'), 'utf8');
+            assert(starterSrc.includes('startFromChat') && fgAutoSrc.includes('startTnegaFirstGraduateFlow'), "tnega_first_graduate cartridge owns startTnegaFirstGraduateFlow and isolates from legacy profile community");
 
             // 6. Sidebar Zero-Flicker Invariant Checks
             const docViewerSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
@@ -3632,18 +3642,20 @@ async function runTests() {
             const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
             assert(runnerSrc.includes('isObc') && runnerSrc.includes('!isObc && Boolean(') && runnerSrc.includes('startTnegaObcFlow'), "desktop/automation_runner prioritizes isObc over isCommunity & isIncome");
             const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
-            assert(starterSrc.includes('isObcAction') && starterSrc.includes('!isObcAction') && starterSrc.includes('startTnegaObcFlow'), "chat_automation_starter prioritizes isObcAction");
+            const obcAutoSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_obc', 'automation.js'), 'utf8');
+            assert(starterSrc.includes('startFromChat') && obcAutoSrc.includes('startTnegaObcFlow'), "tnega_obc cartridge owns startTnegaObcFlow via chat_automation_starter delegation");
             const opRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'operator_routes.js'), 'utf8');
-            assert(opRoutesSrc.includes('isObc') && opRoutesSrc.includes('!isObc'), "operator_routes prioritizes isObc");
+            const obcFlowSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_obc', 'flow.js'), 'utf8');
+            assert(opRoutesSrc.includes('resolveCartridgeForSelection') && obcFlowSrc.includes('enterService'), "operator_routes delegates OBC entry cleanly to tnega_obc cartridge");
 
             // 3. UI & Edit Modal Integrity Checks
             const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-            assert(indexHtml.includes("citizenStartService('OBC சான்றிதழ்')") && indexHtml.includes("startDirectApplyService('OBC சான்றிதழ்')"), "index.html renders OBC REV-115 card & quick launch button");
+            assert(indexHtml.includes("citizenStartService('OBC சான்றிதழ்')") && !indexHtml.includes('id="operatorQuickServiceBar"'), "index.html renders OBC REV-115 card on Home Page without duplicate Operator Desk quick bar");
             assert(indexHtml.includes('id="sidebarObcBox"') && indexHtml.includes('id="editObcFieldsWrap"'), "index.html includes sidebarObcBox & editObcFieldsWrap");
-            const editMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
-            assert(editMgrSrc.includes('isObcMode') && editMgrSrc.includes('editObcCaste'), "edit_modal_manager wires isObcMode & OBC fields");
+            const obcCartJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_obc.js'), 'utf8');
+            assert(obcCartJs.includes('TNEGA_OBC') && obcCartJs.includes('editObcCaste') && obcCartJs.includes('sidebarObcBox'), "tnega_obc UI cartridge wires OBC Edit Modal, OBC sidebar & OBC fields");
             const docViewerSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
-            assert(docViewerSrc.includes('isObcService') && docViewerSrc.includes('sidebarObcBox'), "document_viewer renders sidebarObcBox for OBC service");
+            assert(docViewerSrc.includes('uiCart?.sidebar'), "document_viewer delegates sidebarObcBox rendering to tnega_obc UI cartridge");
 
             // 4. Fresh Customer Document-First Flow (Photo -> Aadhaar -> Community -> ITR -> CAN -> Bucket B -> Ready)
             const { handleNonRationServiceSelection } = require('../src/core/fsm/fsm_other_services');
@@ -3745,10 +3757,11 @@ async function runTests() {
             assert(chatWfSrc.includes('if (isUniversalStartTrigger)') && chatWfSrc.includes('openEditModal()'), "chat_workflow always opens Edit Modal on chat final-submit/start triggers");
 
             const subEngineSrc2 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
+            const obcCartSrc2 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_obc.js'), 'utf8');
             assert(subEngineSrc2.includes('triggerOptions.fromEditModal !== true'), "proceedConfirmedSubmit enforces hard fromEditModal gate across all services");
             assert(subEngineSrc2.includes('extraPayload.fromEditModal !== true'), "sendTextMessage blocks direct automation start without fromEditModal");
-            assert(!subEngineSrc2.includes('docsObj.'), "submission_engine has zero undefined docsObj references for OBC validation");
-            assert(subEngineSrc2.includes("effectiveSubService === 'OBC'") && subEngineSrc2.includes("docs.incomeTaxReturn"), "submission_engine prioritizes OBC and extracts OBC ITR docs");
+            assert(!subEngineSrc2.includes('docsObj.') && !obcCartSrc2.includes('docsObj.'), "submission_engine & tnega_obc cartridge have zero undefined docsObj references for OBC validation");
+            assert(subEngineSrc2.includes('payloadPlugin ? payloadPlugin.subService') && (obcCartSrc2.includes("docs?.incomeTaxReturn") || subEngineSrc2.includes("dMap.incomeTaxReturn")), "submission_engine & tnega_obc cartridge prioritize OBC and extract OBC ITR docs");
 
             const editMgrSrc2 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
             assert(editMgrSrc2.includes('proceedConfirmedSubmit(runRealLive, { fromEditModal: true })'), "submitDirectlyFromEditModal passes { fromEditModal: true } after saving edits");
@@ -3834,8 +3847,8 @@ async function runTests() {
 
             const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
             assert(indexHtml.includes('id="editLegalHeirFieldsWrap"'), "index.html includes editLegalHeirFieldsWrap for REV-114");
-            const editMgrSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
-            assert(editMgrSrc.includes('isLegalHeirMode') && editMgrSrc.includes('editLhDeceasedNameEng'), "edit_modal_manager wires isLegalHeirMode & Deceased fields");
+            const lhCartJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_legal_heir.js'), 'utf8');
+            assert(lhCartJs.includes('TNEGA_LEGAL_HEIR') && lhCartJs.includes('editLhDeceasedNameEng'), "tnega_legal_heir UI cartridge wires Legal Heir layout & Deceased fields");
 
             const readyProfile = {
                 mobileNumber: '9842367866',
@@ -3898,13 +3911,16 @@ async function runTests() {
             assert(featLock.includes('22. TNeGA 6 வருவாய்த் துறை சான்றிதழ்கள் நிரந்தர குறியீட்டு முடக்கம்'), 'FEATURE_LOCK.md documents Section 22 Permanent Code Freeze');
             assert(featLock.includes('23. REV-109 விதவைச் சான்றிதழ் நிரந்தர குறியீட்டு முடக்கம்'), 'FEATURE_LOCK.md documents Section 23 REV-109 Widow Certificate Permanent Code Freeze');
 
-            const chatIntakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_tnega_intake.js'), 'utf8');
-            assert(chatIntakeSrc.includes('isLegalHeirFlow') && chatIntakeSrc.includes('advanceTnegaLegalHeirFlow') && chatIntakeSrc.includes('LEGAL_HEIR_DEATH_CERT_WAIT'), 'chat_tnega_intake routes CAN search & docs into advanceTnegaLegalHeirFlow');
-            assert(chatIntakeSrc.includes('isWidowFlow') && chatIntakeSrc.includes('advanceTnegaWidowFlow') && chatIntakeSrc.includes('WIDOW_DEATH_CERT_WAIT'), 'chat_tnega_intake routes CAN search & docs into advanceTnegaWidowFlow');
+            const legalHeirIntakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_legal_heir', 'intake.js'), 'utf8');
+            const widowIntakeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_widow', 'intake.js'), 'utf8');
+            assert(legalHeirIntakeSrc.includes('LEGAL_HEIR_DEATH_CERT_WAIT') && legalHeirIntakeSrc.includes('advanceFlow'), 'tnega_legal_heir cartridge routes CAN search & docs into advanceFlow');
+            assert(widowIntakeSrc.includes('WIDOW_DEATH_CERT_WAIT') && widowIntakeSrc.includes('advanceFlow'), 'tnega_widow cartridge routes CAN search & docs into advanceFlow');
 
             const subEngSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'submission_engine.js'), 'utf8');
-            assert(subEngSrc.includes("curSub.includes('LEGAL_HEIR')"), 'submission_engine enforces pre-flight document gate for LEGAL_HEIR');
-            assert(subEngSrc.includes("curSub.includes('WIDOW')"), 'submission_engine enforces pre-flight document gate for WIDOW');
+            const lhUiCartSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_legal_heir.js'), 'utf8');
+            const widowUiCartSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_widow.js'), 'utf8');
+            assert(subEngSrc.includes('evaluateCartridgePreSubmit') && lhUiCartSrc.includes('validatePreSubmit') && lhUiCartSrc.includes('deathCertificate'), 'Legal Heir UI cartridge enforces pre-flight document gate');
+            assert(subEngSrc.includes('evaluateCartridgePreSubmit') && widowUiCartSrc.includes('validatePreSubmit') && widowUiCartSrc.includes('deathCertificate'), 'Widow UI cartridge enforces pre-flight document gate');
 
             const runnerSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
             assert(runnerSrc.includes('isLegalHeir') && runnerSrc.includes('startTnegaLegalHeirFlow'), 'desktop/automation_runner routes LEGAL_HEIR to startTnegaLegalHeirFlow');
@@ -3976,7 +3992,7 @@ async function runTests() {
             assert(!vals.includes('குடும்ப உறுப்பினர் நீக்க') && !vals.includes('குடும்பத் தலைவர் மாற்றம்'), 'Unfinished Ration Card options hidden from menu');
 
             const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-            assert(indexHtml.includes('🏛️ ரேஷன் கார்டு (4 சேவைகள்)') && !indexHtml.includes('8 சேவைகள்'), 'UI badges show 4 certified Ration Card services');
+            assert(!indexHtml.includes('8 சேவைகள்') && !indexHtml.includes('id="operatorQuickServiceBar"'), 'Operator Desk hides removed Government Departments quick bar and never exposes 8 unbuilt Ration Card services');
             assert(indexHtml.includes('id="tool4DocSignInput" accept="image/*,.pdf,application/pdf'), 'Digital Sign document input explicitly allows .pdf extension');
 
             const toolsJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'eseva_tools.js'), 'utf8');
@@ -4480,7 +4496,9 @@ async function runTests() {
             assert((sReady.body.citizenProfile.incomeMembers || []).length === 2, 'Excluded Father (index 2) and saved only Husband + Newborn (2 additional members)');
 
             // 4. Client Pre-Flight Smart Card Guard + Income Portal Auto-Overwrite Lock + Strict 457 Upload
-            assert(subEngSrc.includes('hasSmartCard') && subEngSrc.includes('isRevCert'), 'Client submission pre-flight guard checks Smart Ration Card for all Revenue services');
+            const pluginManifestSrc67 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'service_plugins.js'), 'utf8');
+            const obcUiPre67 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_obc.js'), 'utf8');
+            assert(subEngSrc.includes('evaluateCartridgePreSubmit') && subEngSrc.includes('hasSmartCard') && pluginManifestSrc67.includes('requireSmartCard: true') && obcUiPre67.includes('hasSmartCard'), 'Client submission pre-flight guard checks Smart Ration Card for all Revenue services');
             assert(incPortalSrc2.includes('initialFormFillLocked') && !incPortalSrc2.includes('smartCardPath = aadhaarDocPath'), 'tnega_income_certificate locks #incme:landDet autofill after Gate & never swaps Aadhaar into option 457');
 
             try { [dummyScAadh, dummyScPh, dummyScCard].forEach(f => fs.existsSync(f) && fs.unlinkSync(f)); } catch (_) {}
@@ -4529,11 +4547,14 @@ async function runTests() {
                 certificateNumber: 'TN-420261119001'
             });
             assert(incProf.annualIncome === '36000' && incProf.occupation === 'Student' && incProf.fatherOccupation === 'Farmer' && incProf.motherOccupation === 'Homemaker', 'applyExtractedIncomeDetails populates income, applicant occupation, father Farmer & mother Homemaker');
-            assert(incProf.incomeCertNumber === 'TN-420261119001' && upProcSrc68.includes('applyExtractedIncomeDetails'), 'document_upload_processor persists extracted Income Certificate fields on Edit Modal upload');
+            const incExtSrc68 = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_income', 'extractor.js'), 'utf8');
+            const obcExtSrc68 = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_obc', 'extractor.js'), 'utf8');
+            assert(incProf.incomeCertNumber === 'TN-420261119001' && upProcSrc68.includes('processEditModalUpload') && incExtSrc68.includes('applyDocumentUpload') && incExtSrc68.includes('applyExtractedIncomeDetails') && obcExtSrc68.includes('applyExtractedIncomeDetails'), 'document_upload_processor delegates Edit Modal Income Certificate extraction cleanly to isolated cartridges');
 
             // 3. Edit Modal incVal Scope Bug Fix & Live OBC Field Sync
+            const obcUiSrc68 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', 'tnega_obc.js'), 'utf8');
             assert(editMgrSrc68.includes('safeIncVal') && !editMgrSrc68.includes('(incVal ? \'SELF_DECLARATION\''), 'Edit Modal uses safeIncVal outside else block so incVal is never undefined');
-            assert(editMgrSrc68.includes("setVal('editObcFatherOccupation', prof.fatherOccupation)") && editMgrSrc68.includes("setVal('editObcAnnualIncome', prof.annualIncome)"), 'Edit Modal syncs extracted Income & Parent Occupations immediately after upload');
+            assert(editMgrSrc68.includes('syncFromUpload') && obcUiSrc68.includes("setVal('editObcFatherOccupation', prof.fatherOccupation)") && obcUiSrc68.includes("setVal('editObcAnnualIncome', prof.annualIncome)"), 'Edit Modal delegates to tnega_obc UI cartridge syncFromUpload for live OBC Income & Parent Occupations sync');
 
             // 4. OBC Portal Farmer Designation Mapping & 5 Mandatory Docs Upload Queue
             assert(obcPortal.mapParentStatusCode('Farmer', 'Self Employed') === 'agricultural_land_holdingowned_by_mother_father_minor_child', 'OBC Farmer status maps cleanly to Agricultural Land Holding code');
@@ -4652,9 +4673,10 @@ async function runTests() {
             const docViewerSrc70 = fs.readFileSync(path.join(__dirname, '../public/js/modules/document_viewer.js'), 'utf8');
             const runnerSrc70 = fs.readFileSync(path.join(__dirname, '../desktop/automation_runner.js'), 'utf8');
 
+            const pluginsRegSrc70 = fs.readFileSync(path.join(__dirname, '../public/js/modules/service_plugins.js'), 'utf8');
             assert(subEngineSrc70.includes("'NEW_CARD', 'NEW_RATION_CARD'") && subEngineSrc70.includes('!isExplicitRationFlowTop') && subEngineSrc70.includes('isExplicitTnpdsSub'), 'submission_engine.js explicitly isolates NEW_CARD from Smart Card gate & TNeGA Residence diversion');
-            assert(editMgrSrc70.includes('isExplicitRationNewCard') && editMgrSrc70.includes('isTnegaResIntake') && editMgrSrc70.includes('document.getElementById(\'editGasToggleWrap\')?.style.display !== \'none\''), 'edit_modal_manager.js keeps RESIDENCE_PROOF_DOC in New Ration Card mode and preserves Gas details');
-            assert(docViewerSrc70.includes('isTnegaResStateViewer'), 'document_viewer.js excludes RESIDENCE_PROOF_TYPE / RESIDENCE_PROOF_DOC from Residence Certificate sidebar');
+            assert(pluginsRegSrc70.includes("RESIDENCE_PROOF_DOC") && editMgrSrc70.includes('ESEVA_PLUGINS.resolveServicePlugin') && editMgrSrc70.includes('editGasToggleWrap'), 'service_plugins & edit_modal_manager keep RESIDENCE_PROOF_DOC in New Ration Card mode and preserve Gas details');
+            assert(docViewerSrc70.includes('ESEVA_PLUGINS.resolveServicePlugin') && pluginsRegSrc70.includes('RESIDENCE_PROOF_DOC'), 'document_viewer.js resolves active plugin dynamically so RESIDENCE_PROOF_DOC stays scoped to TNPDS_NEW_CARD rather than Residence Certificate sidebar');
             assert(runnerSrc70.includes('isExplicitTnpdsRationSub') && runnerSrc70.includes('isTnegaResidenceIntake'), 'desktop/automation_runner.js locks NEW_CARD & RESIDENCE_PROOF_DOC strictly to TNPDS automation');
 
             passedCount += 11;
@@ -4772,6 +4794,369 @@ async function runTests() {
             assert(runnerDecision.portal === 'TNPDS' && runnerDecision.runnerName === 'startTnpdsRationCardFlow', 'Desktop automation_runner routes captured New Ration Card payload strictly to startTnpdsRationCardFlow');
 
             passedCount += 12;
+        }
+
+        // =========================================================================
+        // TEST 72: 14-Cartridge One-by-One Full E2E Isolation Audit
+        // Verifies Questions, Backend Schema, UI Edit Modal, Pre-Submit & Runner
+        // =========================================================================
+        console.log('\n[TEST 72] 🧩 14-Cartridge One-by-One Full E2E Audit (Questions, Schema, Edit UI, Pre-Submit & Runner)...');
+        {
+            const { CARTRIDGE_FOLDERS, getCartridgeById, listCartridges } = require('../src/cartridges');
+            const { SERVICE_PLUGINS, resolveServicePlugin } = require('../public/js/modules/service_plugins');
+            const { resolveAutomationTarget } = require('../desktop/automation_runner');
+            const { chromium } = require('playwright');
+
+            assert(CARTRIDGE_FOLDERS.length === 14 && listCartridges().length === 14, 'Backend exposes all 14 isolated cartridges');
+            const cartApiRes = await request('GET', '/api/cartridges');
+            assert(cartApiRes.status === 200 && Array.isArray(cartApiRes.body?.cartridges) && cartApiRes.body.cartridges.length === 14, 'GET /api/cartridges returns all 14 cartridge manifests');
+
+            const cartridgeSuiteSpecs = [
+                { id: 'TNPDS_NEW_CARD', chatTrigger: 'புதிய ரேஷன் கார்டு', expectState: 'MEMBER_COUNT', expectSub: 'NEW_CARD', runner: 'startTnpdsRationCardFlow', titlePart: 'புதிய குடும்ப அட்டை', smartCardBox: 'none', photoBox: 'flex', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
+                { id: 'TNPDS_ADD_MEMBER', chatTrigger: 'குடும்ப உறுப்பினர் சேர்க்க', expectState: 'RATION_ADD_MEMBER_TYPE', expectSub: 'ADD_MEMBER', runner: 'startTnpdsAddMemberFlow', titlePart: 'சேர்க்கப்படும் குடும்ப உறுப்பினர்', activeWrap: 'editAddMemberFieldsWrap', seedSubData: { memberName: 'Arun', memberNameTam: 'அருண்', memberNameEng: 'Arun', smartCardNumber: '333123456789' }, blockedWhenEmpty: false },
+                { id: 'TNPDS_REMOVE_MEMBER', chatTrigger: 'குடும்ப உறுப்பினர் நீக்க', expectState: 'RATION_REMOVE_MEMBER_REASON', expectSub: 'REMOVE_MEMBER', runner: 'startTnpdsRemoveMemberFlow', titlePart: 'நீக்கப்படும் குடும்ப உறுப்பினர்', activeWrap: 'editRemoveMemberFieldsWrap', seedSubData: { memberName: 'Siva', reason: 'திருமணம்', smartCardNumber: '333123456789' }, blockedWhenEmpty: false },
+                { id: 'TNPDS_CHANGE_ADDRESS', chatTrigger: 'முகவரி மாற்றம்', expectState: 'RATION_CHANGE_ADDRESS_DOC', expectSub: 'CHANGE_ADDRESS', runner: 'startTnpdsAddressChangeFlow', titlePart: 'புதிய முகவரி', activeWrap: 'editChangeAddressFieldsWrap', seedSubData: { smartCardNumber: '333123456789', doorNo: '12A' }, blockedWhenEmpty: false },
+                { id: 'TNPDS_UPDATE_MOBILE', chatTrigger: 'கைபேசி எண் மாற்றம்', expectState: 'RATION_CHANGE_MOBILE', expectSub: 'UPDATE_MOBILE', runner: 'startTnpdsMobileChangeFlow', titlePart: 'கைபேசி எண் மாற்ற', smartCardBox: 'flex', photoBox: 'none', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
+                { id: 'TNPDS_CHANGE_HEAD', chatTrigger: 'குடும்பத் தலைவர் மாற்றம்', expectState: 'RATION_CHANGE_HEAD_REASON', expectSub: 'CHANGE_HEAD', runner: 'startTnpdsChangeHeadFlow', titlePart: 'குடும்பத் தலைவர் மாற்ற', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
+                { id: 'TNEGA_CAN_REGISTER', chatTrigger: 'CAN_REGISTER_PROMPT', expectStatePrefix: 'CAN_', expectSub: 'CAN_REGISTER', runner: 'startTnegaCanRegisterFlow', titlePart: 'புதிய CAN பதிவு', smartCardBox: 'none', photoBox: 'flex', activeWrap: 'editCommunityFieldsWrap', blockedWhenEmpty: false },
+                { id: 'TNEGA_COMMUNITY', chatTrigger: 'சாதிச் சான்றிதழ்', expectStatePrefix: 'COMMUNITY_', expectSub: 'COMMUNITY', runner: 'startTnegaCommunityFlow', titlePart: 'சாதிச் சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editCommunityFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', communityProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_RESIDENCE', chatTrigger: 'இருப்பிடச் சான்றிதழ்', expectStatePrefix: 'RESIDENCE_', expectSub: 'RESIDENCE', runner: 'startTnegaResidenceFlow', titlePart: 'இருப்பிடச் சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editResidenceFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', residenceProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_INCOME', chatTrigger: 'வருமானச் சான்றிதழ்', expectStatePrefix: 'INCOME_', expectSub: 'INCOME', runner: 'startTnegaIncomeFlow', titlePart: 'வருமானச் சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editIncomeFieldsWrap', extraProfile: { annualIncome: '120000', profession: 'Business' }, revDocs: { smartCard: '/uploads/test_sample_doc.jpg', incomeProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_FIRST_GRADUATE', chatTrigger: 'முதல் பட்டதாரி சான்றிதழ்', expectStatePrefix: 'FIRST_GRADUATE_', expectSub: 'FIRST_GRADUATE', runner: 'startTnegaFirstGraduateFlow', titlePart: 'முதல் பட்டதாரி', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editFirstGraduateFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', applicantEducationProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_OBC', chatTrigger: 'OBC சான்றிதழ்', expectStatePrefix: 'OBC_', expectSub: 'OBC', runner: 'startTnegaObcFlow', titlePart: 'OBC சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editObcFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', communityCertificate: '/uploads/test_sample_doc.jpg', incomeTaxReturn: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_LEGAL_HEIR', chatTrigger: 'வாரிசு சான்றிதழ்', expectStatePrefix: 'LEGAL_HEIR_', expectSub: 'LEGAL_HEIR', runner: 'startTnegaLegalHeirFlow', titlePart: 'வாரிசு சான்றிதழ்', smartCardBox: 'flex', photoBox: 'none', activeWrap: 'editLegalHeirFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', deathCertificate: '/uploads/test_sample_doc.jpg', birthCertificate: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNEGA_WIDOW', chatTrigger: 'விதவைச் சான்றிதழ்', expectStatePrefix: 'WIDOW_', expectSub: 'WIDOW', runner: 'startTnegaWidowFlow', titlePart: 'விதவைச் சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editWidowFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', deathCertificate: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true }
+            ];
+
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            let dialogMessages = [];
+            page.on('dialog', async (d) => { dialogMessages.push(d.message()); await d.dismiss(); });
+            await page.goto(`${BASE_URL}/index.html`);
+            await page.waitForTimeout(600);
+
+            for (let i = 0; i < cartridgeSuiteSpecs.length; i++) {
+                const spec = cartridgeSuiteSpecs[i];
+                const cart = getCartridgeById(spec.id);
+                assert(cart && cart.manifest && cart.flow && cart.intake && cart.extractor && typeof cart.automation?.run === 'function', `[${spec.id}] Backend cartridge has all 5 isolated layers`);
+
+                // A. Real /api/chat question isolation verification
+                const initRes = await request('POST', '/api/operator/new-customer', { isWalkin: true }, { 'x-operator-uid': 'test_suite_operator_uid' });
+                const walkinMob = initRes.body?.customerMobile;
+                assert(Boolean(walkinMob), `[${spec.id}] Walk-in init created session (${walkinMob})`);
+                const hdr = { 'x-session-mobile': walkinMob, 'x-operator-uid': 'test_suite_operator_uid' };
+                const selRes = await request('POST', '/api/chat', { text: spec.chatTrigger, mobileNumber: walkinMob }, hdr);
+                assert(selRes.status === 200, `[${spec.id}] Chat service selection returns 200 OK`);
+                const nextState = String(selRes.body.intakeState || '').toUpperCase();
+                if (spec.expectState) {
+                    assert(nextState === spec.expectState, `[${spec.id}] Enters exact cartridge intakeState=${spec.expectState} (got ${nextState})`);
+                } else if (spec.expectStatePrefix) {
+                    assert(nextState.startsWith(spec.expectStatePrefix) || nextState.includes('CAN_'), `[${spec.id}] Enters cartridge-owned TNeGA intakeState (got ${nextState})`);
+                }
+                if (spec.id !== 'TNEGA_CAN_REGISTER') {
+                    assert((cart.manifest.ownedStates || []).includes(nextState) || resolveServicePlugin({ intakeState: nextState })?.id === spec.id, `[${spec.id}] Resulting state ${nextState} belongs strictly to ${spec.id}`);
+                }
+                await request('DELETE', `/api/drafts/${walkinMob}?permanent=true`, null, hdr);
+
+                // B. Real Browser Edit Modal, Schema Visibility, Pre-Submit Block & Pass, and Runner Verification
+                const mob = `99999001${String(i).padStart(2, '0')}`;
+                const mobHdr = { 'x-session-mobile': mob, 'x-operator-uid': 'test_suite_operator_uid' };
+
+                // First seed minimal draft (missing service docs) if blockedWhenEmpty to prove Cartridge Pre-Submit Gate catches missing docs
+                if (spec.blockedWhenEmpty) {
+                    await request('POST', '/api/drafts/save', {
+                        mobileNumber: mob,
+                        operatorUid: 'test_suite_operator_uid',
+                        subService: spec.expectSub,
+                        pluginId: spec.id,
+                        intakeState: spec.expectState || `${spec.expectSub}_PHOTO_WAIT`,
+                        citizenProfile: {
+                            mobileNumber: mob,
+                            subService: spec.expectSub,
+                            pluginId: spec.id,
+                            fullNameEng: 'Kumaran K',
+                            fullNameTam: 'குமரன் கே',
+                            headAadhaar: '123456789012',
+                            smartCardNumber: '333123456789'
+                        }
+                    }, mobHdr);
+
+                    dialogMessages = [];
+                    const blockedOut = await page.evaluate(async ({ m }) => {
+                        localStorage.setItem('eseva_user_role', 'operator');
+                        localStorage.setItem('eseva_operator_uid', 'test_suite_operator_uid');
+                        localStorage.setItem('eseva_active_customer_mobile', m);
+                        let launched = false;
+                        window.esevaDesktopBridge = {
+                            isDesktopApp: true,
+                            startLiveAutomation: async () => { launched = true; return { success: true }; },
+                            onAutomationUpdate: () => {},
+                            onAutomationFinished: () => {}
+                        };
+                        await openEditModal(m, false);
+                        await submitDirectlyFromEditModal();
+                        return { launched };
+                    }, { m: mob });
+                    assert(!blockedOut.launched && dialogMessages.length > 0, `[${spec.id}] Missing mandatory docs blocks Pre-Submit cleanly with Tamil alert (alerts=${dialogMessages.length})`);
+                }
+
+                // Now seed complete service draft with exact required documents
+                await request('POST', '/api/drafts/save', {
+                    mobileNumber: mob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: spec.expectSub,
+                    pluginId: spec.id,
+                    intakeState: spec.expectState || `READY_TO_APPLY_${spec.expectSub}`,
+                    citizenProfile: {
+                        mobileNumber: mob,
+                        subService: spec.expectSub,
+                        pluginId: spec.id,
+                        fullNameEng: 'Kumaran K',
+                        fullNameTam: 'குமரன் கே',
+                        fatherNameEng: 'Krishnan',
+                        fatherNameTam: 'கிருஷ்ணன்',
+                        headAadhaar: '123456789012',
+                        headDob: '01/01/1990',
+                        headGender: 'Male',
+                        doorNo: '12A',
+                        streetTam: 'மேட்டு தெரு',
+                        streetEng: 'Mettu Street',
+                        pincode: '631052',
+                        district: 'Ranipet',
+                        taluk: 'Arakkonam',
+                        village: 'Minnal',
+                        smartCardNumber: '333123456789',
+                        rationCardNo: '333123456789',
+                        headPhotoPath: '/uploads/test_sample_doc.jpg',
+                        ...(spec.extraProfile || {}),
+                        ...(spec.revDocs || {}),
+                        subServiceData: spec.seedSubData || {},
+                        documents: {
+                            profilePhoto: '/uploads/test_sample_doc.jpg',
+                            headAadhaar: '/uploads/test_sample_doc.jpg',
+                            ...(spec.revDocs || {})
+                        }
+                    }
+                }, mobHdr);
+
+                dialogMessages = [];
+                const passOut = await page.evaluate(async ({ m, activeWrapId }) => {
+                    localStorage.setItem('eseva_user_role', 'operator');
+                    localStorage.setItem('eseva_operator_uid', 'test_suite_operator_uid');
+                    localStorage.setItem('eseva_active_customer_mobile', m);
+                    localStorage.setItem('eseva_active_service', 'OBC'); // Deliberately stale noise across every cartridge!
+                    let capturedDraft = null;
+                    window.esevaDesktopBridge = {
+                        isDesktopApp: true,
+                        startLiveAutomation: async (payload) => { capturedDraft = payload; return { success: true }; },
+                        onAutomationUpdate: () => {},
+                        onAutomationFinished: () => {}
+                    };
+                    await openEditModal(m, false);
+                    const modalTitle = document.getElementById('editModalTitle')?.innerText || '';
+                    const smartCardBoxDisplay = document.getElementById('editSmartCardBox')?.style.display || '';
+                    const photoBoxDisplay = document.getElementById('editPhotoDocBox')?.style.display || '';
+                    const activeWrapDisplay = document.getElementById(activeWrapId)?.style.display || '';
+                    await submitDirectlyFromEditModal();
+                    return { modalTitle, smartCardBoxDisplay, photoBoxDisplay, activeWrapDisplay, capturedDraft };
+                }, { m: mob, activeWrapId: spec.activeWrap });
+
+                await request('DELETE', `/api/drafts/${mob}?permanent=true`, null, mobHdr);
+
+                assert(dialogMessages.length === 0, `[${spec.id}] Valid submission triggers ZERO false alerts (got: ${dialogMessages.join('; ')})`);
+                assert(passOut.modalTitle.includes(spec.titlePart), `[${spec.id}] Edit Modal title isolates strictly to "${spec.titlePart}" (got: ${passOut.modalTitle})`);
+                if (spec.smartCardBox) {
+                    assert(passOut.smartCardBoxDisplay === spec.smartCardBox, `[${spec.id}] editSmartCardBox display is ${spec.smartCardBox} (got: ${passOut.smartCardBoxDisplay})`);
+                }
+                if (spec.photoBox && !spec.seedSubData) {
+                    assert(passOut.photoBoxDisplay === spec.photoBox, `[${spec.id}] editPhotoDocBox display is ${spec.photoBox} (got: ${passOut.photoBoxDisplay})`);
+                }
+                assert(passOut.activeWrapDisplay && passOut.activeWrapDisplay !== 'none', `[${spec.id}] Active wrap ${spec.activeWrap} is visible (display=${passOut.activeWrapDisplay})`);
+                assert(passOut.capturedDraft && passOut.capturedDraft.pluginId === spec.id, `[${spec.id}] IPC captures exact pluginId=${spec.id}`);
+
+                const runnerDecision = resolveAutomationTarget(passOut.capturedDraft);
+                assert(runnerDecision.pluginId === spec.id && runnerDecision.runnerName === spec.runner, `[${spec.id}] automation_runner resolves strictly to ${spec.runner} (got ${runnerDecision.runnerName})`);
+                passedCount += 8;
+            }
+
+            await browser.close();
+            console.log(`  🎉 Verified all 14 Cartridges ONE-BY-ONE cleanly (Questions, Schema, Edit UI, Pre-Submit, & Automation Runner)!`);
+
+            // Verify Edit-Modal upload isolation across all 14 Cartridges (zero NEW_CARD vs ADD_MEMBER collision)
+            const { CARTRIDGES: allCarts72 } = require('../src/cartridges');
+            const { processUploadedDocument: procDoc72 } = require('../src/services/document_upload_processor');
+            for (const [cid, cart] of allCarts72.entries()) {
+                assert(cart.extractor && typeof cart.extractor.processEditModalUpload === 'function', `[${cid}] exposes isolated extractor.processEditModalUpload`);
+                passedCount += 1;
+            }
+            const sampleUpImg = path.join(__dirname, '..', 'uploads', 'test_sample_doc.jpg');
+            const newCardUpSess = { service: 'ரேஷன் கார்டு', subService: 'NEW_CARD', pluginId: 'TNPDS_NEW_CARD', intakeState: 'MEMBER_AADHAAR_FRONT', citizenProfile: { subService: 'NEW_CARD', members: [{}] }, tempUploads: {} };
+            await procDoc72(newCardUpSess, 'memberAadhaar', { path: sampleUpImg }, 0, '9999900199');
+            assert(!newCardUpSess.citizenProfile.subServiceData && newCardUpSess.citizenProfile.members[0].docPath, 'NEW_CARD memberAadhaar upload stays isolated in members[] without polluting subServiceData');
+            const addMemUpSess = { service: 'ரேஷன் கார்டு', subService: 'ADD_MEMBER', pluginId: 'TNPDS_ADD_MEMBER', intakeState: 'RATION_ADD_MEMBER_TYPE', citizenProfile: { subService: 'ADD_MEMBER', headPhotoPath: '/uploads/stale.jpg' }, tempUploads: {} };
+            await procDoc72(addMemUpSess, 'memberAadhaar', { path: sampleUpImg }, 0, '9999900198');
+            assert(addMemUpSess.citizenProfile.subServiceData?.docPath && !addMemUpSess.citizenProfile.headPhotoPath, 'ADD_MEMBER memberAadhaar upload updates subServiceData cleanly without headPhoto leakage');
+
+            // Verify Delete-Document Cartridge delegation, Sidebar Doc-Scope Filter & Dynamic Rendering Hooks
+            const { SERVICE_PLUGINS: uiPlugs72 } = require('../public/js/modules/service_plugins');
+            for (const [cid, cart] of allCarts72.entries()) {
+                assert(cart.flow && typeof cart.flow.onDocumentDeleted === 'function', `[${cid}] exposes isolated flow.onDocumentDeleted`);
+                passedCount += 1;
+            }
+            for (const p of uiPlugs72) {
+                assert(Array.isArray(p.uiCartridge?.ownedDocTypes) && p.uiCartridge.ownedDocTypes.length > 0, `[${p.id}] UI cartridge declares strict ownedDocTypes filter`);
+                passedCount += 1;
+            }
+            const runnerCode72 = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            const htmlCode72 = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+            const docViewCode72 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
+            const editMgrCode72 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'edit_modal_manager.js'), 'utf8');
+            assert(runnerCode72.includes('isTnpdsNewCardTarget') && runnerCode72.includes('readDiskDraftOnly'), 'automation_runner restricts Gas Book & disk residence lookup strictly to TNPDS_NEW_CARD');
+            assert(htmlCode72.includes('id="sidebarDynamicServiceBox"') && docViewCode72.includes('renderDynamicSidebar') && editMgrCode72.includes('renderDynamicEditFields'), 'Dynamic Cartridge Renderers wired for zero index.html bloat on future services');
+            assert(fs.existsSync(path.join(__dirname, '..', 'src', 'cartridges', '_template', 'manifest.js')) && fs.existsSync(path.join(__dirname, '..', 'public', 'js', 'cartridges', '_template.js')), 'Golden Cartridge Blueprint templates exist under _template');
+            passedCount += 5;
+
+            // Verify Single-Shot Delete Fence (no zombie resurrection) & Operator Desk cleanup
+            const { markDraftDeleted, isDraftStaleDueToDelete } = require('../src/services/db/firestore_client');
+            const { saveCitizenDraft } = require('../src/services/db/draft_save');
+            const { deleteCitizenDraft } = require('../src/services/db/draft_manage');
+            const fenceMob = '9999900898';
+            const staleStart = Date.now();
+            await saveCitizenDraft(fenceMob, {
+                operatorUid: 'test_fence_op',
+                citizenProfile: { fullNameEng: 'Fence Test', headAadhaar: '999988887777', mobileNumber: fenceMob }
+            });
+            await deleteCitizenDraft(fenceMob, { permanent: true });
+            assert(isDraftStaleDueToDelete(fenceMob, staleStart) === true, 'Delete fence invalidates in-flight save/sync started before deletion');
+            assert(isDraftStaleDueToDelete(fenceMob, Date.now() + 50) === false, 'Delete fence permits recreating a fresh draft after deletion');
+            await new Promise(r => setTimeout(r, 60));
+            assert(!fs.existsSync(path.join(__dirname, '..', 'data', 'drafts', `${fenceMob}.json`)), 'In-flight setImmediate save never resurrects deleted draft on disk');
+            const manageSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'db', 'draft_manage.js'), 'utf8');
+            assert(manageSrc72.includes(".where('operatorUid', '==', normTarget)") && manageSrc72.includes('deleteStoragePrefix'), 'Cloud sync scopes to logged-in operatorUid and deleteCitizenDraft purges Storage + Firestore');
+            assert(!htmlCode72.includes('id="operatorQuickServiceBar"'), 'Operator Desk hides duplicate Government Departments shortcut bar');
+
+            // Verify Universal Double-Sided Card (Front-only vs Full/Combined) across ALL services
+            const { isDoubleSidedCardComplete } = require('../src/services/document_validator');
+            assert(isDoubleSidedCardComplete({ documentType: 'AADHAAR_FRONT', fullNameEng: 'Test' }, 'front.jpg', 'aadhaar') === false, 'Front-only Aadhaar requires back side');
+            assert(isDoubleSidedCardComplete({ documentType: 'AADHAAR_BACK', hasAddress: true }, 'back.jpg', 'aadhaar') === false, 'Back-only Aadhaar is not complete without front');
+            assert(isDoubleSidedCardComplete({ documentType: 'AADHAAR_FULL', isFullAadhaar: true }, 'full.jpg', 'aadhaar') === true, 'Full combined Aadhaar skips back side');
+            assert(isDoubleSidedCardComplete({ documentType: 'SMART_CARD_FRONT', smartCardNumber: '333000111222' }, 'sc_f.jpg', 'smartCard') === false, 'Front-only Smart Card requires back side');
+            assert(isDoubleSidedCardComplete({ documentType: 'SMART_CARD_BACK', smartCardMembers: [{ nameEng: 'Test' }] }, 'sc_b.jpg', 'smartCard') === false, 'Back-only Smart Card without front is rejected as complete');
+            assert(isDoubleSidedCardComplete({ documentType: 'SMART_CARD', isFullSmartCard: true, smartCardMembers: [{ nameEng: 'Test' }] }, 'sc_full.jpg', 'smartCard') === true, 'Full combined Smart Card skips back side');
+
+            // Adult Add Member: Front-only asks for Back -> Full/Back proceeds to Surrender
+            const adultDualSess = { intakeState: 'RATION_ADD_MEMBER_ADULT_AADHAAR', chatHistory: [], citizenProfile: { rationCardNo: '332145897210' }, tempUploads: {} };
+            await handleRationSubserviceWorkflow('TRIGGER_FILE_UPLOAD', adultDualSess, { path: sampleUpImg }, { documentType: 'AADHAAR_FRONT', fullNameTam: 'பிரியா', fullNameEng: 'Priya', aadhaarNumber: '987654321099' });
+            assert(adultDualSess.intakeState === 'RATION_ADD_MEMBER_ADULT_AADHAAR_BACK', 'Adult Add Member front-only Aadhaar transitions to RATION_ADD_MEMBER_ADULT_AADHAAR_BACK');
+            await handleRationSubserviceWorkflow('TRIGGER_FILE_UPLOAD', adultDualSess, { path: sampleUpImg }, { fatherNameTam: 'ராமன்', address: '12, Main Rd, 631102' });
+            assert(adultDualSess.intakeState === 'RATION_ADD_MEMBER_ADULT_SURRENDER', 'Adult Add Member back Aadhaar merges & advances to SURRENDER');
+
+            const adultFullSess = { intakeState: 'RATION_ADD_MEMBER_ADULT_AADHAAR', chatHistory: [], citizenProfile: { rationCardNo: '332145897210' }, tempUploads: {} };
+            await handleRationSubserviceWorkflow('TRIGGER_FILE_UPLOAD', adultFullSess, { path: sampleUpImg }, { documentType: 'AADHAAR_FULL', isFullAadhaar: true, fullNameTam: 'பிரியா', fullNameEng: 'Priya', aadhaarNumber: '987654321099' });
+            assert(adultFullSess.intakeState === 'RATION_ADD_MEMBER_ADULT_SURRENDER', 'Adult Add Member combined full Aadhaar skips back prompt directly to SURRENDER');
+
+            // Son/Daughter Add Member: Front-only -> Back -> Relation
+            const sonDualSess = { intakeState: 'RATION_ADD_MEMBER_SON_AADHAAR', chatHistory: [], citizenProfile: { rationCardNo: '332145897210' }, tempUploads: {} };
+            await handleRationSubserviceWorkflow('TRIGGER_FILE_UPLOAD', sonDualSess, { path: sampleUpImg }, { documentType: 'AADHAAR_FRONT', fullNameTam: 'கார்த்திக்', fullNameEng: 'Karthik', aadhaarNumber: '987654321098' });
+            assert(sonDualSess.intakeState === 'RATION_ADD_MEMBER_SON_AADHAAR_BACK', 'Son/Daughter front-only Aadhaar transitions to RATION_ADD_MEMBER_SON_AADHAAR_BACK');
+            await handleRationSubserviceWorkflow('ADULT_AADHAAR_SKIP_BACK', sonDualSess, null, null);
+            assert(sonDualSess.intakeState === 'RATION_ADD_MEMBER_SON_RELATION', 'Son/Daughter back skip/complete transitions to RATION_ADD_MEMBER_SON_RELATION');
+
+            // TNPDS NEW_CARD member Aadhaar & TNeGA Legal Heir / Widow dual-sided wiring checks
+            const memAadhSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_member_aadhaar.js'), 'utf8');
+            const lhIntakeSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_legal_heir', 'intake.js'), 'utf8');
+            const wdIntakeSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnega_widow', 'intake.js'), 'utf8');
+            assert(memAadhSrc72.includes('isDoubleSidedCardComplete') && memAadhSrc72.includes("sess.intakeState = 'MEMBER_AADHAAR_BACK'") && !memAadhSrc72.includes('491436223971'), 'NEW_CARD member Aadhaar supports front-vs-full branching without fake Aadhaar fallback');
+            assert(lhIntakeSrc72.includes('handleTnegaAadhaarUploadHelper') && wdIntakeSrc72.includes('handleTnegaAadhaarUploadHelper'), 'Legal Heir & Widow cartridges route Aadhaar through shared Front/Back helper');
+
+            // Step 21 OTP Verifier runtime test (guarantees lastMobileResendAt is function-scoped & never throws ReferenceError after OTP submit)
+            const { verifyNewCardOtpAndSettle } = require('../src/portal/tnpds/steps/step21_new_card_otp_verifier');
+            const otpMockRes = await verifyNewCardOtpAndSettle({
+                isClosed: () => false,
+                locator: () => ({ first: () => ({ count: async () => 1, isVisible: async () => true, inputValue: async () => '178313', scrollIntoViewIfNeeded: async () => {}, click: async () => {}, evaluate: async () => {} }) }),
+                evaluate: async (fn) => {
+                    const s = fn.toString();
+                    if (s.includes('visibleModals')) return { dismissed: true, count: 0 };
+                    if (s.includes('canAddMember')) return { canAddMember: true, memberBtnVisible: true };
+                    return false;
+                },
+                waitForTimeout: async () => {}
+            }, '178313', { onProgress: () => {} });
+            assert(otpMockRes && otpMockRes.success === true, 'verifyNewCardOtpAndSettle completes past OTP modal poll without ReferenceError');
+
+            // Live New Card 6-digit Modal OTP detection test (guarantees typing 6-digit OTP into Chrome OTP modal triggers auto-verify)
+            const { createScopedSessionContext } = require('../tnpds_automation');
+            const otpSessCtx = createScopedSessionContext('test_otp_6digit');
+            otpSessCtx.clearStaleOtpState();
+            const mockModalPage = {
+                isClosed: () => false,
+                url: () => 'https://tnpds.gov.in/pages/newsmartcard',
+                evaluate: async (fn, typeArg) => {
+                    const s = fn.toString();
+                    if (s.includes('isSixDigitModalOtp')) {
+                        return (typeArg === 'new_card_mobile_otp') ? '293614' : null;
+                    }
+                    return null;
+                }
+            };
+            const detected6Otp = await otpSessCtx.requestOtpFromUser('OTP', () => {}, 'new_card_mobile_otp', mockModalPage);
+            assert(detected6Otp === '293614', '6-digit OTP typed in New Card Chrome modal is detected immediately for auto-verify');
+            const headOtpSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_aadhaar_otp_steps.js'), 'utf8');
+            const tnpdsSrc72 = fs.readFileSync(path.join(__dirname, '..', 'tnpds_automation.js'), 'utf8');
+            assert(tnpdsSrc72.includes("type === 'new_card_mobile_otp'") && tnpdsSrc72.includes('கடவு'), 'tnpds_automation.js detects 6-digit modal OTPs & Tamil கடவுச்சொல்லை inputs');
+            assert(tnpdsSrc72.includes('isAadhaarModalOtp') && headOtpSrc72.includes('otpVal.length >= 6'), 'Aadhaar OTP steps support both 6-digit and 7-digit Aadhaar OTPs cleanly');
+
+            // Verify Per-Service Isolated OTP Configurations across all 6 TNPDS service folders (zero shared-watchman collision)
+            const { NEW_CARD_OTP_CONFIG, waitForNewCardMobileOtp } = require('../src/portal/tnpds/flows/new_smart_card/new_card_otp_config');
+            const { ADD_MEMBER_OTP_CONFIG } = require('../src/portal/tnpds/flows/add_member/add_member_otp_config');
+            const { ADDRESS_CHANGE_OTP_CONFIG } = require('../src/portal/tnpds/flows/address_change/address_change_otp_config');
+            const { REMOVE_MEMBER_OTP_CONFIG } = require('../src/portal/tnpds/flows/remove_member/remove_member_otp_config');
+            const { CHANGE_HEAD_OTP_CONFIG } = require('../src/portal/tnpds/flows/change_head/change_head_otp_config');
+            const { MOBILE_CHANGE_OTP_CONFIG } = require('../src/portal/tnpds/flows/mobile_change/mobile_change_otp_config');
+            assert(NEW_CARD_OTP_CONFIG.stages.mobileVerify.digits === 6 && NEW_CARD_OTP_CONFIG.requiresPortalLoginOtp === false, 'NEW_CARD owns isolated 6-digit mobile OTP config');
+            assert(ADD_MEMBER_OTP_CONFIG.stages.citizenLogin.digits === 7 && ADDRESS_CHANGE_OTP_CONFIG.stages.citizenLogin.digits === 7 && REMOVE_MEMBER_OTP_CONFIG.stages.citizenLogin.digits === 7 && CHANGE_HEAD_OTP_CONFIG.stages.citizenLogin.digits === 7, 'Each TNPDS login service owns its isolated 7-digit login OTP config');
+            assert(MOBILE_CHANGE_OTP_CONFIG.stages.citizenLogin.digits === 7 && MOBILE_CHANGE_OTP_CONFIG.stages.newMobileVerify.digits === 6, 'MOBILE_CHANGE owns isolated 7-digit login & 6-digit new-mobile OTP config');
+            const isolatedNewCardOtp = await waitForNewCardMobileOtp({
+                isClosed: () => false,
+                evaluate: async (fn, targetDigits) => targetDigits === 6 ? '293614' : null
+            }, '9790170026', () => {}, {});
+            assert(isolatedNewCardOtp === '293614', 'waitForNewCardMobileOtp resolves 6-digit OTP directly inside new_smart_card folder');
+
+            // Verify Step 22/23 Single-Click Toggle Guard & Calendar Fast-Timeout Law (prevents double-clicking உறுப்பினரை சேர்க்க & 120s calendar hang)
+            const step21Src72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
+            const famLoopSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
+            const matCalSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'helpers', 'mat_calendar_picker.js'), 'utf8');
+            assert(step21Src72.includes('let clickedOnce = false;') && famLoopSrc72.includes('if (openAfterClick) break;'), 'Step 22 & Family Members Loop enforce Single-Click Guard on உறுப்பினரை சேர்க்க toggle button');
+            assert(matCalSrc72.includes('timeout: 3000') && matCalSrc72.includes('el.disabled = false;'), 'mat_calendar_picker enforces fast timeouts & self-heals closed member form without 120s hang');
+
+            // Verify Any-Step Radware / Page-Refresh Auto-Refill from Start (even when user already solved Radware & step returned { success: false } on wiped page)
+            const { executePageBlockWithRadwareRestart: execRadBlock72 } = require('../src/portal/common/universal_radware_resumption');
+            let mockFormIntact = true;
+            const cycleTrace = [];
+            const radRestartRes = await execRadBlock72({
+                isClosed: () => false,
+                url: () => 'https://www.tnpds.gov.in/pages/newsmartcard',
+                evaluate: async () => false,
+                waitForTimeout: async () => {}
+            }, {
+                pageName: 'newsmartcard',
+                firstStepName: 'படி 1/51',
+                checkPageIntactFn: async () => mockFormIntact,
+                runPageStepsFromStart: async (cycle) => {
+                    cycleTrace.push(`START_${cycle}`);
+                    if (cycle === 1) {
+                        mockFormIntact = true;
+                        await new Promise(r => setTimeout(r, 1000)); // allow background monitor to see intact=true
+                        mockFormIntact = false; // simulate user solving mid-run Radware which refreshes/wipes the page
+                        return { success: false, message: 'Step failed on wiped page' };
+                    }
+                    mockFormIntact = true;
+                    cycleTrace.push(`COMPLETE_${cycle}`);
+                    return { success: true };
+                }
+            });
+            assert(radRestartRes && radRestartRes.success === true && cycleTrace.join(',') === 'START_1,START_2,COMPLETE_2', 'executePageBlockWithRadwareRestart automatically restarts from Step 1 when mid-run Radware refreshes/wipes the page');
+            passedCount += 28;
         }
 
         console.log('\n======================================================');

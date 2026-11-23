@@ -33,6 +33,8 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
         return Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(isShown);
     }).catch(() => false);
 
+    let lastMobileResendAt = Date.now();
+
     if (isModalOpen) {
         // STRICT SELECTOR: Specifically target editable OTP input, NEVER readonly prefix inputs like (+91)
         const otpInput = page.locator('input[formcontrolname="mobileOtp"], input[formcontrolname="otp"], input[name="mobileOtp"], .modal input[maxlength="6"]:not([readonly]):not([disabled]), .modal input[placeholder*="OTP"]:not([readonly]):not([disabled]), .modal input[placeholder*="கடவு"]:not([readonly]):not([disabled])').first();
@@ -53,7 +55,7 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
 
         // STRICT INVARIANT: Ensure OTP input contains at least 6 digits before proceeding to click verify!
         let activeVal = (await otpInput.inputValue().catch(() => '')).replace(/\D/g, '');
-        let lastMobileResendAt = Date.now();
+        lastMobileResendAt = Date.now();
         if (activeVal.length < 6) {
             if (onProgress) {
                 onProgress('⏳ [படி 21/51] அரசு TNPDS மொபைல் SMS OTP (6 அல்லது 7 இலக்கங்கள்) உள்ளிடப்படுவதற்காகக் காத்திருக்கிறது...');
@@ -188,9 +190,14 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
         }
 
         if (activeVal.length >= 6) {
-            // Dispatch Angular reactive form events on mobileOtp input
+            // Dispatch Angular reactive form events on mobileOtp input strictly inside the OTP modal
             await page.evaluate((val) => {
-                const inp = document.querySelector('.modal.show input[formcontrolname="mobileOtp"], div[role="dialog"] input[formcontrolname="mobileOtp"], input[formcontrolname="mobileOtp"], input:not([readonly]):not([disabled])');
+                const inp = document.querySelector(
+                    '.modal.show input[formcontrolname="mobileOtp"], div[role="dialog"] input[formcontrolname="mobileOtp"], ' +
+                    'input[formcontrolname="mobileOtp"], .modal input[maxlength="6"]:not([readonly]):not([disabled]), ' +
+                    '.modal input[placeholder*="கடவு"]:not([readonly]):not([disabled]), ' +
+                    '.modal input:not([readonly]):not([disabled]):not([type="hidden"]):not([maxlength="10"])'
+                );
                 if (inp) {
                     inp.value = val;
                     inp.dispatchEvent(new Event('input', { bubbles: true }));
@@ -277,15 +284,27 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
             }
         }).catch(() => {});
 
-        // 1. Radware Challenge Check (Zero-Halt Immunity)
-        if (resilientResumption && typeof resilientResumption.isRadwareChallengeActive === 'function') {
-            const isRad = await resilientResumption.isRadwareChallengeActive(page);
-            if (isRad) {
-                if (onProgress) {
-                    onProgress('🛡️ [Radware மனித சரிபார்ப்பு] போர்ட்டலில் பாதுகாப்பு சவால் தோன்றியுள்ளது. சவால் முடியும் வரை காத்திருக்கிறது...');
-                }
-                await resilientResumption.clearRadwareAndSettle(page, onProgress);
+        // 1. Radware Challenge & Page-Refresh Wipe Check (Zero-Halt Immunity -> Restarts from Step 1/51)
+        const radwareOrWiped = await page.evaluate(() => {
+            const bt = (document.body && document.body.innerText) || '';
+            const isPerf = window.location.hostname.includes('perfdrive') || window.location.href.includes('validate.');
+            const hasVisFrame = Array.from(document.querySelectorAll('iframe[src*="perfdrive"], iframe[src*="validate."], iframe[src*="hcaptcha"]'))
+                .some(f => f.offsetWidth > 0 && f.offsetHeight > 0);
+            if (isPerf || hasVisFrame || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha') || bt.includes('think that you are a bot')) {
+                return 'RADWARE';
             }
+            const nameInps = Array.from(document.querySelectorAll('input[formcontrolname="NameOfFamilyHead"]'));
+            if (nameInps.length > 0 && !nameInps.some(el => el.value && el.value.trim().length > 0)) {
+                return 'WIPED';
+            }
+            return null;
+        }).catch(() => null);
+
+        if (radwareOrWiped) {
+            const err = new Error('RADWARE_PAGE_REFRESH_DETECTED:படி 21 மொபைல் OTP சரிபார்ப்பு');
+            err.isRadwarePageRefresh = true;
+            err.stepLabel = 'படி 21 மொபைல் OTP சரிபார்ப்பு';
+            throw err;
         }
 
         // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Countdown expiry with 65s cooldown)
@@ -413,47 +432,76 @@ async function ensureMemberAdditionFormReady(page, onProgress = () => {}) {
     const dobLocator = page.locator('input[formcontrolname="dateOfBirth"], input[placeholder*="DD/MM/YYYY"]').first();
 
     for (let attempt = 1; attempt <= 5; attempt++) {
+        const wipedAtStep22 = await page.evaluate(() => {
+            const bt = (document.body && document.body.innerText) || '';
+            const isPerf = window.location.hostname.includes('perfdrive') || window.location.href.includes('validate.');
+            const hasVisFrame = Array.from(document.querySelectorAll('iframe[src*="perfdrive"], iframe[src*="validate."], iframe[src*="hcaptcha"]'))
+                .some(f => f.offsetWidth > 0 && f.offsetHeight > 0);
+            if (isPerf || hasVisFrame || bt.includes('ANOMALY DETECTED') || bt.includes('Radware Captcha') || bt.includes('think that you are a bot')) {
+                return true;
+            }
+            const nameInps = Array.from(document.querySelectorAll('input[formcontrolname="NameOfFamilyHead"]'));
+            return nameInps.length > 0 && !nameInps.some(el => el.value && el.value.trim().length > 0);
+        }).catch(() => false);
+        if (wipedAtStep22) {
+            const err = new Error('RADWARE_PAGE_REFRESH_DETECTED:படி 22 உறுப்பினர் படிவம்');
+            err.isRadwarePageRefresh = true;
+            err.stepLabel = 'படி 22 உறுப்பினர் படிவம்';
+            throw err;
+        }
+
         const isVisible = await dobLocator.isVisible().catch(() => false);
         if (isVisible) {
             onProgress('✅ [படி 22/51] குடும்ப உறுப்பினர் சேர்க்கைப் படிவம் வெற்றிகரமாகத் திறக்கப்பட்டது!');
             return { success: true };
         }
 
-        // Clean any lingering modal overlays and force-trigger the Add Member button via direct DOM + Angular events
+        // Clean any lingering modal overlays first (NEVER double-click "உறுப்பினரை சேர்க்க" because toggleForm() sets showForm = !showForm!)
         await page.evaluate(() => {
             document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
             document.body.classList.remove('modal-open');
-            const btns = Array.from(document.querySelectorAll('button'));
-            const btn = btns.find(b => {
-                const t = (b.innerText || '').trim().toLowerCase();
-                return t.includes('உறுப்பினரை சேர்க்க') || t.includes('add member');
-            });
-            if (btn) {
-                btn.disabled = false;
-                btn.removeAttribute('disabled');
-                btn.classList.remove('disabled');
-                btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                btn.click();
-            }
         }).catch(() => {});
 
         const addMemBtn = page.getByRole('button', { name: /உறுப்பினரை சேர்க்க|Add Member/i })
             .or(page.locator('button:has-text("உறுப்பினரை சேர்க்க"), button:has-text("Add Member")'))
             .first();
 
+        let clickedOnce = false;
         if (await addMemBtn.count() > 0) {
-            await addMemBtn.scrollIntoViewIfNeeded().catch(() => {});
+            await addMemBtn.scrollIntoViewIfNeeded({ timeout: 2500 }).catch(() => {});
             await addMemBtn.evaluate(b => {
                 b.disabled = false;
                 b.removeAttribute('disabled');
                 b.classList.remove('disabled');
             }).catch(() => {});
-            await addMemBtn.click({ force: true }).catch(() => {});
+            await addMemBtn.click({ force: true, timeout: 2500 }).catch(() => {});
+            clickedOnce = true;
         }
 
-        await dobLocator.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+        await dobLocator.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+        if (await dobLocator.isVisible().catch(() => false)) {
+            onProgress('✅ [படி 22/51] குடும்ப உறுப்பினர் சேர்க்கைப் படிவம் வெற்றிகரமாகத் திறக்கப்பட்டது!');
+            return { success: true };
+        }
+
+        // Fallback DOM click ONLY if the form is STILL closed after the first click
+        if (!clickedOnce || !(await dobLocator.isVisible().catch(() => false))) {
+            await page.evaluate(() => {
+                const dobEl = document.querySelector('input[formcontrolname="dateOfBirth"]');
+                if (dobEl && (dobEl.offsetWidth > 0 || dobEl.offsetHeight > 0)) return;
+                const btn = Array.from(document.querySelectorAll('button')).find(b => {
+                    const t = (b.innerText || '').trim().toLowerCase();
+                    return t.includes('உறுப்பினரை சேர்க்க') || t.includes('add member');
+                });
+                if (btn) {
+                    btn.disabled = false;
+                    btn.removeAttribute('disabled');
+                    btn.classList.remove('disabled');
+                    btn.click();
+                }
+            }).catch(() => {});
+            await dobLocator.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+        }
     }
 
     const finalCheck = await dobLocator.isVisible().catch(() => false);

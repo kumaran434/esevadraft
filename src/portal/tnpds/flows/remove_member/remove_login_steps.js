@@ -2,6 +2,7 @@
 // TNPDS Remove Member — Login & Authentication Steps (Steps 1, 2, 3)
 // =========================================================================
 const { performEarlyStep1RadwareWarmup } = require('../../../common/universal_radware_resumption');
+const { waitForRemoveMemberLoginOtp } = require('./remove_member_otp_config');
 
 async function executeRemoveMemberLoginSteps({ page, userMobile, onProgress, options, sharedContext }) {
     const {
@@ -220,7 +221,7 @@ async function executeRemoveMemberLoginSteps({ page, userMobile, onProgress, opt
             if (otpAppeared) {
                 onProgress(`📱 [படி 3/10] அரசு TNPDS உங்கள் கைபேசிக்கு (+91 ${userMobile}) அனுப்பிய அரசு 7-இலக்க SMS OTP-க்காகக் காத்திருக்கிறது...`);
                 onProgress('👉 7-இலக்க OTP எண்ணை சாட்டிலோ அல்லது உங்கள் கண்முன்னே தெரியும் Google Chrome உலாவியிலோ உள்ளிடலாம்.');
-                const otpVal = await requestOtpFromUser(`📱 உங்கள் கைபேசிக்கு (+91 ${userMobile}) வந்த அரசு 7-இலக்க SMS OTP எண்ணை உள்ளிடவும் (Step 3 Login OTP):`, onProgress, 'login_otp', page);
+                const otpVal = await waitForRemoveMemberLoginOtp(page, userMobile, onProgress, requestOtpFromUser);
                 if (otpVal === 'PAGE_REFRESHED_TO_LOGIN') {
                     onProgress('🔄 [Login Page Recover] OTP காத்திருப்பின்போது TNPDS தளம் Login முகப்பிற்கு திரும்பியதால் கைபேசி எண் & கேப்ட்சா மீண்டும் தானாக உள்ளிடப்படுகிறது...');
                     continue;

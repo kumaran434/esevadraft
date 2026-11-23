@@ -1,6 +1,7 @@
 /**
  * TNPDS Add Member - Step 9b: Aadhaar OTP Modal Handling & Table Verification
  */
+const { isValidAddMemberAadhaarOtp } = require('./add_member_otp_config');
 
 async function executeStep9TableVerify(page, memberContext, options, onProgress, sharedContext, scanAndBroadcastToasts) {
     const {
@@ -129,8 +130,8 @@ async function executeStep9TableVerify(page, memberContext, options, onProgress,
                         return null;
                     }).catch(() => null);
 
-                    if (typedOtp && typedOtp.length === 6) {
-                        onProgress(`⚡ [Dual Listener] ஆபரேட்டர் குரோம் திரையிலேயே 6-இலக்க ஆதார் OTP (${typedOtp}) உள்ளிட்டுவிட்டார்! தானாக சமர்ப்பிக்கப்படுகிறது...`);
+                    if (typedOtp && isValidAddMemberAadhaarOtp(typedOtp)) {
+                        onProgress(`⚡ [Dual Listener] ஆபரேட்டர் குரோம் திரையிலேயே ஆதார் OTP (${typedOtp}) உள்ளிட்டுவிட்டார்! தானாக சமர்ப்பிக்கப்படுகிறது...`);
                         screenOtpSubmitted = true;
                         await clickAadhaarSubmit().catch(() => {});
                         return typedOtp;
@@ -149,7 +150,7 @@ async function executeStep9TableVerify(page, memberContext, options, onProgress,
 
             const winnerOtp = await Promise.race([screenOtpCheckPromise, userOtpPromise]);
             let targetOtp = (winnerOtp && winnerOtp !== 'ALREADY_VERIFIED_ON_PORTAL') ? String(winnerOtp).replace(/\D/g, '') : '';
-            if (targetOtp && targetOtp.length === 6) {
+            if (targetOtp && isValidAddMemberAadhaarOtp(targetOtp)) {
                 aadhaarOtpHandled = true;
                 if (!screenOtpSubmitted) {
                     await page.evaluate((otpVal) => {

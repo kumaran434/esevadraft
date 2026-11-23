@@ -20,17 +20,22 @@ async function isRadwareChallenge(page) {
         }
 
         return await page.evaluate(() => {
-            // If legitimate inputs or logged-in indicators exist, challenge is NOT active
             const isGovtPageReady = Boolean(
                 document.querySelector('input[formcontrolname], input[name*="mob"], input[placeholder*="கைபேசி"], input[placeholder*="OTP"], #nameTam, select[formcontrolname="serviceType"], select[formcontrolname="service"], #btnLogout, a[href*="logout"], .user-profile')
             );
             const bodyText = (document.body && document.body.innerText) || '';
             const pageTitle = document.title || '';
             const isPerfdrive = window.location.hostname.includes('perfdrive') || window.location.href.includes('validate.');
-            const hasFrame = Boolean(document.querySelector('iframe[src*="perfdrive"], iframe[src*="validate."], iframe[src*="hcaptcha"]'));
+            const challengeFrames = Array.from(document.querySelectorAll('iframe[src*="perfdrive"], iframe[src*="validate."], iframe[src*="hcaptcha"]'));
+            const hasFrame = challengeFrames.length > 0;
+            const hasVisibleFrame = challengeFrames.some(f => (f.offsetWidth > 0 && f.offsetHeight > 0));
+            const hasExplicitRadwareText = bodyText.includes('ANOMALY DETECTED') || bodyText.includes('Radware Captcha') || bodyText.includes('think that you are a bot') || pageTitle.includes('Radware') || pageTitle.includes('Bot Manager');
 
-            if (isPerfdrive || hasFrame || bodyText.includes('ANOMALY DETECTED') || bodyText.includes('Radware Captcha') || bodyText.includes('think that you are a bot') || pageTitle.includes('Radware')) {
-                return !isGovtPageReady || isPerfdrive;
+            if (isPerfdrive || hasVisibleFrame || hasExplicitRadwareText) {
+                return true;
+            }
+            if (hasFrame) {
+                return !isGovtPageReady;
             }
             return false;
         }).catch(() => false);
@@ -303,16 +308,27 @@ async function assertNoRadwareOrPageRefresh(page, checkPageIntactFn = null, step
  * it NEVER resumes just Step 5 in isolation — it waits for Radware clearance and
  * restarts from the BEGINNING STEP of that current page all the way to completion!
  */
-async function executePageBlockWithRadwareRestart(page, blockConfig = {}) {
+async function executePageBlockWithRadwareRestart(page, blockConfig = {}, legacyOnProgress = null, legacyPageName = null) {
+    // Support both object config and legacy (page, fn, onProgress, pageName) signature
+    const normalizedConfig = typeof blockConfig === 'function'
+        ? {
+            runPageStepsFromStart: blockConfig,
+            onProgress: typeof legacyOnProgress === 'function' ? legacyOnProgress : () => {},
+            pageName: legacyPageName || 'Current Page',
+            firstStepName: legacyPageName || 'ஆரம்ப படி'
+        }
+        : (blockConfig || {});
+
     const {
         pageName = 'Current Page',
         firstStepName = 'ஆரம்ப படி',
         runPageStepsFromStart = async () => {},
+        checkPageIntactFn = null,
         onSessionExpiredReLogin = null,
         onProgress = () => {},
         saveCookies = null,
         maxPageRestarts = 4
-    } = blockConfig;
+    } = normalizedConfig;
 
     for (let cycle = 1; cycle <= maxPageRestarts; cycle++) {
         if (await isRadwareChallenge(page)) {
@@ -324,24 +340,74 @@ async function executePageBlockWithRadwareRestart(page, blockConfig = {}) {
             await onSessionExpiredReLogin(page);
         }
 
+        let wasIntactDuringCycle = false;
+        let midCycleRadwareSeen = false;
+        let midCyclePageWiped = false;
+        let monitorTimer = null;
+
+        if (page && typeof page.evaluate === 'function') {
+            monitorTimer = setInterval(async () => {
+                try {
+                    if (!page || (typeof page.isClosed === 'function' && page.isClosed())) return;
+                    if (await isRadwareChallenge(page)) {
+                        midCycleRadwareSeen = true;
+                        return;
+                    }
+                    if (typeof checkPageIntactFn === 'function') {
+                        const intactNow = await checkPageIntactFn(page).catch(() => true);
+                        if (intactNow) {
+                            wasIntactDuringCycle = true;
+                        } else if (wasIntactDuringCycle) {
+                            midCyclePageWiped = true;
+                        }
+                    }
+                } catch (_) {}
+            }, 900);
+        }
+
+        const stopMonitor = () => {
+            if (monitorTimer) {
+                clearInterval(monitorTimer);
+                monitorTimer = null;
+            }
+        };
+
         try {
             const res = await runPageStepsFromStart(cycle);
-            if (await isRadwareChallenge(page)) {
+            stopMonitor();
+
+            const radwareAfter = await isRadwareChallenge(page);
+            const wipedAfter = !radwareAfter && (
+                midCyclePageWiped ||
+                (wasIntactDuringCycle && typeof checkPageIntactFn === 'function' && !(await checkPageIntactFn(page).catch(() => true)))
+            );
+
+            if (radwareAfter || midCycleRadwareSeen || wipedAfter || (res && res.success === false && (radwareAfter || midCycleRadwareSeen || wipedAfter))) {
                 const err = new Error(`RADWARE_PAGE_REFRESH_DETECTED:${pageName}`);
                 err.isRadwarePageRefresh = true;
+                err.stepLabel = pageName;
                 throw err;
             }
             return res;
         } catch (err) {
+            stopMonitor();
             const radwareActive = await isRadwareChallenge(page);
-            if ((err && err.isRadwarePageRefresh) || radwareActive) {
+            const wipedOnCatch = !radwareActive && (
+                midCyclePageWiped ||
+                (wasIntactDuringCycle && typeof checkPageIntactFn === 'function' && !(await checkPageIntactFn(page).catch(() => true)))
+            );
+
+            if ((err && err.isRadwarePageRefresh) || radwareActive || midCycleRadwareSeen || wipedOnCatch) {
                 const interruptedAt = (err && err.stepLabel) || pageName;
-                if (radwareActive) {
-                    onProgress(`🛡️ [Radware இடைமறிப்பு - ${interruptedAt}] Radware கண்டறியப்பட்டது! சவால் தீர்க்கப்படும் வரை காத்திருக்கிறது...`);
+                if (radwareActive || midCycleRadwareSeen) {
+                    onProgress(`🛡️ [Radware இடைமறிப்பு - ${interruptedAt}] Radware கேப்ட்சா கண்டறியப்பட்டது! சவால் தீர்க்கப்படும் வரை காத்திருக்கிறது...`);
                     await waitForRadwareClearanceAndSettle(page, onProgress, { saveCookies });
                 }
                 if (cycle < maxPageRestarts) {
-                    onProgress(`🔄 [பக்க ஆரம்ப மீட்பு] ${interruptedAt}-ல் பக்கம் புதுப்பிக்கப்பட்டதால், வெறும் அந்தப் படியை மட்டும் தொடங்காமல் இப்பக்கத்தின் ஆரம்ப படியிலிருந்து (${firstStepName}) மீண்டும் தொடங்கி முடிக்கப்படுகிறது...`);
+                    onProgress(`🔄 [பக்க ஆரம்ப மீட்பு] ${interruptedAt}-ல் Radware / பக்க ரெஃப்ரெஷ் காரணமாகப் படிவம் புதுப்பிக்கப்பட்டதால், இப்பக்கத்தின் ஆரம்ப படியிலிருந்து (${firstStepName}) மீண்டும் தானாக நிரப்பப்படுகிறது...`);
+                    if (page && typeof page.waitForTimeout === 'function') {
+                        await page.waitForTimeout(1500).catch(() => {});
+                    }
                     continue;
                 }
             }

@@ -3,6 +3,17 @@
  */
 const path = require('path');
 const fs = require('fs');
+const { isValidNewCardAadhaarOtp } = require('./new_card_otp_config');
+const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+
+async function isAadhaarStepPageIntact(page) {
+    if (!page || page.isClosed()) return false;
+    return await page.evaluate(() => {
+        const nameEls = Array.from(document.querySelectorAll('input[formcontrolname="NameOfFamilyHead"]'));
+        if (nameEls.length === 0) return true;
+        return nameEls.some(el => el.value && el.value.trim().length > 0);
+    }).catch(() => true);
+}
 
 async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
@@ -90,6 +101,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
 
     while (!isHeadInTable && watchTicks < maxWatchSec) {
         watchTicks++;
+        await assertNoRadwareOrPageRefresh(page, isAadhaarStepPageIntact, 'படி 35-36 (குடும்பத் தலைவர் ஆதார் OTP)');
 
         // 1. அட்டவணையில் குடும்பத் தலைவர் உறுதி செய்யப்பட்டுள்ளாரா எனச் சரிபார்த்தல்
         isHeadInTable = await page.evaluate(({ eng, tam }) => {
@@ -127,7 +139,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
                     // Ensure the OTP file was created recently (within 45s) and not a stale leftover from previous sessions
                     if (Date.now() - st.mtimeMs < 45000) {
                         const diskVal = fs.readFileSync(pPath, 'utf8').trim().replace(/\D/g, '');
-                        if (diskVal.length === 6) {
+                        if (isValidNewCardAadhaarOtp(diskVal)) {
                             diskOtp = diskVal;
                             try { fs.unlinkSync(pPath); } catch (_) {}
                             break;
@@ -176,9 +188,11 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
 
             // சாளரத்திற்குள் உள்ள OTP உள்ளீட்டை மட்டும் ஆய்வு செய்தல் (பிற மறைக்கப்பட்ட படிவங்களைத் தவிர்த்தல்)
             let otpVal = '';
+            let otpMaxLen = 0;
             const targetInp = modal.querySelector('input[formcontrolname="otp"], input#otp') || modal.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
             if (targetInp) {
                 otpVal = (targetInp.value || '').replace(/\D/g, '');
+                otpMaxLen = Number(targetInp.getAttribute('maxlength') || 0);
             }
 
             // Timer check strictly inside this modal
@@ -199,6 +213,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             return {
                 open: true,
                 otpVal,
+                otpMaxLen,
                 timerVal,
                 hasResendBtn: Boolean(resendBtn && !resendBtn.disabled),
                 hasSubmitBtn: Boolean(submitBtn)
@@ -226,8 +241,22 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             continue;
         }
 
-        // 4. உள்ளீட்டுப் பெட்டியில் 6 இலக்க OTP கண்டறியப்பட்டால் ஒற்றை துல்லிய கிளிக் (Single Atomic Click)
-        if (modalInfo.otpVal && modalInfo.otpVal.length === 6 && modalInfo.otpVal !== lastSubmittedOtp && modalInfo.hasSubmitBtn) {
+        // 4. உள்ளீட்டுப் பெட்டியில் 6 அல்லது 7 இலக்க ஆதார் OTP கண்டறியப்பட்டால் (7-இலக்கம் தட்டச்சு ஆக 2s காத்திருப்புடன்) ஒற்றை துல்லிய கிளிக்
+        const isReadyAadhaarLen = Boolean(modalInfo.otpVal && (
+            modalInfo.otpVal.length >= 7 ||
+            (modalInfo.otpVal.length === 6 && (modalInfo.otpMaxLen === 6 || watchTicks % 2 === 0))
+        ));
+        if (modalInfo.otpVal && modalInfo.otpVal.length >= 6 && isReadyAadhaarLen && modalInfo.otpVal !== lastSubmittedOtp && modalInfo.hasSubmitBtn) {
+            if (modalInfo.otpVal.length === 6 && modalInfo.otpMaxLen !== 6) {
+                await page.waitForTimeout(1600);
+                const recheckedVal = await page.evaluate(() => {
+                    const el = document.querySelector('input[formcontrolname="otp"], input#otp') || document.querySelector('.modal.show input:not([type="hidden"])');
+                    return ((el && el.value) || '').replace(/\D/g, '');
+                }).catch(() => modalInfo.otpVal);
+                if (recheckedVal.length >= 7) {
+                    modalInfo.otpVal = recheckedVal;
+                }
+            }
             lastSubmittedOtp = modalInfo.otpVal;
             onProgress(`📍 [படி 36/51] ஆதார் OTP (${lastSubmittedOtp}) கண்டறியப்பட்டது. சமர்ப்பிக்கப்படுகிறது...`);
 

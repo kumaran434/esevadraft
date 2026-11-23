@@ -8,6 +8,7 @@ const {
     APPDATA_DRAFTS_DIR, 
     COLLECTION_NAME, 
     normalizeOperatorUid, 
+    isDraftStaleDueToDelete,
     syncFatherOrHusband, 
     getFirestoreInstance, 
     isFirestoreAvailable,
@@ -18,6 +19,7 @@ const { processDraftDocuments } = require('./draft_doc_handler');
 async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
     if (!mobileNumber) return;
     const cleanMob = String(mobileNumber).trim();
+    const saveStartedAt = Date.now();
     const shouldSyncCloudSync = options && options.syncCloud === true;
 
     // 1. Load existing draft from local disk or AppData to prevent wiping out extracted fields!
@@ -276,6 +278,10 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
         ? APPDATA_DRAFTS_DIR 
         : LOCAL_DRAFTS_DIR;
 
+    if (isDraftStaleDueToDelete(cleanMob, saveStartedAt)) {
+        return null;
+    }
+
     const fileTarget = path.join(targetLocalDir, `${cleanMob}.json`);
     try {
         fs.writeFileSync(fileTarget, JSON.stringify(payload, null, 2), 'utf8');
@@ -285,7 +291,7 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
 
     if (shouldSyncCloudSync) {
         const firestore = getFirestoreInstance();
-        if (isFirestoreAvailable() && firestore) {
+        if (isFirestoreAvailable() && firestore && !isDraftStaleDueToDelete(cleanMob, saveStartedAt)) {
             try {
                 const cloudPayload = { ...payload };
                 delete cloudPayload.base64Docs;
@@ -296,9 +302,10 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
             }
         }
     } else {
-        // WhatsApp Desktop Standard: Non-blocking Background Cloud Backup
+        // WhatsApp Desktop Standard: Non-blocking Background Cloud Backup (fenced against delete races)
         setImmediate(async () => {
             try {
+                if (isDraftStaleDueToDelete(cleanMob, saveStartedAt)) return;
                 const firestore = getFirestoreInstance();
                 const storageAvail = isStorageAvailable();
                 const firestoreAvail = isFirestoreAvailable() && firestore;
@@ -306,6 +313,7 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
 
                 if (storageAvail) {
                     const cloudRes = await processDraftDocuments(cleanMob, mergedProfile, docPackage, draftData, { uploadToCloud: true });
+                    if (isDraftStaleDueToDelete(cleanMob, saveStartedAt)) return;
                     if (cloudRes && cloudRes.storageUrls && Object.keys(cloudRes.storageUrls).length > 0) {
                         payload.storageUrls = { ...(payload.storageUrls || {}), ...cloudRes.storageUrls };
                         try {
@@ -314,6 +322,7 @@ async function saveCitizenDraft(mobileNumber, draftData, options = {}) {
                     }
                 }
 
+                if (isDraftStaleDueToDelete(cleanMob, saveStartedAt)) return;
                 if (firestoreAvail) {
                     const cloudPayload = { ...payload };
                     delete cloudPayload.base64Docs;

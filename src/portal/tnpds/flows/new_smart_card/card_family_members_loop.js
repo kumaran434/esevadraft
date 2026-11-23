@@ -4,6 +4,17 @@
 const fs = require('fs');
 const path = require('path');
 const { fillAdditionalMemberForm } = require('./card_additional_member_form');
+const { isValidNewCardAadhaarOtp } = require('./new_card_otp_config');
+const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+
+async function isFamilyStepPageIntact(page) {
+    if (!page || page.isClosed()) return false;
+    return await page.evaluate(() => {
+        const nameEls = Array.from(document.querySelectorAll('input[formcontrolname="NameOfFamilyHead"]'));
+        if (nameEls.length === 0) return true;
+        return nameEls.some(el => el.value && el.value.trim().length > 0);
+    }).catch(() => true);
+}
 
 async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
@@ -50,23 +61,30 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
             const dobVisible = await page.locator('input[formcontrolname="dateOfBirth"]').last().isVisible().catch(() => false);
             if (engCount >= 2 && dobVisible) break;
 
+            const addMemBtn = page.locator('button.btn-orange:has-text("உறுப்பினரை சேர்க்க"), button:has-text("உறுப்பினரை சேர்க்க"), button:has-text("Add Member")').first();
+            if (await addMemBtn.count() > 0) {
+                await addMemBtn.scrollIntoViewIfNeeded({ timeout: 2500 }).catch(() => {});
+                await addMemBtn.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
+                await addMemBtn.click({ force: true, timeout: 2500 }).catch(() => {});
+            }
+            await page.waitForTimeout(1000);
+            const openAfterClick = await page.locator('input[formcontrolname="dateOfBirth"]').last().isVisible().catch(() => false);
+            if (openAfterClick) break;
+
+            // Fallback DOM click ONLY if form is still closed (prevents toggleForm() double-click closing the form!)
             await page.evaluate(() => {
+                const dobEl = document.querySelector('input[formcontrolname="dateOfBirth"]');
+                if (dobEl && (dobEl.offsetWidth > 0 || dobEl.offsetHeight > 0)) return;
                 const btns = Array.from(document.querySelectorAll('button')).filter(b => {
                     const t = (b.innerText || '').trim().toLowerCase();
                     return t.includes('உறுப்பினரை சேர்க்க') || t.includes('add member');
                 });
                 for (const b of btns) {
                     b.disabled = false; b.removeAttribute('disabled');
-                    b.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     b.click();
                 }
-            });
-            const addMemBtn = page.locator('button.btn-orange:has-text("உறுப்பினரை சேர்க்க"), button:has-text("உறுப்பினரை சேர்க்க"), button:has-text("Add Member")').first();
-            if (await addMemBtn.count() > 0) {
-                await addMemBtn.scrollIntoViewIfNeeded().catch(() => {});
-                await addMemBtn.click({ force: true }).catch(() => {});
-            }
-            await page.waitForTimeout(2000);
+            }).catch(() => {});
+            await page.waitForTimeout(1200);
         }
 
         const totalEngInputs = await page.locator('input[formcontrolname="NameOfFamilyHead"]').count();
@@ -185,6 +203,7 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
             let promptedAppOnce = false;
 
             for (let tick = 0; tick < 360; tick++) {
+                await assertNoRadwareOrPageRefresh(page, isFamilyStepPageIntact, `படி 36 (உறுப்பினர் ${memNum} ஆதார் OTP)`);
                 const nowInTable = await page.evaluate((cnt) => {
                     const table = document.querySelector('table');
                     if (!table) return false;
@@ -211,7 +230,7 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                             const st = fs.statSync(pPath);
                             if (Date.now() - st.mtimeMs < 45000) {
                                 const dVal = fs.readFileSync(pPath, 'utf8').trim().replace(/\D/g, '');
-                                if (dVal.length === 6) {
+                                if (isValidNewCardAadhaarOtp(dVal)) {
                                     typedFromApp = dVal;
                                     try { fs.unlinkSync(pPath); } catch (_) {}
                                     break;
@@ -240,7 +259,7 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                         onProgress, 'aadhaar_otp', page
                     )).then(async (appOtp) => {
                         const cleanAppOtp = (appOtp && appOtp !== 'ALREADY_VERIFIED_ON_PORTAL') ? String(appOtp).replace(/\D/g, '') : '';
-                        if (cleanAppOtp && cleanAppOtp.length === 6) {
+                        if (isValidNewCardAadhaarOtp(cleanAppOtp)) {
                             await page.evaluate((otpVal) => {
                                 const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp');
                                 if (otpInp && (otpInp.value || '').replace(/\D/g, '') !== otpVal) {
@@ -281,7 +300,15 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                     continue;
                 }
 
-                if (modalSnap.otpVal.length === 6 && modalSnap.otpVal !== lastMemOtpSubmitted) {
+                if (modalSnap.otpVal.length === 6) {
+                    await page.waitForTimeout(1600);
+                    const recheckedMemOtp = await page.evaluate(() => {
+                        const el = document.querySelector('input[formcontrolname="otp"], input#otp') || document.querySelector('.modal.show input:not([type="hidden"])');
+                        return ((el && el.value) || '').replace(/\D/g, '');
+                    }).catch(() => modalSnap.otpVal);
+                    if (recheckedMemOtp.length >= 7) modalSnap.otpVal = recheckedMemOtp;
+                }
+                if (isValidNewCardAadhaarOtp(modalSnap.otpVal) && modalSnap.otpVal !== lastMemOtpSubmitted) {
                     lastMemOtpSubmitted = modalSnap.otpVal;
                     onProgress(`🔑 [உறுப்பினர் ${memNum}] ஆதார் OTP (${lastMemOtpSubmitted}) சமர்ப்பிக்கப்படுகிறது...`);
                     // Playwright Single Atomic Click strictly inside this Aadhaar modal

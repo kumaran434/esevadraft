@@ -209,8 +209,20 @@
                 const res = await fetch(`/api/drafts/${encodeURIComponent(cleanMob)}/documents-list${subQuery}`);
                 const data = await res.json();
                 if (data && data.success && Array.isArray(data.documents) && data.documents.length > 0) {
-                    cachedServerDocsByMobile[cleanMob] = data.documents;
-                    renderSidebarDocuments(data.documents);
+                    let filteredDocs = data.documents;
+                    const activePluginForDocs = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function' && currentCitizenData)
+                        ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
+                        : null;
+                    const allowedDocTypes = activePluginForDocs?.uiCartridge?.ownedDocTypes;
+                    if (Array.isArray(allowedDocTypes) && allowedDocTypes.length > 0 && (currentCitizenData?.subService || currentCitizenData?.service || currentCitizenData?.pluginId)) {
+                        filteredDocs = data.documents.filter(d => {
+                            const t = String(d?.type || '');
+                            if (t.startsWith('memberAadhaar')) return allowedDocTypes.includes('memberAadhaar');
+                            return allowedDocTypes.includes(t);
+                        });
+                    }
+                    cachedServerDocsByMobile[cleanMob] = filteredDocs;
+                    renderSidebarDocuments(filteredDocs);
                 } else {
                     const localDocs = currentCitizenData ? extractDocumentsFromProfile(currentCitizenData, cleanMob) : [];
                     if (localDocs.length > 0) {
@@ -426,31 +438,19 @@
                 setVal('infoResidenceProof', a.residenceProof ? (a.residenceProof.typeTam || a.residenceProof.type) : '');
                 setVal('infoCardType', a.cardTypeTam || (a.cardType ? 'அரிசி அட்டை' : 'அரிசி அட்டை (பச்சை)'));
 
-                // Active Service Identification for Context-Adaptive Sidebar
+                // Authoritative Per-Service Cartridge Sidebar Resolution (Zero cross-service ladders)
                 const curState = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
-                const svcName = (window.pendingSelectedService || a.serviceName || data?.serviceName || '').toLowerCase();
+                const svcHint = window.pendingSelectedService || a.serviceName || data?.serviceName || '';
                 const isServiceSelectionOnly = (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || curState === 'REVENUE_DEPARTMENT_SERVICES' || (!curState && !window.pendingSelectedService));
                 const viewerPlugin = (!isServiceSelectionOnly && window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
-                    ? window.ESEVA_PLUGINS.resolveServicePlugin(a)
+                    ? window.ESEVA_PLUGINS.resolveServicePlugin({ ...a, intakeState: curState || a.intakeState }, { overrideHint: svcHint })
                     : null;
                 const vpId = viewerPlugin?.id || '';
-                const isExplicitNewCard = vpId === 'TNPDS_NEW_CARD' || a.subService === 'NEW_CARD' || a.subService === 'NEW_RATION_CARD' ||
-                                          a.service === 'new_smart_card' || a.service === 'ration' || 
-                                          a.service === 'புதிய ரேஷன் கார்டு' || a.service === 'புதிய குடும்ப அட்டை' ||
-                                          window.pendingSelectedService === 'ration' || window.pendingSelectedService === 'new_smart_card' ||
-                                          svcName.includes('புதிய ரேஷன்') || svcName.includes('புதிய குடும்ப') || svcName.includes('ration') || svcName.includes('smart_card');
-                const isWidowService = !isServiceSelectionOnly && !isExplicitNewCard && (vpId === 'TNEGA_WIDOW' || (!viewerPlugin && (curState.includes('WIDOW') || svcName.includes('widow') || svcName.includes('விதவை') || svcName.includes('rev-109') || a.subService === 'WIDOW' || a.subService === 'WIDOW_CERTIFICATE')));
-                const isLegalHeirService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && (vpId === 'TNEGA_LEGAL_HEIR' || (!viewerPlugin && (curState.includes('LEGAL_HEIR') || svcName.includes('legal heir') || svcName.includes('வாரிசு') || svcName.includes('rev-114') || a.subService === 'LEGAL_HEIR' || a.subService === 'LEGAL_HEIR_CERTIFICATE')));
-                const isObcService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && !isLegalHeirService && (vpId === 'TNEGA_OBC' || (!viewerPlugin && (curState.includes('OBC') || svcName.includes('obc') || svcName.includes('இதர பிற்படுத்தப்பட்டோர்') || svcName.includes('rev-115') || a.subService === 'OBC')));
-                const isIncomeService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && !isLegalHeirService && !isObcService && (vpId === 'TNEGA_INCOME' || (!viewerPlugin && (curState.includes('INCOME') || svcName.includes('வருமானம்') || svcName.includes('income'))));
-                const isTnegaResStateViewer = curState.startsWith('RESIDENCE_') && curState !== 'RESIDENCE_PROOF_TYPE' && curState !== 'RESIDENCE_PROOF_DOC';
-                const isResidenceService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && !isLegalHeirService && !isObcService && (vpId === 'TNEGA_RESIDENCE' || (!viewerPlugin && (isTnegaResStateViewer || a.subService === 'RESIDENCE' || a.subService === 'RESIDENCE_CERTIFICATE' || svcName.includes('இருப்பிடம்') || svcName.includes('residence'))));
-                const isCommunityService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && !isLegalHeirService && !isObcService && (vpId === 'TNEGA_COMMUNITY' || (!viewerPlugin && (curState.includes('COMMUNITY') || svcName.includes('சாதி') || svcName.includes('community'))));
-                const isFirstGraduateService = !isServiceSelectionOnly && !isExplicitNewCard && !isWidowService && !isLegalHeirService && !isObcService && (vpId === 'TNEGA_FIRST_GRADUATE' || (!viewerPlugin && (curState.includes('FIRST_GRADUATE') || svcName.includes('பட்டதாரி') || svcName.includes('first_graduate') || svcName.includes('first graduate') || a.subService === 'FIRST_GRADUATE')));
-                const isRemoveMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceRemoveMember;
-                const isAddMemberService = !isServiceSelectionOnly && !isExplicitNewCard && isSubserviceAddMember;
-                const isAddressChangeService = !isServiceSelectionOnly && !isExplicitNewCard && (a.subService === 'CHANGE_ADDRESS' || a.subService === 'ADDRESS_CHANGE' || curState.includes('CHANGE_ADDRESS') || svcName.includes('முகவரி'));
-                const isNewRationCardService = !isServiceSelectionOnly && (isExplicitNewCard || (!isWidowService && !isLegalHeirService && !isIncomeService && !isResidenceService && !isCommunityService && !isFirstGraduateService && !isObcService && !isRemoveMemberService && !isAddMemberService && !isAddressChangeService && (
+                const uiCart = viewerPlugin?.uiCartridge || null;
+                const sbCfg = uiCart?.sidebar || {};
+
+                const isAddMemberService = !isServiceSelectionOnly && vpId === 'TNPDS_ADD_MEMBER';
+                const isNewRationCardService = !isServiceSelectionOnly && (vpId === 'TNPDS_NEW_CARD' || (!viewerPlugin && (
                     curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE'
                 )));
 
@@ -461,162 +461,33 @@
                 }
                 const headTitleEl = document.getElementById('sidebarHeadTitle');
                 if (headTitleEl) {
-                    if (isWidowService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (விதவைச் சான்றிதழ்)';
-                    else if (isLegalHeirService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (வாரிசு சான்றிதழ்)';
-                    else if (isIncomeService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள்';
-                    else if (isResidenceService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (இருப்பிடம்)';
-                    else if (isObcService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (OBC சான்றிதழ்)';
-                    else if (isCommunityService) headTitleEl.innerHTML = '👤 விண்ணப்பதாரர் விவரங்கள் (சாதிச் சான்றிதழ்)';
-                    else if (isFirstGraduateService) headTitleEl.innerHTML = '👤 மாணவர் / விண்ணப்பதாரர் விவரங்கள்';
-                    else if (isRemoveMemberService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் / அட்டை விவரங்கள்';
-                    else if (isAddressChangeService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் / அட்டை விவரங்கள்';
-                    else if (isAddMemberService) headTitleEl.innerHTML = '👤 குடும்பத் தலைவர் விவரங்கள்';
-                    else if (isNewRationCardService) headTitleEl.innerHTML = '👤 1. குடும்பத் தலைவர்';
-                    else headTitleEl.innerHTML = '👤 வாடிக்கையாளர் விவரங்கள்';
+                    headTitleEl.innerHTML = sbCfg.headTitle || (isNewRationCardService ? '👤 1. குடும்பத் தலைவர்' : '👤 வாடிக்கையாளர் விவரங்கள்');
                 }
 
-                // 2. Income Certificate Box
-                const incomeBox = document.getElementById('sidebarIncomeBox');
-                if (incomeBox) {
-                    if (isIncomeService) {
-                        incomeBox.style.display = 'block';
-                        setVal('infoAnnualIncome', a.annualIncome ? `₹${Number(a.annualIncome).toLocaleString('en-IN')}` : '—');
-                        setVal('infoProfession', a.profession || '—');
-                        setVal('infoCanNo', a.canNumber || '—');
-                    } else {
-                        incomeBox.style.display = 'none';
+                // 2. Hide ALL Service-Scoped Sidebar Boxes, then show & populate ONLY active Cartridge Box
+                const allSidebarBoxIds = [
+                    'sidebarIncomeBox', 'sidebarResidenceBox', 'sidebarCommunityBox',
+                    'sidebarFirstGraduateBox', 'sidebarObcBox', 'sidebarWidowBox',
+                    'sidebarAddMemberBox', 'sidebarChangeAddressBox', 'sidebarRemoveMemberBox',
+                    'sidebarDynamicServiceBox'
+                ];
+                for (const boxId of allSidebarBoxIds) {
+                    const el = document.getElementById(boxId);
+                    if (el) el.style.display = 'none';
+                }
+                if (!isServiceSelectionOnly && typeof uiCart?.renderDynamicSidebar === 'function') {
+                    const dynBoxEl = document.getElementById('sidebarDynamicServiceBox');
+                    if (dynBoxEl && uiCart.renderDynamicSidebar(dynBoxEl, a, subData, { setVal, activeCustMob }) !== false) {
+                        dynBoxEl.style.display = 'block';
                     }
-                }
-
-                // 2.2 Residence Certificate Box
-                const residenceBox = document.getElementById('sidebarResidenceBox');
-                if (residenceBox) {
-                    if (isResidenceService) {
-                        residenceBox.style.display = 'block';
-                        setVal('infoResidenceCanNo', a.canNumber || '—');
-                        setVal('infoResidenceYears', a.yearsOfResidence || '—');
-                        setVal('infoResidencePurpose', a.purposeOfCertificate || '—');
-                    } else {
-                        residenceBox.style.display = 'none';
-                    }
-                }
-
-                // 2.3 Community Certificate Box
-                const communityBox = document.getElementById('sidebarCommunityBox');
-                if (communityBox) {
-                    if (isCommunityService) {
-                        communityBox.style.display = 'block';
-                        setVal('infoCommunityCanNo', a.canNumber || '—');
-                        setVal('infoCommunityMother', a.motherNameTam || a.motherNameEng || a.motherName || '—');
-                        setVal('infoCommunityReligion', a.religion || '—');
-                        setVal('infoCommunityCategory', a.community || a.socialCategory || '—');
-                        setVal('infoCommunityCaste', a.caste || a.subCaste || a.casteName || '—');
-                    } else {
-                        communityBox.style.display = 'none';
-                    }
-                }
-
-                // 2.4 First Graduate Certificate Box
-                const firstGraduateBox = document.getElementById('sidebarFirstGraduateBox');
-                if (firstGraduateBox) {
-                    if (isFirstGraduateService) {
-                        firstGraduateBox.style.display = 'block';
-                        setVal('infoFirstGraduateCanNo', a.canNumber || '—');
-                        setVal('infoFirstGraduateCourse', a.currentCourse || a.degreeCourse || a.courseName || '—');
-                        setVal('infoFirstGraduateCollege', a.institutionName || a.collegeName || '—');
-                        setVal('infoFirstGraduateFatherEdu', a.fatherEducation || '—');
-                        setVal('infoFirstGraduateMotherEdu', a.motherEducation || '—');
-                    } else {
-                        firstGraduateBox.style.display = 'none';
-                    }
-                }
-
-                // 2.45 OBC Certificate Box (REV-115)
-                const obcBox = document.getElementById('sidebarObcBox');
-                if (obcBox) {
-                    if (isObcService) {
-                        obcBox.style.display = 'block';
-                        setVal('infoObcCanNo', a.canNumber || '—');
-                        setVal('infoObcCaste', a.caste || a.subCaste || '—');
-                        setVal('infoObcOccupation', a.occupation || a.applicantOccupation || '—');
-                        setVal('infoObcIncome', a.annualIncome ? `₹${a.annualIncome}` : '—');
-                    } else {
-                        obcBox.style.display = 'none';
-                    }
-                }
-
-                // 2.46 Widow Certificate Box (REV-109)
-                const widowBox = document.getElementById('sidebarWidowBox');
-                if (widowBox) {
-                    if (isWidowService) {
-                        widowBox.style.display = 'block';
-                        setVal('infoWidowCanNo', a.canNumber || '—');
-                        setVal('infoWidowSpouse', a.spouseNameTam || a.spouseNameEng || a.husbandNameTam || a.husbandNameEng || '—');
-                        setVal('infoWidowDod', a.dateOfDeath || '—');
-                        setVal('infoWidowDcNo', a.deathCertificateNo || '—');
-                        setVal('infoWidowMarDate', a.dateOfMarriage || '—');
-                    } else {
-                        widowBox.style.display = 'none';
-                    }
-                }
-
-                // 2.8 Add Member Box
-                const addMemberBox = document.getElementById('sidebarAddMemberBox');
-                if (addMemberBox) {
-                    if (isAddMemberService && subData) {
-                        addMemberBox.style.display = 'block';
-                        const addName = subData.memberNameTam ? (subData.memberNameEng ? `${subData.memberNameTam} (${subData.memberNameEng})` : subData.memberNameTam) : (subData.memberName || '—');
-                        const addRel = subData.relationshipTam || subData.relationship || (subData.isChild ? 'மகன்/மகள்' : 'உறுப்பினர்');
-                        const addDob = subData.dob || '—';
-                        const addGender = subData.genderTam || subData.gender || '—';
-                        const addAadhaar = subData.aadhaarNo ? subData.aadhaarNo.replace(/(\d{4})/g, '$1 ').trim() : '—';
-                        const cleanAddMob = (a.mobileNumber && !/^walkin_/i.test(String(a.mobileNumber))) ? a.mobileNumber : ((activeCustMob && !/^walkin_/i.test(String(activeCustMob))) ? activeCustMob : '');
-                        const addMob = cleanAddMob ? `+91 ${cleanAddMob}` : '—';
-                        const addDoc = subData.isChild ? 'பிறப்புச் சான்றிதழ் (Birth Certificate)' : 'ஆதார் அட்டை (Aadhaar Card)';
-                        setVal('infoAddMemberName', addName);
-                        setVal('infoAddMemberRel', addRel);
-                        setVal('infoAddMemberDobGender', `${addDob} | ${addGender}`);
-                        setVal('infoAddMemberAadhaar', addAadhaar);
-                        setVal('infoAddMemberMobile', addMob);
-                        setVal('infoAddMemberDoc', `${addDoc} ✅`);
-                    } else {
-                        addMemberBox.style.display = 'none';
-                    }
-                }
-
-                // 2.9 Change Address Box
-                const changeAddressBox = document.getElementById('sidebarChangeAddressBox');
-                if (changeAddressBox) {
-                    if (isAddressChangeService && subData) {
-                        changeAddressBox.style.display = 'block';
-                        const dNo = subData.doorNo || '—';
-                        const street = subData.streetTam ? (subData.streetEng ? `${subData.streetTam} (${subData.streetEng})` : subData.streetTam) : (subData.streetEng || '');
-                        const area = subData.areaTam ? (subData.areaEng ? `${subData.areaTam} (${subData.areaEng})` : subData.areaTam) : (subData.areaEng || '—');
-                        const taluk = subData.taluk || a.taluk || '—';
-                        const dist = subData.district || a.district || '—';
-                        const pin = subData.pincode || a.pincode || '—';
-                        const proof = subData.proofType || 'மின் கட்டண ரசீது (EB Bill)';
-                        setVal('infoChangeAddressStreet', `${dNo}, ${street}`.trim());
-                        setVal('infoChangeAddressArea', area);
-                        setVal('infoChangeAddressTalukDist', `${taluk} / ${dist}`);
-                        setVal('infoChangeAddressPin', pin);
-                        setVal('infoChangeAddressProof', `${proof} ✅`);
-                    } else {
-                        changeAddressBox.style.display = 'none';
-                    }
-                }
-
-                // 3. Remove Member Box
-                const removeBox = document.getElementById('sidebarRemoveMemberBox');
-                if (removeBox) {
-                    if (isRemoveMemberService) {
-                        removeBox.style.display = 'block';
-                        const remName = subData?.memberNameTam || subData?.memberNameEng || subData?.memberName || '—';
-                        setVal('infoRemoveMemberName', remName);
-                        setVal('infoRemoveReason', subData?.reason || '—');
-                        setVal('infoRemoveSmartCard', a.smartCardNumber || a.rationCardNo || subData?.smartCardNumber || '—');
-                    } else {
-                        removeBox.style.display = 'none';
+                } else if (!isServiceSelectionOnly && sbCfg.boxId) {
+                    const activeBoxEl = document.getElementById(sbCfg.boxId);
+                    if (activeBoxEl) {
+                        let populated = true;
+                        if (typeof uiCart.populateSidebar === 'function') {
+                            populated = uiCart.populateSidebar(a, subData, { setVal, activeCustMob }) !== false;
+                        }
+                        if (populated) activeBoxEl.style.display = 'block';
                     }
                 }
 

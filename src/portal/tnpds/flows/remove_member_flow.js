@@ -130,6 +130,11 @@ async function startTnpdsRemoveMemberFlow(citizenProfile = {}, onProgress = () =
             firstStepName: 'படி 4/10 (சேவை தேர்வு)',
             onProgress,
             saveCookies: sharedContext.saveTnpdsCookies,
+            onSessionExpiredReLogin: async (p) => {
+                if ((p.url() || '').toLowerCase().includes('/auth/login')) {
+                    await executeRemoveMemberLoginSteps({ page: p, userMobile, onProgress, options, sharedContext });
+                }
+            },
             runPageStepsFromStart: async () => {
                 formResult = await executeRemoveMemberFormSteps({
                     page,

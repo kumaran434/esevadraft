@@ -4,6 +4,7 @@ const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../utils/bilingual_helper');
+const { isDoubleSidedCardComplete } = require('../../services/document_validator');
 
 const { persistSessions } = storageService;
 
@@ -70,6 +71,7 @@ async function handleMemberAadhaar(ctx, req, res) {
         const compliantPdf = await produceCompliantDocument(uploadedFile.path);
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.currentMemberFront = uploadedFile.path;
+        sess.tempUploads.currentMemberFrontBoundingBox = extracted.documentBoundingBox || null;
         sess.tempUploads.currentMemberDoc = compliantPdf;
 
         const rawMemEng = extracted.fullNameEng || `Member ${sess.currentMemberIdx + 1}`;
@@ -131,12 +133,48 @@ async function handleMemberAadhaar(ctx, req, res) {
         sess.tempUploads[memDocSlotKey] = compliantPdf;
         sess.tempUploads[memDocKey] = compliantPdf;
 
+        const hasBothSides = isBirthCert || isDoubleSidedCardComplete(extracted, uploadedFile.path, 'aadhaar');
+
+        if (!hasBothSides) {
+            sess.intakeState = 'MEMBER_AADHAAR_BACK';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `🪪 **உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டை முன்பக்கம் பெறப்பட்டது!** ✅\n\n` +
+                      `• 👤 **பெயர்:** ${sess.tempMember.nameTam} (${sess.tempMember.nameEng})\n` +
+                      `• 🪪 **ஆதார் எண்:** ${(sess.tempMember.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim() || '*(எண் தெளிவாக இல்லை — Edit-ல் சரிபார்க்கவும்)*'}\n` +
+                      `• 🎂 **பிறந்த தேதி:** ${sess.tempMember.dob} | **பாலினம்:** ${sess.tempMember.genderTam}\n\n` +
+                      `🔄 **இப்போது உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையின் பின்பக்கத்தையும் (Back Side / முகவரி பகுதி) பதிவேற்றவும்:**\n` +
+                      `*(AI தானாக முன் + பின் பக்கங்களை ஒரே 2-in-1 A4 PDF ஆவணமாக இணைக்கும் ✨)*`,
+                actionRequired: 'upload',
+                uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் பின்பக்கம்`,
+                options: [
+                    { label: "📷 ஆதார் பின்பக்கம் பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: "MEMBER_AADHAAR_SKIP_BACK" }
+                ]
+            });
+            persistSessions(activeMobile);
+            if (activeMobile) {
+                saveCitizenDraft(activeMobile, {
+                    citizenProfile: sess.citizenProfile,
+                    chatHistory: sess.chatHistory,
+                    intakeState: sess.intakeState,
+                    targetMemberCount: sess.targetMemberCount,
+                    currentMemberIdx: sess.currentMemberIdx,
+                    tempMember: sess.tempMember,
+                    tempUploads: sess.tempUploads,
+                    step: sess.step || 'draft'
+                }).catch(() => {});
+            }
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+            return true;
+        }
+
         sess.intakeState = 'MEMBER_RELATIONSHIP';
         sess.chatHistory.push({
             sender: 'bot',
             text: (isBirthCert
                 ? `📜 **உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் பிறப்புச் சான்றிதழ் (Birth Certificate) வெற்றிகரமாகப் பெறப்பட்டது!** ✅\n\n`
-                : `📄 **உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டை வெற்றிகரமாகப் பெறப்பட்டது!** ✅\n\n`) +
+                : `📄 **உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் முழு ஆதார் அட்டை (இரு பக்கங்களும்) வெற்றிகரமாகப் பெறப்பட்டது!** ✅\n\n`) +
                   `• 👤 **பெயர்:** ${sess.tempMember.nameTam} (${sess.tempMember.nameEng})\n` +
                   (isBirthCert
                       ? `• 📜 **ஆவணம்:** பிறப்புச் சான்றிதழ் (ஆதார் எண் இல்லாத குழந்தை)\n`
@@ -164,15 +202,15 @@ async function handleMemberAadhaar(ctx, req, res) {
 
     // STATE 7: MEMBER_AADHAAR_BACK
     if (sess.intakeState === 'MEMBER_AADHAAR_BACK') {
-        // If user sends text or skip intent while at MEMBER_AADHAAR_BACK and tempMember has details:
         if (!uploadedFile) {
-            if (sess.tempMember && (sess.tempMember.nameTam || sess.tempMember.nameEng)) {
-                // If text is a relationship choice, advance immediately!
+            const isExplicitSkip = text === 'MEMBER_AADHAAR_SKIP_BACK' || text === 'MEMBER_DOC_COMPLETE' ||
+                (text && /பின்பக்கம் தேவையில்லை|skip|முழு ஆவணம் முடிந்தது/i.test(text));
+            if (isExplicitSkip && sess.tempMember && (sess.tempMember.nameTam || sess.tempMember.nameEng)) {
                 sess.intakeState = 'MEMBER_RELATIONSHIP';
                 sess.chatHistory.push({
                     sender: 'bot',
                     text: `✅ **உறுப்பினர் ${sess.currentMemberIdx + 1} (${sess.tempMember.nameTam || sess.tempMember.nameEng}) ஆதார் விவரங்கள் உறுதி செய்யப்பட்டன!** 📄\n\n` +
-                          `• 🪪 **ஆதார் எண்:** ${(sess.tempMember.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim()}\n` +
+                          `• 🪪 **ஆதார் எண்:** ${(sess.tempMember.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim() || '—'}\n` +
                           `• 🎂 **பிறந்த தேதி:** ${sess.tempMember.dob || '—'}\n\n` +
                           `🤝 **குடும்பத் தலைவருடனான இவரின் உறவுமுறை என்ன?** கீழே உள்ளதில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
                     options: getRelationshipOptions(sess.citizenProfile?.headGender)
@@ -196,9 +234,13 @@ async function handleMemberAadhaar(ctx, req, res) {
 
             sess.chatHistory.push({
                 sender: 'bot',
-                text: `🔄 உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையைப் பதிவேற்றவும்:`,
+                text: `🔄 தயவுசெய்து உறுப்பினர் ${sess.currentMemberIdx + 1}-ன் ஆதார் அட்டையின் **பின்பக்கத்தை (Back Side)** பதிவேற்றவும்:`,
                 actionRequired: 'upload',
-                uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார்`
+                uploadPrompt: `உறுப்பினர் ${sess.currentMemberIdx + 1} ஆதார் பின்பக்கம்`,
+                options: [
+                    { label: "📷 ஆதார் பின்பக்கம் பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+                    { label: "⏭️ பின்பக்கம் தேவையில்லை — தொடர்க", value: "MEMBER_AADHAAR_SKIP_BACK" }
+                ]
             });
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
             return true;
@@ -207,13 +249,17 @@ async function handleMemberAadhaar(ctx, req, res) {
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.currentMemberBack = uploadedFile.path;
 
+        const backRawExtracted = await inspectAndExtractDocument(uploadedFile.path).catch(() => ({}));
         const fs = require('fs');
         let finalDocPdf = null;
         if (sess.tempUploads.currentMemberFront && fs.existsSync(sess.tempUploads.currentMemberFront)) {
             try {
                 finalDocPdf = await produceDualSidedDocument(
                     sess.tempUploads.currentMemberFront,
-                    sess.tempUploads.currentMemberBack
+                    sess.tempUploads.currentMemberBack,
+                    null,
+                    sess.tempUploads.currentMemberFrontBoundingBox || null,
+                    backRawExtracted?.documentBoundingBox || null
                 );
             } catch (_) {}
         }
@@ -221,25 +267,41 @@ async function handleMemberAadhaar(ctx, req, res) {
             finalDocPdf = await produceCompliantDocument(uploadedFile.path);
         }
 
-        const extracted = await inspectAndExtractDocument(finalDocPdf || uploadedFile.path);
+        const extracted = await inspectAndExtractDocument(finalDocPdf || uploadedFile.path).catch(() => backRawExtracted || {});
+        const mergedExtracted = { ...(backRawExtracted || {}), ...(extracted || {}) };
         sess.tempMember = sess.tempMember || {};
-        if (extracted.fullNameEng) sess.tempMember.nameEng = extracted.fullNameEng;
-        if (extracted.fullNameTam) sess.tempMember.nameTam = extracted.fullNameTam;
-        if (extracted.dob) sess.tempMember.dob = extracted.dob;
-        if (extracted.gender) {
-            sess.tempMember.gender = extracted.gender;
-            sess.tempMember.genderTam = extracted.gender === 'Male' ? 'ஆண்' : 'பெண்';
+        const prevNameEng = sess.tempMember.nameEng && !sess.tempMember.nameEng.startsWith('Member ') ? sess.tempMember.nameEng : '';
+        const prevNameTam = sess.tempMember.nameTam && !sess.tempMember.nameTam.startsWith('உறுப்பினர் ') ? sess.tempMember.nameTam : '';
+        if (!prevNameEng && mergedExtracted.fullNameEng) sess.tempMember.nameEng = mergedExtracted.fullNameEng;
+        if (!prevNameTam && mergedExtracted.fullNameTam) sess.tempMember.nameTam = mergedExtracted.fullNameTam;
+        if (!sess.tempMember.dob && mergedExtracted.dob) sess.tempMember.dob = mergedExtracted.dob;
+        if (!sess.tempMember.gender && mergedExtracted.gender) {
+            sess.tempMember.gender = mergedExtracted.gender;
+            sess.tempMember.genderTam = mergedExtracted.gender === 'Male' ? 'ஆண்' : 'பெண்';
         }
-        if (extracted.aadhaarNumber && extracted.aadhaarNumber.length === 12) {
-            sess.tempMember.aadhaarNumber = extracted.aadhaarNumber;
+        const backAadhaarDigits = String(mergedExtracted.aadhaarNumber || '').replace(/\D/g, '');
+        if (!sess.tempMember.aadhaarNumber && backAadhaarDigits.length === 12) {
+            sess.tempMember.aadhaarNumber = backAadhaarDigits;
         }
+        sess.tempMember.address = {
+            ...(sess.tempMember.address || {}),
+            doorNo: mergedExtracted.doorNo || sess.tempMember.address?.doorNo || '',
+            streetEng: mergedExtracted.streetEng || sess.tempMember.address?.streetEng || '',
+            streetTam: mergedExtracted.streetTam || sess.tempMember.address?.streetTam || '',
+            areaEng: mergedExtracted.areaEng || sess.tempMember.address?.areaEng || '',
+            areaTam: mergedExtracted.areaTam || sess.tempMember.address?.areaTam || '',
+            pincode: mergedExtracted.pincode || sess.tempMember.address?.pincode || '',
+            district: mergedExtracted.district || sess.tempMember.address?.district || '',
+            taluk: mergedExtracted.taluk || sess.tempMember.address?.taluk || '',
+            village: mergedExtracted.village || sess.tempMember.address?.village || ''
+        };
 
         sess.tempMember.nameEng = sess.tempMember.nameEng || `Member ${sess.currentMemberIdx + 1}`;
         sess.tempMember.nameTam = sess.tempMember.nameTam || `உறுப்பினர் ${sess.currentMemberIdx + 1}`;
         sess.tempMember.dob = sess.tempMember.dob || '01/01/2000';
         sess.tempMember.gender = sess.tempMember.gender || 'Female';
         sess.tempMember.genderTam = sess.tempMember.genderTam || 'பெண்';
-        sess.tempMember.aadhaarNumber = sess.tempMember.aadhaarNumber || '491436223971';
+        sess.tempMember.aadhaarNumber = sess.tempMember.aadhaarNumber || '';
         sess.tempMember.docType = 'AADHAAR_CARD';
         sess.tempMember.docPath = finalDocPdf;
 
@@ -256,10 +318,13 @@ async function handleMemberAadhaar(ctx, req, res) {
         }
         sess.citizenProfile.tempMember = sess.tempMember;
         sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        const memDocSlotKeyMerged = `memberDoc_${sess.currentMemberIdx}`;
         const memDocKeyMerged = `memberAadhaar${Math.max(0, sess.currentMemberIdx - 1)}`;
+        sess.citizenProfile.documents[memDocSlotKeyMerged] = finalDocPdf;
         sess.citizenProfile.documents[memDocKeyMerged] = finalDocPdf;
         sess.citizenProfile.documents.memberAadhaar = finalDocPdf;
         sess.tempUploads = sess.tempUploads || {};
+        sess.tempUploads[memDocSlotKeyMerged] = finalDocPdf;
         sess.tempUploads[memDocKeyMerged] = finalDocPdf;
         sess.tempUploads.memberAadhaar = finalDocPdf;
 

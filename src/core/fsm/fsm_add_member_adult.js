@@ -4,6 +4,35 @@
 
 const { RELATIONSHIP_OPTIONS, mapRelationshipToEng } = require('./fsm_options_registry');
 const { renderSubserviceReadySummary } = require('./fsm_summary_formatter');
+const { maybePromptSubserviceAadhaarBack, completeSubserviceAadhaarBack } = require('./fsm_member_doc_upload');
+
+function pushAdultSurrenderPrompt(sess, isRealExtracted, mergedDualSided = false) {
+    sess.intakeState = 'RATION_ADD_MEMBER_ADULT_SURRENDER';
+    const ssd = sess.subServiceData || {};
+    const nameDisplay = ssd.memberNameTam && ssd.memberNameEng
+        ? `${ssd.memberNameTam} (${ssd.memberNameEng})`
+        : (ssd.memberName || 'உறுப்பினர்');
+    const aadhaarDisplay = ssd.aadhaarNo ? `\n• 🪪 **ஆதார் எண்:** ${(ssd.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()}` : '';
+    const dobDisplay = ssd.dob ? `\n• 📅 **பிறந்த தேதி:** ${ssd.dob}` : '';
+    const successPrefix = mergedDualSided
+        ? '✅ **உறுப்பினர் ஆதார் அட்டை (முன்பக்கம் + பின்பக்கம்) 2-in-1 A4 PDF-ஆக இணைக்கப்பட்டது!** 📄'
+        : (isRealExtracted ? '✅ **உறுப்பினரின் ஆதார் அட்டை AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **உறுப்பினரின் ஆதார் அட்டை பெறப்பட்டது!** 🪪');
+
+    sess.chatHistory.push({
+        sender: 'bot',
+        text: `${successPrefix}\n\n` +
+              `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}\n\n` +
+              `📋 **படி 2/2: அடுத்த கட்ட ஆவணம்:**\n` +
+              `முந்தைய குடும்ப அட்டையிலிருந்து பெயர் நீக்கப்பட்ட சான்றிதழ் (Surrender Certificate) அல்லது திருமணப் பத்திரிகையைப் பதிவேற்றவும்:`,
+        actionRequired: 'upload',
+        uploadPrompt: 'நீக்கல் சான்று / திருமணப் பத்திரிகை',
+        options: [
+            { label: "🧪 மாதிரி சான்றிதழ் (Demo Surrender)", value: "DEMO_SURRENDER_DOC" },
+            { label: "✅ ஆவணம் உள்ளது - தொடரவும்", value: "SURRENDER_DOC_CONFIRMED" },
+            { label: "🔙 பின்செல்ல", value: "ADD_MEMBER_ADULT" }
+        ]
+    });
+}
 
 function handleAddMemberAdult(text, sess, currentState, uploadedDoc, extractedDoc) {
     if (text === 'ADD_MEMBER_ADULT' || text === 'ADD_MEMBER_INLAW' || text === 'ADD_MEMBER_PARENT') {
@@ -28,13 +57,12 @@ function handleAddMemberAdult(text, sess, currentState, uploadedDoc, extractedDo
     }
 
     if (currentState === 'RATION_ADD_MEMBER_ADULT_AADHAAR') {
-        sess.intakeState = 'RATION_ADD_MEMBER_ADULT_SURRENDER';
         sess.subServiceData = sess.subServiceData || {};
         sess.subServiceData.isChild = false;
         sess.subServiceData.docType = 'Aadhaar Card';
         sess.subServiceData.docPath = uploadedDoc?.path || sess.subServiceData.docPath || 'uploads/kumaran_aadhaar_card.jpeg';
         const isBypass = text === 'TRIGGER_FILE_UPLOAD' || text === 'DEMO_ADULT_AADHAAR' || text === 'ADULT_AADHAAR_CONFIRMED';
-        
+
         let isRealExtracted = false;
         if (extractedDoc && (extractedDoc.fullNameTam || extractedDoc.fullNameEng || extractedDoc.aadhaarNumber)) {
             isRealExtracted = true;
@@ -60,29 +88,30 @@ function handleAddMemberAdult(text, sess, currentState, uploadedDoc, extractedDo
             }
         }
 
-        const nameDisplay = sess.subServiceData.memberNameTam && sess.subServiceData.memberNameEng
-            ? `${sess.subServiceData.memberNameTam} (${sess.subServiceData.memberNameEng})`
-            : (sess.subServiceData.memberName || 'உறுப்பினர்');
+        if (text !== 'ADULT_AADHAAR_CONFIRMED' && text !== 'DEMO_ADULT_AADHAAR' && maybePromptSubserviceAadhaarBack({
+            sess,
+            uploadedDoc,
+            extractedDoc,
+            backWaitState: 'RATION_ADD_MEMBER_ADULT_AADHAAR_BACK',
+            skipValue: 'ADULT_AADHAAR_SKIP_BACK',
+            isRealExtracted
+        })) {
+            return true;
+        }
 
-        const aadhaarDisplay = sess.subServiceData.aadhaarNo ? `\n• 🪪 **ஆதார் எண்:** ${(sess.subServiceData.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()}` : '';
-        const dobDisplay = sess.subServiceData.dob ? `\n• 📅 **பிறந்த தேதி:** ${sess.subServiceData.dob}` : '';
-        const successPrefix = isRealExtracted ? '✅ **உறுப்பினரின் ஆதார் அட்டை AI மூலம் படிக்கப்பட்டது!** 🪪' : '✅ **உறுப்பினரின் ஆதார் அட்டை பெறப்பட்டது!** 🪪';
-
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `${successPrefix}\n\n` +
-                  `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}\n\n` +
-                  `📋 **படி 2/2: அடுத்த கட்ட ஆவணம்:**\n` +
-                  `முந்தைய குடும்ப அட்டையிலிருந்து பெயர் நீக்கப்பட்ட சான்றிதழ் (Surrender Certificate) அல்லது திருமணப் பத்திரிகையைப் பதிவேற்றவும்:`,
-            actionRequired: 'upload',
-            uploadPrompt: 'நீக்கல் சான்று / திருமணப் பத்திரிகை',
-            options: [
-                { label: "🧪 மாதிரி சான்றிதழ் (Demo Surrender)", value: "DEMO_SURRENDER_DOC" },
-                { label: "✅ ஆவணம் உள்ளது - தொடரவும்", value: "SURRENDER_DOC_CONFIRMED" },
-                { label: "🔙 பின்செல்ல", value: "ADD_MEMBER_ADULT" }
-            ]
-        });
+        pushAdultSurrenderPrompt(sess, isRealExtracted, false);
         return true;
+    }
+
+    if (currentState === 'RATION_ADD_MEMBER_ADULT_AADHAAR_BACK') {
+        return completeSubserviceAadhaarBack({
+            text, sess, uploadedDoc, extractedDoc,
+            skipValue: 'ADULT_AADHAAR_SKIP_BACK'
+        }).then((res) => {
+            if (!res.done) return true;
+            pushAdultSurrenderPrompt(sess, true, res.merged);
+            return true;
+        });
     }
 
     if (currentState === 'RATION_ADD_MEMBER_ADULT_SURRENDER') {

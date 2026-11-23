@@ -3,6 +3,7 @@
 // Reverse-Engineered & Modular Production Implementation
 // =========================================================================
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+const { waitForMobileChangeNewNumberOtp } = require('./mobile_change_otp_config');
 
 async function executeMobileChangeFormSteps({
     page,
@@ -178,12 +179,7 @@ async function executeMobileChangeFormSteps({
         await page.waitForTimeout(1000);
     }
 
-    const newOtpVal = await requestOtpFromUser(
-        `📱 உங்கள் புதிய கைபேசி எண்ணிற்கு (+91 ${newMobile}) வந்த அரசு 6-இலக்க SMS OTP எண்ணை உள்ளிடவும்:`,
-        onProgress,
-        'mobile_update_otp',
-        page
-    );
+    const newOtpVal = await waitForMobileChangeNewNumberOtp(page, newMobile, onProgress, requestOtpFromUser);
 
     if (newOtpVal && newOtpVal !== 'PAGE_REFRESHED_TO_LOGIN') {
         onProgress(`✍️ [OTP சரிபார்ப்பு] புதிய எண் OTP (${newOtpVal}) போர்ட்டல் மாடலில் உள்ளிடப்படுகிறது...`);
