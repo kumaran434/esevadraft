@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 
-const { logOperatorError, listOperatorErrors, listOperatorErrorSummaries } = require('../../firestore_db');
+const { logOperatorError, listOperatorErrors, listOperatorErrorSummaries, logOperatorCorrection, listOperatorCorrections } = require('../../firestore_db');
 
 // 1. GET /dev
 router.get('/dev', (req, res) => {
@@ -171,6 +171,26 @@ router.get('/api/telemetry/errors', async (req, res) => {
             typeof listOperatorErrorSummaries === 'function' ? listOperatorErrorSummaries(30) : []
         ]);
         res.json({ success: true, count: errors.length, operators, errors });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 9. POST /api/telemetry/correction & GET /api/telemetry/corrections
+router.post('/api/telemetry/correction', async (req, res) => {
+    try {
+        const logged = await logOperatorCorrection(req.body || {});
+        res.json({ success: true, id: logged ? logged.id : null, cloudSaved: Boolean(logged && logged.cloudSaved) });
+    } catch (e) {
+        res.json({ success: false, error: e.message });
+    }
+});
+
+router.get('/api/telemetry/corrections', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit, 10) || 40;
+        const corrections = typeof listOperatorCorrections === 'function' ? await listOperatorCorrections(limit) : [];
+        res.json({ success: true, count: corrections.length, corrections });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

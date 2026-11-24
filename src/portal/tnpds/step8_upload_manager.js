@@ -107,7 +107,8 @@ async function verifyDocumentUploadConfirmation(page, fileName, scanAndBroadcast
                 const t = (el.innerText || '').trim();
                 return el.offsetParent !== null && t.length < 80 && (t.includes('doc_') || t.includes(fname) || t.includes('.jpeg') || t.includes('.jpg') || t.includes('.png') || t.includes('.pdf') || t.includes('test_sample_doc'));
             });
-            const hasGreen = document.querySelectorAll('.badge-success, .bg-success, .text-success, .fa-check, i.fa-check-circle, .alert-success').length > 0;
+            const hasGreenChip = Boolean(document.querySelector('div[style*="69f777"]'));
+            const hasGreen = document.querySelectorAll('.badge-success, .badge.bg-success, .bg-success, .text-success, .fa-check, i.fa-check-circle, .alert-success').length > 0;
             const hasClearBtn = Array.from(document.querySelectorAll('button, a')).some(b => b.innerText && b.innerText.trim().toLowerCase() === 'x' && b.offsetParent !== null);
             const allUploadBtns = Array.from(document.querySelectorAll('button, div.btn')).filter(b => {
                 const t = (b.innerText || '').trim();
@@ -119,7 +120,8 @@ async function verifyDocumentUploadConfirmation(page, fileName, scanAndBroadcast
                 const txt = (el.innerText || '').trim();
                 return txt.length < 100 && (txt.includes('கோப்பு பதிவேற்றப்பட்டது') || txt.includes('பதிவேற்றப்பட்டது') || txt.toLowerCase().includes('uploaded') || txt.includes('வெற்றிகரமாக'));
             });
-            const isSuccess = Boolean(badge || hasGreen || hasClearBtn || (isUploadDisabled && uploadInpVal) || uploadInpVal || hasUploadText);
+            // Strict Step Gate (Golden Rule 22): raw input filename alone NEVER proves server upload completed!
+            const isSuccess = Boolean(hasGreenChip || hasGreen || hasClearBtn || (isUploadDisabled && uploadInpVal) || hasUploadText);
             let badgeText = '';
             if (badge) {
                 const m = (badge.innerText || '').match(/[\w.-]+\.(?:jpeg|jpg|png|pdf)/i);
@@ -139,9 +141,9 @@ async function verifyDocumentUploadConfirmation(page, fileName, scanAndBroadcast
             break;
         }
 
-        // If not yet uploaded by iteration 6 (1.5s) or 14 (3.5s), retry clicking upload button once
+        // If not yet uploaded by iteration 6 (1.5s) or 14 (3.5s), retry clicking STRICTLY Upload button once
         if (uWait === 6 || uWait === 14) {
-            await page.locator('div.btn-primary:has-text("பதிவேற்ற"), div.btn:has-text("பதிவேற்ற"), button:has-text("பதிவேற்ற"), div.btn:has-text("பதிவேற்றவும்"), button:has-text("பதிவேற்றவும்"), button.btn-primary').last().click({ force: true }).catch(() => {});
+            await page.locator('div.btn-primary:has-text("பதிவேற்ற"), div.btn:has-text("பதிவேற்ற"), button:has-text("பதிவேற்ற"), div.btn:has-text("பதிவேற்றவும்"), button:has-text("பதிவேற்றவும்"), button:has-text("Upload")').last().click({ force: true }).catch(() => {});
         }
     }
 

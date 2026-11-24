@@ -15,16 +15,26 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
     const isMockSandboxMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
     const { tamName, userMobile, aadhaarRaw } = sanitizedProfile;
 
-    // படி 47: சுய அறிவிப்பு செக்பாக்ஸ் டிக்
+    // படி 47: சுய அறிவிப்பு செக்பாக்ஸ் டிக் & கடுமையான சரிபார்ப்பு (Strict Step Gate)
     onProgress('📍 [படி 47/51] சுய அறிவிப்பு உறுதிப்படுத்தல் செக்பாக்ஸ் டிக் செய்யப்படுகிறது...');
     const declarationCheckbox = page.locator('input[formcontrolname="declaration"], input[type="checkbox"][id*="declaration"]').first();
-    if (await declarationCheckbox.count() > 0) {
-        await declarationCheckbox.check({ force: true }).catch(() => {});
-    } else {
-        const fallbackCb = page.getByRole('checkbox').last();
-        if (await fallbackCb.count() > 0) await fallbackCb.check({ force: true }).catch(() => {});
+    const targetCb = (await declarationCheckbox.count() > 0) ? declarationCheckbox : page.getByRole('checkbox').last();
+    if (await targetCb.count() > 0) {
+        await targetCb.check({ force: true }).catch(() => {});
+        await targetCb.dispatchEvent('change').catch(() => {});
+        if (!(await targetCb.isChecked().catch(() => false))) {
+            await targetCb.click({ force: true }).catch(() => {});
+        }
     }
-    await page.waitForTimeout(1000);
+    const isDeclChecked = (await targetCb.count() > 0) ? await targetCb.isChecked().catch(() => false) : false;
+    if (!isDeclChecked && !isMockSandboxMode) {
+        const declErr = 'படி 47: சுய அறிவிப்பு உறுதிமொழி (Declaration) கட்டம் டிக் செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் நிறுத்தப்பட்டது.';
+        await showBrowserHud('🔴 படி 47 உறுதிமொழிப் பிழை', declErr, 'error', page).catch(() => {});
+        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${declErr}`);
+        return { success: false, message: declErr };
+    }
+    onProgress('✅ [படி 47/51] சுய அறிவிப்பு உறுதிமொழி டிக் செய்யப்பட்டு பூட்டப்பட்டது!');
+    await page.waitForTimeout(800);
 
     // படி 48: மனித மேற்பார்வை தணிக்கை சாளரம்
     onProgress('📍 [படி 48/51] அரசு இணையதளத்தின் முழுப் பக்கமும் (Full HD) ஸ்கிரீன்ஷாட் எடுக்கப்படுகிறது...');

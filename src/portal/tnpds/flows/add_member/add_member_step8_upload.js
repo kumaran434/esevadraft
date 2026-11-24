@@ -289,19 +289,19 @@ async function executeStep8Upload(page, memberContext, options, onProgress, shar
                     const chipTxt = (greenChip.innerText || '').replace(/X$/i, '').trim();
                     return { isSuccess: true, badgeText: chipTxt || fname };
                 }
-                const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
-                const activeFileInput = fileInputs.find(i => i.files && i.files.length > 0);
-                if (activeFileInput && activeFileInput.files[0]) {
-                    return { isSuccess: true, badgeText: activeFileInput.files[0].name };
+                const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim());
+                if (toasts.some(t => t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t))) {
+                    return { isSuccess: true, badgeText: fname };
                 }
                 const leafNodes = Array.from(document.querySelectorAll('span, label, p, b, strong, a, .badge'));
                 const badge = leafNodes.find(el => {
                     const t = (el.innerText || '').trim();
                     return el.offsetParent !== null && t.length < 80 && (t.includes('doc_') || t.includes(fname) || t.includes('.jpeg') || t.includes('.jpg') || t.includes('.png') || t.includes('.pdf') || t.includes('test_sample_doc'));
                 });
-                const hasGreen = document.querySelectorAll('.badge-success, .bg-success, .text-success, .fa-check, i.fa-check-circle, .alert-success').length > 0;
+                const hasGreen = document.querySelectorAll('.badge-success, .badge.bg-success, .bg-success, .text-success, .fa-check, i.fa-check-circle, .alert-success').length > 0;
                 const hasClearBtn = Array.from(document.querySelectorAll('button, a, span')).some(b => b.innerText && b.innerText.trim().toLowerCase() === 'x' && b.offsetParent !== null);
-                const isSuccess = Boolean(badge || hasGreen || hasClearBtn);
+                // Strict Step Gate (Golden Rule 22): raw file input selection NEVER proves upload completed!
+                const isSuccess = Boolean(hasGreen || hasClearBtn);
                 let badgeText = '';
                 if (badge) {
                     const m = (badge.innerText || '').match(/[\w.-]+\.(?:jpeg|jpg|png|pdf)/i);
@@ -317,6 +317,13 @@ async function executeStep8Upload(page, memberContext, options, onProgress, shar
                 uploadedBadgeText = checkRes.badgeText;
                 break;
             }
+        }
+
+        if (!isDocUploadedGreen && !isMockSandboxMode) {
+            const haltErr = `படி 8: துணை ஆவணம் (${fileName}) TNPDS சர்வரில் பதிவேற்றம் உறுதி செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் செயல்முறை நிறுத்தப்பட்டது.`;
+            await showBrowserHud('[படி 8/12] 🔴 ஆவணப் பதிவேற்றப் பிழை', haltErr, 'error');
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltErr}`);
+            return { success: false, message: haltErr };
         }
 
         const cleanDisplayBadge = (uploadedBadgeText && uploadedBadgeText.length < 60) ? uploadedBadgeText : fileName;

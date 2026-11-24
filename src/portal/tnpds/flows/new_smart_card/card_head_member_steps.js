@@ -3,6 +3,7 @@
  */
 const path = require('path');
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+const { verifyServerUploadConfirmed, fillAndVerifyInput, selectAndVerifyOption } = require('../../../common/strict_step_gate');
 
 async function isHeadStepPageIntact(page) {
     if (!page || page.isClosed()) return false;
@@ -58,38 +59,39 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     }
     await page.waitForTimeout(1500);
 
+    const isStrictLive = !(options?.mockSandbox !== false && options?.isMockSandboxMode !== false);
+
     // படி 22.1: குடும்பத் தலைவர் பெயர் - ஆங்கிலம் (உறுப்பினர் சேர்க்கைப் படிவத்தில் தட்டச்சு)
     const engName = citizenProfile.fullNameEng || citizenProfile.name || 'Kumaran K';
     onProgress(`📍 [படி 22.1/51] உறுப்பினர் படிவத்தில் பெயர் ஆங்கிலம் (${engName}) தட்டச்சு செய்யப்படுகிறது...`);
     const memEngLocator = page.locator('input[formcontrolname="NameOfFamilyHead"]').last();
-    if (await memEngLocator.count() > 0) {
-        await memEngLocator.scrollIntoViewIfNeeded().catch(() => {});
-        await memEngLocator.evaluate(el => { el.disabled = false; el.removeAttribute('disabled'); el.removeAttribute('readonly'); }).catch(() => {});
-        await memEngLocator.fill(engName);
-        await memEngLocator.dispatchEvent('input').catch(() => {});
-        await memEngLocator.dispatchEvent('change').catch(() => {});
-    }
+    await fillAndVerifyInput(page, memEngLocator, engName, 'படி 22.1 (தலைவர் பெயர் - ஆங்கிலம்)', { required: isStrictLive });
 
     // படி 22.2: குடும்பத் தலைவர் பெயர் - தமிழ் (உறுப்பினர் சேர்க்கைப் படிவத்தில் தட்டச்சு)
     const tamName = citizenProfile.fullNameTam || 'குமரன் கி';
     onProgress(`📍 [படி 22.2/51] உறுப்பினர் படிவத்தில் பெயர் தமிழ் (${tamName}) தட்டச்சு செய்யப்படுகிறது...`);
     const memTamLocator = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').last();
-    if (await memTamLocator.count() > 0) {
-        await memTamLocator.scrollIntoViewIfNeeded().catch(() => {});
-        await memTamLocator.evaluate(el => { el.disabled = false; el.removeAttribute('disabled'); el.removeAttribute('readonly'); }).catch(() => {});
-        await memTamLocator.fill(tamName);
-        await memTamLocator.dispatchEvent('input').catch(() => {});
-        await memTamLocator.dispatchEvent('change').catch(() => {});
-    }
-    await page.waitForTimeout(500);
+    await fillAndVerifyInput(page, memTamLocator, tamName, 'படி 22.2 (தலைவர் பெயர் - தமிழ்)', { required: isStrictLive });
+    onProgress('✅ [படி 22/51] குடும்பத் தலைவர் பெயர் (ஆங்கிலம் & தமிழ்) உறுதி செய்யப்பட்டது!');
+    await page.waitForTimeout(400);
 
-    // படி 23: பிறந்த தேதி
+    // படி 23: பிறந்த தேதி + கடுமையான சரிபார்ப்பு (Strict Step Gate)
     await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 23 (பிறந்த தேதி காலண்டர்)');
     const headDob = citizenProfile.headDob || citizenProfile.dob || '10/06/1993';
     onProgress(`📍 [படி 23/51] பிறந்த தேதி (${headDob}) காலண்டர் மூலம் தேர்வு செய்யப்படுகிறது...`);
     await selectDateInMatCalendar(page, headDob, false);
+    const dobInpHead = page.locator('input[formcontrolname="dateOfBirth"]').first();
+    let headDobActual = (await dobInpHead.inputValue().catch(() => '')).trim();
+    if (!headDobActual && isStrictLive) {
+        await selectDateInMatCalendar(page, headDob, false);
+        headDobActual = (await dobInpHead.inputValue().catch(() => '')).trim();
+        if (!headDobActual) {
+            throw new Error(`படி 23 பிழை: பிறந்த தேதி (${headDob}) காலண்டரில் தேர்வு செய்யப்படவில்லை!`);
+        }
+    }
+    onProgress(`✅ [படி 23/51] பிறந்த தேதி (${headDobActual || headDob}) உறுதி செய்யப்பட்டது!`);
     await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 23 (பிறந்த தேதி காலண்டர்)');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
 
     // படி 24: பாலினம்
     const headGenderLabel = isHeadFemale ? 'பெண் (Female)' : 'ஆண் (Male)';
@@ -101,8 +103,12 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
             const v = (o.value || '').toLowerCase(), t = (o.text || '').toLowerCase();
             return isHeadFemale ? (v.includes('female') || t.includes('பெண்')) : (v.includes('male') || t.includes('ஆண்'));
         });
-        await genderSelect.selectOption(targetOpt ? targetOpt.value : { index: isHeadFemale ? 2 : 1 }).catch(() => {});
-        await genderSelect.dispatchEvent('change').catch(() => {});
+        await selectAndVerifyOption(genderSelect, 'படி 24 (பாலினம்)', {
+            value: targetOpt ? targetOpt.value : null,
+            index: targetOpt ? null : (isHeadFemale ? 2 : 1),
+            required: isStrictLive
+        });
+        onProgress(`✅ [படி 24/51] பாலினம் (${headGenderLabel}) உறுதி செய்யப்பட்டது!`);
         await page.waitForTimeout(300);
     }
 
@@ -110,8 +116,10 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     onProgress('📍 [படி 25/51] தேசிய இனம் (இந்தியன்) தேர்வு செய்யப்படுகிறது...');
     const nationSelect = page.locator('select[formcontrolname="nationality"]').first();
     if (await nationSelect.count() > 0) {
-        await nationSelect.selectOption('Indian').catch(async () => { await nationSelect.selectOption({ index: 1 }); });
-        await nationSelect.dispatchEvent('change');
+        await selectAndVerifyOption(nationSelect, 'படி 25 (தேசிய இனம்)', { value: 'Indian', required: isStrictLive }).catch(async () => {
+            await selectAndVerifyOption(nationSelect, 'படி 25 (தேசிய இனம்)', { index: 1, required: isStrictLive });
+        });
+        onProgress('✅ [படி 25/51] தேசிய இனம் (இந்தியன்) உறுதி செய்யப்பட்டது!');
         await page.waitForTimeout(300);
     }
 
@@ -120,8 +128,11 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     if (await relSelect.count() > 0 && !(await relSelect.evaluate(el => el.disabled).catch(() => false))) {
         const rOptions = await relSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
         const headOpt = rOptions.find(o => o.text.toLowerCase().includes('head') || o.text.includes('தலைவர்') || o.value.includes('HEAD'));
-        await relSelect.selectOption(headOpt ? headOpt.value : { index: 1 }).catch(() => {});
-        await relSelect.dispatchEvent('change').catch(() => {});
+        await selectAndVerifyOption(relSelect, 'படி 25.5 (உறவுமுறை - தலைவர்)', {
+            value: headOpt ? headOpt.value : null,
+            index: headOpt ? null : 1,
+            required: isStrictLive
+        });
         await page.waitForTimeout(300);
     }
 
@@ -129,20 +140,17 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     onProgress('📍 [படி 26/51] தொழில் (தனியார் ஊழியர்) தேர்வு செய்யப்படுகிறது...');
     const profSelect = page.locator('select[formcontrolname="profession"]').first();
     if (await profSelect.count() > 0) {
-        await profSelect.selectOption({ index: 1 }).catch(() => {});
-        await profSelect.dispatchEvent('change');
+        await selectAndVerifyOption(profSelect, 'படி 26 (தொழில்)', { index: 1, required: isStrictLive });
+        onProgress('✅ [படி 26/51] தொழில் உறுதி செய்யப்பட்டது!');
         await page.waitForTimeout(300);
     }
 
     // படி 27: மாத வருமானம்
     onProgress('📍 [படி 27/51] மாத வருமானம் (3000) நிரப்பப்படுகிறது...');
     const incomeInput = page.locator('input[formcontrolname="monthlyIncome"]').first();
-    if (await incomeInput.count() > 0) {
-        await incomeInput.fill('3000');
-        await incomeInput.dispatchEvent('input');
-        await incomeInput.dispatchEvent('change');
-        await page.waitForTimeout(300);
-    }
+    await fillAndVerifyInput(page, incomeInput, '3000', 'படி 27 (மாத வருமானம்)', { required: isStrictLive });
+    onProgress('✅ [படி 27/51] மாத வருமானம் (₹3,000) உறுதி செய்யப்பட்டது!');
+    await page.waitForTimeout(300);
 
     // படி 28: ஆதார் அட்டை வகை
     onProgress('📍 [படி 28/51] உறுப்பினர் ஆவண வகை (ஆதார் அட்டை) தேர்ந்தெடுக்கப்படுகிறது...');
@@ -150,21 +158,24 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     if (await docSelect.count() > 0) {
         const dOptions = await docSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
         const aadhaarDocOpt = dOptions.find(o => o.value === 'AADHAAR_CARD' || o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar'));
-        await docSelect.selectOption(aadhaarDocOpt ? aadhaarDocOpt.value : 'AADHAAR_CARD').catch(() => {});
-        await docSelect.dispatchEvent('input').catch(() => {});
-        await docSelect.dispatchEvent('change').catch(() => {});
-        await page.waitForTimeout(500);
+        await selectAndVerifyOption(docSelect, 'படி 28 (ஆவண வகை - ஆதார்)', {
+            value: aadhaarDocOpt ? aadhaarDocOpt.value : 'AADHAAR_CARD',
+            required: isStrictLive
+        });
+        onProgress('✅ [படி 28/51] ஆவண வகை (ஆதார் அட்டை) உறுதி செய்யப்பட்டது!');
+        await page.waitForTimeout(400);
     }
 
     // படிகள் 29, 30, 31: 12-இலக்க ஆதார் எண்
-    const aadhaarRaw = (citizenProfile.headAadhaar || '').replace(/\s+/g, '');
+    const aadhaarRaw = (citizenProfile.headAadhaar || '').replace(/\D/g, '');
     const a1 = page.locator('input[formcontrolname="aadhaarNumber"]').first();
     const a2 = page.locator('input[formcontrolname="aadhaarNumber1"]').first();
     const a3 = page.locator('input[formcontrolname="aadhaarNumber2"]').first();
     if (await a1.count() > 0 && await a2.count() > 0 && await a3.count() > 0) {
-        await a1.fill(aadhaarRaw.substring(0, 4)); await a1.dispatchEvent('input'); await a1.dispatchEvent('change');
-        await a2.fill(aadhaarRaw.substring(4, 8)); await a2.dispatchEvent('input'); await a2.dispatchEvent('change');
-        await a3.fill(aadhaarRaw.substring(8, 12)); await a3.dispatchEvent('input'); await a3.dispatchEvent('change');
+        await fillAndVerifyInput(page, a1, aadhaarRaw.substring(0, 4), 'படி 29 (ஆதார் முதல் 4 இலக்கம்)', { required: isStrictLive });
+        await fillAndVerifyInput(page, a2, aadhaarRaw.substring(4, 8), 'படி 30 (ஆதார் நடு 4 இலக்கம்)', { required: isStrictLive });
+        await fillAndVerifyInput(page, a3, aadhaarRaw.substring(8, 12), 'படி 31 (ஆதார் கடைசி 4 இலக்கம்)', { required: isStrictLive });
+        onProgress('✅ [படிகள் 29-31/51] 12-இலக்க ஆதார் எண் முழுமையாக உறுதி செய்யப்பட்டது!');
     }
 
     // படி 32: ஆதார் PDF ஆவணம்
@@ -185,28 +196,35 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
         return { success: false, message: 'குடும்பத் தலைவர் ஆதார் கோப்பு உள்ளீட்டுக் களம் இல்லை.' };
     }
 
-    // படி 33: பதிவேற்ற உறுதிப்பாடு (ஆதார் ஆவணம் இணைக்கப்பட்டு பதிவேற்று பொத்தான் அழுத்தப்படுகிறது)
+    // படி 33: பதிவேற்ற உறுதிப்பாடு (ஒற்றை கிளிக் + நிஜ சர்வர் பதிவேற்றம் உறுதி — Strict Step Gate)
     onProgress('📍 [படி 33/51] ஆதார் ஆவணப் பதிவேற்று பொத்தான் (Upload) அழுத்தப்படுகிறது...');
-    
-    // Specifically click the upload button inside the supportingDocumentProof container:
-    await page.evaluate(() => {
-        const inp = document.querySelector('input[formcontrolname="supportingDocumentProof"]');
-        const parent = inp?.closest('.form-group') || inp?.parentElement;
-        const btn = parent?.querySelector('button.btn-secondary, button:not([style*="color: red"]), .btn');
-        if (btn) btn.click();
-    });
+    const isMockSandboxMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
 
-    // Playwright fallback for the supporting document upload button:
-    const docUploadLoc = page.locator('div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button.btn-secondary, div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), input[formcontrolname="supportingDocumentProof"] ~ button').last();
+    let headUploadClicked = false;
+    const docUploadLoc = page.locator('div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button.btn-secondary, div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload"), input[formcontrolname="supportingDocumentProof"] ~ button').last();
     if (await docUploadLoc.count() > 0) {
         await docUploadLoc.scrollIntoViewIfNeeded().catch(() => {});
-        await docUploadLoc.click({ force: true }).catch(() => {});
+        await docUploadLoc.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
+        await docUploadLoc.click({ force: true }).then(() => { headUploadClicked = true; }).catch(() => {});
+    }
+    if (!headUploadClicked) {
+        await page.evaluate(() => {
+            const inp = document.querySelector('input[formcontrolname="supportingDocumentProof"]');
+            const parent = inp?.closest('.form-group') || inp?.parentElement;
+            const btn = parent?.querySelector('button.btn-secondary, button:not([style*="color: red"]), .btn');
+            if (btn) btn.click();
+        }).catch(() => {});
     }
 
-    // Wait for the chip badge confirmation
-    await page.waitForSelector('div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("x"), div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text(" x "), .badge, div:has-text(".pdf")', { timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(1000);
+    const headDocUploaded = await verifyServerUploadConfirmed(page, 'input[formcontrolname="supportingDocumentProof"]', 8000);
     await scanAndBroadcastToasts();
+    if (!headDocUploaded && !isMockSandboxMode) {
+        const headUpErr = 'படி 33: குடும்பத் தலைவர் ஆதார் ஆவணம் அரசு சர்வரில் பதிவேற்றம் உறுதி செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் நிறுத்தப்பட்டது.';
+        await showBrowserHud('🔴 படி 33 ஆவணப் பதிவேற்றப் பிழை', headUpErr, 'error', page).catch(() => {});
+        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${headUpErr}`);
+        return { success: false, message: headUpErr };
+    }
+    onProgress('✅ [படி 33/51] குடும்பத் தலைவர் ஆதார் ஆவணம் வெற்றிகரமாகப் பதிவேற்றப்பட்டு பூட்டப்பட்டது!');
 
     // படி 34: உறுப்பினர் விவரம் சேமி (Geolocation polyfill injected so browser location never fails)
     await page.evaluate(() => {

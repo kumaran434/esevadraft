@@ -2,6 +2,7 @@
  * TNPDS New Smart Card - Steps 1 to 13: Applicant Demographics & Address
  */
 const fs = require('fs');
+const { fillAndVerifyInput } = require('../../../common/strict_step_gate');
 
 async function executeApplicantDemographics(page, citizenProfile, sanitizedProfile, docPrep, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const { requestReplacementFileFromUser, produceCompliantPassportPhoto = async (p) => p, showBrowserHud = async () => {} } = sharedContext;
@@ -117,10 +118,14 @@ async function executeApplicantDemographics(page, citizenProfile, sanitizedProfi
                 el.removeAttribute('readonly'); el.readOnly = false;
                 el.style.display = 'block'; el.style.opacity = '1'; el.style.visibility = 'visible';
             }).catch(() => {});
-            try { await headFileInput.setInputFiles(activePhoto, { timeout: 2000 }); } catch (_) {}
+            try {
+                await headFileInput.setInputFiles(activePhoto, { timeout: 2000 });
+                await headFileInput.dispatchEvent('change').catch(() => {});
+            } catch (_) {}
             logDiag(3, 'photo_upload', `Attached: ${activePhoto}`);
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(1500);
             await scanAndBroadcastToasts();
+            onProgress('✅ [படி 3/51] குடும்பத் தலைவர் பாஸ்போர்ட் புகைப்படம் இணைக்கப்பட்டது!');
         } else {
             onProgress('⚠️ [படி 3/51] பாஸ்போர்ட் புகைப்படக் கட்டம் பின்னர் பதிவேற்றப்படும்; பெயர் மற்றும் முகவரி விவரங்கள் தொடர்ந்து நிரப்பப்படுகின்றன...');
         }
@@ -133,9 +138,9 @@ async function executeApplicantDemographics(page, citizenProfile, sanitizedProfi
     onProgress(`📍 [படி 4/51] குடும்பத் தலைவர் பெயர் - ஆங்கிலம் (${resolvedEngName}) தட்டச்சு செய்யப்படுகிறது...`);
     const headNameInput = page.locator('input[formcontrolname="NameOfFamilyHead"]').first();
     await headNameInput.waitFor({ state: 'visible', timeout: 15000 });
-    await headNameInput.fill(resolvedEngName);
-    await headNameInput.dispatchEvent('input');
-    await headNameInput.dispatchEvent('change');
+    await fillAndVerifyInput(page, headNameInput, resolvedEngName, 'படி 4 (பெயர் - ஆங்கிலம்)', { domSelector: 'input[formcontrolname="NameOfFamilyHead"]' });
+    logDiag(4, 'PASS', `Step 4 verified: ${resolvedEngName}`);
+    onProgress(`✅ [படி 4/51] குடும்பத் தலைவர் பெயர் (${resolvedEngName}) உறுதி செய்யப்பட்டது!`);
 
     // படி 5: ஆங்கிலத் தந்தை / கணவர் பெயர்
     if (!engFather || engFather.trim() === '' || engFather.trim().toUpperCase() === 'FATHER') {
@@ -146,80 +151,44 @@ async function executeApplicantDemographics(page, citizenProfile, sanitizedProfi
     onProgress(`📍 [படி 5/51] தந்தை / கணவர் பெயர் - ஆங்கிலம் (${resolvedEngFather}) தட்டச்சு செய்யப்படுகிறது...`);
     const fatherNameInput = page.locator('input[formcontrolname="FathersOrHusbandsName"]').first();
     await fatherNameInput.waitFor({ state: 'visible', timeout: 15000 });
-    await fatherNameInput.click();
-    await fatherNameInput.fill(resolvedEngFather);
-    await fatherNameInput.dispatchEvent('input');
-    await fatherNameInput.dispatchEvent('change');
-    await fatherNameInput.press('Space').catch(() => {});
-    await page.waitForTimeout(200);
-    await fatherNameInput.press('Backspace').catch(() => {});
-    await fatherNameInput.dispatchEvent('change');
-
-    let checkEngFather = await fatherNameInput.inputValue();
-    if (!checkEngFather || checkEngFather.trim() === '') {
-        await page.evaluate(({ val }) => {
-            const el = document.querySelector('input[formcontrolname="FathersOrHusbandsName"]');
-            if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
-        }, { val: resolvedEngFather });
-        checkEngFather = await fatherNameInput.inputValue();
-    }
+    const checkEngFather = await fillAndVerifyInput(page, fatherNameInput, resolvedEngFather, 'படி 5 (தந்தை/கணவர் பெயர் - ஆங்கிலம்)', { domSelector: 'input[formcontrolname="FathersOrHusbandsName"]' });
     logDiag(5, 'PASS', `Step 5 verified: ${checkEngFather}`);
+    onProgress(`✅ [படி 5/51] தந்தை / கணவர் பெயர் (${checkEngFather}) உறுதி செய்யப்பட்டது!`);
 
     // படி 6: கதவு எண் ஆங்கிலம்
     onProgress(`📍 [படி 6/51] கதவு எண் - ஆங்கிலம் (${doorNo}) தட்டச்சு செய்யப்படுகிறது...`);
-    await page.locator('input[formcontrolname="AddressLine1"]').first().fill(doorNo);
-    await page.locator('input[formcontrolname="AddressLine1"]').first().dispatchEvent('change');
+    await fillAndVerifyInput(page, page.locator('input[formcontrolname="AddressLine1"]').first(), doorNo, 'படி 6 (கதவு எண் - ஆங்கிலம்)', { required: Boolean(doorNo), domSelector: 'input[formcontrolname="AddressLine1"]' });
+    onProgress(`✅ [படி 6/51] கதவு எண் (${doorNo}) உறுதி செய்யப்பட்டது!`);
 
     // படி 7: தெருப் பெயர் ஆங்கிலம்
     onProgress(`📍 [படி 7/51] தெருப் பெயர் - ஆங்கிலம் (${engStreet}) தட்டச்சு செய்யப்படுகிறது...`);
-    await page.locator('input[formcontrolname="AddressLine2"]').first().fill(engStreet);
-    await page.locator('input[formcontrolname="AddressLine2"]').first().dispatchEvent('change');
+    await fillAndVerifyInput(page, page.locator('input[formcontrolname="AddressLine2"]').first(), engStreet, 'படி 7 (தெருப் பெயர் - ஆங்கிலம்)', { required: Boolean(engStreet), domSelector: 'input[formcontrolname="AddressLine2"]' });
+    onProgress(`✅ [படி 7/51] தெருப் பெயர் (${engStreet}) உறுதி செய்யப்பட்டது!`);
 
     // படி 8: பகுதி / கிராமம் ஆங்கிலம்
     onProgress(`📍 [படி 8/51] பகுதி / கிராமம் - ஆங்கிலம் (${engArea}) தட்டச்சு செய்யப்படுகிறது...`);
     const engAreaInp = page.locator('input[formcontrolname="AddressLine3"]').first();
-    if (await engAreaInp.count() > 0) {
-        await engAreaInp.fill(engArea);
-        await engAreaInp.dispatchEvent('change');
-    }
-    await page.waitForTimeout(2000);
+    await fillAndVerifyInput(page, engAreaInp, engArea, 'படி 8 (பகுதி/கிராமம் - ஆங்கிலம்)', { required: Boolean(engArea), domSelector: 'input[formcontrolname="AddressLine3"]' });
+    await page.waitForTimeout(1500);
+    onProgress(`✅ [படி 8/51] பகுதி / கிராமம் (${engArea || '-'}) உறுதி செய்யப்பட்டது!`);
 
-    // படிகள் 9 முதல் 13: தமிழ் விவரங்கள்
-    onProgress(`📍 [படிகள் 9-13/51] தூய தமிழ் முகவரி (${tamName} / ${tamFather} / ${doorNo} / ${tamStreet} / ${tamArea}) பூட்டப்படுகிறது...`);
+    // படிகள் 9 முதல் 13: தமிழ் விவரங்கள் (இருமொழி கட்டாய சரிபார்ப்பு)
+    onProgress(`📍 [படிகள் 9-13/51] தூய தமிழ் பெயர் & முகவரி (${tamName} / ${tamFather} / ${doorNo} / ${tamStreet} / ${tamArea}) உள்ளிடப்படுகிறது...`);
     const headTamInput = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').first();
-    if (await headTamInput.count() > 0) { await headTamInput.fill(tamName); await headTamInput.dispatchEvent('input'); await headTamInput.dispatchEvent('change'); }
-
     const fatherTamInput = page.locator('input[formcontrolname="தந்தைகணவர்பெயர்"]').first();
-    if (await fatherTamInput.count() > 0) { await fatherTamInput.fill(tamFather); await fatherTamInput.dispatchEvent('input'); await fatherTamInput.dispatchEvent('change'); }
-
     const doorTamInput = page.locator('input[formcontrolname="முகவரிவரி1"]').first();
-    if (await doorTamInput.count() > 0) { await doorTamInput.fill(doorNo); await doorTamInput.dispatchEvent('input'); await doorTamInput.dispatchEvent('change'); }
-
     const streetTamInput = page.locator('input[formcontrolname="முகவரிவரி2"]').first();
-    if (await streetTamInput.count() > 0) { await streetTamInput.fill(tamStreet); await streetTamInput.dispatchEvent('input'); await streetTamInput.dispatchEvent('change'); }
-
     const areaTamInput = page.locator('input[formcontrolname="முகவரிவரி3"]').first();
-    if (await areaTamInput.count() > 0) { await areaTamInput.fill(tamArea); await areaTamInput.dispatchEvent('input'); await areaTamInput.dispatchEvent('change'); }
 
-    await page.evaluate(({ tamName, tamFather, doorNo, tamStreet, tamArea }) => {
-        const setVal = (sel, val) => {
-            const el = document.querySelector(sel);
-            if (el && val) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
-        };
-        if (tamName) setVal('input[formcontrolname="குடும்பதலைவர்பெயர்"]', tamName);
-        if (tamFather) setVal('input[formcontrolname="தந்தைகணவர்பெயர்"]', tamFather);
-        if (doorNo) setVal('input[formcontrolname="முகவரிவரி1"]', doorNo);
-        if (tamStreet) setVal('input[formcontrolname="முகவரிவரி2"]', tamStreet);
-        if (tamArea) setVal('input[formcontrolname="முகவரிவரி3"]', tamArea);
-    }, { tamName, tamFather, doorNo, tamStreet, tamArea });
+    await fillAndVerifyInput(page, headTamInput, tamName, 'படி 9 (தலைவர் பெயர் - தமிழ்)', { required: Boolean(tamName), domSelector: 'input[formcontrolname="குடும்பதலைவர்பெயர்"]' });
+    const checkTamFather = await fillAndVerifyInput(page, fatherTamInput, tamFather, 'படி 10 (தந்தை/கணவர் பெயர் - தமிழ்)', { required: true, domSelector: 'input[formcontrolname="தந்தைகணவர்பெயர்"]' });
+    await fillAndVerifyInput(page, doorTamInput, doorNo, 'படி 11 (கதவு எண் - தமிழ்)', { required: Boolean(doorNo), domSelector: 'input[formcontrolname="முகவரிவரி1"]' });
+    await fillAndVerifyInput(page, streetTamInput, tamStreet, 'படி 12 (தெருப் பெயர் - தமிழ்)', { required: Boolean(tamStreet), domSelector: 'input[formcontrolname="முகவரிவரி2"]' });
+    await fillAndVerifyInput(page, areaTamInput, tamArea, 'படி 13 (பகுதி/கிராமம் - தமிழ்)', { required: Boolean(tamArea), domSelector: 'input[formcontrolname="முகவரிவரி3"]' });
 
-    await page.waitForTimeout(500);
-    let checkTamFather = await fatherTamInput.inputValue().catch(() => '');
-    if (!checkTamFather || checkTamFather.trim() === '') {
-        logDiag(10, 'FAIL', 'Tamil father name empty');
-        throw new Error('படி 10 பிழை: தந்தை / கணவர் பெயர் (தமிழ்) காலியாக உள்ளது!');
-    }
+    await page.waitForTimeout(400);
     logDiag(10, 'PASS', `Step 10 verified: ${checkTamFather}`);
+    onProgress(`✅ [படிகள் 9-13/51] தமிழ் பெயர் & முகவரி விவரங்கள் அனைத்தும் 100% உறுதி செய்யப்பட்டன!`);
     await takeStepSnapshot('step13_address_locked');
     return { success: true };
 }

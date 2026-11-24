@@ -99,15 +99,21 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         const { memPdf, targetRelTam, targetRelEng, isBirthCertMember } = formRes;
         const docLabel = isBirthCertMember ? 'பிறப்புச் சான்றிதழ் PDF' : 'ஆதார் PDF';
 
-        // 12. "பதிவேற்றம்" பொத்தான் கிளிக் ➔ பச்சைக் குறியீடு உறுதி
+        // 12. "பதிவேற்றம்" பொத்தான் கிளிக் ➔ சர்வர் பதிவேற்றம் உறுதி (ஒற்றை கிளிக் + நிஜ சரிபார்ப்பு)
         onProgress(`📍 [உறுப்பினர் ${memNum}] ${docLabel} பதிவேற்றம் ("பதிவேற்றம்") பொத்தான் அழுத்தப்படுகிறது...`);
-        await showBrowserHud(`📤 [உறுப்பினர் ${memNum}] ${docLabel} சர்வரில் பதிவேற்றப்படுகிறது...`, 'அரசு தளத்தில் பதிவேற்றம் ஆகிறது • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');
+        await showBrowserHud(`📤 [உறுப்பினர் ${memNum}] ${docLabel} பதிவேற்றம்`, 'அரசு தளத்தில் பதிவேற்றம் ஆகிறது • காத்திருக்கவும்...', 'warning');
 
-        await page.evaluate(() => {
-            const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
-            const lastInp = allDocInputs[allDocInputs.length - 1];
-            if (lastInp && lastInp.parentElement) {
-                let parent = lastInp.parentElement;
+        let uploadClicked = false;
+        const memUploadBtn = page.locator('div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload"), div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")').last();
+        if (await memUploadBtn.count() > 0) {
+            await memUploadBtn.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
+            await memUploadBtn.click({ force: true, timeout: 3000 }).then(() => { uploadClicked = true; }).catch(() => {});
+        }
+        if (!uploadClicked) {
+            await page.evaluate(() => {
+                const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
+                const lastInp = allDocInputs[allDocInputs.length - 1];
+                let parent = lastInp ? lastInp.parentElement : null;
                 for (let i = 0; i < 4 && parent; i++) {
                     const btn = Array.from(parent.querySelectorAll('button')).find(b => {
                         const t = (b.innerText || '').trim().toLowerCase();
@@ -120,61 +126,147 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                     }
                     parent = parent.parentElement;
                 }
-            }
-        });
-
-        const memUploadBtn = page.locator('div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")').last();
-        if (await memUploadBtn.count() > 0) {
-            await memUploadBtn.click({ force: true }).catch(() => {});
+            }).catch(() => {});
         }
-        await page.waitForTimeout(3500);
-        await scanAndBroadcastToasts();
 
-        const isGreenInDOM = await page.evaluate((fileName) => {
-            const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
-            const lastInp = allDocInputs[allDocInputs.length - 1];
-            if (!lastInp || !lastInp.parentElement) return true;
-            const parent = lastInp.parentElement;
-            const hasFileName = parent.innerText && parent.innerText.includes(fileName);
-            const hasClearBtn = Array.from(parent.querySelectorAll('button')).some(b => b.innerText.trim().toLowerCase() === 'x');
-            const uploadBtn = Array.from(parent.querySelectorAll('button')).find(b => (b.innerText || '').toLowerCase().includes('பதிவேற்றம்') || (b.innerText || '').toLowerCase().includes('upload'));
-            const isUploadDisabled = uploadBtn ? uploadBtn.disabled : false;
-            const greenEl = parent.querySelectorAll('.badge.bg-success, .text-success, i.fa-check, .alert-success');
-            return Boolean(hasFileName || hasClearBtn || isUploadDisabled || greenEl.length > 0);
-        }, path.basename(memPdf));
+        const verifyMemDocUploaded = async () => {
+            return await page.evaluate(() => {
+                const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
+                const lastInp = allDocInputs[allDocInputs.length - 1];
+                const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim());
+                const hasSuccessToast = toasts.some(t => t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t));
+                if (hasSuccessToast) return true;
+                if (!lastInp || !lastInp.parentElement) return false;
+                let container = lastInp.parentElement;
+                for (let i = 0; i < 4 && container; i++) {
+                    const hasClearBtn = Array.from(container.querySelectorAll('button')).some(b => {
+                        const txt = (b.innerText || '').trim().toLowerCase();
+                        return txt === 'x' || txt === '×';
+                    });
+                    const uploadBtn = Array.from(container.querySelectorAll('button')).find(b => {
+                        const t = (b.innerText || '').toLowerCase();
+                        return t.includes('பதிவேற்றம்') || t.includes('upload');
+                    });
+                    const isUploadDisabled = uploadBtn ? uploadBtn.disabled : false;
+                    const greenEl = container.querySelectorAll('.badge.bg-success, .text-success, i.fa-check, .alert-success');
+                    if (hasClearBtn || isUploadDisabled || greenEl.length > 0) return true;
+                    container = container.parentElement;
+                }
+                return false;
+            }).catch(() => false);
+        };
+
+        let isGreenInDOM = false;
+        for (let uw = 0; uw < 8; uw++) {
+            await page.waitForTimeout(1000);
+            isGreenInDOM = await verifyMemDocUploaded();
+            if (isGreenInDOM) break;
+        }
+        await scanAndBroadcastToasts();
+        if (!isGreenInDOM) isGreenInDOM = await verifyMemDocUploaded();
 
         if (!isGreenInDOM && !isMockSandboxMode) {
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} ${docLabel} பதிவேற்றத்தில் பச்சைக் குறியீடு வரவில்லை!`);
-            return { success: false, message: `உறுப்பினர் ${memNum} ${docLabel} பதிவேற்றம் தோல்வி.` };
+            const upErrMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ${docLabel} பதிவேற்றம் ஆகவில்லை!`;
+            await showBrowserHud(`🔴 ஆவணப் பதிவேற்றப் பிழை`, upErrMsg, 'error');
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** ${upErrMsg}`);
+            return { success: false, message: upErrMsg };
         }
         onProgress(`✅ [உறுப்பினர் ${memNum}] ${docLabel} வெற்றிகரமாகப் பதிவேற்றப்பட்டு பச்சைக் குறியீடு உறுதி செய்யப்பட்டது!`);
 
         // Clear any leftover OTP from previous member BEFORE saving this member (prevents UIDAI/mobile OTP collisions)
         clearStaleOtpState();
 
-        // 13. உறுப்பினர் விவரம் சேமி பொத்தான் கிளிக்
+        // Geolocation polyfill + Angular locationService guard (prevents Save Member from hanging on location prompt)
+        await page.evaluate(() => {
+            try {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition = function(success) {
+                        success({
+                            coords: { latitude: 12.9716, longitude: 79.1585, accuracy: 20 },
+                            timestamp: Date.now()
+                        });
+                    };
+                }
+                for (const el of document.querySelectorAll('*')) {
+                    if (window.ng && window.ng.getComponent) {
+                        const c = window.ng.getComponent(el);
+                        if (c && c.locationService) {
+                            c.locationService.getBrowserLocation = async () => ({ latitude: 12.9716, longitude: 79.1585 });
+                            break;
+                        }
+                    }
+                }
+            } catch (_) {}
+        }).catch(() => {});
+
+        // 13. உறுப்பினர் விவரம் சேமி பொத்தான் கிளிக் (Strict Save Member Click & Angular Validation Check)
         onProgress(`📍 [உறுப்பினர் ${memNum}] உறுப்பினர் விவரம் சேமி பொத்தான் அழுத்தப்படுகிறது...`);
-        const saveMemBtn = page.getByRole('button', { name: /உறுப்பினர் விவரம் சேமி|Save Member|Save/i })
-            .or(page.locator('button:has-text("உறுப்பினர் விவரம் சேமி"), button:has-text("Save Member")')).last();
+
+        // Refresh Angular control validity in case any native input/select didn't notify FormGroup
+        const formAudit = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                const t = (b.innerText || '').trim();
+                return (t.includes('உறுப்பினர் விவரம் சேமி') || t.includes('Save Member')) && b.offsetParent !== null;
+            });
+            const targetBtn = btns[btns.length - 1] || null;
+            const form = targetBtn ? targetBtn.closest('form') : null;
+            if (form) {
+                form.querySelectorAll('input, select, textarea').forEach(el => {
+                    if (el.type === 'file') return;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                });
+            }
+            const invalidLabels = form
+                ? Array.from(form.querySelectorAll('.ng-invalid')).map(el => el.getAttribute('formcontrolname') || el.name || el.tagName).filter(Boolean)
+                : [];
+            return {
+                btnFound: Boolean(targetBtn),
+                btnDisabled: Boolean(targetBtn && targetBtn.disabled),
+                invalidControls: Array.from(new Set(invalidLabels))
+            };
+        }).catch(() => ({ btnFound: false, btnDisabled: false, invalidControls: [] }));
+
+        await page.waitForTimeout(300);
+
+        if (formAudit.btnDisabled && !isMockSandboxMode) {
+            const invalidInfo = formAudit.invalidControls.length > 0 ? formAudit.invalidControls.join(', ') : 'தெரியாத புலம்';
+            const disabledMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) "உறுப்பினர் விவரம் சேமி" பொத்தான் செயலற்ற நிலையில் (Disabled) உள்ளது — முழுமையடையாத புலங்கள்: ${invalidInfo}`;
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Member ${memNum} Validation):** ${disabledMsg}`);
+            await showBrowserHud(`🔴 உறுப்பினர் ${memNum} படிவச் சரிபார்ப்புப் பிழை`, disabledMsg, 'error');
+            return { success: false, message: disabledMsg };
+        }
+
+        const saveMemBtn = page.locator('button:has-text("உறுப்பினர் விவரம் சேமி"), button:has-text("Save Member")').last();
         if (await saveMemBtn.count() > 0) {
             await saveMemBtn.scrollIntoViewIfNeeded().catch(() => {});
-            await saveMemBtn.click({ force: true }).catch(() => {});
+            await saveMemBtn.click({ timeout: 5000 }).catch(async () => {
+                await saveMemBtn.click({ force: true }).catch(() => {});
+            });
+        } else {
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} "உறுப்பினர் விவரம் சேமி" பொத்தான் திரையில் கிடைக்கவில்லை!`);
+            return { success: false, message: `உறுப்பினர் ${memNum} சேமி பொத்தான் கிடைக்கவில்லை.` };
         }
 
         await showBrowserHud('⏳ தயவுசெய்து காத்திருக்கவும்...', `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) விவரங்கள் அரசு அட்டவணையில் சேர்க்கப்படுகின்றன...`, 'info');
-        for (let s = 1; s <= 30; s++) {
+        for (let s = 1; s <= 25; s++) {
             await page.waitForTimeout(1000);
-            const isBusy = await page.evaluate(() => {
+            if (await checkAadhaarModal()) break;
+            const busyState = await page.evaluate(() => {
                 const text = document.body.innerText;
                 const hasLoading = text.includes('தயவுசெய்து காத்திருக்கவும்') || text.includes('Please Wait');
-                const btn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினர் விவரம் சேமி'));
-                return Boolean(hasLoading || (btn && btn.disabled));
-            });
-            if (!isBusy) break;
+                const errToast = Array.from(document.querySelectorAll('.p-toast-message-error, .p-toast-message-warn, .toast-error, .alert-danger')).map(t => (t.innerText || '').trim()).filter(Boolean).join(' | ');
+                return { hasLoading, errToast };
+            }).catch(() => ({ hasLoading: false, errToast: '' }));
+            if (busyState.errToast) {
+                await scanAndBroadcastToasts();
+                break;
+            }
+            if (!busyState.hasLoading && s >= 2) break;
         }
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(1200);
         await scanAndBroadcastToasts();
-        await removeBrowserHud();
 
         // 14. ஆதார் OTP (ஆதார் உறுப்பினருக்கு Modal தோன்றினால்; பிறப்புச் சான்றிதழ் குழந்தைக்கு ஆதார் OTP தேவையில்லை)
         let isMemModalVisible = false;
@@ -199,7 +291,7 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
 
             // Live self-healing watch loop supporting app chat/IPC AND direct Chrome typing + resend cooldown + toast retry
             let lastMemOtpSubmitted = '';
-            let lastMemResendAt = Date.now();
+            let promptedResendNotice = false;
             let promptedAppOnce = false;
 
             for (let tick = 0; tick < 360; tick++) {
@@ -286,18 +378,9 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                     return { otpVal: val, timerVal, canResend: Boolean(resendBtn && !resendBtn.disabled) };
                 }).catch(() => ({ otpVal: '', timerVal: null, canResend: false }));
 
-                if (modalSnap.timerVal === 0 && modalSnap.canResend && (Date.now() - lastMemResendAt >= 65000)) {
-                    lastMemResendAt = Date.now();
-                    onProgress(`🔄 [உறுப்பினர் ${memNum}] 300 விநாடிகள் முடிந்தது — புதிய UIDAI ஆதார் OTP கோரப்படுகிறது...`);
-                    const resendLoc = page.locator('input[formcontrolname="otp"], input#otp')
-                        .locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(text(),"மீண்டும்") or contains(text(),"Resend")]')
-                        .first();
-                    if (await resendLoc.count() > 0 && await resendLoc.isVisible().catch(() => false)) {
-                        await resendLoc.click({ delay: 50 }).catch(() => {});
-                    }
-                    lastMemOtpSubmitted = '';
-                    await page.waitForTimeout(2500);
-                    continue;
+                if (modalSnap.timerVal === 0 && modalSnap.canResend && !promptedResendNotice) {
+                    promptedResendNotice = true;
+                    onProgress(`⏳ [உறுப்பினர் ${memNum}] ஆதார் OTP டைமர் முடிந்துள்ளது — SMS வரவில்லையெனில் "OTP மீண்டும் அனுப்பவும்" பொத்தானை அழுத்தவும் (முந்தைய OTP-ஐப் பாதுகாக்க தானியங்கி Resend தவிர்க்கப்பட்டது).`);
                 }
 
                 if (modalSnap.otpVal.length === 6) {
@@ -367,7 +450,9 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
 
         await takeStepSnapshot(`member_${memNum}_saved`);
         if (!isMemberInTable) {
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) அரசு அட்டவணையில் சேமிக்கப்படவில்லை!`);
+            const haltMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) அரசு அட்டவணையில் சேமிக்கப்படவில்லை! ஆவணப் பதிவேற்றம் அல்லது ஆதார் சரிபார்ப்பு முழுமையடையவில்லை.`;
+            await showBrowserHud(`🔴 உறுப்பினர் ${memNum} சேர்க்கை நிறுத்தம்`, haltMsg, 'error');
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltMsg}`);
             return { success: false, message: `உறுப்பினர் ${memNum} அட்டவணையில் உறுதி செய்யப்படவில்லை.` };
         }
         onProgress(`✅ [உறுப்பினர் ${memNum}] ${mem.nameTam || mem.nameEng} அரசு அட்டவணையில் வெற்றிகரமாகச் சேர்க்கப்பட்டு பச்சையாகப் பூட்டப்பட்டது!`);

@@ -4,14 +4,23 @@
 const fs = require('fs');
 const path = require('path');
 const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../../../utils/bilingual_helper');
+const { fillAndVerifyInput, selectAndVerifyOption } = require('../../../common/strict_step_gate');
 
 let produceCompliantDocument;
-try {
-    const ps = require('../../../../photo_studio');
-    produceCompliantDocument = ps.produceCompliantDocument;
-} catch (e) {
-    produceCompliantDocument = async (p) => p;
+for (const candidate of [
+    '../../../../../photo_studio',
+    path.join(__dirname, '..', '..', '..', '..', '..', 'photo_studio.js'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'photo_studio.js') : ''
+].filter(Boolean)) {
+    try {
+        const ps = require(candidate);
+        if (ps && ps.produceCompliantDocument) {
+            produceCompliantDocument = ps.produceCompliantDocument;
+            break;
+        }
+    } catch (_) {}
 }
+if (!produceCompliantDocument) produceCompliantDocument = async (p) => p;
 
 async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, scanAndBroadcastToasts) {
     const {
@@ -23,22 +32,15 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     const isMockSandboxMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
     const { engName, tamName } = sanitizedProfile;
 
-    // 2. பெயர் (ஆங்கிலம்) உள்ளீடு & சரிபார்ப்பு பூட்டு (STRICTLY nth(1) — NEVER touch nth(0) Section 1 Head!)
-    const targetMemEng = (mem.nameEng || mem.name || '').trim();
-    onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் (${targetMemEng}) உள்ளிடப்படுகிறது...`);
-    const nameEngInp = page.locator('input[formcontrolname="NameOfFamilyHead"]').nth(1);
-    
-    await nameEngInp.evaluate(el => {
-        el.disabled = false; el.removeAttribute('disabled');
-        el.readOnly = false; el.removeAttribute('readonly');
-    });
-    await nameEngInp.click({ force: true });
-    await nameEngInp.fill(targetMemEng);
-    await nameEngInp.dispatchEvent('input');
-    await nameEngInp.dispatchEvent('change');
-    await page.waitForTimeout(600);
+    const isStrictLive = !isMockSandboxMode;
 
-    // 3. பெயர் (தமிழில்) உள்ளீடு & சரிபார்ப்பு பூட்டு (இருமொழி இனிஷியல் துல்லிய ஒத்திசைவு)
+    // 2. பெயர் (ஆங்கிலம்) & 3. பெயர் (தமிழில்) கடுமையான சரிபார்ப்பு (Strict Step Gate)
+    const targetMemEng = (mem.nameEng || mem.name || '').trim();
+    onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் ஆங்கிலம் (${targetMemEng}) உள்ளிடப்படுகிறது...`);
+    const nameEngInp = page.locator('input[formcontrolname="NameOfFamilyHead"]').nth(1);
+    await fillAndVerifyInput(page, nameEngInp, targetMemEng, `உறுப்பினர் ${memNum} (பெயர் - ஆங்கிலம்)`, { required: isStrictLive });
+    await page.waitForTimeout(300);
+
     let targetMemTam = (mem.nameTam || mem.name || '').trim();
     if (targetMemEng && targetMemTam) {
         targetMemTam = normalizeTamilInitialsFromEnglish(targetMemEng, targetMemTam);
@@ -47,31 +49,17 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     }
     onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் தமிழ் (${targetMemTam}) உள்ளிடப்படுகிறது...`);
     const nameTamInp = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').nth(1);
-    
-    await nameTamInp.evaluate((el, val) => {
-        el.disabled = false; el.removeAttribute('disabled');
-        el.readOnly = false; el.removeAttribute('readonly');
-        el.value = val;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur', { bubbles: true }));
-    }, targetMemTam);
+    await fillAndVerifyInput(page, nameTamInp, targetMemTam, `உறுப்பினர் ${memNum} (பெயர் - தமிழ்)`, { required: isStrictLive });
     await page.waitForTimeout(300);
 
     // 1.5 தலைப்பு தேர்வு (Salutation)
     const salEng = page.locator('select[formcontrolname="salutation"]').nth(1);
     if (await salEng.count() > 0) {
-        await salEng.evaluate(el => { el.disabled = false; el.removeAttribute('disabled'); });
-        const optIdx = mem.gender === 'Female' ? 2 : 1;
-        await salEng.selectOption({ index: optIdx }).catch(() => {});
-        await salEng.dispatchEvent('change');
+        await selectAndVerifyOption(salEng, `உறுப்பினர் ${memNum} (தலைப்பு - ஆங்கிலம்)`, { index: mem.gender === 'Female' ? 2 : 1, required: false });
     }
     const salTam = page.locator('select[formcontrolname="lsalutation"]').nth(1);
     if (await salTam.count() > 0) {
-        await salTam.evaluate(el => { el.disabled = false; el.removeAttribute('disabled'); });
-        const optIdx = mem.gender === 'Female' ? 2 : 1;
-        await salTam.selectOption({ index: optIdx }).catch(() => {});
-        await salTam.dispatchEvent('change');
+        await selectAndVerifyOption(salTam, `உறுப்பினர் ${memNum} (தலைப்பு - தமிழ்)`, { index: mem.gender === 'Female' ? 2 : 1, required: false });
     }
 
     // Ironclad Safeguard: Verify Section 1 Family Head was NOT modified!
@@ -90,11 +78,20 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         }, { tamName });
     }
 
-    // 4. பிறந்த தேதி உள்ளீடு (Calendar)
+    // 4. பிறந்த தேதி உள்ளீடு + கடுமையான சரிபார்ப்பு
     const memDobVal = mem.dob || '03/06/2000';
     onProgress(`📍 [உறுப்பினர் ${memNum}] பிறந்த தேதி (${memDobVal}) காலண்டர் மூலம் தேர்வு செய்யப்படுகிறது...`);
     await selectDateInMatCalendar(page, memDobVal, true);
-    await page.waitForTimeout(500);
+    const dobInpMem = page.locator('input[formcontrolname="dateOfBirth"]').last();
+    let memDobActual = (await dobInpMem.inputValue().catch(() => '')).trim();
+    if (!memDobActual && isStrictLive) {
+        await selectDateInMatCalendar(page, memDobVal, true);
+        memDobActual = (await dobInpMem.inputValue().catch(() => '')).trim();
+        if (!memDobActual) {
+            throw new Error(`உறுப்பினர் ${memNum} பிறந்த தேதி (${memDobVal}) காலண்டரில் தேர்வு செய்யப்படவில்லை!`);
+        }
+    }
+    await page.waitForTimeout(400);
 
     // 5. பாலினம் (Male / Female)
     const isMemFemale = mem.gender === 'Female' || (mem.genderTam && mem.genderTam.includes('பெண்'));
@@ -106,23 +103,21 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
             const v = (o.value || '').toLowerCase();
             return isMemFemale ? (v.includes('female') || t.includes('பெண்') || t.includes('female')) : (v.includes('male') || t.includes('ஆண்') || t.includes('male'));
         });
-        if (targetOpt) {
-            await genSelect.selectOption(targetOpt.value).catch(() => {});
-        } else {
-            await genSelect.selectOption({ index: isMemFemale ? 2 : 1 }).catch(() => {});
-        }
-        await genSelect.dispatchEvent('change').catch(() => {});
-        await page.waitForTimeout(300);
+        await selectAndVerifyOption(genSelect, `உறுப்பினர் ${memNum} (பாலினம்)`, {
+            value: targetOpt ? targetOpt.value : null,
+            index: targetOpt ? null : (isMemFemale ? 2 : 1),
+            required: isStrictLive
+        });
+        await page.waitForTimeout(250);
     }
 
     // 6. தேசிய இனம் (இந்தியன்)
     const natSelect = page.locator('select[formcontrolname="nationality"]').last();
     if (await natSelect.count() > 0) {
-        await natSelect.selectOption('Indian').catch(async () => {
-            await natSelect.selectOption({ index: 1 });
+        await selectAndVerifyOption(natSelect, `உறுப்பினர் ${memNum} (தேசிய இனம்)`, { value: 'Indian', required: isStrictLive }).catch(async () => {
+            await selectAndVerifyOption(natSelect, `உறுப்பினர் ${memNum} (தேசிய இனம்)`, { index: 1, required: isStrictLive });
         });
-        await natSelect.dispatchEvent('change');
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(250);
     }
 
     // 7. உறவுமுறை தேர்வு
@@ -185,29 +180,27 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         if (yrMatch) memAge = Math.max(0, new Date().getFullYear() - parseInt(yrMatch[1], 10));
     }
 
-    // 8. தொழில் & வருமானம்
+    // 8. தொழில் & வருமானம் (Strict Step Gate)
     const profSelect = page.locator('select[formcontrolname="profession"]').last();
     if (await profSelect.count() > 0) {
+        const pOpts = await profSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: (o.text || '').trim() }))).catch(() => []);
         if (isBirthCertMember || memAge < 15) {
-            const pOpts = await profSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: (o.text || '').trim() }))).catch(() => []);
             const childOpt = pOpts.find(o => /student|child|none|not applicable|மாணவ|குழந்தை|பொருந்தாது|இல்லை/i.test(o.text + ' ' + o.value));
-            if (childOpt) await profSelect.selectOption(childOpt.value).catch(() => {});
-            else await profSelect.selectOption({ index: pOpts.length > 1 ? pOpts.length - 1 : 1 }).catch(() => {});
+            await selectAndVerifyOption(profSelect, `உறுப்பினர் ${memNum} (தொழில்)`, {
+                value: childOpt ? childOpt.value : null,
+                index: childOpt ? null : (pOpts.length > 1 ? pOpts.length - 1 : 1),
+                required: isStrictLive
+            });
         } else {
-            await profSelect.selectOption({ index: 1 }).catch(() => {});
+            await selectAndVerifyOption(profSelect, `உறுப்பினர் ${memNum} (தொழில்)`, { index: 1, required: isStrictLive });
         }
-        await profSelect.dispatchEvent('change');
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(250);
     }
 
     const incInp = page.locator('input[formcontrolname="monthlyIncome"]').last();
-    if (await incInp.count() > 0) {
-        const memInc = (isBirthCertMember || memAge < 18) ? '0' : String(mem.monthlyIncome || '3000');
-        await incInp.fill(memInc);
-        await incInp.dispatchEvent('input');
-        await incInp.dispatchEvent('change');
-        await page.waitForTimeout(300);
-    }
+    const memInc = (isBirthCertMember || memAge < 18) ? '0' : String(mem.monthlyIncome || '3000');
+    await fillAndVerifyInput(page, incInp, memInc, `உறுப்பினர் ${memNum} (மாத வருமானம்)`, { required: isStrictLive });
+    await page.waitForTimeout(250);
 
     // 9. மற்ற ஆவணங்கள் * (பிறப்புச் சான்றிதழ் vs ஆதார் அட்டை — உறுப்பினருக்கு ஏற்ப 1-to-1 தேர்வு)
     onProgress(`📍 [உறுப்பினர் ${memNum}] ஆவண வகை (${isBirthCertMember ? 'பிறப்புச் சான்றிதழ் - ஆதார் இல்லை' : 'ஆதார் அட்டை'}) தேர்ந்தெடுக்கப்படுகிறது...`);
@@ -217,14 +210,12 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         const targetDocOpt = isBirthCertMember
             ? dOptions.find(o => o.text.includes('பிறப்பு') || o.text.toLowerCase().includes('birth') || o.value.toLowerCase().includes('birth'))
             : dOptions.find(o => o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar') || o.value.toLowerCase().includes('aadhaar'));
-        if (targetDocOpt) {
-            await docSelect.selectOption(targetDocOpt.value).catch(() => {});
-        } else if (dOptions.length > 1) {
-            await docSelect.selectOption({ index: 1 }).catch(() => {});
-        }
-        await docSelect.dispatchEvent('input').catch(() => {});
-        await docSelect.dispatchEvent('change').catch(() => {});
-        await page.waitForTimeout(1000);
+        await selectAndVerifyOption(docSelect, `உறுப்பினர் ${memNum} (ஆவண வகை)`, {
+            value: targetDocOpt ? targetDocOpt.value : null,
+            index: targetDocOpt ? null : 1,
+            required: isStrictLive
+        });
+        await page.waitForTimeout(900);
     }
 
     // 10. 12-இலக்க ஆதார் எண் உள்ளீடு (பிறப்புச் சான்றிதழ் உறுப்பினருக்கு ஆதார் எண் ஒருபோதும் நிரப்பப்படாது!)
@@ -254,11 +245,9 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         const mPart3 = validMemAadhaar.substring(8, 12);
 
         onProgress(`📍 [உறுப்பினர் ${memNum}] 12-இலக்க ஆதார் எண் (${mPart1} ${mPart2} ${mPart3}) உள்ளிடப்படுகிறது...`);
-        if (await a1.count() > 0 && await a2.count() > 0 && await a3.count() > 0) {
-            await a1.fill(mPart1); await a1.dispatchEvent('input'); await a1.dispatchEvent('change');
-            await a2.fill(mPart2); await a2.dispatchEvent('input'); await a2.dispatchEvent('change');
-            await a3.fill(mPart3); await a3.dispatchEvent('input'); await a3.dispatchEvent('change');
-        }
+        await fillAndVerifyInput(page, a1, mPart1, `உறுப்பினர் ${memNum} (ஆதார் பகுதி 1)`, { required: isStrictLive });
+        await fillAndVerifyInput(page, a2, mPart2, `உறுப்பினர் ${memNum} (ஆதார் பகுதி 2)`, { required: isStrictLive });
+        await fillAndVerifyInput(page, a3, mPart3, `உறுப்பினர் ${memNum} (ஆதார் பகுதி 3)`, { required: isStrictLive });
     }
     await page.waitForTimeout(500);
 
@@ -310,6 +299,7 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         }).catch(() => {});
         try {
             await aadhaarFileInput.setInputFiles(memPdf, { timeout: 2000 });
+            await aadhaarFileInput.dispatchEvent('change').catch(() => {});
         } catch (e) {
             console.warn('[Member Aadhaar Upload] setInputFiles timed out or failed:', e.message);
         }

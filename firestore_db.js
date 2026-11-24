@@ -7,7 +7,7 @@ const { saveCitizenDraft } = require('./src/services/db/draft_save');
 const { getCitizenDraft } = require('./src/services/db/draft_get');
 const { listAllDrafts, trashCitizenDraft, restoreCitizenDraft, deleteCitizenDraft, migrateCustomerUploads } = require('./src/services/db/draft_manage');
 const { saveUserProfile, getUserProfile, deleteUserProfile, lookupUserByMobile, saveActiveOperatorSession, getActiveOperatorSession, clearActiveOperatorSession } = require('./src/services/db/user_profile_store');
-const { logOperatorCorrection, logOperatorError, listOperatorErrors, listOperatorErrorSummaries } = require('./src/services/db/telemetry_store');
+const { logOperatorCorrection, listOperatorCorrections, logOperatorError, listOperatorErrors, listOperatorErrorSummaries } = require('./src/services/db/telemetry_store');
 
 module.exports = {
     saveCitizenDraft,
@@ -25,6 +25,7 @@ module.exports = {
     getActiveOperatorSession,
     clearActiveOperatorSession,
     logOperatorCorrection,
+    listOperatorCorrections,
     logOperatorError,
     listOperatorErrors,
     listOperatorErrorSummaries,

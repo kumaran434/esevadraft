@@ -169,7 +169,6 @@ async function executeMobileChangeFormSteps({
     onProgress(`👉 புதிய கைபேசியில் (+91 ${newMobile}) வந்த 6-இலக்க OTP எண்ணை சாட்டிலோ அல்லது Google Chrome திரையிலோ உள்ளிடவும்.`);
     await showBrowserHud('[படி 10/10] புதிய எண் OTP', `+91 ${newMobile}-க்கு வந்த OTP உள்ளிடவும்`, 'warning');
 
-    const otpModal = page.locator('.modal, div[role="dialog"], div.modal-dialog, form:has(input[formcontrolname="otp"])').first();
     let isModalVisible = false;
     for (let w = 0; w < 15; w++) {
         if (await page.locator('input[formcontrolname="otp"]').count() > 0) {
@@ -177,6 +176,14 @@ async function executeMobileChangeFormSteps({
             break;
         }
         await page.waitForTimeout(1000);
+    }
+
+    const isMockSandboxMode = options?.isMockSandbox !== false && options?.mockSandbox !== false;
+    if (!isModalVisible && !isMockSandboxMode) {
+        const mobOtpErr = `படி 9: புதிய எண் (+91 ${newMobile}) OTP சாளரம் திரையில் திறக்கப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.`;
+        await showBrowserHud('[படி 9/10] 🔴 OTP சாளரம் திறக்கவில்லை', mobOtpErr, 'error');
+        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${mobOtpErr}`);
+        return { success: false, message: mobOtpErr };
     }
 
     const newOtpVal = await waitForMobileChangeNewNumberOtp(page, newMobile, onProgress, requestOtpFromUser);

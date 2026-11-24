@@ -6,9 +6,19 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 let produceDualSidedDocument = null;
-try {
-    produceDualSidedDocument = require('../../../services/photo_studio').produceDualSidedDocument;
-} catch (_) {}
+for (const candidate of [
+    '../../../../photo_studio',
+    path.join(__dirname, '..', '..', '..', '..', 'photo_studio.js'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'photo_studio.js') : ''
+].filter(Boolean)) {
+    try {
+        const ps = require(candidate);
+        if (ps && ps.produceDualSidedDocument) {
+            produceDualSidedDocument = ps.produceDualSidedDocument;
+            break;
+        }
+    } catch (_) {}
+}
 
 async function resolveDocFromOptions(candidateFilePath, options, citizenProfile, docCategory, memberIndex = -1) {
     options = options || {};

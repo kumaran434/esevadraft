@@ -258,6 +258,16 @@
     5. `automation.js`: `startFromChat`, `run`, `chatStartTriggers`, `readyStates`.
     6. UI Cartridge (`public/js/cartridges/<service>.js`): `ownedDocTypes`, `renderDynamicEditFields` (zero static HTML bloat in `public/index.html`), `collectEditFields`, `renderDynamicSidebar`, `syncFromUpload`, `validatePreSubmit`.
 - **Frozen Core Tools Only**: Only pure stateless tools (`photo_studio.js`, `ai_document_extractor.js`, `doc_upload_primitives.js`, `tn_district_mapper.js`, `tnega_browser_manager.js`, `storage_service.js`) and thin switchboards (`<= 120 lines`) remain shared.
+
+### 🔒 Golden Rule 22: Mandatory Strict Step-Completion Gate Law (படி-முடிவு உறுதிப்பாட்டு விதி — ஒரு படி முடியாமல் அடுத்த படி செல்ல முழுத் தடை)
+- **Zero Premature Step Advancement (படி முடியாமல் அடுத்த படி செல்லவே கூடாது)**:
+  - எந்தவொரு அரசு ஆட்டோமேஷனிலும் (TNPDS & TNeGA — அனைத்து சேவைகளிலும்) **படி N முழுமையாக முடிந்து அரசு போர்ட்டலின் DOM / சர்வர் மூலம் உறுதி செய்யப்படாமல்** ஒருபோதும் படி N+1-க்குத் தாவக் கூடாது.
+  - **கட்டாயப் பூட்டுகள் (Mandatory Step Locks)**:
+    1. **Generate OTP (படி 19 / Login OTP) ➡️ Wait OTP**: OTP உருவாக்கு பொத்தானை அழுத்திய பிறகு, உண்மையில் Chrome-ல் OTP Modal திறந்ததா என்பதை உறுதிப்படுத்திய பிறகே OTP காத்திருப்பிற்குச் செல்ல வேண்டும்.
+    2. **Upload Document ➡️ Save / Next**: `<input type="file">`-ல் கோப்பின் பெயர் தெரிந்தாலே பதிவேற்றம் முடிந்துவிட்டதாகக் கருதக் கூடாது (`uploadInpVal`, `hasFileName`, `input.files[0]` ஆகியவை போலி உறுதி!). அரசு சர்வரின் `"வெற்றிகரமாக பதிவேற்றப்பட்டது"` Toast / பச்சை Chip (`#69f777`, `.badge-success`, `.alert-success`, clear `'x'` button, அல்லது upload button disabled) வந்த பிறகே `Save Member` / `Next` அழுத்த வேண்டும்.
+    3. **Verify OTP ➡️ Next Form / Next Member**: OTP சமர்ப்பித்த பிறகு, போர்ட்டல் பிழையின்றி OTP சாளரம் மூடி அடுத்த நிலை / அட்டவணையில் உறுப்பினர் வரிசை உறுதியான பிறகே அடுத்த உறுப்பினருக்கோ அடுத்த கட்டத்திற்கோ செல்ல வேண்டும்.
+    4. **Zero Blind Aadhaar Auto-Resend**: UIDAI ஆதார் OTP சாளரத்தில் ஆப்ரேட்டர் அனுமதியின்றி தானாக `"மீண்டும் அனுப்பவும்"` (Resend) அழுத்தி `txn` குறியீட்டை அழிக்கக் கூடாது.
+    5. **Halt Loudly at Step N**: படி N உறுதிப்படுத்தப்படவில்லை எனில், அங்கேயே சிவப்பு HUD (`🔴 பிழை`) மற்றும் சாட் எச்சரிக்கையுடன் பாதுகாப்பாக நிறுத்த வேண்டும் — தவறான படிக்கு ஓடக் கூடாது.
 - **Automated Gate**: Enforce via `node scripts/preflight_check.js` and `tests/regression_suite.js` on every change.
 
 ---

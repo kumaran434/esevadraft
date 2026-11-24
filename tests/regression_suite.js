@@ -3961,15 +3961,24 @@ async function runTests() {
             assert(!headStepsSrc.includes('comp.aadharCheck()') && headStepsSrc.includes('new Date(dYear, dMonth, dDay, 12, 0, 0)'), "card_head_member_steps avoids duplicate aadharCheck() OTP firing and parses DOB dynamically");
 
             const step21Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
-            assert(step21Src.includes('65000') && fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_aadhaar_otp_steps.js'), 'utf8').includes('65000'), "OTP verifiers enforce strict 65s resend cooldown");
+            const headAadhaarSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_aadhaar_otp_steps.js'), 'utf8');
+            assert(step21Src.includes('65000'), "Mobile OTP verifier enforces strict 65s resend cooldown");
+            assert(!headAadhaarSrc.includes('resendLoc.click'), "Head Aadhaar OTP verifier NEVER auto-clicks UIDAI Resend (prevents txn mismatch)");
 
             const famLoopSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
             assert(famLoopSrc.includes('if (!isBirthCertMember)') && famLoopSrc.includes('clearStaleOtpState'), "card_family_members_loop skips Aadhaar OTP for Birth Certificate members and clears stale OTP between members");
+            assert(!famLoopSrc.includes('resendLoc.click') && famLoopSrc.includes('verifyMemDocUploaded'), "Member loop prevents UIDAI txn auto-resend wipe and verifies real server upload toast/badge");
+
+            const docPrepSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_doc_prep.js'), 'utf8');
+            assert(docPrepSrc.includes('../../../../../photo_studio') && addMemFormSrc.includes('../../../../../photo_studio'), "New Card doc prep & additional member form resolve root photo_studio cleanly");
+
+            const tnpdsHudSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'helpers', 'browser_hud.js'), 'utf8');
+            assert(tnpdsHudSrc.includes('width: 295px') && tnpdsHudSrc.includes('white-space:normal') && tnpdsHudSrc.includes('eseva-hud-error-tag'), "TNPDS browser HUD renders compact right-aligned wrapping card with visible red error badge");
 
             const tnpdsAutoSrc = fs.readFileSync(path.join(__dirname, '..', 'tnpds_automation.js'), 'utf8');
             assert(tnpdsAutoSrc.includes('cachedUserOtp = \'\'; cachedOtpTimestamp = 0;') && tnpdsAutoSrc.includes('!isModalVisible'), "tnpds_automation clears cachedUserOtp on consumption and ignores spinner while OTP modal is open");
 
-            passedCount += 13;
+            passedCount += 16;
         }
 
         // =========================================================================
@@ -5156,7 +5165,74 @@ async function runTests() {
                 }
             });
             assert(radRestartRes && radRestartRes.success === true && cycleTrace.join(',') === 'START_1,START_2,COMPLETE_2', 'executePageBlockWithRadwareRestart automatically restarts from Step 1 when mid-run Radware refreshes/wipes the page');
-            passedCount += 28;
+
+            // Verify Golden Rule 22: Mandatory Strict Step-Completion Gate Law across all TNPDS flows
+            const gateMod = require('../src/portal/common/strict_step_gate');
+            const gateFail = await gateMod.enforceStrictStepGate('படி 33 ஆதார் பதிவேற்றம்', async () => false, {});
+            assert(gateFail && gateFail.success === false, 'enforceStrictStepGate halts cleanly when step fails verification');
+            const gatePass = await gateMod.enforceStrictStepGate('படி 33 ஆதார் பதிவேற்றம்', async () => true, {});
+            assert(gatePass && gatePass.success === true, 'enforceStrictStepGate passes when step completes cleanly');
+
+            const step8MgrSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'step8_upload_manager.js'), 'utf8');
+            assert(!step8MgrSrc.includes('|| uploadInpVal ||'), 'step8_upload_manager never treats raw input filename as server upload success');
+            const addMem8Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'add_member', 'add_member_step8_upload.js'), 'utf8');
+            assert(!addMem8Src.includes('activeFileInput.files[0]') && addMem8Src.includes('!isDocUploadedGreen && !isMockSandboxMode'), 'add_member_step8_upload enforces strict server upload gate before Step 9');
+            const jurStepsSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_jurisdiction_steps.js'), 'utf8');
+            assert(jurStepsSrc.includes('waitForOtpModalOpened'), 'card_jurisdiction_steps verifies OTP modal opened at Step 19 before advancing to Step 20');
+            const headMemSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_member_steps.js'), 'utf8');
+            assert(headMemSrc.includes('verifyServerUploadConfirmed'), 'card_head_member_steps verifies Step 33 server upload before Step 34 Save Member');
+            const commGasSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_commodities_gas_steps.js'), 'utf8');
+            assert(commGasSrc.includes('verifyServerUploadConfirmed') && commGasSrc.includes('selectAndVerifyOption') && commGasSrc.includes('fillAndVerifyInput'), 'card_commodities_gas_steps verifies residence proof upload & card/gas fields strictly');
+
+            const appDemoSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_applicant_demographics.js'), 'utf8');
+            assert(appDemoSrc.includes('fillAndVerifyInput'), 'card_applicant_demographics enforces fillAndVerifyInput on Steps 4-13');
+            const addMemFormSrc73 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_additional_member_form.js'), 'utf8');
+            assert(addMemFormSrc73.includes('fillAndVerifyInput') && addMemFormSrc73.includes('selectAndVerifyOption'), 'card_additional_member_form verifies every member input & select strictly');
+            const submitStepsSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_upload_and_submit_steps.js'), 'utf8');
+            assert(submitStepsSrc.includes('isDeclChecked'), 'card_upload_and_submit_steps verifies Step 47 declaration checkbox strictly');
+            const mobFormSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'mobile_change', 'mobile_form_steps.js'), 'utf8');
+            assert(mobFormSrc.includes('!isModalVisible && !isMockSandboxMode'), 'mobile_form_steps halts at Step 9 if OTP modal failed to open');
+            assert(typeof gateMod.fillAndVerifyInput === 'function' && typeof gateMod.selectAndVerifyOption === 'function', 'strict_step_gate exports universal fillAndVerifyInput and selectAndVerifyOption helpers');
+
+            passedCount += 40;
+        }
+
+        // [TEST 74] Operator Chrome Edit Tracker & Correction Telemetry Gate
+        console.log('Testing [TEST 74] Operator Chrome Edit Tracker & Correction Telemetry...');
+        {
+            const trackerMod = require('../src/portal/common/operator_edit_tracker');
+            assert(typeof trackerMod.wrapChromiumWithEditTracker === 'function' && typeof trackerMod.CHROME_EDIT_INIT_SCRIPT === 'function', 'operator_edit_tracker exports wrapChromiumWithEditTracker and CHROME_EDIT_INIT_SCRIPT');
+            const initSrc = trackerMod.CHROME_EDIT_INIT_SCRIPT.toString();
+            assert(initSrc.includes('password') && initSrc.includes('__esevaRecordFieldEdit') && initSrc.includes('isTrusted'), 'CHROME_EDIT_INIT_SCRIPT ignores sensitive fields and tracks only human trusted changes');
+
+            const dsMod = require('../desktop/desktop_services');
+            assert(typeof dsMod.reportOperatorCorrection === 'function', 'desktop_services exports reportOperatorCorrection');
+            const captured = [];
+            const prevSink = global.__esevaTestTelemetrySink;
+            global.__esevaTestTelemetrySink = (p) => captured.push(p);
+            try {
+                dsMod.reportOperatorCorrection({
+                    serviceId: 'tnega_income_certificate',
+                    eventType: 'FIELD_CORRECTED_BY_OPERATOR',
+                    fieldName: 'Member Name',
+                    appValue: 'Son',
+                    operatorValue: 'KUMAR'
+                });
+            } finally {
+                global.__esevaTestTelemetrySink = prevSink;
+            }
+            assert(captured.length === 1 && captured[0].__endpoint === '/api/telemetry/correction' && captured[0].operatorValue === 'KUMAR', 'reportOperatorCorrection routes through test sink safely to /api/telemetry/correction');
+
+            const arSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'automation_runner.js'), 'utf8');
+            assert(arSrc.includes('wrapChromiumWithEditTracker') && arSrc.includes('didSucceed') && arSrc.includes('RUN_COMPLETED_WITH_EDITS'), 'automation_runner wraps Chromium with edit tracker and does not log successful runs as AUTOMATION_FAILED');
+
+            const drSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'dev_routes.js'), 'utf8');
+            assert(drSrc.includes('/api/telemetry/correction') && drSrc.includes('/api/telemetry/corrections'), 'dev_routes exposes correction telemetry POST & GET endpoints');
+
+            const famLoopSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
+            assert(famLoopSrc.includes('formAudit.btnDisabled') && !famLoopSrc.includes('|Save/i'), 'card_family_members_loop avoids generic |Save match and audits disabled Angular controls before clicking Save Member');
+
+            passedCount += 7;
         }
 
         console.log('\n======================================================');

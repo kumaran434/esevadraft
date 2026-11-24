@@ -95,7 +95,7 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
     const headDisplayName = citizenProfile.fullNameTam || citizenProfile.fullNameEng || 'தலைவர்';
     let isHeadInTable = false;
     let lastSubmittedOtp = '';
-    let lastAadhaarResendAt = Date.now();
+    let promptedHeadResendNotice = false;
     const maxWatchSec = 600; // 10 minutes live watch
     let watchTicks = 0;
 
@@ -226,19 +226,10 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             continue;
         }
 
-        // 3. 300 விநாடிகள் முடிந்து டைமர் 0 ஆனால் (மற்றும் 65 விநாடி cooldown முடிந்தால்) தானாக 'OTP மீண்டும் அனுப்பவும்' அழுத்துதல்
-        if (modalInfo.timerVal === 0 && modalInfo.hasResendBtn && (Date.now() - lastAadhaarResendAt >= 65000)) {
-            lastAadhaarResendAt = Date.now();
-            onProgress('📍 [ஆதார் OTP] 300 விநாடிகள் முடிவடைந்தது. புதிய UIDAI OTP பெற "OTP மீண்டும் அனுப்பவும்" பொத்தான் அழுத்தப்படுகிறது...');
-            try {
-                const resendLoc = page.locator('input[formcontrolname="otp"]').locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(text(),"மீண்டும்") or contains(text(),"Resend")]').first();
-                if (await resendLoc.count() > 0 && await resendLoc.isVisible().catch(() => false)) {
-                    await resendLoc.click({ delay: 50 }).catch(() => {});
-                }
-            } catch (_) {}
-            lastSubmittedOtp = '';
-            await page.waitForTimeout(2500);
-            continue;
+        // 3. டைமர் 0 ஆனால் (முந்தைய UIDAI txn தவறுவதைத் தவிர்க்க தானியங்கி Resend கிளிக் செய்யாமல்) ஆப்ரேட்டருக்கு எச்சரிக்கை மட்டும் காட்டுதல்
+        if (modalInfo.timerVal === 0 && modalInfo.hasResendBtn && !promptedHeadResendNotice) {
+            promptedHeadResendNotice = true;
+            onProgress('⏳ [ஆதார் OTP] டைமர் முடிந்துள்ளது — SMS வரவில்லையெனில் Chrome-ல் "OTP மீண்டும் அனுப்பவும்" பொத்தானை அழுத்தவும்.');
         }
 
         // 4. உள்ளீட்டுப் பெட்டியில் 6 அல்லது 7 இலக்க ஆதார் OTP கண்டறியப்பட்டால் (7-இலக்கம் தட்டச்சு ஆக 2s காத்திருப்புடன்) ஒற்றை துல்லிய கிளிக்

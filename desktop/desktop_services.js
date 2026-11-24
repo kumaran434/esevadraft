@@ -147,42 +147,49 @@ function readFlightActionsSafe(maxItems = 10) {
     return [];
 }
 
-function reportOperatorTelemetry(errorData = {}) {
-    try {
-        const skipCloud = process.env.NODE_ENV === 'test' || process.env.ESEVA_SKIP_CLOUD_SYNC === '1';
-        const sess = readLocalOperatorSessionFallback();
-        const opUid = errorData.operatorUid || sess.operatorUid || '';
-        const opName = errorData.operatorName || sess.displayName || 'unknown';
-        const opMob = errorData.operatorMobile || sess.mobileNumber || '';
-        const runTail = Array.isArray(errorData.runLogTail) && errorData.runLogTail.length
-            ? errorData.runLogTail
+function buildBaseTelemetryPayload(data = {}, includeDiagnostics = true) {
+    const sess = readLocalOperatorSessionFallback();
+    const base = {
+        appVersion: (app && typeof app.getVersion === 'function') ? (app.getVersion() || '1.1.31') : '1.1.31',
+        platform: process.platform,
+        arch: process.arch,
+        timestamp: new Date().toISOString(),
+        ...data,
+        operatorUid: data.operatorUid || sess.operatorUid || '',
+        operatorName: data.operatorName || sess.displayName || 'unknown',
+        operatorMobile: data.operatorMobile || sess.mobileNumber || '',
+        __fromCloudRelay: true
+    };
+    if (includeDiagnostics) {
+        base.runLogTail = Array.isArray(data.runLogTail) && data.runLogTail.length
+            ? data.runLogTail
             : readTailLinesSafe(path.join(getSafeUserDataDir(), 'logs', 'latest_run.log'), 25);
-        const uiActions = Array.isArray(errorData.lastUiActions) && errorData.lastUiActions.length
-            ? errorData.lastUiActions
+        base.lastUiActions = Array.isArray(data.lastUiActions) && data.lastUiActions.length
+            ? data.lastUiActions
             : readFlightActionsSafe(10);
+    }
+    return base;
+}
 
-        const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
-        const targetUrl = `${baseUrl}/api/telemetry/error`;
-        const payload = {
-            appVersion: (app && typeof app.getVersion === 'function') ? (app.getVersion() || '1.1.31') : '1.1.31',
-            platform: process.platform,
-            arch: process.arch,
-            timestamp: new Date().toISOString(),
-            ...errorData,
-            operatorUid: opUid,
-            operatorName: opName,
-            operatorMobile: opMob,
-            runLogTail: runTail,
-            lastUiActions: uiActions,
-            __fromCloudRelay: true
-        };
-
+function sendCloudTelemetryPost(endpointPath, data = {}, includeDiagnostics = true) {
+    try {
+        const payload = buildBaseTelemetryPayload(data, includeDiagnostics);
         if (typeof global.__esevaTestTelemetrySink === 'function') {
-            try { global.__esevaTestTelemetrySink(payload); } catch (_) {}
+            try { global.__esevaTestTelemetrySink({ ...payload, __endpoint: endpointPath }); } catch (_) {}
+            return payload;
         }
 
-        if (skipCloud) return payload;
+        const isTestEnv = Boolean(
+            process.env.NODE_ENV === 'test' ||
+            process.env.ESEVA_SKIP_CLOUD_SYNC === '1' ||
+            process.env.REGRESSION_TEST === 'true' ||
+            process.env.ESEVA_TEST_USERDATA ||
+            process.argv.some(a => a.includes('regression_suite') || a.includes('test_'))
+        );
+        if (isTestEnv) return payload;
 
+        const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
+        const targetUrl = `${baseUrl}${endpointPath}`;
         const postData = JSON.stringify(payload);
         const urlObj = new URL(targetUrl);
         const client = urlObj.protocol === 'https:' ? require('https') : require('http');
@@ -206,9 +213,19 @@ function reportOperatorTelemetry(errorData = {}) {
         req.on('timeout', () => { req.destroy(); });
         req.write(postData);
         req.end();
-    } catch (e) {
+        return payload;
+    } catch (_) {
         // Telemetry must never crash desktop app
+        return null;
     }
+}
+
+function reportOperatorTelemetry(errorData = {}) {
+    return sendCloudTelemetryPost('/api/telemetry/error', errorData, true);
+}
+
+function reportOperatorCorrection(correctionData = {}) {
+    return sendCloudTelemetryPost('/api/telemetry/correction', correctionData, false);
 }
 
 async function launchVisibleBrowser() {
@@ -431,6 +448,7 @@ function detectOrphanedMidRunOnStartup(telemetryReporter = reportOperatorTelemet
 module.exports = {
     syncLatestAutomationEngine,
     reportOperatorTelemetry,
+    reportOperatorCorrection,
     launchVisibleBrowser,
     setupAutoUpdater,
     getActiveFlightFilePath,

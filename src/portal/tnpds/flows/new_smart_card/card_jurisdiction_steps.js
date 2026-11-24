@@ -2,6 +2,7 @@
  * TNPDS New Smart Card - Steps 14 to 20: Jurisdiction (District, Taluk, Village, Pin) & Mobile OTP
  */
 const { waitForNewCardMobileOtp } = require('./new_card_otp_config');
+const { waitForOtpModalOpened } = require('../../../common/strict_step_gate');
 let resolveTnDistrict;
 try {
     const dm = require('../../../../tn_district_mapper');
@@ -363,13 +364,34 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
             await scanAndBroadcastToasts();
         }
     } else {
-        // படி 19: OTP உருவாக்கு
+        // படி 19: OTP உருவாக்கு ➔ Modal திறந்தது உறுதியான பிறகே படி 20-க்குச் செல்ல வேண்டும் (Strict Step Gate)
         onProgress('📍 [படி 19/51] OTP உருவாக்கு பொத்தான் அழுத்தப்படுகிறது...');
         const otpBtn = page.getByRole('button', { name: /OTP ஐ உருவாக்கு|Generate OTP|மறுமுறை அனுப்பவும்/i }).first();
         await otpBtn.scrollIntoViewIfNeeded().catch(() => {});
         await otpBtn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(2500);
         await scanAndBroadcastToasts();
+
+        let otpModalReady = await waitForOtpModalOpened(page, 9000);
+        if (!otpModalReady) {
+            await otpBtn.click({ force: true }).catch(() => {});
+            await scanAndBroadcastToasts();
+            otpModalReady = await waitForOtpModalOpened(page, 6000);
+        }
+
+        const isMobileAlreadyVerified = await page.evaluate(() => {
+            return Boolean(document.querySelector('#memberFormSection, input[formcontrolname="dateOfBirth"]')) ||
+                Array.from(document.querySelectorAll('button')).some(b => (b.innerText || '').trim() === 'திருத்தம்');
+        }).catch(() => false);
+
+        const isMockMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
+        if (!otpModalReady && !isMobileAlreadyVerified && !isMockMode) {
+            const step19Err = 'படி 19: "OTP ஐ உருவாக்கு" அழுத்திய பிறகும் OTP சாளரம் திறக்கவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.';
+            if (typeof sharedContext.showBrowserHud === 'function') {
+                await sharedContext.showBrowserHud('🔴 படி 19 OTP பிழை', step19Err, 'error', page).catch(() => {});
+            }
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${step19Err}`);
+            return { success: false, message: step19Err };
+        }
     }
 
     // படி 20: மொபைல் OTP பெறுதல் (புதிய ரேஷன் கார்டுக்கான தனி 6-இலக்க OTP கட்டுப்பாடு — new_card_otp_config.js)

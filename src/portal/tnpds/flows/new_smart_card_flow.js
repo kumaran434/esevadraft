@@ -102,10 +102,13 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
     onProgress = (msg) => {
         rawOnProgress(msg);
         if (page && !page.isClosed()) {
-            const isWarning = typeof msg === 'string' && (msg.includes('OTP') || msg.includes('கட்டத்தைத் திக்') || msg.includes('பிழை'));
-            const isApproval = typeof msg === 'string' && (msg.includes('ஒப்புதல்') || msg.includes('Approval'));
-            const hudType = isApproval ? 'approval' : (isWarning ? 'warning' : 'info');
-            showBrowserHud('⚡ TNPDS நேரலை', msg, hudType, page).catch(() => {});
+            const msgStr = typeof msg === 'string' ? msg : '';
+            const isError = /கடும் பூட்டு|தோல்வி|நிறுத்தப்பட்டது|உறுதி செய்யப்படவில்லை|did not match|\btxn\b|பிழை|error|failed|🛑/i.test(msgStr);
+            const isWarning = !isError && (msgStr.includes('OTP') || msgStr.includes('கட்டத்தைத் திக்') || msgStr.includes('⚠️') || msgStr.includes('⏳'));
+            const isApproval = msgStr.includes('ஒப்புதல்') || msgStr.includes('Approval');
+            const hudType = isError ? 'error' : (isApproval ? 'approval' : (isWarning ? 'warning' : 'info'));
+            const hudTitle = isError ? '🔴 TNPDS பிழை / நிறுத்தம்' : '⚡ TNPDS நேரலை';
+            showBrowserHud(hudTitle, msgStr, hudType, page).catch(() => {});
         }
     };
 

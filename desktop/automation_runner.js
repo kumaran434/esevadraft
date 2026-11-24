@@ -8,10 +8,25 @@ const fs = require('fs');
 const {
     syncLatestAutomationEngine,
     reportOperatorTelemetry,
+    reportOperatorCorrection,
     writeActiveRunFlight,
     clearActiveRunFlight,
     isPreSubmitReached
 } = require('./desktop_services');
+
+let wrapChromiumWithEditTracker = null;
+for (const trackerCand of [
+    '../src/portal/common/operator_edit_tracker',
+    process.resourcesPath ? path.join(process.resourcesPath, 'src', 'portal', 'common', 'operator_edit_tracker.js') : ''
+].filter(Boolean)) {
+    try {
+        const mod = require(trackerCand);
+        if (mod && typeof mod.wrapChromiumWithEditTracker === 'function') {
+            wrapChromiumWithEditTracker = mod.wrapChromiumWithEditTracker;
+            break;
+        }
+    } catch (_) {}
+}
 
 function readDiskDraftOnly(customerMobile) {
     const mobClean = String(customerMobile || '').replace(/\D/g, '');
@@ -305,7 +320,8 @@ function finalizeMidRunTelemetryIfNeeded(ctx, { errorType, errorMessage, step, a
             errorType: errorType || 'AUTOMATION_ABANDONED_MID_RUN',
             errorMessage: errorMessage || 'Automation stopped before reaching Pre-Submit Gate',
             startedAt: ctx.startedAt,
-            lastProgressAt: ctx.lastProgressAt
+            lastProgressAt: ctx.lastProgressAt,
+            operatorCorrections: Array.isArray(ctx.operatorCorrections) ? ctx.operatorCorrections.slice(-25) : []
         });
     }
     return {
@@ -601,7 +617,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         reachedPreSubmit: false,
         midRunTelemetrySent: false,
         stuckWarningSent: false,
-        stuckWatchdogTimer: null
+        stuckWatchdogTimer: null,
+        operatorCorrections: []
     };
     activeRunContext = runCtx;
     try {
@@ -805,6 +822,35 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         } catch (_) {}
     }
 
+
+    let rawPlaywrightChromium = playwrightChromium;
+    if (playwrightChromium && typeof wrapChromiumWithEditTracker === 'function') {
+        playwrightChromium = wrapChromiumWithEditTracker(rawPlaywrightChromium, (editEvt) => {
+            if (!editEvt || !editEvt.fieldKey) return;
+            const existingIdx = runCtx.operatorCorrections.findIndex(c => c.fieldKey === editEvt.fieldKey && c.url === editEvt.url);
+            if (existingIdx !== -1) {
+                editEvt.beforeVal = runCtx.operatorCorrections[existingIdx].beforeVal;
+                runCtx.operatorCorrections[existingIdx] = editEvt;
+            } else {
+                runCtx.operatorCorrections.push(editEvt);
+            }
+            writeLogEntry(`✏️ [ஆப்ரேட்டர் திருத்தம்] ${editEvt.fieldLabel}: "${editEvt.beforeVal || '(காலி)'}" ➡️ "${editEvt.afterVal}"`);
+            reportOperatorCorrection({
+                type: 'PORTAL_FIELD_CORRECTION',
+                runId: runCtx.runId,
+                operatorUid: runCtx.operatorUid,
+                operatorMobile: runCtx.operatorMobile,
+                operatorName: runCtx.operatorName,
+                customerMobile: runCtx.customerMobile,
+                serviceName: runCtx.serviceName,
+                fieldKey: editEvt.fieldKey,
+                fieldLabel: editEvt.fieldLabel,
+                beforeVal: editEvt.beforeVal,
+                afterVal: editEvt.afterVal,
+                portalUrl: editEvt.url
+            });
+        });
+    }
 
     let automationModule = loadAutomationModule();
     lastActiveTnpdsModule = automationModule;
@@ -1024,15 +1070,37 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     }).then(res => {
         clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
-        if (res && (res.success || isPreSubmitReached(res))) {
+        const didSucceed = Boolean(res && (res.success === true || isPreSubmitReached(res)));
+        if (didSucceed) {
             runCtx.reachedPreSubmit = true;
+            runCtx.midRunTelemetrySent = true;
+            try { if (runCtx.stuckWatchdogTimer) { clearInterval(runCtx.stuckWatchdogTimer); runCtx.stuckWatchdogTimer = null; } } catch (_) {}
+            clearActiveRunFlight();
+            if (activeRunContext && activeRunContext.runId === runCtx.runId) activeRunContext = null;
+
+            reportOperatorCorrection({
+                type: runCtx.operatorCorrections.length > 0 ? 'RUN_COMPLETED_WITH_EDITS' : 'RUN_COMPLETED',
+                runId: runCtx.runId,
+                operatorUid: runCtx.operatorUid,
+                operatorMobile: runCtx.operatorMobile,
+                operatorName: runCtx.operatorName,
+                customerMobile: runCtx.customerMobile,
+                serviceName: runCtx.serviceName,
+                correctionsCount: runCtx.operatorCorrections.length,
+                corrections: runCtx.operatorCorrections.slice(-25),
+                applicationNumber: res?.applicationNumber || res?.appRefNo || '',
+                note: res?.message || 'Automation completed cleanly'
+            });
         }
+
         const isAbandoned = Boolean(res?.stopped || res?.browserClosed);
-        const midMeta = finalizeMidRunTelemetryIfNeeded(runCtx, {
-            step: res?.step || runCtx.lastProgressMsg,
-            errorType: isAbandoned ? 'AUTOMATION_ABANDONED_MID_RUN' : 'AUTOMATION_FAILED',
-            errorMessage: res?.error || res?.message || (isAbandoned ? 'Stopped mid-run before reaching Pre-Submit Gate' : 'Automation finished with failure')
-        });
+        const midMeta = didSucceed
+            ? { promptFaultReason: false, runId: runCtx.runId, serviceName: runCtx.serviceName, lastStep: runCtx.lastProgressMsg }
+            : finalizeMidRunTelemetryIfNeeded(runCtx, {
+                step: res?.step || runCtx.lastProgressMsg,
+                errorType: isAbandoned ? 'AUTOMATION_ABANDONED_MID_RUN' : 'AUTOMATION_FAILED',
+                errorMessage: res?.error || res?.message || (isAbandoned ? 'Stopped mid-run before reaching Pre-Submit Gate' : 'Automation finished with failure')
+            });
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('automation-finished', {
                 ...(res || {}),

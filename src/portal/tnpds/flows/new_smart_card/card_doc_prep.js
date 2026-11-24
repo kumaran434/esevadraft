@@ -6,17 +6,19 @@ const path = require('path');
 const os = require('os');
 
 let produceCompliantPassportPhoto, produceCompliantDocument, produceDualSidedDocument;
-try {
-    const ps = require('../../../../photo_studio');
-    produceCompliantPassportPhoto = ps.produceCompliantPassportPhoto;
-    produceCompliantDocument = ps.produceCompliantDocument;
-    produceDualSidedDocument = ps.produceDualSidedDocument;
-} catch (e) {
+for (const candidate of [
+    '../../../../../photo_studio',
+    path.join(__dirname, '..', '..', '..', '..', '..', 'photo_studio.js'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'photo_studio.js') : ''
+].filter(Boolean)) {
     try {
-        const ps = require(path.join(__dirname, '..', '..', '..', '..', 'photo_studio.js'));
-        produceCompliantPassportPhoto = ps.produceCompliantPassportPhoto;
-        produceCompliantDocument = ps.produceCompliantDocument;
-        produceDualSidedDocument = ps.produceDualSidedDocument;
+        const ps = require(candidate);
+        if (ps && ps.produceCompliantDocument) {
+            produceCompliantPassportPhoto = ps.produceCompliantPassportPhoto;
+            produceCompliantDocument = ps.produceCompliantDocument;
+            produceDualSidedDocument = ps.produceDualSidedDocument;
+            break;
+        }
     } catch (_) {}
 }
 if (!produceCompliantPassportPhoto) produceCompliantPassportPhoto = async (p) => p;

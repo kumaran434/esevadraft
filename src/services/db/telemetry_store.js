@@ -108,27 +108,64 @@ function relayTelemetryToCloud(payload) {
     });
 }
 
-async function logOperatorCorrection(logData) {
-    const id = `corr_${Date.now()}`;
-    const payload = {
+async function logOperatorCorrection(logData = {}) {
+    const fallbackSess = resolveFallbackOperatorSession();
+    const operatorUid = String(logData.operatorUid || logData.uid || fallbackSess.operatorUid || '').trim();
+    const operatorMobile = String(logData.operatorMobile || logData.mobile || fallbackSess.mobileNumber || '').replace(/\D/g, '').slice(-10) || String(logData.operatorMobile || 'unknown');
+    const operatorName = String(logData.operatorName || fallbackSess.displayName || 'unknown').trim() || 'unknown';
+    const id = `corr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const payload = JSON.parse(JSON.stringify({
         ...logData,
         id,
+        operatorUid: operatorUid || null,
+        operatorMobile,
+        operatorName,
+        customerMobile: maskCustomerMobile(logData.customerMobile || logData.mobile || ''),
+        beforeVal: logData.beforeVal !== undefined ? maskSensitiveTokens(logData.beforeVal).slice(0, 200) : undefined,
+        afterVal: logData.afterVal !== undefined ? maskSensitiveTokens(logData.afterVal).slice(0, 200) : undefined,
         timestamp: new Date().toISOString()
-    };
+    }));
     try {
         const localFile = path.join(LOCAL_CORRECTIONS_DIR, `${id}.json`);
         fs.writeFileSync(localFile, JSON.stringify(payload, null, 2), 'utf8');
     } catch (_) {}
 
     const firestore = getFirestoreInstance();
-    if (isFirestoreAvailable() && firestore) {
+    if (isFirestoreAvailable() && firestore && !isTestMode()) {
         try {
-            await firestore.collection(CORRECTIONS_COLLECTION).doc(id).set(JSON.parse(JSON.stringify(payload)));
+            await firestore.collection(CORRECTIONS_COLLECTION).doc(id).set(payload);
+            return { ...payload, cloudSaved: true };
         } catch (e) {
             console.warn(`Firestore log correction error: ${e.message}`);
         }
     }
     return payload;
+}
+
+async function listOperatorCorrections(limitCount = 40) {
+    const firestore = getFirestoreInstance();
+    if (isFirestoreAvailable() && firestore && !isTestMode()) {
+        try {
+            const snap = await firestore.collection(CORRECTIONS_COLLECTION)
+                .orderBy('timestamp', 'desc')
+                .limit(limitCount)
+                .get();
+            return snap.docs.map(d => d.data());
+        } catch (e) {
+            console.warn(`Firestore listOperatorCorrections query error: ${e.message}`);
+        }
+    }
+    try {
+        if (fs.existsSync(LOCAL_CORRECTIONS_DIR)) {
+            return fs.readdirSync(LOCAL_CORRECTIONS_DIR)
+                .filter(f => f.startsWith('corr_') && f.endsWith('.json'))
+                .map(f => { try { return JSON.parse(fs.readFileSync(path.join(LOCAL_CORRECTIONS_DIR, f), 'utf8')); } catch { return null; } })
+                .filter(Boolean)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, limitCount);
+        }
+    } catch (_) {}
+    return [];
 }
 
 async function logOperatorError(data = {}) {
@@ -139,7 +176,9 @@ async function logOperatorError(data = {}) {
     const operatorKey = sanitizeOperatorKey(operatorUid, operatorMobile, operatorName);
 
     const id = `err_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const timestamp = data.timestamp || new Date().toISOString();
+    const serverIsoNow = new Date().toISOString();
+    const clientTimestamp = data.timestamp || null;
+    const timestamp = serverIsoNow; // Always trust server UTC clock (guards against skewed operator Windows clocks)
     const rawActions = Array.isArray(data.lastUiActions) ? data.lastUiActions.slice(-10) : [];
     const rawRunTail = Array.isArray(data.runLogTail)
         ? data.runLogTail.slice(-25).map(l => maskSensitiveTokens(l).slice(0, 240))
@@ -168,6 +207,7 @@ async function logOperatorError(data = {}) {
         })),
         runLogTail: rawRunTail,
         extraInfo: data.extraInfo && typeof data.extraInfo === 'object' ? data.extraInfo : {},
+        clientTimestamp,
         timestamp
     }));
 
@@ -303,6 +343,7 @@ async function listOperatorErrors(limitCount = 30, filter = {}) {
 module.exports = {
     sanitizeOperatorKey,
     logOperatorCorrection,
+    listOperatorCorrections,
     logOperatorError,
     listOperatorErrors,
     listOperatorErrorSummaries

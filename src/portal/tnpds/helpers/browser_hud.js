@@ -16,14 +16,19 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
             const u = window.location.href.toLowerCase();
             if (u.includes('perfdrive') || u.includes('validate')) return;
             let hud = document.getElementById('esevadraft-browser-hud');
-            const borderColor = type === 'success' ? '#22c55e' : (type === 'approval' || type === 'warning' ? '#f59e0b' : (type === 'error' ? '#ef4444' : '#38bdf8'));
+            const isErr = type === 'error';
+            const isWarn = type === 'approval' || type === 'warning';
+            const isOk = type === 'success';
+            const borderColor = isOk ? '#22c55e' : (isWarn ? '#f59e0b' : (isErr ? '#ef4444' : '#38bdf8'));
+            const bgColor = isErr ? 'rgba(69, 10, 10, 0.96)' : 'rgba(15, 23, 42, 0.94)';
+            const subColor = isErr ? '#fecaca' : (isWarn ? '#fde68a' : (isOk ? '#bbf7d0' : '#cbd5e1'));
             const iconSvg = type === 'success'
-                ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
-                : (type === 'approval' || type === 'warning'
-                    ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
-                    : (type === 'error'
-                        ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
-                        : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="#38bdf8"></path></svg>'
+                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+                : (isWarn
+                    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+                    : (isErr
+                        ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
+                        : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="#38bdf8"></path></svg>'
                     )
                 );
 
@@ -31,34 +36,52 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
                 hud = document.createElement('div');
                 hud.id = 'esevadraft-browser-hud';
                 hud.style.cssText = `
-                    position: fixed; top: 12px; right: 24px; z-index: 2147483647;
-                    height: 36px; box-sizing: border-box; background: rgba(15, 23, 42, 0.94);
-                    backdrop-filter: blur(8px); border: 1.5px solid ${borderColor};
-                    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); border-radius: 8px; padding: 0 10px 0 12px;
-                    color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                    display: inline-flex; align-items: center; gap: 8px; pointer-events: none;
-                    transition: border-color 0.2s ease, opacity 0.2s ease; max-width: 72vw; white-space: nowrap;
+                    position: fixed; top: 10px; right: 12px; z-index: 2147483647;
+                    width: 295px; max-width: 88vw; box-sizing: border-box;
+                    background: ${bgColor}; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+                    border: ${isErr ? '2px' : '1.5px'} solid ${borderColor};
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.52); border-radius: 10px; padding: 9px 11px;
+                    color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Tamil Sangam MN", sans-serif;
+                    display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+                    transition: border-color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+                    line-height: 1.35;
                 `;
                 hud.innerHTML = `
-                    <span id="eseva-hud-icon" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;">${iconSvg}</span>
-                    <span id="eseva-hud-step-badge" style="display: none; font-size: 11px; font-weight: 800; background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 6px;"></span>
-                    <span id="eseva-hud-title" style="font-size: 12px; font-weight: 700; color: #f8fafc; letter-spacing: 0.1px;"></span>
-                    <span id="eseva-hud-sub" style="font-size: 11.5px; font-weight: 500; color: #94a3b8; max-width: 520px; overflow: hidden; text-overflow: ellipsis;"></span>
-                    <span style="font-size: 9.5px; font-weight: 700; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 6px; border-radius: 4px; text-transform: uppercase; margin-left: 2px;">eSeva</span>
-                    <button type="button" id="esevaHudReportToggle" style="pointer-events: auto; background: rgba(239,68,68,0.22); color: #fecaca; border: 1px solid rgba(248,113,113,0.5); border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer; margin-left: 4px;">🚨 பிழை தெரிவி</button>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; border-bottom:1px solid rgba(255,255,255,0.12); padding-bottom:5px;">
+                        <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+                            <span id="eseva-hud-icon" style="display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; flex-shrink:0;">${iconSvg}</span>
+                            <span id="eseva-hud-title" style="font-size:11.5px; font-weight:800; color:#f8fafc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                            <span id="eseva-hud-step-badge" style="display:none; font-size:10px; font-weight:800; background:#2563eb; color:#ffffff; padding:2px 6px; border-radius:5px;"></span>
+                            <span id="eseva-hud-error-tag" style="display:none; font-size:10px; font-weight:800; background:#dc2626; color:#ffffff; padding:2px 6px; border-radius:5px;">🔴 பிழை</span>
+                            <button type="button" id="esevaHudReportToggle" style="pointer-events:auto; background:rgba(239,68,68,0.22); color:#fecaca; border:1px solid rgba(248,113,113,0.55); border-radius:5px; padding:2px 7px; font-size:10.5px; font-weight:700; cursor:pointer;">🚨 பிழை</button>
+                        </div>
+                    </div>
+                    <div id="eseva-hud-sub" style="font-size:11px; font-weight:600; color:${subColor}; white-space:normal; word-break:break-word; line-height:1.4; max-height:125px; overflow-y:auto;"></div>
                 `;
                 document.body.appendChild(hud);
             } else {
                 hud.style.borderColor = borderColor;
+                hud.style.borderWidth = isErr ? '2px' : '1.5px';
+                hud.style.background = bgColor;
+                hud.style.boxShadow = isErr
+                    ? '0 8px 26px rgba(220, 38, 38, 0.45), 0 0 0 1px rgba(239,68,68,0.35)'
+                    : '0 8px 24px rgba(0, 0, 0, 0.52)';
                 const iconEl = document.getElementById('eseva-hud-icon');
                 if (iconEl) iconEl.innerHTML = iconSvg;
+                const subStyleEl = document.getElementById('eseva-hud-sub');
+                if (subStyleEl) subStyleEl.style.color = subColor;
             }
+
+            const errTagEl = document.getElementById('eseva-hud-error-tag');
+            if (errTagEl) errTagEl.style.display = isErr ? 'inline-block' : 'none';
 
             let drawer = document.getElementById('esevaHudReportBox');
             if (!drawer) {
                 drawer = document.createElement('div');
                 drawer.id = 'esevaHudReportBox';
-                drawer.style.cssText = 'display:none; position:fixed; top:54px; right:24px; z-index:2147483647; width:330px; background:rgba(15,23,42,0.96); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.45); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.45); pointer-events:auto;';
+                drawer.style.cssText = 'display:none; position:fixed; top:112px; right:12px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.97); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.5); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.48); pointer-events:auto;';
                 drawer.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11.5px;font-weight:700;color:#fecaca;">
                         <span>🚨 பிழை / தாமதம் தெரிவிக்க</span>
@@ -153,11 +176,16 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
 
             const titleEl = document.getElementById('eseva-hud-title');
             if (titleEl) titleEl.textContent = title || '';
+            const cleanSub = String(subtitle || '').replace(/\*\*/g, '').replace(/\s*\n\s*/g, ' ').trim();
             const subEl = document.getElementById('eseva-hud-sub');
-            if (subEl) subEl.textContent = subtitle ? ` • ${subtitle}` : '';
+            if (subEl) subEl.textContent = cleanSub;
 
             hud.style.opacity = '1';
-            hud.style.display = 'inline-flex';
+            hud.style.display = 'flex';
+            if (drawer && hud) {
+                const rect = hud.getBoundingClientRect();
+                if (rect && rect.bottom > 0) drawer.style.top = `${Math.round(rect.bottom + 6)}px`;
+            }
         }, { title, subtitle, type }).catch(() => {});
     } catch (e) {}
 }
@@ -191,7 +219,7 @@ async function injectVisualBanner(targetPage = null) {
             if (document.getElementById('eseva-captcha-guide')) return;
             const b = document.createElement('div');
             b.id = 'eseva-captcha-guide';
-            b.style.cssText = 'position:fixed; top:52px; right:24px; z-index:2147483647; height:34px; box-sizing:border-box; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); color:#f8fafc; padding:0 14px; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:8px; border:1px solid #38bdf8; pointer-events:none; white-space:nowrap;';
+            b.style.cssText = 'position:fixed; top:112px; right:12px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); color:#f8fafc; padding:8px 12px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:11.5px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid #38bdf8; pointer-events:none; white-space:normal; line-height:1.35;';
             b.innerHTML = '<span style="color:#38bdf8;">🛡️</span> <span>"I am human" கட்டத்தைத் திக் செய்யவும்</span>';
             document.body.appendChild(b);
         });
