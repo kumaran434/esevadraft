@@ -187,7 +187,7 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
                     // 4. Jurisdiction (Steps 14 to 20)
                     await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 14-20 (மண்டல விவரங்கள் & OTP)');
                     await saveStepCheckpoint(citizenProfile.mobileNumber, 'new_smart_card', 14, { stage: 'jurisdiction' });
-                    const jurRes = await executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts);
+                    const jurRes = await executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, boundScanToasts, options);
                     if (!jurRes || !jurRes.success) {
                         await assertNoRadwareOrPageRefresh(page, isNewCardPageIntact, 'படிகள் 14-20 (மண்டல விவரங்கள் & OTP)');
                         return jurRes || { success: false, message: 'படிகள் 14-20 தோல்வி.' };

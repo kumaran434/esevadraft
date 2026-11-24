@@ -117,7 +117,7 @@ async function matchBestSelectOption(selectLoc, candidates = [], translitFn = nu
     return null;
 }
 
-async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
+async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts, options = {}) {
     const { requestOtpFromUser } = sharedContext;
     const { pincode, userMobile, engStreet, engArea, tamStreet, tamArea } = sanitizedProfile;
 
@@ -383,7 +383,8 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
                 Array.from(document.querySelectorAll('button')).some(b => (b.innerText || '').trim() === 'திருத்தம்');
         }).catch(() => false);
 
-        const isMockMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
+        const effOpts = options || sharedContext?.options || {};
+        const isMockMode = effOpts?.mockSandbox !== false && effOpts?.isMockSandboxMode !== false;
         if (!otpModalReady && !isMobileAlreadyVerified && !isMockMode) {
             const step19Err = 'படி 19: "OTP ஐ உருவாக்கு" அழுத்திய பிறகும் OTP சாளரம் திறக்கவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.';
             if (typeof sharedContext.showBrowserHud === 'function') {

@@ -15,6 +15,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
         await activePage.evaluate(({ title, subtitle, type }) => {
             const u = window.location.href.toLowerCase();
             if (u.includes('perfdrive') || u.includes('validate')) return;
+            document.getElementById('eseva-captcha-guide')?.remove();
             let hud = document.getElementById('esevadraft-browser-hud');
             const isErr = type === 'error';
             const isWarn = type === 'approval' || type === 'warning';

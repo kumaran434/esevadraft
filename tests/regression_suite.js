@@ -5247,7 +5247,11 @@ async function runTests() {
             const navPreflightSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_navigation_preflight.js'), 'utf8');
             assert(navPreflightSrc.includes('currentlyVisible.has(prev)') && navPreflightSrc.includes('seenToasts.delete'), 'scanAndBroadcastToasts prunes dismissed alerts so repeat OTP failures log cleanly');
 
-            passedCount += 13;
+            const jurSrc75 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_jurisdiction_steps.js'), 'utf8');
+            const nscFlowSrc75 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card_flow.js'), 'utf8');
+            assert(jurSrc75.includes('options = {}') && nscFlowSrc75.includes('boundScanToasts, options)'), 'executeJurisdictionSteps accepts options without ReferenceError and new_smart_card_flow passes options');
+
+            passedCount += 14;
         }
 
         console.log('\n======================================================');

@@ -75,6 +75,7 @@ async function navigateAndPrepareForm(page, onProgress = () => {}, sharedContext
                     const salCount = await page.locator('select[formcontrolname="salutation"], input[formcontrolname="NameOfFamilyHead"]').count().catch(() => 0);
                     if (salCount > 0) {
                         isFormReady = true;
+                        await page.evaluate(() => { document.getElementById('eseva-captcha-guide')?.remove(); }).catch(() => {});
                         onProgress('✅ **பாதுகாப்பு சோதனை முடிந்தது!** TNPDS படிவம் வெற்றிகரமாகத் திறக்கப்பட்டது.');
                         await showBrowserHud('படிவம் நிரப்பப்படுகிறது...', '', 'info', page);
                         break;
