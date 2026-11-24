@@ -8,12 +8,22 @@ async function scanAndBroadcastToasts(page, onProgress = () => {}, logDiag = () 
     if (!page || page.isClosed()) return;
     try {
         const toastElements = await page.locator('.p-toast, .p-toast-message, .toast, .ui-growl, .ui-growl-message, .mat-snack-bar-container, .alert, .swal2-popup, div[role="alert"]').all();
+        const currentlyVisible = new Set();
         for (const el of toastElements) {
             const text = (await el.innerText()).trim();
-            if (text && text.length > 3 && !seenToasts.has(text)) {
-                seenToasts.add(text);
-                logDiag(0, 'portal_alert', text);
-                onProgress(`📢 **அரசு இணையதள அறிவிப்பு (Toast Message):**\n"${text}"`);
+            if (text && text.length > 3) {
+                currentlyVisible.add(text);
+                if (!seenToasts.has(text)) {
+                    seenToasts.add(text);
+                    logDiag(0, 'portal_alert', text);
+                    onProgress(`📢 **அரசு இணையதள அறிவிப்பு (Toast Message):**\n"${text}"`);
+                }
+            }
+        }
+        // Prune dismissed toasts so repeat OTP/portal alerts in subsequent attempts are ALWAYS logged!
+        for (const prev of Array.from(seenToasts)) {
+            if (!currentlyVisible.has(prev)) {
+                seenToasts.delete(prev);
             }
         }
     } catch (_) {}

@@ -6,6 +6,15 @@ const path = require('path');
 const { fillAdditionalMemberForm } = require('./card_additional_member_form');
 const { isValidNewCardAadhaarOtp } = require('./new_card_otp_config');
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+const {
+    installOtpModalCopilot,
+    resetHumanSubmitWatch,
+    readOtpModalCopilotState,
+    performVisibleModalOtpSubmit,
+    performVisibleModalResend,
+    shouldBotTriggerResend,
+    shouldBotTriggerSubmit
+} = require('../../../common/otp_copilot_watcher');
 
 async function isFamilyStepPageIntact(page) {
     if (!page || page.isClosed()) return false;
@@ -288,10 +297,12 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         if (isMemModalVisible) {
             onProgress(`🔐 [ஆதார் OTP தேவை] உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ஆதார் OTP சாளரம் திரையில் உள்ளது!`);
             await showBrowserHud(`[ஆதார் OTP தேவை] உறுப்பினர் ${memNum}`, `${mem.nameTam || mem.nameEng} ஆதார் SMS OTP உள்ளிடவும்`, 'warning');
+            await installOtpModalCopilot(page);
 
-            // Live self-healing watch loop supporting app chat/IPC AND direct Chrome typing + resend cooldown + toast retry
+            // Live Co-Pilot watch loop supporting app chat/IPC AND direct Chrome typing + manual Resend/Submit immunity
             let lastMemOtpSubmitted = '';
-            let promptedResendNotice = false;
+            let lastBotMemResendAt = Date.now();
+            let notedHumanMemResendAt = 0;
             let promptedAppOnce = false;
 
             for (let tick = 0; tick < 360; tick++) {
@@ -304,7 +315,8 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                 }, memNum).catch(() => false);
                 if (nowInTable) break;
 
-                if (!(await checkAadhaarModal())) {
+                const modalSnap = await readOtpModalCopilotState(page);
+                if (!modalSnap.open) {
                     await page.waitForTimeout(1000);
                     continue;
                 }
@@ -335,14 +347,20 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                 }
                 if (typedFromApp) {
                     await page.evaluate((otpVal) => {
-                        const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp') ||
-                            Array.from(document.querySelectorAll('.modal input:not([type="hidden"])')).find(i => !i.disabled && !i.readOnly);
+                        const modals = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .modal-dialog')).filter(m => {
+                            const s = window.getComputedStyle(m);
+                            return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show') || m.classList.contains('d-block')) && s.visibility !== 'hidden';
+                        });
+                        const modal = modals[modals.length - 1] || document;
+                        const otpInp = modal.querySelector('input[formcontrolname="otp"], input#otp') ||
+                            modal.querySelector('input:not([type="hidden"]):not([disabled]):not([readonly])');
                         if (otpInp) {
                             otpInp.value = otpVal;
                             otpInp.dispatchEvent(new Event('input', { bubbles: true }));
                             otpInp.dispatchEvent(new Event('change', { bubbles: true }));
                         }
                     }, typedFromApp);
+                    modalSnap.otpVal = typedFromApp;
                 } else if (!promptedAppOnce && tick === 0) {
                     promptedAppOnce = true;
                     // Register background chat OTP listener so operator can type either in App OR directly in Chrome
@@ -353,7 +371,12 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                         const cleanAppOtp = (appOtp && appOtp !== 'ALREADY_VERIFIED_ON_PORTAL') ? String(appOtp).replace(/\D/g, '') : '';
                         if (isValidNewCardAadhaarOtp(cleanAppOtp)) {
                             await page.evaluate((otpVal) => {
-                                const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp');
+                                const modals = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .modal-dialog')).filter(m => {
+                                    const s = window.getComputedStyle(m);
+                                    return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show') || m.classList.contains('d-block')) && s.visibility !== 'hidden';
+                                });
+                                const modal = modals[modals.length - 1] || document;
+                                const otpInp = modal.querySelector('input[formcontrolname="otp"], input#otp');
                                 if (otpInp && (otpInp.value || '').replace(/\D/g, '') !== otpVal) {
                                     otpInp.value = otpVal;
                                     otpInp.dispatchEvent(new Event('input', { bubbles: true }));
@@ -364,60 +387,87 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                     }).catch(() => {});
                 }
 
-                const modalSnap = await page.evaluate(() => {
-                    const otpInp = document.querySelector('input[formcontrolname="otp"], input#otp');
-                    const modal = otpInp ? otpInp.closest('.modal, div[role="dialog"]') : document.querySelector('.modal.show, div[role="dialog"]');
-                    if (!modal) return { otpVal: '', timerVal: null, canResend: false };
-                    const val = ((otpInp || modal.querySelector('input:not([type="hidden"])'))?.value || '').replace(/\D/g, '');
-                    const timerSpan = Array.from(modal.querySelectorAll('span.text-danger, span')).find(s => /^\d+$/.test((s.innerText || '').trim()));
-                    const timerVal = timerSpan ? parseInt(timerSpan.innerText.trim(), 10) : null;
-                    const resendBtn = Array.from(modal.querySelectorAll('button')).find(b => {
-                        const bt = (b.innerText || '').trim();
-                        return bt.includes('மீண்டும் அனுப்பவும்') || bt.includes('Resend');
-                    });
-                    return { otpVal: val, timerVal, canResend: Boolean(resendBtn && !resendBtn.disabled) };
-                }).catch(() => ({ otpVal: '', timerVal: null, canResend: false }));
-
-                if (modalSnap.timerVal === 0 && modalSnap.canResend && !promptedResendNotice) {
-                    promptedResendNotice = true;
-                    onProgress(`⏳ [உறுப்பினர் ${memNum}] ஆதார் OTP டைமர் முடிந்துள்ளது — SMS வரவில்லையெனில் "OTP மீண்டும் அனுப்பவும்" பொத்தானை அழுத்தவும் (முந்தைய OTP-ஐப் பாதுகாக்க தானியங்கி Resend தவிர்க்கப்பட்டது).`);
+                // Co-Pilot Resend: ஆபரேட்டர் கையால் Resend அழுத்தினால் ஆப் முழுமையாக வழிவிடும்!
+                if (modalSnap.humanResendAt > notedHumanMemResendAt) {
+                    notedHumanMemResendAt = modalSnap.humanResendAt;
+                    lastMemOtpSubmitted = '';
+                    onProgress(`⌨️ [Co-Pilot] உறுப்பினர் ${memNum}: ஆப்ரேட்டர் "OTP மீண்டும் அனுப்பவும்" அழுத்தினார் — புது OTP-க்காகக் காத்திருக்கிறது.`);
                 }
 
-                if (modalSnap.otpVal.length === 6) {
-                    await page.waitForTimeout(1600);
-                    const recheckedMemOtp = await page.evaluate(() => {
-                        const el = document.querySelector('input[formcontrolname="otp"], input#otp') || document.querySelector('.modal.show input:not([type="hidden"])');
-                        return ((el && el.value) || '').replace(/\D/g, '');
-                    }).catch(() => modalSnap.otpVal);
-                    if (recheckedMemOtp.length >= 7) modalSnap.otpVal = recheckedMemOtp;
+                if (shouldBotTriggerResend(modalSnap, lastBotMemResendAt, Date.now(), 10000)) {
+                    const didResend = await performVisibleModalResend(page);
+                    if (didResend) {
+                        lastBotMemResendAt = Date.now();
+                        lastMemOtpSubmitted = '';
+                        onProgress(`🔔 [உறுப்பினர் ${memNum} ஆதார் OTP] டைமர் முடிந்ததால் ஆப் புதிய OTP கோரியது — இனி புதிதாக வரும் SMS OTP-யை மட்டும் உள்ளிடவும்!`);
+                        await page.waitForTimeout(2500);
+                        continue;
+                    }
                 }
-                if (isValidNewCardAadhaarOtp(modalSnap.otpVal) && modalSnap.otpVal !== lastMemOtpSubmitted) {
+
+                // Co-Pilot Submit: ஆபரேட்டர் ஏற்கனவே Submit/Enter அழுத்தியிருந்தால் 2-வது கிளிக் செய்யாது!
+                const memSub = shouldBotTriggerSubmit(modalSnap, lastMemOtpSubmitted, 6, Date.now());
+                if (memSub.reason === 'human_already_submitted') {
+                    if (modalSnap.otpVal !== lastMemOtpSubmitted) {
+                        lastMemOtpSubmitted = modalSnap.otpVal;
+                        onProgress(`⌨️ [Co-Pilot] உறுப்பினர் ${memNum}: ஆப்ரேட்டர் நேரடியாக OTP (${lastMemOtpSubmitted}) சமர்ப்பித்ததை உணர்ந்தது!`);
+                        await page.waitForTimeout(3000);
+                        await scanAndBroadcastToasts();
+                    }
+                } else if (memSub.submit) {
+                    if (modalSnap.otpVal.length === 6 && modalSnap.otpMaxLen !== 6) {
+                        await page.waitForTimeout(1600);
+                        const recheckedSnap = await readOtpModalCopilotState(page);
+                        if (!recheckedSnap.open) {
+                            await page.waitForTimeout(1000);
+                            continue;
+                        }
+                        if (recheckedSnap.humanSubmitAt > 0 && (Date.now() - recheckedSnap.humanSubmitAt < 6500) && recheckedSnap.humanSubmittedOtp === recheckedSnap.otpVal) {
+                            lastMemOtpSubmitted = recheckedSnap.otpVal;
+                            onProgress(`⌨️ [Co-Pilot] உறுப்பினர் ${memNum}: ஆப்ரேட்டர் நேரடியாக OTP (${lastMemOtpSubmitted}) சமர்ப்பித்ததை உணர்ந்தது!`);
+                            await page.waitForTimeout(3000);
+                            await scanAndBroadcastToasts();
+                            continue;
+                        }
+                        modalSnap.otpVal = recheckedSnap.otpVal || modalSnap.otpVal;
+                    }
                     lastMemOtpSubmitted = modalSnap.otpVal;
                     onProgress(`🔑 [உறுப்பினர் ${memNum}] ஆதார் OTP (${lastMemOtpSubmitted}) சமர்ப்பிக்கப்படுகிறது...`);
-                    // Playwright Single Atomic Click strictly inside this Aadhaar modal
-                    const subBtnLoc = page.locator('input[formcontrolname="otp"], input#otp')
+                    // Playwright Single Atomic Click strictly inside the VISIBLE Aadhaar modal
+                    const subBtnLoc = page.locator('.modal.show input[formcontrolname="otp"], .modal.show input#otp, .modal.d-block input[formcontrolname="otp"], div[role="dialog"] input[formcontrolname="otp"]')
                         .locator('xpath=ancestor::div[contains(@class,"modal")]//button[contains(@class,"btn-success") or contains(text(),"சமர்ப்பிக்கவும்") or contains(text(),"Submit")]')
-                        .first();
+                        .last();
                     if (await subBtnLoc.count() > 0 && await subBtnLoc.isVisible().catch(() => false)) {
                         await subBtnLoc.click({ delay: 60 }).catch(() => {});
+                    } else {
+                        await performVisibleModalOtpSubmit(page, lastMemOtpSubmitted);
                     }
                     await page.waitForTimeout(3000);
                     await scanAndBroadcastToasts();
+                }
 
-                    const toastErr = await page.evaluate(() => {
-                        const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert')).map(t => (t.innerText || '').trim());
-                        return toasts.find(t => /txn|xsd|தவறான|invalid|failed|expired|காலாவதி/i.test(t));
-                    }).catch(() => null);
-                    if (toastErr) {
+                const toastErr = await page.evaluate(() => {
+                    const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert')).map(t => (t.innerText || '').trim());
+                    return toasts.find(t => /txn|xsd|தவறான|invalid|failed|expired|காலாவதி/i.test(t));
+                }).catch(() => null);
+                if (toastErr && lastMemOtpSubmitted) {
+                    const curMemSnap = await readOtpModalCopilotState(page);
+                    if (curMemSnap.open && curMemSnap.otpVal === lastMemOtpSubmitted) {
                         onProgress(`⚠️ [உறுப்பினர் ${memNum} ஆதார் OTP] "${toastErr}" — புதிய OTP உள்ளிடவும்...`);
                         await page.evaluate(() => {
-                            const inp = document.querySelector('input[formcontrolname="otp"], input#otp');
+                            const modals = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .modal-dialog')).filter(m => {
+                                const s = window.getComputedStyle(m);
+                                return (m.offsetParent !== null || s.display !== 'none' || m.classList.contains('show') || m.classList.contains('d-block')) && s.visibility !== 'hidden';
+                            });
+                            const modal = modals[modals.length - 1];
+                            const inp = modal && modal.querySelector('input[formcontrolname="otp"], input#otp');
                             if (inp) {
                                 inp.value = '';
                                 inp.dispatchEvent(new Event('input', { bubbles: true }));
                                 inp.dispatchEvent(new Event('change', { bubbles: true }));
                             }
                         }).catch(() => {});
+                        await resetHumanSubmitWatch(page);
                         lastMemOtpSubmitted = '';
                     }
                 }

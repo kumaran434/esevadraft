@@ -12,6 +12,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+    installOtpModalCopilot,
+    readOtpModalCopilotState,
+    shouldBotTriggerResend
+} = require('../../common/otp_copilot_watcher');
 let resilientResumption = null;
 try {
     resilientResumption = require('../add_member/resilient_step_resumption');
@@ -36,6 +41,7 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
     let lastMobileResendAt = Date.now();
 
     if (isModalOpen) {
+        await installOtpModalCopilot(page);
         // STRICT SELECTOR: Specifically target editable OTP input, NEVER readonly prefix inputs like (+91)
         const otpInput = page.locator('input[formcontrolname="mobileOtp"], input[formcontrolname="otp"], input[name="mobileOtp"], .modal input[maxlength="6"]:not([readonly]):not([disabled]), .modal input[placeholder*="OTP"]:not([readonly]):not([disabled]), .modal input[placeholder*="கடவு"]:not([readonly]):not([disabled])').first();
         if (await otpInput.count() > 0 && await otpInput.isVisible().catch(() => false)) {
@@ -153,9 +159,10 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                     }
                 }
 
-                // Check countdown expiry inside modal -> auto click resend ONLY if timer truly expired (0s) & cooldown elapsed (65s)
+                // Check countdown expiry inside modal -> Co-Pilot resend ONLY if human hasn't taken manual Resend control
                 let resent = false;
-                if (Date.now() - lastMobileResendAt >= 65000) {
+                const cpMobState = await readOtpModalCopilotState(page);
+                if (shouldBotTriggerResend(cpMobState, lastMobileResendAt, Date.now(), 8000)) {
                     resent = await page.evaluate(() => {
                         const modal = document.querySelector('.modal.show, div[role="dialog"]');
                         if (modal) {
@@ -307,8 +314,9 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
             throw err;
         }
 
-        // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Countdown expiry with 65s cooldown)
-        const allowPollResend = (Date.now() - lastMobileResendAt >= 65000);
+        // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Co-Pilot Countdown expiry)
+        const cpMobPollState = await readOtpModalCopilotState(page);
+        const allowPollResend = shouldBotTriggerResend(cpMobPollState, lastMobileResendAt, Date.now(), 8000);
         const alertInfo = await page.evaluate((canResend) => {
             // Check countdown timer expiry -> auto click resend button only after 65s cooldown
             if (canResend) {

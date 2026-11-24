@@ -3962,12 +3962,12 @@ async function runTests() {
 
             const step21Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
             const headAadhaarSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_head_aadhaar_otp_steps.js'), 'utf8');
-            assert(step21Src.includes('65000'), "Mobile OTP verifier enforces strict 65s resend cooldown");
-            assert(!headAadhaarSrc.includes('resendLoc.click'), "Head Aadhaar OTP verifier NEVER auto-clicks UIDAI Resend (prevents txn mismatch)");
+            assert(step21Src.includes('shouldBotTriggerResend') && step21Src.includes('installOtpModalCopilot'), "Mobile OTP verifier uses Co-Pilot resend guard and strict 65s cooldown");
+            assert(headAadhaarSrc.includes('shouldBotTriggerResend') && headAadhaarSrc.includes('shouldBotTriggerSubmit') && headAadhaarSrc.includes('human_already_submitted'), "Head Aadhaar OTP verifier yields to human Resend/Submit clicks via Co-Pilot");
 
             const famLoopSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
             assert(famLoopSrc.includes('if (!isBirthCertMember)') && famLoopSrc.includes('clearStaleOtpState'), "card_family_members_loop skips Aadhaar OTP for Birth Certificate members and clears stale OTP between members");
-            assert(!famLoopSrc.includes('resendLoc.click') && famLoopSrc.includes('verifyMemDocUploaded'), "Member loop prevents UIDAI txn auto-resend wipe and verifies real server upload toast/badge");
+            assert(famLoopSrc.includes('shouldBotTriggerResend') && famLoopSrc.includes('shouldBotTriggerSubmit') && famLoopSrc.includes('verifyMemDocUploaded'), "Member loop uses Co-Pilot Resend/Submit immunity and verifies real server upload toast/badge");
 
             const docPrepSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_doc_prep.js'), 'utf8');
             assert(docPrepSrc.includes('../../../../../photo_studio') && addMemFormSrc.includes('../../../../../photo_studio'), "New Card doc prep & additional member form resolve root photo_studio cleanly");
@@ -5238,7 +5238,16 @@ async function runTests() {
             const newCardExtSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_new_card', 'extractor.js'), 'utf8');
             assert(newCardExtSrc.includes('intendedProofType') && newCardExtSrc.includes('delete targetMem.birthCertificatePath'), 'tnpds_new_card extractor respects intendedProofType and clears stale birthCertificatePath on Aadhaar upload');
 
-            passedCount += 9;
+            // [TEST 75] OTP Co-Pilot Human Yield & Double-Submit Guard
+            const cpMod = require('../src/portal/common/otp_copilot_watcher');
+            const nowT = 1700000000000;
+            assert(cpMod.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 0, humanResendCount: 1, humanResendAt: nowT - 10000, otpVal: '', lastHumanTypeAt: 0, timerZeroSinceAt: nowT - 15000 }, 0, nowT, 10000) === false, 'Co-Pilot NEVER auto-clicks Resend after human already clicked Resend manually');
+            assert(cpMod.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 0, humanResendCount: 0, humanResendAt: 0, otpVal: '', lastHumanTypeAt: 0, timerZeroSinceAt: nowT - 15000 }, 0, nowT, 10000) === true, 'Co-Pilot clicks Resend cleanly after 10s grace ONLY when human has NOT taken Resend control');
+            assert(cpMod.shouldBotTriggerSubmit({ open: true, hasSubmitBtn: true, otpVal: '525289', humanSubmitAt: nowT - 1500, humanSubmittedOtp: '525289', lastHumanTypeAt: 0 }, '', 6, nowT).reason === 'human_already_submitted', 'Co-Pilot detects human Submit click/Enter and prevents duplicate submission');
+            const navPreflightSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_navigation_preflight.js'), 'utf8');
+            assert(navPreflightSrc.includes('currentlyVisible.has(prev)') && navPreflightSrc.includes('seenToasts.delete'), 'scanAndBroadcastToasts prunes dismissed alerts so repeat OTP failures log cleanly');
+
+            passedCount += 13;
         }
 
         console.log('\n======================================================');
