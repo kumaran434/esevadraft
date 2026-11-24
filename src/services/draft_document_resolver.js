@@ -55,25 +55,27 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     if (docType.toLowerCase().includes('member')) {
         const idxMatch = docType.match(/\d+/);
         const idx = idxMatch ? parseInt(idxMatch[0], 10) : 0;
-        const mem = draft?.citizenProfile?.members?.[idx + 1] || draft?.citizenProfile?.members?.[idx] || sess?.citizenProfile?.members?.[idx + 1];
-        if (mem && mem.docPath) docPath = mem.docPath;
+        const mem = draft?.citizenProfile?.members?.[idx + 1] || sess?.citizenProfile?.members?.[idx + 1] || (idx === 0 ? draft?.citizenProfile?.members?.[0] : null);
+        if (mem && (mem.docPath || (mem.docType === 'BIRTH_CERTIFICATE' && mem.birthCertificatePath))) {
+            docPath = mem.docPath || mem.birthCertificatePath;
+        }
+        if (!docPath && docs[`memberDoc_${idx + 1}`]) {
+            docPath = docs[`memberDoc_${idx + 1}`];
+        }
+        if (!docPath && docs[`memberAadhaar${idx}`]) {
+            docPath = docs[`memberAadhaar${idx}`];
+        }
         if (!docPath && docs.memberAadhaars && docs.memberAadhaars[idx]) {
             docPath = docs.memberAadhaars[idx];
         }
-        if (!docPath && docs[`memberAadhaar_${idx}`]) {
-            docPath = docs[`memberAadhaar_${idx}`];
+        if (!docPath && docs[`memberAadhaar_${idx + 1}`]) {
+            docPath = docs[`memberAadhaar_${idx + 1}`];
         }
-        if (!docPath && docs.memberAadhaars && docs.memberAadhaars.length > 0) {
+        if (!docPath && idx === 0 && docs.memberAadhaars && docs.memberAadhaars.length > 0) {
             docPath = docs.memberAadhaars[0];
         }
-        if (!docPath) {
+        if (!docPath && idx === 0) {
             docPath = docs.memberAadhaar || sess?.subServiceData?.docPath || draft?.citizenProfile?.subServiceData?.docPath || sess?.citizenProfile?.subServiceData?.docPath;
-        }
-        const headCand = docs.headAadhaar || draft?.storageUrls?.headAadhaar;
-        const isHeadPdf = typeof headCand === 'string' && (headCand.toLowerCase().endsWith('.pdf') || headCand.toLowerCase().includes('merged'));
-        const isDocPathPdf = typeof docPath === 'string' && docPath.toLowerCase().endsWith('.pdf');
-        if (!isDocPathPdf && isHeadPdf) {
-            docPath = headCand;
         }
     }
 
@@ -86,32 +88,35 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     }
 
     const isAadhaarReq = docType === 'headAadhaar' || docType.toLowerCase().includes('member');
-    {
+    const memIdxMatch = docType.toLowerCase().includes('member') ? docType.match(/\d+/) : null;
+    const isIndexedMemReq = Boolean(memIdxMatch);
+    const reqMemSlot = memIdxMatch ? (parseInt(memIdxMatch[0], 10) + 1) : 0;
+    if (!isIndexedMemReq) {
         const isHead = docType === 'headAadhaar';
         const sUrls = draft?.storageUrls || {};
         let fCand = isAadhaarReq
             ? (isHead
                 ? (docs.headAadhaarFront || draft?.citizenProfile?.documents?.headAadhaarFront || draft?.documents?.headAadhaarFront || sess?.tempUploads?.headAadhaarFront || docs.headAadhaar)
-                : (docs.memberAadhaarFront || draft?.citizenProfile?.documents?.memberAadhaarFront || draft?.documents?.memberAadhaarFront || docs[`memberAadhaarFront_0`] || sess?.tempUploads?.memberAadhaarFront || docs.memberAadhaar || docs.headAadhaarFront || docs.headAadhaar))
+                : (docs.memberAadhaarFront || draft?.citizenProfile?.documents?.memberAadhaarFront || draft?.documents?.memberAadhaarFront || docs[`memberAadhaarFront_0`] || sess?.tempUploads?.memberAadhaarFront || docs.memberAadhaar))
             : (docs[`${docType}Front`] || draft?.citizenProfile?.documents?.[`${docType}Front`] || draft?.documents?.[`${docType}Front`] || sess?.tempUploads?.[`${docType}Front`] || docs[docType]);
         let bCand = isAadhaarReq
             ? (isHead
                 ? (docs.headAadhaarBack || draft?.citizenProfile?.documents?.headAadhaarBack || draft?.documents?.headAadhaarBack || sess?.tempUploads?.headAadhaarBack)
-                : (docs.memberAadhaarBack || draft?.citizenProfile?.documents?.memberAadhaarBack || draft?.documents?.memberAadhaarBack || docs[`memberAadhaarBack_0`] || sess?.tempUploads?.memberAadhaarBack || docs.headAadhaarBack))
+                : (docs.memberAadhaarBack || draft?.citizenProfile?.documents?.memberAadhaarBack || draft?.documents?.memberAadhaarBack || docs[`memberAadhaarBack_0`] || sess?.tempUploads?.memberAadhaarBack))
             : (docs[`${docType}Back`] || draft?.citizenProfile?.documents?.[`${docType}Back`] || draft?.documents?.[`${docType}Back`] || sess?.tempUploads?.[`${docType}Back`]);
         if (typeof fCand === 'object' && fCand !== null) fCand = fCand.path || fCand.url || fCand.docPath || null;
         if (typeof bCand === 'object' && bCand !== null) bCand = bCand.path || bCand.url || bCand.docPath || null;
         const fB64 = isAadhaarReq
-            ? (isHead ? (b64Docs.headAadhaarFrontBase64 || b64Docs.headAadhaarBase64) : (b64Docs.memberAadhaarFrontBase64 || b64Docs.memberAadhaarBase64 || b64Docs.headAadhaarFrontBase64 || b64Docs.headAadhaarBase64))
+            ? (isHead ? (b64Docs.headAadhaarFrontBase64 || b64Docs.headAadhaarBase64) : (b64Docs.memberAadhaarFrontBase64 || b64Docs.memberAadhaarBase64))
             : (b64Docs[`${docType}FrontBase64`] || b64Docs[`${docType}Base64`]);
         const bB64 = isAadhaarReq
-            ? (isHead ? b64Docs.headAadhaarBackBase64 : (b64Docs.memberAadhaarBackBase64 || b64Docs.headAadhaarBackBase64))
+            ? (isHead ? b64Docs.headAadhaarBackBase64 : b64Docs.memberAadhaarBackBase64)
             : b64Docs[`${docType}BackBase64`];
         const fStorage = isAadhaarReq
-            ? (isHead ? (sUrls.headAadhaarFront || sUrls.headAadhaar) : (sUrls.memberAadhaarFront || sUrls.memberAadhaar || sUrls.headAadhaarFront || sUrls.headAadhaar))
+            ? (isHead ? (sUrls.headAadhaarFront || sUrls.headAadhaar) : (sUrls.memberAadhaarFront || sUrls.memberAadhaar))
             : (sUrls[`${docType}Front`] || sUrls[docType]);
         const bStorage = isAadhaarReq
-            ? (isHead ? sUrls.headAadhaarBack : (sUrls.memberAadhaarBack || sUrls.headAadhaarBack))
+            ? (isHead ? sUrls.headAadhaarBack : sUrls.memberAadhaarBack)
             : sUrls[`${docType}Back`];
 
         const hasFront = !!(fCand || fB64 || fStorage);
@@ -361,7 +366,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete target.profilePhoto;
             delete target.headPhoto;
         }
-        if (isHeadAadhaar || docType === 'memberAadhaar') {
+        if (isHeadAadhaar) {
             delete target.headAadhaarBase64;
             delete target.headAadhaarName;
             delete target.headAadhaarFrontBase64;
@@ -381,6 +386,21 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete target.memberAadhaarBackBase64;
             delete target.memberAadhaarBackName;
             delete target.memberAadhaar;
+        } else if (docType === 'memberAadhaar') {
+            if (memberIndex > 0) {
+                if (Array.isArray(target.memberAadhaarsBase64)) {
+                    target.memberAadhaarsBase64[memberIndex - 1] = null;
+                }
+            } else {
+                delete target.memberAadhaarBase64;
+                delete target.memberAadhaarName;
+                delete target.memberAadhaarsBase64;
+                delete target.memberAadhaarFrontBase64;
+                delete target.memberAadhaarFrontName;
+                delete target.memberAadhaarBackBase64;
+                delete target.memberAadhaarBackName;
+                delete target.memberAadhaar;
+            }
         }
         if (isResidence) {
             delete target.residenceProofBase64;
@@ -453,11 +473,19 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             delete docMap.memberAadhaars;
             delete docMap.memberAadhaar_0;
         } else if (docType === 'memberAadhaar') {
-            delete docMap.memberAadhaar;
-            delete docMap.memberAadhaarFront;
-            delete docMap.memberAadhaarBack;
-            delete docMap.memberAadhaars;
-            delete docMap[`memberAadhaar_${memberIndex}`];
+            if (memberIndex > 0) {
+                delete docMap[`memberAadhaar_${memberIndex}`];
+                delete docMap[`memberDoc_${memberIndex}`];
+                delete docMap[`memberAadhaar${memberIndex - 1}`];
+                delete docMap[`memberAadhaarFront_${memberIndex}`];
+                delete docMap[`memberAadhaarBack_${memberIndex}`];
+            } else {
+                delete docMap.memberAadhaar;
+                delete docMap.memberAadhaarFront;
+                delete docMap.memberAadhaarBack;
+                delete docMap.memberAadhaars;
+                delete docMap[`memberAadhaar_${memberIndex}`];
+            }
         }
         if (isResidence) {
             delete docMap.residenceProof;
@@ -514,14 +542,21 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
             if (memberIndex > 0 && Array.isArray(prof.members) && prof.members[memberIndex]) {
                 delete prof.members[memberIndex].docPath;
                 delete prof.members[memberIndex].aadhaarDocPath;
-            }
-            if (prof.subServiceData) {
-                delete prof.subServiceData.docPath;
-                delete prof.subServiceData.aadhaarDocPath;
-                delete prof.subServiceData.memberDocPath;
-            }
-            if (prof.tempMember) {
-                delete prof.tempMember.docPath;
+                delete prof.members[memberIndex].birthCertificatePath;
+                delete prof.members[memberIndex].proofType;
+                if (prof.members[memberIndex].docType === 'BIRTH_CERTIFICATE') {
+                    prof.members[memberIndex].docType = 'AADHAAR_CARD';
+                    prof.members[memberIndex].hasAadhaar = true;
+                }
+            } else {
+                if (prof.subServiceData) {
+                    delete prof.subServiceData.docPath;
+                    delete prof.subServiceData.aadhaarDocPath;
+                    delete prof.subServiceData.memberDocPath;
+                }
+                if (prof.tempMember) {
+                    delete prof.tempMember.docPath;
+                }
             }
         }
         if (isResidence) {

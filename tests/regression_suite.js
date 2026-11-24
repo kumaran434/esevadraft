@@ -5232,7 +5232,13 @@ async function runTests() {
             const famLoopSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_family_members_loop.js'), 'utf8');
             assert(famLoopSrc.includes('formAudit.btnDisabled') && !famLoopSrc.includes('|Save/i'), 'card_family_members_loop avoids generic |Save match and audits disabled Angular controls before clicking Save Member');
 
-            passedCount += 7;
+            const tnpdsHudSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'helpers', 'browser_hud.js'), 'utf8');
+            assert(tnpdsHudSrc.includes('bottom: 14px; right: 14px;') && !tnpdsHudSrc.includes('top: 10px; right: 12px;'), 'TNPDS browser_hud is positioned bottom-right so top-right portal error toasts are never hidden');
+
+            const newCardExtSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_new_card', 'extractor.js'), 'utf8');
+            assert(newCardExtSrc.includes('intendedProofType') && newCardExtSrc.includes('delete targetMem.birthCertificatePath'), 'tnpds_new_card extractor respects intendedProofType and clears stale birthCertificatePath on Aadhaar upload');
+
+            passedCount += 9;
         }
 
         console.log('\n======================================================');

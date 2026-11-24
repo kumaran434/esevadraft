@@ -370,7 +370,13 @@
                 if (isMobileChanged) {
                     fd.append('oldMobileNumber', originalEditingMobile);
                 }
-                if (memberIndex) fd.append('memberIndex', String(memberIndex));
+                if (memberIndex) {
+                    fd.append('memberIndex', String(memberIndex));
+                    const memProofTypeEl = document.getElementById(`editMemberDocType_${memberIndex}`);
+                    if (memProofTypeEl && memProofTypeEl.value) {
+                        fd.append('intendedProofType', memProofTypeEl.value);
+                    }
+                }
 
                 const upRes = await fetch('/api/drafts/upload-document', {
                     method: 'POST',
@@ -707,6 +713,12 @@
                     if (vbEl) vbEl.style.display = 'none';
                     if (currentCitizenData && currentCitizenData.members && currentCitizenData.members[memberIndex]) {
                         delete currentCitizenData.members[memberIndex].docPath;
+                        delete currentCitizenData.members[memberIndex].birthCertificatePath;
+                        delete currentCitizenData.members[memberIndex].proofType;
+                    }
+                    if (currentCitizenData && currentCitizenData.documents) {
+                        delete currentCitizenData.documents[`memberDoc_${memberIndex}`];
+                        delete currentCitizenData.documents[`memberAadhaar${memberIndex - 1}`];
                     }
                 }
             } else if (docType === 'memberProof') {
@@ -1111,7 +1123,7 @@
                         const mName = m.nameTam ? `${m.nameTam} (${m.nameEng || ''})` : (m.nameEng || `உறுப்பினர் ${mIdx}`);
                         const mRel = m.relationshipTam || m.relationship || '';
                         const isMemBirthCert = m.docType === 'BIRTH_CERTIFICATE' || m.hasAadhaar === false;
-                        const mDoc = m.docPath || m.birthCertificatePath || '';
+                        const mDoc = m.docPath || (isMemBirthCert ? m.birthCertificatePath : '') || '';
                         const mDocStr = typeof mDoc === 'object' ? (mDoc?.path || mDoc?.docPath || '') : String(mDoc || '');
                         const mUrl = formatDocUrl(mDocStr);
                         const isPdf = isPdfPath(mDocStr);
@@ -1463,7 +1475,11 @@
                         if (isMobileChanged) {
                             fd.append('oldMobileNumber', originalEditingMobile);
                         }
-                        if (item.memberIndex) fd.append('memberIndex', String(item.memberIndex));
+                        if (item.memberIndex) {
+                            fd.append('memberIndex', String(item.memberIndex));
+                            const pTypeEl = document.getElementById(`editMemberDocType_${item.memberIndex}`);
+                            if (pTypeEl && pTypeEl.value) fd.append('intendedProofType', pTypeEl.value);
+                        }
 
                         const upRes = await fetch('/api/drafts/upload-document', {
                             method: 'POST',
@@ -1533,6 +1549,7 @@
                         existingMembers[idx] = {
                             ...existingMembers[idx],
                             docType: resolvedDocType,
+                            proofType: resolvedDocType,
                             hasAadhaar: !isBc,
                             nameTam: mNameTamEl ? mNameTamEl.value.trim() : existingMembers[idx].nameTam,
                             nameEng: mNameEngEl ? mNameEngEl.value.trim() : existingMembers[idx].nameEng,
@@ -1544,6 +1561,9 @@
                             genderTam: mGenEl ? (mGenEl.value === 'Female' ? 'பெண்' : 'ஆண்') : existingMembers[idx].genderTam,
                             aadhaarNumber: isBc ? '' : (mAadhEl ? mAadhEl.value.replace(/\s+/g, '') : existingMembers[idx].aadhaarNumber)
                         };
+                        if (!isBc) {
+                            delete existingMembers[idx].birthCertificatePath;
+                        }
                     }
                 }
 

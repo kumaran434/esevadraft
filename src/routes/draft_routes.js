@@ -131,19 +131,25 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
 
             draft.base64Docs = draft.base64Docs || {};
             const extraMembers = Array.isArray(draft.citizenProfile?.members) ? draft.citizenProfile.members.slice(1) : [];
-            if (extraMembers.length > 0 && (!draft.base64Docs.memberAadhaarsBase64 || draft.base64Docs.memberAadhaarsBase64.length < extraMembers.length)) {
+            if (extraMembers.length > 0) {
+                const existingB64List = Array.isArray(draft.base64Docs.memberAadhaarsBase64) ? draft.base64Docs.memberAadhaarsBase64 : [];
                 const rebuiltMemDocs = [];
                 for (let ei = 0; ei < extraMembers.length; ei++) {
                     const em = extraMembers[ei];
-                    const emPath = em?.docPath || em?.birthCertificatePath || draft.documents?.[`memberDoc_${ei + 1}`] || draft.documents?.[`memberAadhaar${ei}`] || '';
+                    const emPath = em?.docPath || (em?.docType === 'BIRTH_CERTIFICATE' ? em?.birthCertificatePath : '') || draft.documents?.[`memberDoc_${ei + 1}`] || draft.documents?.[`memberAadhaar${ei}`] || '';
+                    let pushed = false;
                     if (emPath) {
                         const resolvedEm = fs.existsSync(emPath) ? emPath : path.join(__dirname, '..', '..', 'uploads', path.basename(emPath));
                         if (fs.existsSync(resolvedEm)) {
                             try {
                                 const b64 = fs.readFileSync(resolvedEm).toString('base64');
                                 rebuiltMemDocs.push({ name: path.basename(resolvedEm), docType: em?.docType || 'AADHAAR_CARD', memberIdx: ei + 1, base64: b64 });
+                                pushed = true;
                             } catch (_) {}
                         }
+                    }
+                    if (!pushed && existingB64List[ei]) {
+                        rebuiltMemDocs.push(existingB64List[ei]);
                     }
                 }
                 if (rebuiltMemDocs.length > 0) {
@@ -553,7 +559,8 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
             delete require.cache[require.resolve('../services/document_upload_processor')];
         } catch (_) {}
         const { processUploadedDocument: liveProcessDoc } = require('../services/document_upload_processor');
-        const { optimizedPath, extractedData, fileSizeKB } = await liveProcessDoc(sess, docType, uploadedFile, memberIndex, targetMobile);
+        const intendedProofType = String(req.body.intendedProofType || '').trim();
+        const { optimizedPath, extractedData, fileSizeKB } = await liveProcessDoc(sess, docType, uploadedFile, memberIndex, targetMobile, intendedProofType);
         let relativeUrl = null;
         let previewUrl = null;
 

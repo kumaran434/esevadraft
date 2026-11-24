@@ -13,13 +13,16 @@ const {
  * delegates document validation, extraction, normalization and saving strictly
  * to that Cartridge's own `extractor.processEditModalUpload`.
  */
-async function processUploadedDocument(sess, docType, uploadedFile, memberIndex = 0, targetMobile = '') {
+async function processUploadedDocument(sess, docType, uploadedFile, memberIndex = 0, targetMobile = '', intendedProofType = '') {
     if (!sess.citizenProfile) sess.citizenProfile = {};
     if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
     if (!sess.tempUploads) sess.tempUploads = {};
 
-    const { resolveCartridge } = require('../cartridges');
-    const activeCart = resolveCartridge(sess);
+    const { resolveCartridge, getCartridgeById } = require('../cartridges');
+    let activeCart = resolveCartridge(sess);
+    if ((!activeCart || activeCart.id !== 'TNPDS_NEW_CARD') && memberIndex >= 1 && docType.startsWith('memberAadhaar')) {
+        activeCart = getCartridgeById('TNPDS_NEW_CARD') || activeCart;
+    }
 
     let optimizedPath = uploadedFile.path;
     let extractedData = null;
@@ -30,7 +33,8 @@ async function processUploadedDocument(sess, docType, uploadedFile, memberIndex 
             docType,
             uploadedFile,
             memberIndex,
-            targetMobile
+            targetMobile,
+            intendedProofType
         }));
     } else {
         // Pure pre-service Master Profile fallback (strictly no subServiceData / ration member rules)

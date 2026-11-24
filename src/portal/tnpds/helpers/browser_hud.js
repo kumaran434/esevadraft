@@ -36,7 +36,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
                 hud = document.createElement('div');
                 hud.id = 'esevadraft-browser-hud';
                 hud.style.cssText = `
-                    position: fixed; top: 10px; right: 12px; z-index: 2147483647;
+                    position: fixed; bottom: 14px; right: 14px; z-index: 2147483647;
                     width: 295px; max-width: 88vw; box-sizing: border-box;
                     background: ${bgColor}; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
                     border: ${isErr ? '2px' : '1.5px'} solid ${borderColor};
@@ -81,7 +81,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
             if (!drawer) {
                 drawer = document.createElement('div');
                 drawer.id = 'esevaHudReportBox';
-                drawer.style.cssText = 'display:none; position:fixed; top:112px; right:12px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.97); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.5); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.48); pointer-events:auto;';
+                drawer.style.cssText = 'display:none; position:fixed; bottom:138px; right:14px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.97); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.5); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.48); pointer-events:auto;';
                 drawer.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11.5px;font-weight:700;color:#fecaca;">
                         <span>🚨 பிழை / தாமதம் தெரிவிக்க</span>
@@ -184,7 +184,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
             hud.style.display = 'flex';
             if (drawer && hud) {
                 const rect = hud.getBoundingClientRect();
-                if (rect && rect.bottom > 0) drawer.style.top = `${Math.round(rect.bottom + 6)}px`;
+                if (rect && rect.height > 0) drawer.style.bottom = `${Math.round(rect.height + 22)}px`;
             }
         }, { title, subtitle, type }).catch(() => {});
     } catch (e) {}
@@ -219,7 +219,7 @@ async function injectVisualBanner(targetPage = null) {
             if (document.getElementById('eseva-captcha-guide')) return;
             const b = document.createElement('div');
             b.id = 'eseva-captcha-guide';
-            b.style.cssText = 'position:fixed; top:112px; right:12px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); color:#f8fafc; padding:8px 12px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:11.5px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid #38bdf8; pointer-events:none; white-space:normal; line-height:1.35;';
+            b.style.cssText = 'position:fixed; bottom:155px; right:14px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); color:#f8fafc; padding:8px 12px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:11.5px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid #38bdf8; pointer-events:none; white-space:normal; line-height:1.35;';
             b.innerHTML = '<span style="color:#38bdf8;">🛡️</span> <span>"I am human" கட்டத்தைத் திக் செய்யவும்</span>';
             document.body.appendChild(b);
         });
