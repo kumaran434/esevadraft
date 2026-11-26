@@ -5697,20 +5697,21 @@ async function runTests() {
             assert(!switched80.documents?.memberAadhaar && !switched80.storageUrls?.memberAadhaar, 'TEST 80.9: Switching away from ADD_MEMBER purges transient memberAadhaar from Master Profile & storageUrls');
             assert(Boolean(switched80.citizenProfile?.headAadhaar === '554433221100'), 'TEST 80.10: Master Profile permanent fields remain intact across service switches');
 
-            // Verify Pure Master Profile Cloud Vault payload strips transient service trials & trial docs
+            // Verify Cloud Draft payload preserves per-application subService, subServiceData & member docs while stripping raw base64 buffers
             const { buildMasterCloudPayload } = require('../src/services/db/draft_save');
             const cloudSnap = buildMasterCloudPayload({
+                draftId: `${test80Mob}_1700000000001`,
                 mobileNumber: test80Mob,
                 subService: 'ADD_MEMBER',
-                subServiceData: { memberNameTam: 'தற்காலிக குழந்தை', docPath: 'C:/tmp/mem.jpg' },
-                intakeState: 'RATION_ADD_MEMBER_RELATION',
-                chatHistory: [{ sender: 'bot', text: 'temp' }],
-                citizenProfile: { fullNameTam: 'கார்த்திக் சு', headAadhaar: '554433221100', subService: 'ADD_MEMBER', subServiceData: { memberNameTam: 'தற்காலிக குழந்தை' } },
+                subServiceData: { memberNameTam: 'குமரன் கி', docPath: 'C:/tmp/mem.jpg' },
+                intakeState: 'READY_TO_APPLY',
+                chatHistory: [{ sender: 'bot', text: 'ready' }],
+                citizenProfile: { fullNameTam: 'கார்த்திக் சு', headAadhaar: '554433221100', subService: 'ADD_MEMBER', subServiceData: { memberNameTam: 'குமரன் கி' }, base64Docs: { memberAadhaarBase64: 'AAA' } },
                 documents: { headAadhaar: 'C:/tmp/head.jpg', memberAadhaar: 'C:/tmp/mem.jpg', newAddressProof: 'C:/tmp/addr.jpg' },
                 storageUrls: { headAadhaar: 'https://cloud/head.jpg', memberAadhaar: 'https://cloud/mem.jpg' }
             });
-            assert(cloudSnap.subService === null && cloudSnap.subServiceData === null && cloudSnap.intakeState === 'SERVICE_SELECTION' && cloudSnap.chatHistory.length === 0, 'TEST 80.11: Cloud Vault payload stores pure Master Profile only (zero transient service trials)');
-            assert(Boolean(cloudSnap.documents.headAadhaar) && !cloudSnap.documents.memberAadhaar && !cloudSnap.documents.newAddressProof && !cloudSnap.storageUrls.memberAadhaar, 'TEST 80.12: Cloud Vault payload preserves Master docs and strips transient trial docs');
+            assert(cloudSnap.subService === 'ADD_MEMBER' && cloudSnap.subServiceData?.memberNameTam === 'குமரன் கி' && cloudSnap.intakeState === 'READY_TO_APPLY' && !cloudSnap.citizenProfile.base64Docs, 'TEST 80.11: Cloud draft payload preserves per-application ADD_MEMBER state while stripping raw base64 blobs');
+            assert(Boolean(cloudSnap.documents.headAadhaar) && Boolean(cloudSnap.documents.memberAadhaar) && Boolean(cloudSnap.storageUrls.memberAadhaar), 'TEST 80.12: Cloud draft payload preserves Master and Member docs safely without stripping active sub-service uploads');
 
             await deleteCitizenDraft(test80Mob);
             passedCount += 12;
@@ -6423,6 +6424,94 @@ async function runTests() {
                 assert(editUiRes.launchedPayload?.subServiceData?.relationshipTam === 'மருமகன்' && editUiRes.launchedPayload?.subServiceData?.relationshipEng === 'Son-in-law', `TEST 84.submitSync: Direct submit carries edited relationshipTam=மருமகன் & relationshipEng=Son-in-law`);
                 assert(editUiRes.launchedPayload?.subServiceData?.addMembersList?.[0]?.relationshipTam === 'மருமகன்' && editUiRes.launchedPayload?.subServiceData?.memberNameEng === 'Kumaran K', `TEST 84.listSync: addMembersList[0] stays 100% synced with Edit Modal changes`);
                 passedCount += 12;
+            }
+
+            // TEST 85: Auto-Deletion Immunity for Saved Add Member Drafts (Cloud Payload, History Poll, Resume Login, Service Switch Fork)
+            {
+                const { buildMasterCloudPayload } = require('../src/services/app_store');
+                const amKeepMob = '9999900085';
+                const amKeepHdr = { 'x-session-mobile': amKeepMob, 'x-operator-uid': 'test_suite_operator_uid' };
+                const initKeep = await request('POST', '/api/operator/new-customer', { customerMobile: amKeepMob, operatorUid: 'test_suite_operator_uid' }, amKeepHdr);
+                const keepDraftId = initKeep.body?.draftId;
+                const keepHdr = { ...amKeepHdr, 'x-draft-id': keepDraftId };
+
+                await request('POST', '/api/drafts/save', {
+                    draftId: keepDraftId,
+                    mobileNumber: amKeepMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'ADD_MEMBER',
+                    intakeState: 'READY_TO_APPLY',
+                    documents: { memberAadhaar: '/uploads/test_sample_doc.jpg' },
+                    subServiceData: {
+                        subService: 'ADD_MEMBER',
+                        memberName: 'குமரன் கி',
+                        memberNameTam: 'குமரன் கி',
+                        memberNameEng: 'Kumaran K',
+                        relationshipTam: 'மகன்',
+                        relationshipEng: 'Son',
+                        dob: '10/06/1993',
+                        aadhaarNo: '575567662931',
+                        docPath: '/uploads/test_sample_doc.jpg'
+                    },
+                    citizenProfile: {
+                        mobileNumber: amKeepMob,
+                        subService: 'ADD_MEMBER',
+                        documents: { memberAadhaar: '/uploads/test_sample_doc.jpg' },
+                        subServiceData: {
+                            subService: 'ADD_MEMBER',
+                            memberName: 'குமரன் கி',
+                            memberNameTam: 'குமரன் கி',
+                            memberNameEng: 'Kumaran K',
+                            relationshipTam: 'மகன்',
+                            relationshipEng: 'Son',
+                            dob: '10/06/1993',
+                            aadhaarNo: '575567662931',
+                            docPath: '/uploads/test_sample_doc.jpg'
+                        }
+                    }
+                }, keepHdr);
+
+                // 1. buildMasterCloudPayload NEVER strips subService, subServiceData, or memberAadhaar
+                const savedKeep = await request('GET', `/api/drafts/${encodeURIComponent(keepDraftId)}`, null, keepHdr);
+                const cloudObj = buildMasterCloudPayload(savedKeep.body?.draft || {});
+                assert(
+                    cloudObj.subService === 'ADD_MEMBER' &&
+                    cloudObj.subServiceData?.memberNameTam === 'குமரன் கி' &&
+                    Boolean(cloudObj.documents?.memberAadhaar),
+                    'TEST 85.cloudSafe: buildMasterCloudPayload preserves ADD_MEMBER subServiceData and memberAadhaar doc'
+                );
+
+                // 2. Repeated /api/chat/history polling NEVER wipes ADD_MEMBER draft even if intakeState starts fresh
+                const pollRes = await request('GET', `/api/chat/history?mobile=${amKeepMob}&draftId=${encodeURIComponent(keepDraftId)}`, null, keepHdr);
+                assert(pollRes.status === 200 && pollRes.body?.citizenProfile?.subServiceData?.memberNameTam === 'குமரன் கி', 'TEST 85.pollSafe: GET /api/chat/history preserves saved ADD_MEMBER data');
+
+                // 3. POST /api/auth/login preserves ADD_MEMBER even when subService is inside citizenProfile
+                const loginRes = await request('POST', '/api/auth/login', {
+                    draftId: keepDraftId,
+                    mobileNumber: amKeepMob,
+                    customerMobile: amKeepMob,
+                    isCustomerSession: true,
+                    operatorUid: 'test_suite_operator_uid'
+                }, keepHdr);
+                assert(loginRes.body?.citizenProfile?.subService === 'ADD_MEMBER' && loginRes.body?.citizenProfile?.subServiceData?.memberNameTam === 'குமரன் கி', 'TEST 85.loginSafe: Resume login preserves ADD_MEMBER subServiceData');
+
+                // 4. Switching service via chat forks to a NEW draftId instead of overwriting the saved ADD_MEMBER draft!
+                const switchRes = await request('POST', '/api/chat', {
+                    text: 'முகவரி மாற்றம்',
+                    mobileNumber: amKeepMob,
+                    draftId: keepDraftId,
+                    operatorUid: 'test_suite_operator_uid'
+                }, keepHdr);
+                assert(switchRes.body?.draftId && switchRes.body.draftId !== keepDraftId, `TEST 85.forkId: Switching service forks a new draftId (${switchRes.body?.draftId}) instead of overwriting ${keepDraftId}`);
+                const origAfterSwitch = await request('GET', `/api/drafts/${encodeURIComponent(keepDraftId)}`, null, keepHdr);
+                assert(
+                    origAfterSwitch.body?.draft?.subService === 'ADD_MEMBER' &&
+                    origAfterSwitch.body?.draft?.citizenProfile?.subServiceData?.memberNameTam === 'குமரன் கி',
+                    'TEST 85.origIntact: Original saved ADD_MEMBER draft remains 100% intact after switching service'
+                );
+
+                await request('DELETE', `/api/drafts/${encodeURIComponent(amKeepMob)}?permanent=true`, null, amKeepHdr);
+                passedCount += 5;
             }
 
             passedCount += cartridgeDirs81.length + 25;

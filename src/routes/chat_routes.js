@@ -150,7 +150,11 @@ router.get('/api/chat/history', async (req, res) => {
                     sess.applicationNumber = null;
                     sess.applicationPdfUrl = null;
                 }
-                if (sess.intakeState === 'SERVICE_SELECTION' || draft.intakeState === 'SERVICE_SELECTION') {
+                const hasRestoredSubSvc = Boolean(
+                    (sess.subService && sess.subService !== 'NEW_CARD' && sess.subServiceData && Object.keys(sess.subServiceData).length > 0) ||
+                    (draft.subService && draft.subService !== 'NEW_CARD' && (draft.subServiceData || draftProf.subServiceData))
+                );
+                if (!hasRestoredSubSvc && (sess.intakeState === 'SERVICE_SELECTION' || draft.intakeState === 'SERVICE_SELECTION')) {
                     sess.intakeState = 'SERVICE_SELECTION';
                     sess.step = 'SERVICE_SELECTION';
                     sess.subService = null;
@@ -288,7 +292,14 @@ router.get('/api/chat/history', async (req, res) => {
     for (const [k, v] of Object.entries({ ...(sess.citizenProfile?.documents || {}), ...(sess.tempUploads || {}) })) {
         if (v !== null && v !== undefined && v !== '') mergedCleanDocs[k] = v;
     }
-    if (mobile && sess.citizenProfile && (sess.citizenProfile.fullNameEng || sess.citizenProfile.fullNameTam || sess.citizenProfile.headAadhaar)) {
+    const hasMeaningfulPollData = Boolean(
+        sess.citizenProfile &&
+        (sess.citizenProfile.fullNameEng || sess.citizenProfile.fullNameTam || sess.citizenProfile.headAadhaar ||
+         (sess.subServiceData && Object.keys(sess.subServiceData).length > 0) ||
+         (sess.citizenProfile.subServiceData && Object.keys(sess.citizenProfile.subServiceData).length > 0))
+    );
+    const isEmptyMenuShell = (sess.intakeState === 'SERVICE_SELECTION' && !sess.subService && !sess.subServiceData && !sess.citizenProfile?.subServiceData);
+    if (mobile && !sess._isPureFreshSession && hasMeaningfulPollData && !isEmptyMenuShell) {
         const saveKey = sess.draftId || mobile;
         saveCitizenDraft(saveKey, {
             draftId: saveKey,

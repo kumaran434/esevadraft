@@ -35,11 +35,6 @@ const _latestSaveSeq = new Map();
 const _lastCloudHash = new Map();
 const _loggedRestores = new Set();
 
-const TRANSIENT_CLOUD_DOC_KEYS = [
-    'memberAadhaar', 'memberAadhaarFront', 'memberAadhaarBack',
-    'mergedAadhaar', 'birthCertificate', 'newAddressProof', 'surrenderProof'
-];
-
 const SYNTHETIC_TEST_MOBILES = new Set([
     '9790170099', '9840011223', '9111223344', '9333222111', '9444332211',
     '9555444333', '9777666555', '9876500050', '9991112244', '9998881122',
@@ -85,19 +80,19 @@ function readLocalJson(filePath) {
 
 function buildMasterCloudPayload(payload) {
     const cleanProfile = { ...(payload.citizenProfile || {}) };
-    delete cleanProfile.subService;
-    delete cleanProfile.subServiceData;
-    delete cleanProfile.tempMember;
-    delete cleanProfile.tempUploads;
+    // Never strip subService, subServiceData, tempMember, or saved documents from a draft's own cloud backup!
+    // Strip only heavy raw base64 buffers so Firestore 1MB doc limit is never exceeded.
+    delete cleanProfile.base64Docs;
 
-    const cleanDocs = { ...(payload.documents || {}) };
-    const cleanUrls = { ...(payload.storageUrls || {}) };
-    for (const k of TRANSIENT_CLOUD_DOC_KEYS) {
-        delete cleanDocs[k];
-        delete cleanUrls[k];
-        if (cleanProfile.documents) delete cleanProfile.documents[k];
+    const cleanDocs = {};
+    for (const [k, v] of Object.entries(payload.documents || {})) {
+        if (v !== null && v !== undefined && v !== '') cleanDocs[k] = v;
     }
+    const cleanUrls = { ...(payload.storageUrls || {}) };
     cleanProfile.documents = { ...cleanDocs };
+
+    const resolvedSubService = payload.subService !== undefined ? payload.subService : (cleanProfile.subService || null);
+    const resolvedSubData = payload.subServiceData !== undefined ? payload.subServiceData : (cleanProfile.subServiceData || null);
 
     return {
         draftId: payload.draftId || payload.mobileNumber,
@@ -107,17 +102,17 @@ function buildMasterCloudPayload(payload) {
         operatorMobile: payload.operatorMobile || null,
         canNumber: payload.canNumber || null,
         citizenProfile: cleanProfile,
-        subService: null,
-        subServiceData: null,
+        subService: resolvedSubService,
+        subServiceData: resolvedSubData,
         documents: cleanDocs,
-        chatHistory: [],
-        intakeState: 'SERVICE_SELECTION',
+        chatHistory: Array.isArray(payload.chatHistory) ? payload.chatHistory.slice(-40) : [],
+        intakeState: payload.intakeState || cleanProfile.intakeState || 'SERVICE_SELECTION',
         targetMemberCount: payload.targetMemberCount !== undefined ? payload.targetMemberCount : null,
-        currentMemberIdx: 0,
-        tempMember: null,
-        tempUploads: null,
-        step: 'SERVICE_SELECTION',
-        status: payload.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED',
+        currentMemberIdx: payload.currentMemberIdx !== undefined ? payload.currentMemberIdx : 0,
+        tempMember: payload.tempMember !== undefined ? payload.tempMember : (cleanProfile.tempMember || null),
+        tempUploads: payload.tempUploads || cleanDocs || null,
+        step: payload.step || 'draft',
+        status: payload.applicationNumber ? 'SUBMITTED' : (payload.status || 'DRAFT_SAVED'),
         applicationNumber: payload.applicationNumber || null,
         applicationPdfUrl: payload.applicationPdfUrl || null,
         storageUrls: cleanUrls,
@@ -550,7 +545,11 @@ function isMeaningfulApp(d) {
         (d.name && d.name.trim() && !d.name.startsWith('வாடிக்கையாளர் (+91')) ||
         (prof.headAadhaar && prof.headAadhaar.trim()) ||
         (Array.isArray(prof.members) && prof.members.length > 0) ||
+        Boolean(d.subService || prof.subService) ||
         (prof.subServiceData && Object.keys(prof.subServiceData).length > 0) ||
+        (d.subServiceData && Object.keys(d.subServiceData).length > 0) ||
+        (Array.isArray(prof.savedFamilyMembers) && prof.savedFamilyMembers.length > 0) ||
+        (Array.isArray(prof.savedVaultDocs) && prof.savedVaultDocs.length > 0) ||
         prof.tempMember ||
         (d.documents && Object.keys(d.documents).some(k => Boolean(d.documents[k]))) ||
         (d.base64Docs && Object.keys(d.base64Docs).length > 0) ||
@@ -661,7 +660,7 @@ async function listApps(operatorUid = null) {
                 : await queryRef.get();
             snap.forEach(doc => {
                 const d = doc.data();
-                if (!isMeaningfulApp(d)) { col.doc(doc.id).delete().catch(() => {}); return; }
+                if (!isMeaningfulApp(d)) return;
                 const docOp = normalizeOperatorUid(d.operatorUid);
                 if (normTarget && (!docOp || docOp !== normTarget)) return;
                 const draftId = String(d.draftId || doc.id || d.mobileNumber).trim();

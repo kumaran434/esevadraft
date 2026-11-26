@@ -2,6 +2,7 @@ const storageService = require('../../services/storage_service');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { handleServiceSelection, handleRationSubserviceWorkflow } = require('../../core/chat_fsm');
 const { resolveCartridge, getCartridgeById } = require('../../cartridges');
+const { generateUniqueDraftId, setActiveDraftIdForMobile, extractMobileFromDraftKey } = require('../../services/db/firestore_client');
 
 const { persistSessions } = storageService;
 
@@ -48,7 +49,8 @@ const CAN_ACTION_PREFIXES = [
 ];
 
 async function handleServiceSelector(ctx, req, res) {
-    const { text, uploadedFile, sess } = ctx;
+    const { text, uploadedFile } = ctx;
+    let sess = ctx.sess;
 
     const isCanAction = CAN_ACTION_TOKENS.has(text) || (text && CAN_ACTION_PREFIXES.some(p => text.startsWith(p)));
     if (isCanAction) return false;
@@ -77,6 +79,62 @@ async function handleServiceSelector(ctx, req, res) {
         isCategorySwitch ||
         matchedSelection
     ) {
+        // Protect previously saved draft: if this non-fresh session already holds real saved application data
+        // and the operator navigates back to service menus / starts another service, fork a fresh isolated session object
+        // so the previously saved draft in RAM, disk, and cloud is NEVER mutated, overwritten, or wiped!
+        const hasSavedSubPayload = Boolean(
+            !sess._isPureFreshSession && (
+                sess.applicationNumber ||
+                (sess.subService && sess.subServiceData && Object.keys(sess.subServiceData).some(k => k !== '_savedCandidates' && Boolean(sess.subServiceData[k])))
+            )
+        );
+        const isLeavingToMenuOrNewService = Boolean(isCategorySwitch || matchedSelection) &&
+            sess.intakeState !== 'SERVICE_SELECTION' &&
+            sess.intakeState !== 'RATION_CARD_SERVICES' &&
+            sess.intakeState !== 'REVENUE_DEPARTMENT_SERVICES';
+        if (hasSavedSubPayload && isLeavingToMenuOrNewService) {
+            const forkMob = extractMobileFromDraftKey(ctx?.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || sess.draftId || '');
+            if (forkMob && !/^walkin_/i.test(forkMob) && /^[6-9]\d{9}$/.test(forkMob)) {
+                const newDraftId = generateUniqueDraftId(forkMob);
+                const freshProf = storageService.createFreshProfile(forkMob);
+                const clonedVaultDocs = Array.isArray(sess.citizenProfile?.savedVaultDocs) ? [...sess.citizenProfile.savedVaultDocs] : undefined;
+                const clonedSavedMembers = Array.isArray(sess.citizenProfile?.savedFamilyMembers) ? [...sess.citizenProfile.savedFamilyMembers] : undefined;
+                if (clonedVaultDocs) freshProf.savedVaultDocs = clonedVaultDocs;
+                if (clonedSavedMembers) freshProf.savedFamilyMembers = clonedSavedMembers;
+                const forkedSess = {
+                    draftId: newDraftId,
+                    mobileNumber: forkMob,
+                    operatorUid: sess.operatorUid || ctx?.reqOpUid || null,
+                    operatorName: sess.operatorName || null,
+                    operatorMobile: sess.operatorMobile || null,
+                    role: sess.role || 'citizen',
+                    citizenProfile: freshProf,
+                    subService: null,
+                    subServiceData: null,
+                    applicationNumber: null,
+                    applicationPdfUrl: null,
+                    targetMemberCount: 1,
+                    currentMemberIdx: 1,
+                    step: 'intake',
+                    intakeState: 'SERVICE_SELECTION',
+                    chatHistory: [],
+                    _draftChecked: true,
+                    _isPureFreshSession: true,
+                    tempUploads: {},
+                    documents: {},
+                    base64Docs: {},
+                    tempMember: null
+                };
+                sess = forkedSess;
+                ctx.sess = forkedSess;
+                setActiveDraftIdForMobile(forkMob, newDraftId, forkedSess.operatorUid);
+                storageService.sessions.set(newDraftId, forkedSess);
+                if (forkedSess.operatorUid) {
+                    storageService.sessions.set(`${forkedSess.operatorUid}::${forkMob}`, forkedSess);
+                }
+                storageService.setSessionState(forkedSess);
+            }
+        }
         handleServiceSelection(text, sess);
         try {
             const matchedCartridge = resolveCartridge({
@@ -98,6 +156,7 @@ async function handleServiceSelector(ctx, req, res) {
         res.json({
             chatHistory: sess.chatHistory,
             citizenProfile: isWalkinMenuOnly ? null : sess.citizenProfile,
+            draftId: sess.draftId || null,
             step: sess.intakeState,
             intakeState: sess.intakeState,
             pluginId: sess.pluginId ?? null,

@@ -114,7 +114,7 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
             try {
                 const storageService = require('../services/storage_service');
                 const sess = storageService.sessions?.get(cleanMob) || (storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : null);
-                if (sess && sess.subService) {
+                if (sess && sess.subService && (!sess.draftId || sess.draftId === cleanMob)) {
                     draft.subService = sess.subService;
                     draft.intakeState = sess.intakeState || draft.intakeState;
                     draft.subServiceData = sess.subServiceData || draft.subServiceData;

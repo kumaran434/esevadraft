@@ -329,14 +329,18 @@ router.post('/api/auth/login', async (req, res) => {
                 });
             }
         } else {
-            // If the draft already has an active subService, strictly preserve it!
-            if (draft && draft.subService) {
-                sess.subService = draft.subService;
-                sess.intakeState = draft.intakeState || 'READY_TO_APPLY';
+            // If the draft already has an active subService (either top-level or inside citizenProfile/subServiceData), strictly preserve it!
+            const draftSub = draft?.subService || draft?.citizenProfile?.subService || draft?.subServiceData?.subService || draft?.citizenProfile?.subServiceData?.subService || null;
+            const draftSubData = draft?.subServiceData || draft?.citizenProfile?.subServiceData || null;
+            if (draft && (draftSub || (draftSubData && Object.keys(draftSubData).length > 0))) {
+                const resolvedSub = draftSub || (draftSubData?.memberName || draftSubData?.memberNameTam ? 'ADD_MEMBER' : (draftSubData?.doorNo ? 'CHANGE_ADDRESS' : null));
+                sess.subService = resolvedSub;
+                sess.subServiceData = draftSubData;
+                sess.intakeState = (draft.intakeState && draft.intakeState !== 'SERVICE_SELECTION') ? draft.intakeState : 'READY_TO_APPLY';
                 sess.step = draft.step || 'draft';
                 if (sess.citizenProfile) {
-                    sess.citizenProfile.subService = draft.subService;
-                    sess.citizenProfile.subServiceData = draft.subServiceData || draft.citizenProfile?.subServiceData || null;
+                    sess.citizenProfile.subService = resolvedSub;
+                    sess.citizenProfile.subServiceData = draftSubData;
                 }
                 if (!Array.isArray(draft.chatHistory) || draft.chatHistory.length === 0) {
                     const welcomeObj = getInitialWelcomeMessage(sess.citizenProfile, cleanMobile);
