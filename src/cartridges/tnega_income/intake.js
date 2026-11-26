@@ -58,7 +58,7 @@ async function handleIntake(ctx, req, res) {
         return true;
     }
 
-    if ((sess.intakeState === 'INCOME_MEMBER_COUNT_WAIT' || (text && (text.includes('நபர்') || text.includes('நபர்கள்')))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if ((sess.intakeState === 'INCOME_MEMBER_COUNT_WAIT' || (text && /^\d+\s*நபர்/i.test(text.trim()))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         const countMatch = text.match(/\d+/);
         const count = countMatch ? parseInt(countMatch[0], 10) : (text.includes('1') ? 1 : (text.includes('2') ? 2 : (text.includes('3') ? 3 : (text.includes('4') ? 4 : 1))));
         sess.citizenProfile.familyMemberCount = count;

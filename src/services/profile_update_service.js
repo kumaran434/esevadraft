@@ -184,25 +184,33 @@ function applyProfileUpdates(sess, updated) {
         }
     }
 
+    const prevSubService = sess.subService || sess.citizenProfile?.subService || null;
+    const isSubServiceChanged = Boolean(updated.subService && prevSubService && updated.subService !== prevSubService);
     if (updated.subService !== undefined) {
         sess.citizenProfile.subService = updated.subService;
         sess.subService = updated.subService;
         if (!updated.subService) {
             sess.citizenProfile.subServiceData = null;
             sess.subServiceData = null;
+        } else if (isSubServiceChanged) {
+            sess.citizenProfile.subServiceData = {};
+            sess.subServiceData = {};
         }
     }
     if (updated.subServiceData) {
-        sess.citizenProfile.subServiceData = {
-            ...(sess.citizenProfile.subServiceData || {}),
+        const baseSubData = isSubServiceChanged ? {} : (sess.citizenProfile.subServiceData || {});
+        const mergedSubData = {
+            ...baseSubData,
             ...updated.subServiceData
         };
-        if (sess.subServiceData) {
-            sess.subServiceData = {
-                ...sess.subServiceData,
-                ...updated.subServiceData
-            };
+        const activeSubSvc = sess.subService || sess.citizenProfile?.subService;
+        if (activeSubSvc === 'UPDATE_MOBILE') {
+            for (const staleKey of ['memberName', 'memberNameTam', 'memberNameEng', 'relationshipTam', 'relationshipEng', 'aadhaarNo', 'docPath', 'aadhaarDocPath', 'doorNo', 'streetTam', 'streetEng', 'areaTam', 'areaEng', 'pincode', 'proofType', 'addressProofDocPath', 'isNewAddressEntered']) {
+                delete mergedSubData[staleKey];
+            }
         }
+        sess.citizenProfile.subServiceData = mergedSubData;
+        sess.subServiceData = { ...mergedSubData };
     }
     if (updated.gasDetails) {
         const prevGas = sess.citizenProfile.gasDetails || {};
@@ -213,7 +221,7 @@ function applyProfileUpdates(sess, updated) {
         if (!newGas.oilCompany && prevGas.oilCompany) newGas.oilCompany = prevGas.oilCompany;
         if (!newGas.oilCompanyDisplay && prevGas.oilCompanyDisplay) newGas.oilCompanyDisplay = prevGas.oilCompanyDisplay;
         if (!newGas.gasBookPath && prevGas.gasBookPath) newGas.gasBookPath = prevGas.gasBookPath;
-        if (prevGas.hasGas) newGas.hasGas = true;
+        if (updated.gasDetails.hasGas !== false && prevGas.hasGas) newGas.hasGas = true;
 
         sess.citizenProfile.gasDetails = newGas;
         if (newGas.gasBookPath) {
@@ -271,7 +279,8 @@ function applyProfileUpdates(sess, updated) {
         'areaTam', 'areaEng', 'pincode', 'district', 'taluk', 'village', 'headAadhaar',
         'rationCardNo', 'subService', 'subServiceData', 'gasDetails', 'residenceProof', 'documents', 'members',
         'headPhotoPath', 'profilePhoto', 'headPhoto', 'communityProof', 'communityCertificatePath', 'familyCommunityProofPath', 'smartCardDocPath',
-        'step', 'mobileNumber', 'chatHistory', 'status', 'intakeState', 'isDeleted', 'isTrashed',
+        'step', 'mobileNumber', 'mobile', 'oldMobileNumber', 'oldMobile', 'draftId', 'fromEditModal', 'silent',
+        'operatorUid', 'operatorName', 'operatorMobile', 'chatHistory', 'status', 'intakeState', 'isDeleted', 'isTrashed',
         'tempUploads', 'base64Docs', 'storageUrls', 'createdAt', 'updatedAt'
     ]);
     for (const [k, v] of Object.entries(updated)) {

@@ -169,7 +169,8 @@ router.post('/api/auth/sync-profile', async (req, res) => {
 router.post('/api/auth/login', async (req, res) => {
     const { displayName, email, firebaseUid, role, operatorUid, isCustomerSession, customerMobile } = req.body;
     const rawMobile = customerMobile || req.body.mobileNumber || req.body.mobile || '';
-    let cleanMobile = rawMobile.replace(/\D/g, '');
+    let cleanMobile = String(rawMobile).replace(/\D/g, '');
+    if (cleanMobile.length === 12 && cleanMobile.startsWith('91')) cleanMobile = cleanMobile.slice(2);
     
     if (!cleanMobile && email) {
         cleanMobile = '9876543210';
@@ -249,18 +250,33 @@ router.post('/api/auth/login', async (req, res) => {
         });
     }
 
-    const sess = setActiveSession(cleanMobile);
+    const requestedDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
+    const effectiveOpUid = operatorUid || firebaseUid || req.headers['x-operator-uid'] || null;
+    const sess = (typeof storageService.resolveSessionForRequest === 'function' && (requestedDraftId || effectiveOpUid)
+        ? storageService.resolveSessionForRequest({ draftId: requestedDraftId, mobile: cleanMobile, operatorUid: effectiveOpUid })
+        : null) || setActiveSession(cleanMobile);
+    storageService.setActiveMobile(cleanMobile);
+    storageService.setSessionState(sess);
+    // Explicit user-initiated Continue / Resume from Drafts Desk: allow restoring exact paused state & docs
+    sess._isPureFreshSession = false;
+    sess._draftChecked = true;
     if (displayName) sess.operatorName = displayName;
     if (email) sess.operatorEmail = email;
     if (firebaseUid) sess.firebaseUid = firebaseUid;
-    if (operatorUid) sess.operatorUid = operatorUid;
+    if (effectiveOpUid) sess.operatorUid = effectiveOpUid;
     sess.role = userRole;
 
     let draft = null;
     try {
-        draft = await getCitizenDraft(cleanMobile);
+        draft = await getCitizenDraft(requestedDraftId || cleanMobile, effectiveOpUid);
     } catch (e) {
         console.warn('Draft check error:', e.message);
+    }
+    sess.draftId = (draft && draft.draftId) || requestedDraftId || cleanMobile;
+    const { setActiveDraftIdForMobile } = require('../services/db/firestore_client');
+    setActiveDraftIdForMobile(cleanMobile, sess.draftId, effectiveOpUid);
+    if (sess.draftId && storageService.sessions) {
+        storageService.sessions.set(sess.draftId, sess);
     }
 
     const hasDraftData = mergeDraftIntoSession(sess, draft, cleanMobile);
@@ -322,8 +338,12 @@ router.post('/api/auth/login', async (req, res) => {
                     sess.citizenProfile.subService = draft.subService;
                     sess.citizenProfile.subServiceData = draft.subServiceData || draft.citizenProfile?.subServiceData || null;
                 }
-                const welcomeObj = getInitialWelcomeMessage(sess.citizenProfile, cleanMobile);
-                sess.chatHistory = [welcomeObj];
+                if (!Array.isArray(draft.chatHistory) || draft.chatHistory.length === 0) {
+                    const welcomeObj = getInitialWelcomeMessage(sess.citizenProfile, cleanMobile);
+                    sess.chatHistory = [welcomeObj];
+                } else {
+                    sess.chatHistory = draft.chatHistory;
+                }
             } else {
                 // Initialize customer session at clean Service Selection with Master Profile loaded
                 sess.intakeState = 'SERVICE_SELECTION';
@@ -367,6 +387,7 @@ router.post('/api/auth/login', async (req, res) => {
     res.json({
         success: true,
         isLoggedIn: true,
+        draftId: sess.draftId || cleanMobile,
         role: userRole,
         resumedSession: !!(draft && hasDraftData),
         citizenProfile: sess.citizenProfile,

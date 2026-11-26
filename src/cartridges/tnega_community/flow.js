@@ -1,5 +1,6 @@
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { isPhysicalDocValid, hasValidSmartCard, buildSmartCardPromptStep } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'COMMUNITY';
@@ -251,18 +252,13 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'COMMUNITY';
     sess.pluginId = 'TNEGA_COMMUNITY';
     if (sess.citizenProfile) {
         sess.citizenProfile.subService = 'COMMUNITY';
         sess.citizenProfile.pluginId = 'TNEGA_COMMUNITY';
-        delete sess.citizenProfile.caste;
-        delete sess.citizenProfile.communityProof;
-        delete sess.citizenProfile.communityProofSkipped;
     }
-    delete sess.caste;
-    delete sess.communityProof;
-    delete sess.communityProofSkipped;
     if (isDirectOperator) {
         sess.intakeState = 'COMMUNITY_INTAKE';
         if (createAppFn && cleanMobile) { try { createAppFn(cleanMobile, 'COMMUNITY_CERT', sess.citizenProfile); } catch (_) {} }

@@ -87,12 +87,14 @@
             if (aBanner) aBanner.classList.remove('show');
 
             try {
+                const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
                 const res = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': userMob, 'x-operator-uid': opUid },
-                    body: JSON.stringify({ message: serviceName, mobileNumber: userMob })
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': userMob, 'x-draft-id': activeDraftId, 'x-operator-uid': opUid },
+                    body: JSON.stringify({ message: serviceName, mobileNumber: userMob, draftId: activeDraftId || undefined })
                 });
                 const data = await res.json();
+                if (data.draftId) localStorage.setItem('eseva_active_draft_id', data.draftId);
                 renderMessages(data.chatHistory, true);
                 updateSidebar(data);
             } catch (e) {

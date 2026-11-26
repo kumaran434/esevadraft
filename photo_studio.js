@@ -221,8 +221,8 @@ async function produceCompliantDocument(inputPath, options = {}) {
     }
 }
 
-async function produceDualSidedDocument(frontPath, backPath) {
-    return coreProduceDualSided(frontPath, backPath, produceCompliantDocument);
+async function produceDualSidedDocument(frontPath, backPath, produceCompliantDocFallback = produceCompliantDocument, options = {}) {
+    return coreProduceDualSided(frontPath, backPath, produceCompliantDocFallback || produceCompliantDocument, options);
 }
 
 async function extractFacePassportFromDocument(filePath, boundingBox = null) {

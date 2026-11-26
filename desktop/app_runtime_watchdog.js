@@ -63,8 +63,16 @@ function startDesktopRuntimeWatchdog(getMainWindow) {
                 }
             }
 
-            // B. Check Local Server Port 3000 Liveness
-            const req = http.get('http://127.0.0.1:3000/', { timeout: 3000 }, (res) => {
+            // B. Check Active Local Server Liveness
+            let activeUrl = 'http://127.0.0.1:3000/';
+            try {
+                const localServer = require('./local_server');
+                if (localServer && typeof localServer.getActiveServerUrl === 'function') {
+                    const u = localServer.getActiveServerUrl();
+                    if (u) activeUrl = u.endsWith('/') ? u : `${u}/`;
+                }
+            } catch (_) {}
+            const req = http.get(activeUrl, { timeout: 3000 }, (res) => {
                 failedPings = 0;
                 res.resume();
             });

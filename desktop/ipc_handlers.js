@@ -53,6 +53,13 @@ function registerIpcHandlers({ getMainWindow, getActiveModule, setActiveModule }
                     }
                 }
             }
+            try {
+                const tnegaMod = require('../tnega_can_automation');
+                if (tnegaMod && typeof tnegaMod.stopTnegaAutomation === 'function') {
+                    const tStop = await tnegaMod.stopTnegaAutomation();
+                    if (tStop && tStop.wasRunning) wasRunning = true;
+                }
+            } catch (_) {}
             const { reportMidRunStopIfNeeded } = require('./automation_runner');
             const midMeta = reportMidRunStopIfNeeded({
                 silent: isSilent,
@@ -100,6 +107,16 @@ function registerIpcHandlers({ getMainWindow, getActiveModule, setActiveModule }
             if (activeMod && typeof activeMod.provideOtp === 'function') {
                 handled = activeMod.provideOtp(clean);
             }
+            try {
+                const tnegaMod = require('../tnega_can_automation');
+                if (tnegaMod && typeof tnegaMod.provideCanOtp === 'function') {
+                    const tStatus = typeof tnegaMod.getLiveTnegaStatus === 'function' ? tnegaMod.getLiveTnegaStatus() : null;
+                    if (!tStatus || tStatus.isWaitingForCanOtp) {
+                        const tHandled = tnegaMod.provideCanOtp(clean);
+                        if (tHandled) handled = true;
+                    }
+                }
+            } catch (_) {}
             const diskLocations = [
                 path.join(__dirname, '..', 'data', 'pending_otp.txt'),
                 path.join(app.getPath('userData'), 'data', 'pending_otp.txt'),
@@ -191,6 +208,9 @@ function registerIpcHandlers({ getMainWindow, getActiveModule, setActiveModule }
         try {
             const win = getMainWindow();
             if (win && !win.isDestroyed()) {
+                if (win.isMinimized()) win.restore();
+                // Win32 Electron focus-reset trick: blur -> focus restores dead Chromium keyboard focus after native dialogs
+                win.blur();
                 win.focus();
                 if (win.webContents) win.webContents.focus();
             }

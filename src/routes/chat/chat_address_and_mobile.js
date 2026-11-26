@@ -123,12 +123,16 @@ async function handleAddressAndMobile(ctx, req, res) {
             saveCitizenProfile(activeMobile, sess.citizenProfile);
 
             try {
+                const docsToPersist = { ...(sess.citizenProfile?.documents || {}), ...(sess.tempUploads || {}) };
                 await saveCitizenDraft(cleanDigits, {
                     operatorUid: reqOpUid || sess.operatorUid || null,
                     operatorName: sess.operatorName || null,
                     operatorMobile: sess.operatorMobile || null,
                     citizenProfile: sess.citizenProfile,
-                    documents: {},
+                    documents: docsToPersist,
+                    base64Docs: sess.base64Docs || {},
+                    tempUploads: docsToPersist,
+                    targetMemberCount: sess.targetMemberCount,
                     chatHistory: sess.chatHistory,
                     intakeState: 'RESIDENCE_PROOF_TYPE',
                     status: 'DRAFT_SAVED'

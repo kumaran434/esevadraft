@@ -15,7 +15,9 @@ const path = require('path');
 const {
     installOtpModalCopilot,
     readOtpModalCopilotState,
-    shouldBotTriggerResend
+    performVisibleModalResend,
+    shouldBotTriggerResend,
+    shouldBotTriggerSubmit
 } = require('../../common/otp_copilot_watcher');
 let resilientResumption = null;
 try {
@@ -33,10 +35,48 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
         onProgress('📍 [படி 21/51] அரசு TNPDS மொபைல் OTP சரிபார்க்கப்படுகிறது...');
     }
 
-    const isModalOpen = await page.evaluate(() => {
-        const isShown = (el) => !!el && (el.offsetParent !== null || getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0);
-        return Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(isShown);
-    }).catch(() => false);
+    const checkEntryState = async () => {
+        return await page.evaluate(() => {
+            const isShown = (el) => !!el && (el.offsetParent !== null || getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0);
+            const visOtpModal = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
+                if (!isShown(m)) return false;
+                const t = (m.innerText || '');
+                return t.includes('OTP') || t.includes('கடவுச்சொல்');
+            });
+            const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+            const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                if (!isShown(b)) return false;
+                const t = (b.innerText || '').trim().toLowerCase();
+                return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+            });
+            const mobDisabled = Boolean(mobInp && mobInp.disabled);
+            const mobScope = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+            const hasEditBtn = Array.from(mobScope.querySelectorAll('button')).some(b => {
+                if (!isShown(b)) return false;
+                const t = (b.innerText || '').trim();
+                return t === 'திருத்தம்' || /^edit$/i.test(t);
+            });
+            return {
+                isModalOpen: visOtpModal,
+                hasMobileField: Boolean(mobInp),
+                mobileVerified: Boolean(mobInp && !hasGenOtpBtn && (mobDisabled || hasEditBtn))
+            };
+        }).catch(() => ({ isModalOpen: false, hasMobileField: false, mobileVerified: false }));
+    };
+
+    const entryState = await checkEntryState();
+    const isModalOpen = entryState.isModalOpen;
+
+    if (!isModalOpen && entryState.hasMobileField && !entryState.mobileVerified) {
+        // Double-check after 1.2s in case Angular just verified and is updating DOM
+        await page.waitForTimeout(1200);
+        const recheckEntry = await checkEntryState();
+        if (!recheckEntry.isModalOpen && recheckEntry.hasMobileField && !recheckEntry.mobileVerified) {
+            const haltErr = 'படி 21: அரசு மொபைல் OTP சரிபார்க்கப்படவில்லை ("OTP ஐ உருவாக்கு" இன்னும் நிலுவையில் உள்ளது)! படி 22-க்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.';
+            if (onProgress) onProgress(`🛑 **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltErr}`);
+            return { success: false, error: 'MOBILE_OTP_NOT_VERIFIED_ON_PORTAL: ' + haltErr };
+        }
+    }
 
     let lastMobileResendAt = Date.now();
 
@@ -69,8 +109,10 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
             for (let waitTick = 0; waitTick < 300; waitTick++) {
                 await page.waitForTimeout(1000);
 
-                // Auto-Heal: Check if user typed OTP into Chrome input directly and auto-click verify immediately!
-                const liveTypeResult = await page.evaluate(() => {
+                // Auto-Heal: Check if user typed OTP into Chrome input directly and auto-click verify immediately (obeying Co-Pilot submit guard)!
+                const preTypeCopilot = await readOtpModalCopilotState(page);
+                const subCheck = shouldBotTriggerSubmit(preTypeCopilot, '', 6, Date.now());
+                const liveTypeResult = subCheck.submit ? await page.evaluate(() => {
                     const modal = document.querySelector('.modal.show, div[role="dialog"], .modal');
                     if (!modal) return null;
                     const inp = modal.querySelector('input[formcontrolname="mobileOtp"], input[formcontrolname="otp"], input[maxlength="6"]:not([readonly]):not([disabled]), input:not([readonly]):not([disabled]):not([type="hidden"])');
@@ -103,7 +145,7 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                         return { clicked: false, val };
                     }
                     return null;
-                }).catch(() => null);
+                }).catch(() => null) : null;
 
                 if (liveTypeResult && liveTypeResult.clicked) {
                     if (onProgress) onProgress(`🔑 [படி 21/51] அரசு மொபைல் OTP (${liveTypeResult.val}) தானாகக் கண்டறியப்பட்டது! 'சமர்ப்பிக்கவும் / பதிவு செய்' பொத்தான் வெற்றிகரமாக அழுத்தப்பட்டது!`);
@@ -111,14 +153,35 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                     break;
                 }
 
-                // If modal naturally dismissed or verified outside, break immediately
-                const modalStillOpen = await page.evaluate(() => {
+                // If modal naturally dismissed AND mobile number is genuinely verified on TNPDS portal, break immediately
+                const closeCheck = await page.evaluate(() => {
                     const isShown = (el) => !!el && (el.offsetParent !== null || getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0);
-                    return Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(isShown);
-                }).catch(() => false);
-                const hasAddMemBtn = await page.locator('button:has-text("உறுப்பினரை சேர்க்க")').isVisible().catch(() => false);
-                if (!modalStillOpen && (waitTick > 3 || hasAddMemBtn)) {
-                    if (onProgress) onProgress('✅ [படி 21/51] அரசு போர்ட்டலில் OTP மாடல் வெற்றிகரமாக நிறைவுபெற்று மூடப்பட்டுவிட்டது!');
+                    const modalOpen = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).some(m => {
+                        if (!isShown(m)) return false;
+                        const t = (m.innerText || '');
+                        return t.includes('OTP') || t.includes('கடவுச்சொல்');
+                    });
+                    const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+                    const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                        if (!isShown(b)) return false;
+                        const t = (b.innerText || '').trim().toLowerCase();
+                        return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+                    });
+                    const mobScope = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+                    const hasEditBtn = Array.from(mobScope.querySelectorAll('button')).some(b => {
+                        if (!isShown(b)) return false;
+                        const t = (b.innerText || '').trim();
+                        return t === 'திருத்தம்' || /^edit$/i.test(t);
+                    });
+                    const mobileVerified = Boolean(mobInp && !hasGenOtpBtn && (mobInp.disabled || hasEditBtn));
+                    return { modalOpen, hasMobileField: Boolean(mobInp), mobileVerified };
+                }).catch(() => ({ modalOpen: false, hasMobileField: false, mobileVerified: false }));
+                if (!closeCheck.modalOpen && closeCheck.hasMobileField && closeCheck.mobileVerified) {
+                    if (onProgress) onProgress('✅ [படி 21/51] அரசு போர்ட்டலில் மொபைல் OTP உண்மையாகச் சரிபார்க்கப்பட்டுவிட்டது!');
+                    break;
+                }
+                if (!closeCheck.modalOpen && closeCheck.hasMobileField && !closeCheck.mobileVerified && waitTick > 2) {
+                    if (onProgress) onProgress('⚠️ [படி 21/51] மொபைல் OTP சாளரம் சரிபார்க்கப்படாமல் மூடப்பட்டது!');
                     break;
                 }
 
@@ -159,32 +222,17 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
                     }
                 }
 
-                // Check countdown expiry inside modal -> Co-Pilot resend ONLY if human hasn't taken manual Resend control
+                // Check countdown expiry inside modal -> Co-Pilot single-click resend ONLY if human hasn't taken manual Resend control
                 let resent = false;
                 const cpMobState = await readOtpModalCopilotState(page);
-                if (shouldBotTriggerResend(cpMobState, lastMobileResendAt, Date.now(), 8000)) {
-                    resent = await page.evaluate(() => {
-                        const modal = document.querySelector('.modal.show, div[role="dialog"]');
-                        if (modal) {
-                            const mText = (modal.innerText || '').trim();
-                            const btns = Array.from(modal.querySelectorAll('button, a'));
-                            const resendBtn = btns.find(b => {
-                                const t = (b.innerText || '').toLowerCase();
-                                return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
-                            });
-                            if ((mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) && resendBtn && !resendBtn.disabled) {
-                                resendBtn.click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    }).catch(() => false);
+                if (shouldBotTriggerResend(cpMobState, lastMobileResendAt, Date.now(), 4000, 2)) {
+                    resent = await performVisibleModalResend(page, { allowInlinePage: false });
                 }
 
                 if (resent) {
                     lastMobileResendAt = Date.now();
                     if (onProgress) {
-                        onProgress('🔄 [OTP மீட்சி] முந்தைய OTP 60 நொடிகள் காலாவதியாகிவிட்டது! போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" அழுத்தப்பட்டு புதிய OTP கோரப்பட்டது!');
+                        onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், போர்ட்டலில் "மீண்டும் அனுப்பு" 1 முறை அழுத்தப்பட்டு புதிய OTP கோரப்பட்டது!');
                     }
                 }
 
@@ -316,53 +364,35 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
 
         // 2. Check for government error alerts inside modal or DOM (Toasts, Alerts, Co-Pilot Countdown expiry)
         const cpMobPollState = await readOtpModalCopilotState(page);
-        const allowPollResend = shouldBotTriggerResend(cpMobPollState, lastMobileResendAt, Date.now(), 8000);
-        const alertInfo = await page.evaluate((canResend) => {
-            // Check countdown timer expiry -> auto click resend button only after 65s cooldown
-            if (canResend) {
-                const modal = document.querySelector('.modal.show, div.modal[style*="display: block"], div[role="dialog"]:not([style*="display: none"])');
-                if (modal) {
-                    const mText = (modal.innerText || modal.textContent || '').trim();
-                    if (mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) {
-                        const btns = Array.from(modal.querySelectorAll('button, a'));
-                        const resendBtn = btns.find(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
-                        });
-                        if (resendBtn && !resendBtn.disabled) {
-                            resendBtn.click();
-                            return '__OTP_RESENT_AUTOMATICALLY__';
-                        }
-                    }
+        if (shouldBotTriggerResend(cpMobPollState, lastMobileResendAt, Date.now(), 4000, 2)) {
+            const didResendInPoll = await performVisibleModalResend(page, { allowInlinePage: false });
+            if (didResendInPoll) {
+                lastMobileResendAt = Date.now();
+                if (onProgress) {
+                    onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், போர்ட்டலில் "மீண்டும் அனுப்பு" 1 முறை அழுத்தப்பட்டது! புதிய OTP-க்காகக் காத்திருக்கிறது...');
                 }
+                await page.waitForTimeout(2000);
+                continue;
             }
-
-            const errEls = Array.from(document.querySelectorAll('.p-toast-detail, .p-toast-message, .alert-danger, .alert-warning, .error-msg, .text-danger, .toast-error, .swal2-error, .swal2-html-container, span[style*="color: red"]'));
+        }
+        const alertInfo = await page.evaluate(() => {
+            const errEls = Array.from(document.querySelectorAll('#toast-container .toast-error, .toast-error, .toast-message, .p-toast-detail, .p-toast-message, .alert-danger, .alert-warning, .error-msg, .text-danger, .swal2-error, .swal2-html-container, span[style*="color: red"]'));
             for (const el of errEls) {
                 const txt = (el.innerText || el.textContent || '').trim();
                 if (txt.includes('அனுப்பப்பட்டுள்ளது') || txt.includes('கடவுச்சொல்லை உள்ளிடவும்')) continue;
-                if (txt.includes('தவறான') || txt.includes('செல்லாது') || txt.includes('invalid') || txt.includes('தவறு') || txt.includes('ஏற்கனவே உள்ளது')) {
+                if (txt.includes('தவறான') || txt.includes('செல்லாது') || txt.includes('invalid') || txt.includes('தவறு') || txt.includes('ஏற்கனவே உள்ளது') || txt.includes('முடிந்துவிட்டது') || txt.includes('காலாவதி') || txt.includes('expired')) {
                     return txt;
                 }
             }
             return null;
-        }, allowPollResend).catch(() => null);
-
-        if (alertInfo === '__OTP_RESENT_AUTOMATICALLY__') {
-            lastMobileResendAt = Date.now();
-            if (onProgress) {
-                onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், போர்ட்டலில் "மீண்டும் அனுப்புங்கள்" அழுத்தப்பட்டது! புதிய OTP-க்காகக் காத்திருக்கிறது...');
-            }
-            await page.waitForTimeout(2000);
-            continue;
-        }
+        }).catch(() => null);
 
         if (alertInfo) {
             otpErrorDetected = alertInfo;
             break;
         }
 
-        // 3. Genuine Modal Clearance Check
+        // 3. Genuine Modal Clearance + Strict Mobile Verification Check
         const modalState = await page.evaluate(() => {
             const isShown = (el) => {
                 if (!el) return false;
@@ -374,23 +404,47 @@ async function verifyNewCardOtpAndSettle(page, receivedOtp, helpers = {}, option
             const activeOtpModal = visibleModals.find(m => !((m.innerText || '').includes('வெளியேற விரும்புகிறீர்களா')));
             const hasVisibleModal = Boolean(activeOtpModal);
             const hasBackdrop = Boolean(document.querySelector('.modal-backdrop'));
-            const memberSectionUnlocked = Boolean(document.querySelector('#memberFormSection, input[formcontrolname="dateOfBirth"]'));
-            return { hasVisibleModal, hasBackdrop, memberSectionUnlocked };
-        }).catch(() => ({ hasVisibleModal: false, hasBackdrop: false, memberSectionUnlocked: false }));
+            const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+            const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                if (!isShown(b)) return false;
+                const t = (b.innerText || '').trim().toLowerCase();
+                return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+            });
+            const mobScope = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+            const hasEditBtn = Array.from(mobScope.querySelectorAll('button')).some(b => {
+                if (!isShown(b)) return false;
+                const t = (b.innerText || '').trim();
+                return t === 'திருத்தம்' || /^edit$/i.test(t);
+            });
+            const mobileVerified = Boolean(mobInp && !hasGenOtpBtn && (mobInp.disabled || hasEditBtn));
+            return {
+                hasVisibleModal,
+                hasBackdrop,
+                hasMobileField: Boolean(mobInp),
+                hasGenOtpBtn,
+                mobileVerified
+            };
+        }).catch(() => ({ hasVisibleModal: false, hasBackdrop: false, hasMobileField: false, hasGenOtpBtn: false, mobileVerified: false }));
 
-        // Genuine success: modal naturally closed AND no backdrop, OR member section is already open/unlocked
-        if (modalState.memberSectionUnlocked || (!modalState.hasVisibleModal && !modalState.hasBackdrop)) {
+        // If mobile field exists on page, NEVER clear Step 21 unless mobileVerified === true!
+        const isStrictlyVerified = modalState.hasMobileField
+            ? (modalState.mobileVerified && !modalState.hasVisibleModal)
+            : Boolean(modalState.dismissed || (!modalState.hasVisibleModal && !modalState.hasBackdrop));
+
+        if (isStrictlyVerified) {
+            if (!modalState.hasVisibleModal && modalState.hasBackdrop) {
+                await page.evaluate(() => {
+                    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+                    document.body.classList.remove('modal-open');
+                }).catch(() => {});
+            }
             isModalDismissed = true;
             break;
         }
 
-        // If modal naturally closed but a harmless transparent backdrop was left behind:
-        if (!modalState.hasVisibleModal && modalState.hasBackdrop) {
-            await page.evaluate(() => {
-                document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
-                document.body.classList.remove('modal-open');
-            }).catch(() => {});
-            isModalDismissed = true;
+        // If OTP modal closed on real portal WITHOUT verifying mobile, halt immediately after 1s grace!
+        if (modalState.hasMobileField && !modalState.hasVisibleModal && !modalState.mobileVerified && poll >= 2) {
+            otpErrorDetected = 'மொபைல் OTP சரிபார்க்கப்படாமல் சாளரம் மூடப்பட்டது ("OTP ஐ உருவாக்கு" இன்னும் நிலுவையில் உள்ளது).';
             break;
         }
     }

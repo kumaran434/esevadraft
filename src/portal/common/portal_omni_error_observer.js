@@ -147,13 +147,13 @@ class PortalOmniErrorObserver {
                     const mText = (visibleModal.innerText || visibleModal.textContent || '').trim();
                     
                     // Match Tamil / English timer: "மீதமுள்ள : 45 நொடிகள்" or "Remaining : 0 seconds"
-                    const timerMatch = mText.match(/(?:மீதமுள்ள|remaining)\s*:\s*(\d+)\s*(?:நொடிகள்|seconds|s)/i);
+                    const timerMatch = mText.match(/(?:மீதமுள்ள|remaining)\s*:\s*(\d+)\s*(?:நொடிகள்|நொடி|seconds|second|sec|s)?(?=$|[^a-zA-Z0-9\u0B80-\u0BFF])/i);
                     if (timerMatch) {
                         results.timerRemaining = parseInt(timerMatch[1], 10);
                         if (results.timerRemaining === 0) {
                             results.isTimerExpired = true;
                         }
-                    } else if (mText.includes('0 நொடிகள்') || mText.includes('0 seconds') || mText.includes('காலாவதி')) {
+                    } else if (/(?:^|[^\d])0\s*(?:நொடிகள்|நொடி|seconds|second|sec)(?=$|[^a-zA-Z0-9\u0B80-\u0BFF])/i.test(mText) || /காலாவதி|expired/i.test(mText)) {
                         results.isTimerExpired = true;
                         results.timerRemaining = 0;
                     }

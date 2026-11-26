@@ -1,5 +1,6 @@
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { isPhysicalDocValid } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'FIRST_GRADUATE';
@@ -277,22 +278,13 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'FIRST_GRADUATE';
     sess.pluginId = 'TNEGA_FIRST_GRADUATE';
     if (sess.citizenProfile) {
         sess.citizenProfile.subService = 'FIRST_GRADUATE';
         sess.citizenProfile.pluginId = 'TNEGA_FIRST_GRADUATE';
-        delete sess.citizenProfile.currentCourse;
-        delete sess.citizenProfile.institutionName;
-        delete sess.citizenProfile.fatherEducation;
-        delete sess.citizenProfile.motherEducation;
-        delete sess.citizenProfile.familyGraduateConfirmed;
     }
-    delete sess.currentCourse;
-    delete sess.institutionName;
-    delete sess.fatherEducation;
-    delete sess.motherEducation;
-    delete sess.familyGraduateConfirmed;
     if (isDirectOperator) {
         sess.intakeState = 'FIRST_GRADUATE_INTAKE';
         if (createAppFn && cleanMobile) { try { createAppFn(cleanMobile, 'FIRST_GRADUATE_CERTIFICATE', sess.citizenProfile); } catch (_) {} }

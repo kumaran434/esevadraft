@@ -186,6 +186,11 @@
         // Get saved data for this portal
         const portals = (currentVaultSummary && currentVaultSummary.portals) || {};
         let pData = portals[selectedKey] || null;
+        if (!pData && selectedKey === 'custom') {
+            const knownKeys = new Set(Object.keys(PORTAL_CONFIG));
+            const firstCustomKey = Object.keys(portals).find(k => !knownKeys.has(k) && portals[k]?.hasCredentials);
+            if (firstCustomKey) pData = { ...portals[firstCustomKey], _resolvedKey: firstCustomKey };
+        }
         if (!pData && selectedKey === 'tnega' && currentVaultSummary && currentVaultSummary.tnega) {
             pData = currentVaultSummary.tnega;
         }
@@ -436,10 +441,20 @@
     async function deleteCurrentPortalVault() {
         const selector = document.getElementById('vaultPortalSelector');
         const selectedKey = selector ? selector.value : 'tnega';
+        let deleteKey = selectedKey;
+        if (selectedKey === 'custom' && currentVaultSummary && currentVaultSummary.portals) {
+            const knownKeys = new Set(Object.keys(PORTAL_CONFIG));
+            const customNameVal = (document.getElementById('vaultCustomPortalName')?.value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            const matchedCustom = (customNameVal && currentVaultSummary.portals[customNameVal]) ? customNameVal : Object.keys(currentVaultSummary.portals).find(k => !knownKeys.has(k) && currentVaultSummary.portals[k]?.hasCredentials);
+            if (matchedCustom) deleteKey = matchedCustom;
+        }
         const config = PORTAL_CONFIG[selectedKey] || PORTAL_CONFIG.custom;
-        const portalName = config.name || selectedKey;
+        const portalName = config.name || deleteKey;
 
-        if (!confirm(`உங்கள் ${portalName} லாகின் விவரங்களை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`)) return;
+        const okDel = typeof showInAppConfirmModal === 'function'
+            ? await showInAppConfirmModal('🗑️ லாகின் விவரம் நீக்கவா?', `உங்கள் ${portalName} லாகின் விவரங்களை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`, '🗑️ நீக்கு')
+            : confirm(`உங்கள் ${portalName} லாகின் விவரங்களை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`);
+        if (!okDel) return;
         const opUid = getActiveOperatorUid();
         const msgBox = document.getElementById('vaultStatusMessage');
 
@@ -450,7 +465,7 @@
                     'Content-Type': 'application/json',
                     'x-operator-uid': toSafeHttpHeader(opUid)
                 },
-                body: JSON.stringify({ portal: selectedKey, operatorUid: opUid })
+                body: JSON.stringify({ portal: deleteKey, operatorUid: opUid })
             });
             const data = await res.json();
             if (data.success) {

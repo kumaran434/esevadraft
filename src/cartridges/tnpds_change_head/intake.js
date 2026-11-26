@@ -9,7 +9,7 @@ async function handleIntake(ctx, req, res) {
         handleFlowFn: handleFlow,
         onUploadedFn: async (sess, uploadedFile) => {
             sess.tempUploads = sess.tempUploads || {};
-            sess.tempUploads.headAadhaar = uploadedFile.path;
+            sess.tempUploads.headChangeProof = uploadedFile.path;
         }
     });
 }

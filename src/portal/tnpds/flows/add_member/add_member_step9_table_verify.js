@@ -2,6 +2,11 @@
  * TNPDS Add Member - Step 9b: Aadhaar OTP Modal Handling & Table Verification
  */
 const { isValidAddMemberAadhaarOtp } = require('./add_member_otp_config');
+const {
+    installOtpModalCopilot,
+    readOtpModalCopilotState,
+    shouldBotTriggerSubmit
+} = require('../../../common/otp_copilot_watcher');
 
 async function executeStep9TableVerify(page, memberContext, options, onProgress, sharedContext, scanAndBroadcastToasts) {
     const {
@@ -106,6 +111,7 @@ async function executeStep9TableVerify(page, memberContext, options, onProgress,
         // 3. Dynamic Aadhaar OTP Modal Handler (triggers whenever government portal renders the OTP modal)
         if (modalOpen && !aadhaarOtpHandled) {
             isAadhaarOtpModalVisible = true;
+            await installOtpModalCopilot(page, { forceReset: false, allowInlinePage: false }).catch(() => {});
             onProgress(`🔐 [ஆதார் OTP தேவை] உறுப்பினர் "${memberNameTam}" (${memberNameEng}) அவர்களின் ஆதார் எண்ணிற்கு அரசு SMS OTP அனுப்பியுள்ளது!`);
             await showBrowserHud('[ஆதார் OTP தேவை]', `${memberNameTam} ஆதார் OTP உள்ளிடவும் (Chrome அல்லது Chat)`, 'warning');
 
@@ -131,9 +137,19 @@ async function executeStep9TableVerify(page, memberContext, options, onProgress,
                     }).catch(() => null);
 
                     if (typedOtp && isValidAddMemberAadhaarOtp(typedOtp)) {
-                        onProgress(`⚡ [Dual Listener] ஆபரேட்டர் குரோம் திரையிலேயே ஆதார் OTP (${typedOtp}) உள்ளிட்டுவிட்டார்! தானாக சமர்ப்பிக்கப்படுகிறது...`);
+                        const cpState = await readOtpModalCopilotState(page, { allowInlinePage: false });
+                        const submitCheck = shouldBotTriggerSubmit(cpState, '', 6, Date.now());
+                        if (submitCheck.reason === 'human_still_typing') {
+                            await page.waitForTimeout(500).catch(() => {});
+                            continue;
+                        }
                         screenOtpSubmitted = true;
-                        await clickAadhaarSubmit().catch(() => {});
+                        if (submitCheck.reason === 'human_already_submitted') {
+                            onProgress(`⌨️ [Co-Pilot] ஆப்ரேட்டர் நேரடியாக ஆதார் OTP (${typedOtp}) சமர்ப்பித்ததை உணர்ந்தது — இரட்டை கிளிக் தவிர்க்கப்பட்டது!`);
+                        } else {
+                            onProgress(`⚡ [Dual Listener] ஆபரேட்டர் குரோம் திரையிலேயே ஆதார் OTP (${typedOtp}) உள்ளிட்டுவிட்டார்! தானாக சமர்ப்பிக்கப்படுகிறது...`);
+                            await clickAadhaarSubmit().catch(() => {});
+                        }
                         return typedOtp;
                     }
                     await page.waitForTimeout(500).catch(() => {});

@@ -24,6 +24,8 @@ const { applyProfileUpdates } = require('../services/profile_update_service');
 router.post('/api/profile/update', async (req, res) => {
     try {
         const updated = req.body;
+        const opUid = updated.operatorUid || req.headers['x-operator-uid'] || null;
+        const reqDraftIdTop = String(updated.draftId || req.headers['x-draft-id'] || '').trim();
         const rawNewMobile = updated.mobileNumber || updated.mobile || '';
         let cleanNewMobile = String(rawNewMobile).replace(/\D/g, '');
         if (cleanNewMobile.length === 12 && cleanNewMobile.startsWith('91')) {
@@ -54,18 +56,22 @@ router.post('/api/profile/update', async (req, res) => {
         }
 
         const currentTarget = cleanOldMobile || cleanNewMobile || activeMob || '';
-        const sess = (currentTarget && typeof getOrCreateSession === 'function') 
-            ? getOrCreateSession(currentTarget) 
-            : (storageService.getSessionState() || createFreshProfile(currentTarget || ''));
+        const sess = (typeof storageService.resolveSessionForRequest === 'function' && (reqDraftIdTop || opUid)
+            ? storageService.resolveSessionForRequest({ draftId: reqDraftIdTop, mobile: currentTarget, operatorUid: opUid })
+            : null) || ((currentTarget && typeof getOrCreateSession === 'function')
+            ? getOrCreateSession(reqDraftIdTop || currentTarget)
+            : (storageService.getSessionState() || { citizenProfile: createFreshProfile(currentTarget || ''), chatHistory: [], tempUploads: {} }));
+        if (opUid && !sess.operatorUid) sess.operatorUid = opUid;
 
+        if (!Array.isArray(sess.chatHistory)) sess.chatHistory = [];
         if (!sess.citizenProfile) {
             sess.citizenProfile = createFreshProfile(currentTarget || '');
         }
 
-        // Check if existing draft exists for currentTarget to inherit all details and documents
-        if (currentTarget && !updated.fromEditModal && (!sess.citizenProfile.fullNameEng || (sess.citizenProfile.gasDetails && !sess.citizenProfile.gasDetails.consumerNumber))) {
+        // Check if existing draft exists for currentTarget to inherit all details and documents (NEVER on a Pure Fresh session!)
+        if (currentTarget && !sess._isPureFreshSession && !updated.fromEditModal && (!sess.citizenProfile.fullNameEng || (sess.citizenProfile.gasDetails && !sess.citizenProfile.gasDetails.consumerNumber))) {
             try {
-                const existingDraft = await getCitizenDraft(currentTarget);
+                const existingDraft = await getCitizenDraft(reqDraftIdTop || currentTarget, opUid);
                 if (existingDraft && existingDraft.citizenProfile) {
                     sess.citizenProfile = {
                         ...createFreshProfile(currentTarget),
@@ -101,7 +107,10 @@ router.post('/api/profile/update', async (req, res) => {
 
         if (is10Digit) {
             sess.citizenProfile.mobileNumber = cleanNewMobile;
-            sessions.set(cleanNewMobile, sess);
+            if (sess.draftId) sessions.set(sess.draftId, sess);
+            if (!opUid || !sessions.has(cleanNewMobile) || sessions.get(cleanNewMobile)?.operatorUid === opUid) {
+                sessions.set(cleanNewMobile, sess);
+            }
 
             if (cleanOldMobile && cleanOldMobile !== cleanNewMobile) {
                 // Phone number has changed!
@@ -142,11 +151,18 @@ router.post('/api/profile/update', async (req, res) => {
                     }
                 } catch (_) {}
 
-                // Purge / delete old citizen draft and profile so duplicate profile is NEVER created!
-                await deleteCitizenDraft(cleanOldMobile, { preserveUploads: true }).catch(() => {});
-                try { deleteCitizenProfile(cleanOldMobile); } catch (_) {}
+                // Delete ONLY this specific draft under the old mobile (never wipe sibling apps!)
+                const { isSpecificDraftId } = require('../services/db/firestore_client');
+                const oldDraftToDelete = (sess.draftId && isSpecificDraftId(sess.draftId)) ? sess.draftId : cleanOldMobile;
+                await deleteCitizenDraft(oldDraftToDelete, { preserveUploads: true }).catch(() => {});
+                if (!isSpecificDraftId(oldDraftToDelete)) {
+                    try { deleteCitizenProfile(cleanOldMobile); } catch (_) {}
+                }
                 if (typeof storageService.purgeSession === 'function') {
-                    storageService.purgeSession(cleanOldMobile);
+                    storageService.purgeSession(oldDraftToDelete);
+                }
+                if (sess.draftId && isSpecificDraftId(sess.draftId)) {
+                    sess.draftId = `${cleanNewMobile}_${Date.now()}`;
                 }
             }
         }
@@ -156,9 +172,12 @@ router.post('/api/profile/update', async (req, res) => {
         }
 
         if (activeCustKey) {
-            saveCitizenProfile(activeCustKey, sess.citizenProfile);
+            const profSaveKey = (is10Digit && cleanOldMobile && cleanOldMobile !== cleanNewMobile)
+                ? activeCustKey
+                : (String(req.body.draftId || req.headers['x-draft-id'] || '').trim() || sess.draftId || activeCustKey);
+            saveCitizenProfile(profSaveKey, sess.citizenProfile);
             try {
-                const existingDraft = await getCitizenDraft(activeCustKey).catch(() => null);
+                const existingDraft = sess._isPureFreshSession ? null : await getCitizenDraft(profSaveKey, opUid).catch(() => null);
                 const docsToSave = {
                     ...(existingDraft?.documents || {}),
                     ...(sess.tempUploads || {}),
@@ -187,8 +206,15 @@ router.post('/api/profile/update', async (req, res) => {
                     delete docsToSave.profilePhoto;
                     delete docsToSave.headPhoto;
                 }
-                if (sess.citizenProfile?.headAadhaarDocPath && fs.existsSync(sess.citizenProfile.headAadhaarDocPath)) {
-                    docsToSave.headAadhaar = sess.citizenProfile.headAadhaarDocPath;
+                const headAadhCand = sess.citizenProfile?.headAadhaarDocPath || docsToSave.headAadhaar || sess.citizenProfile?.members?.[0]?.docPath || existingDraft?.documents?.headAadhaar || existingDraft?.citizenProfile?.headAadhaarDocPath || '';
+                if (headAadhCand && fs.existsSync(headAadhCand)) {
+                    sess.citizenProfile.headAadhaarDocPath = headAadhCand;
+                    docsToSave.headAadhaar = headAadhCand;
+                    if (Array.isArray(sess.citizenProfile.members) && sess.citizenProfile.members[0] && !sess.citizenProfile.members[0].docPath) {
+                        sess.citizenProfile.members[0].docPath = headAadhCand;
+                    }
+                } else if (existingDraft?.base64Docs?.headAadhaarBase64 || sess.base64Docs?.headAadhaarBase64 || existingDraft?.storageUrls?.headAadhaar) {
+                    if (headAadhCand) docsToSave.headAadhaar = headAadhCand;
                 } else {
                     delete docsToSave.headAadhaar;
                 }
@@ -351,7 +377,13 @@ router.post('/api/profile/update', async (req, res) => {
                 sess.base64Docs = base64Docs;
                 if (sess.citizenProfile) sess.citizenProfile.base64Docs = base64Docs;
 
-                await saveCitizenDraft(activeCustKey, {
+                const reqDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
+                const isPhoneChanged = Boolean(is10Digit && cleanOldMobile && cleanOldMobile !== cleanNewMobile);
+                const saveKey = isPhoneChanged ? activeCustKey : (reqDraftId || sess.draftId || activeCustKey);
+                sess.draftId = saveKey;
+                await saveCitizenDraft(saveKey, {
+                    draftId: saveKey,
+                    mobileNumber: activeCustKey,
                     operatorUid: sess.operatorUid || null,
                     operatorName: sess.operatorName || null,
                     operatorMobile: sess.operatorMobile || null,

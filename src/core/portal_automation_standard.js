@@ -86,14 +86,13 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
 
         const mimeType = isJpeg ? 'image/jpeg' : 'image/png';
 
-        // Strategy 1: Local Gemini SDK
-        const OFFICIAL_PRODUCTION_GEMINI_KEY = Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8');
-        const apiKey = options.geminiApiKey || process.env.GEMINI_API_KEY || OFFICIAL_PRODUCTION_GEMINI_KEY;
+        // Strategy 1: Local Gemini SDK (Budget-Optimized Flash Lite with 0 thinking tokens)
+        const apiKey = options.geminiApiKey || process.env.GEMINI_API_KEY || '';
         if (apiKey) {
             try {
                 const { GoogleGenAI } = require('@google/genai');
                 const ai = new GoogleGenAI({ apiKey });
-                for (const mName of ['gemini-flash-latest', 'gemini-3.8-flash']) {
+                for (const mName of ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite']) {
                     try {
                         const ocrRes = await ai.models.generateContent({
                             model: mName,
@@ -105,6 +104,8 @@ async function solveUniversalCaptcha(page, onProgress = () => {}, options = {}) 
                                 ]
                             }],
                             config: {
+                                temperature: 0,
+                                maxOutputTokens: 16,
                                 systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
                             }
                         });

@@ -92,7 +92,8 @@
                 const res = await origFetch.apply(this, args);
                 if (!res.ok && res.status >= 400) {
                     const rawUrl = String(args[0] || '').split('?')[0];
-                    if (!rawUrl.includes('/flight-recorder') && !rawUrl.includes('/telemetry')) {
+                    const isExpectedAuthCheck = res.status === 403 && rawUrl.includes('/api/dev/golden-gallery');
+                    if (!isExpectedAuthCheck && !rawUrl.includes('/flight-recorder') && !rawUrl.includes('/telemetry')) {
                         addBreadcrumb('API_FAIL', `${rawUrl} [${res.status}]`);
                         if (res.status === 403 || res.status >= 500) {
                             dumpCrashIncident('API_STATUS_' + res.status, `Request to ${rawUrl} returned status ${res.status}`);

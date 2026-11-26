@@ -82,6 +82,15 @@ function runAutomationTask(runner, flowProfile, targetSess, targetMob, isMockTes
                     targetSess.citizenProfile.applicationNumber = result.applicationNumber;
                     targetSess.citizenProfile.applicationPdfUrl = result.applicationPdfUrl;
                     targetSess.citizenProfile.submittedAt = new Date().toISOString();
+                    targetSess.citizenProfile.submittedApplications = Array.isArray(targetSess.citizenProfile.submittedApplications) ? targetSess.citizenProfile.submittedApplications : [];
+                    if (!targetSess.citizenProfile.submittedApplications.some(a => String(a.applicationNumber || '').trim() === String(result.applicationNumber).trim())) {
+                        targetSess.citizenProfile.submittedApplications.push({
+                            applicationNumber: String(result.applicationNumber).trim(),
+                            service: targetSess.subService || targetSess.citizenProfile.subService || 'NEW_CARD',
+                            pdfUrl: result.applicationPdfUrl || `/receipts/Application_${result.applicationNumber}.pdf`,
+                            submittedAt: targetSess.citizenProfile.submittedAt
+                        });
+                    }
                     saveCitizenProfile(targetMob, targetSess.citizenProfile);
                 }
                 targetSess.step = 'submitted';

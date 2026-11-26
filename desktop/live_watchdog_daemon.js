@@ -61,8 +61,17 @@ const fs = require('fs');
                             return { action: 'WAITING_AADHAAR_OTP', modal: true };
                         }
 
-                        // Autonomous Self-Healing: If countdown is 0 and only resend button is visible, click it!
-                        if (mText.includes('0 நொடிகள்') && resendBtn && !resendBtn.disabled && !verifyBtn) {
+                        // Autonomous Self-Healing: If countdown is strictly 0 and only resend button is visible (and Co-Pilot hasn't locked/human-clicked), click once!
+                        const cp = window.__esevaOtpCopilot || {};
+                        const isTimerZero = /(?:^|[^\d])0\s*(?:நொடிகள்|நொடி|seconds|second|sec)(?=$|[^a-zA-Z0-9\u0B80-\u0BFF])/i.test(mText);
+                        const notLocked = !cp.humanResendCount && !cp.botResendCyclePendingReset && ((cp.botResendInFlightUntil || 0) < Date.now());
+                        if (isTimerZero && notLocked && resendBtn && !resendBtn.disabled && !verifyBtn) {
+                            if (window.__esevaOtpCopilot) {
+                                window.__esevaOtpCopilot.botResendInFlightUntil = Date.now() + 15000;
+                                window.__esevaOtpCopilot.botResendAt = Date.now();
+                                window.__esevaOtpCopilot.botResendCount = (window.__esevaOtpCopilot.botResendCount || 0) + 1;
+                                window.__esevaOtpCopilot.botResendCyclePendingReset = true;
+                            }
                             resendBtn.click();
                             return { action: 'AUTO_CLICKED_RESEND' };
                         }

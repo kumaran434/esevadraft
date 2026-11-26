@@ -4,6 +4,7 @@ const { saveCitizenProfile } = require('../../../database');
 const { saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceCompliantPassportPhoto } = require('../../../photo_studio');
+const { hydrateBase64DocCache } = require('../../services/doc_upload_primitives');
 
 const { persistSessions } = storageService;
 
@@ -78,9 +79,16 @@ async function handleHeadPhoto(ctx, req, res) {
         if (qualityCheck.taluk) sess.citizenProfile.taluk = qualityCheck.taluk;
         if (qualityCheck.village) sess.citizenProfile.village = qualityCheck.village;
 
-        const fullPdf = await produceCompliantDocument(uploadedFile.path);
+        let fullPdf = await produceCompliantDocument(uploadedFile.path);
+        if (!fullPdf) fullPdf = uploadedFile.path;
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.headAadhaarFront = uploadedFile.path;
+        sess.tempUploads.headAadhaar = fullPdf;
+        sess.citizenProfile.headAadhaarDocPath = fullPdf;
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        sess.citizenProfile.documents.headAadhaarFront = uploadedFile.path;
+        sess.citizenProfile.documents.headAadhaar = fullPdf;
+        hydrateBase64DocCache(sess, 'headAadhaar', fullPdf);
         updateHeadMember(sess.citizenProfile, fullPdf);
         if (activeMobile) {
             saveCitizenProfile(activeMobile, sess.citizenProfile);

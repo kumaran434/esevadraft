@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-suite",
-  "version": "1.1.42",
+  "version": "1.1.43",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -13,7 +13,6 @@
     "service:new": "node scripts/scaffold_service.js",
     "app:robot": "node scripts/run_desktop_automation.js --flow ration",
     "app:dev": "node scripts/run_desktop_automation.js --login --keep-open",
-    "app:go": "node scratch/drive_submit_to_portal.js",
     "test:e2e": "node scripts/run_full_e2e_automation.js",
     "test:golden": "node scripts/run_golden_simulator.js",
     "dev": "node server.js"

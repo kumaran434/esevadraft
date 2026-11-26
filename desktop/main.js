@@ -9,8 +9,7 @@ const fs = require('fs');
 // Strip default Windows application menu
 Menu.setApplicationMenu(null);
 
-// Load environment variables across potential runtimes
-const OFFICIAL_PRODUCTION_GEMINI_KEY = Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8');
+// Load environment variables across potential runtimes (strictly from .env — never hardcodes secrets)
 try { require('dotenv').config({ path: path.join(__dirname, '..', '.env') }); } catch (_) {}
 try { require('dotenv').config({ path: path.join(process.resourcesPath || '', '.env') }); } catch (_) {}
 try {
@@ -18,16 +17,10 @@ try {
     if (uData) {
         if (!fs.existsSync(uData)) fs.mkdirSync(uData, { recursive: true });
         const userEnv = path.join(uData, '.env');
-        if (!fs.existsSync(userEnv)) {
-            fs.writeFileSync(userEnv, `PORT=3000\nGEMINI_API_KEY=${OFFICIAL_PRODUCTION_GEMINI_KEY}\n`, 'utf-8');
-        }
         require('dotenv').config({ path: userEnv });
     }
 } catch (_) {}
 try { require('dotenv').config(); } catch (_) {}
-if (!process.env.GEMINI_API_KEY) {
-    process.env.GEMINI_API_KEY = OFFICIAL_PRODUCTION_GEMINI_KEY;
-}
 
 const { createMainWindow, getMainWindow } = require('./window_manager');
 const { setupAutoUpdater, detectOrphanedMidRunOnStartup } = require('./desktop_services');
@@ -202,6 +195,12 @@ async function cleanupAutomation() {
                 await tnpds.stopTnpdsAutomation();
             }
         }
+        try {
+            const tnega = require('../tnega_can_automation');
+            if (tnega && typeof tnega.stopTnegaAutomation === 'function') {
+                await tnega.stopTnegaAutomation();
+            }
+        } catch (_) {}
     } catch (_) {}
 }
 

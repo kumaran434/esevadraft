@@ -12,23 +12,21 @@ const { getTnegaState, launchTnegaBrowser, maximizeTnegaWindow } = require('./tn
 const { generateCanReceiptPdf } = require('../../services/tnega_receipt_generator');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
 const { AiCaptchaSolver } = require('../common/ai_captcha_solver');
+const { installOtpModalCopilot, tryCopilotAutoResendIfExpired } = require('../common/otp_copilot_watcher');
 const { ensureBilingualPair, formatStreetWithHamlet } = require('../../utils/bilingual_helper');
 const { normalizeDobWithYearFallback } = require('../../services/profile_helpers');
 
 let saveCitizenDraft = null;
 let getCitizenDraft = null;
-let APPDATA_DRAFTS_DIR = null;
 try {
     const fDb = require('../../../firestore_db');
     saveCitizenDraft = fDb.saveCitizenDraft;
     getCitizenDraft = fDb.getCitizenDraft;
-    const fc = require('../../services/db/firestore_client');
-    APPDATA_DRAFTS_DIR = fc.APPDATA_DRAFTS_DIR;
 } catch (_) {}
 
 async function safeSaveCanToDraft(mobile, citizenProfile, canNumber, subService = 'CAN_REGISTER') {
     if (!saveCitizenDraft || !mobile || !canNumber) return;
-    const cleanMob = String(mobile).replace(/\D+/g, '').slice(-10);
+    const cleanMob = String(mobile || '').split('_')[0].replace(/\D+/g, '').slice(-10);
     if (!cleanMob) return;
     try {
         const existing = getCitizenDraft ? (await getCitizenDraft(cleanMob).catch(() => null)) : null;
@@ -37,25 +35,8 @@ async function safeSaveCanToDraft(mobile, citizenProfile, canNumber, subService 
             ...(citizenProfile || {}),
             canNumber
         };
-        // If this customer already exists in AppData/Roaming (Desktop runtime), keep it in sync immediately
-        if (APPDATA_DRAFTS_DIR) {
-            const appDataFile = path.join(APPDATA_DRAFTS_DIR, `${cleanMob}.json`);
-            if (fs.existsSync(appDataFile)) {
-                try {
-                    const appDataDraft = JSON.parse(fs.readFileSync(appDataFile, 'utf8'));
-                    appDataDraft.canNumber = canNumber;
-                    appDataDraft.citizenProfile = {
-                        ...(appDataDraft.citizenProfile || {}),
-                        ...mergedProfile,
-                        canNumber
-                    };
-                    appDataDraft.lastUpdated = new Date().toISOString();
-                    fs.writeFileSync(appDataFile, JSON.stringify(appDataDraft, null, 2), 'utf8');
-                } catch (_) {}
-            }
-        }
 
-        // Fire-and-forget cloud/draft sync so portal navigation is never blocked by slow network uploads
+        // Single Canonical Store + Cloud Backup via saveCitizenDraft
         saveCitizenDraft(cleanMob, {
             ...(existing || {}),
             citizenProfile: mergedProfile,
@@ -1971,6 +1952,7 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
         }
 
         state.isWaitingForCanOtp = true;
+        await installOtpModalCopilot(tnegaPage, { forceReset: true, allowInlinePage: true }).catch(() => {});
         onProgress(`📲 [விதி 5 நேரலை பின்னணி இயக்கம்] TNeGA OTP உங்கள் கைபேசிக்கு (+91 ${mobile}) அனுப்பப்பட்டுள்ளது.`);
         onProgress('⌨️ தயவுசெய்து OTP எண்ணை உள்ளிடவும் (அல்லது பிரவுசரில் தட்டச்சு செய்யவும்). லைவ் கண்காணிப்பு தொடர்ந்து விழிப்புடன் உள்ளது...');
 
@@ -1990,8 +1972,11 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
             });
 
             let registerAttempted = false;
+            let isCanTickRunning = false;
 
             const checkInterval = setInterval(async () => {
+                if (isCanTickRunning) return;
+                isCanTickRunning = true;
                 try {
                     if (tnegaPage.isClosed()) {
                         clearInterval(checkInterval);
@@ -2044,6 +2029,14 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                                 type: 'waiting'
                             });
                         }
+                    } else if (!state.otpConfirmedInDom && !state.pendingCanOtpValue) {
+                        await tryCopilotAutoResendIfExpired(tnegaPage, {
+                            allowInlinePage: true,
+                            graceAfterZeroMs: 4000,
+                            maxAutoResends: 2,
+                            onProgress,
+                            stageLabel: 'TNeGA CAN OTP'
+                        });
                     }
 
                     // 2. Check if user typed directly into the Chrome DOM input
@@ -2223,6 +2216,8 @@ async function registerNewCan(citizenProfile = {}, onProgress = () => {}, option
                     }
                 } catch (e) {
                     // Keep daemon watching - don't crash
+                } finally {
+                    isCanTickRunning = false;
                 }
             }, 500);
 

@@ -1,20 +1,19 @@
 /**
  * eSevaDraft Citizen Master Service
- * Manages unified Master Citizen Profiles with Multi-Factor Indexing (Mobile, Aadhaar, Smart Card).
- * Adheres to Golden Rule 1 (Purpose-Driven Functional Modularity).
+ *
+ * Single Canonical Store Law:
+ * Reads and writes Master Citizen Profiles directly inside the ONE active drafts directory
+ * (getActiveDraftsDir()/<mobile>.json) with a lightweight Aadhaar lookup index inside getActiveDataDir().
+ * NEVER creates duplicate data/citizens/*.json files or cross-reads two local directories.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { getCitizenProfile, saveCitizenProfile } = require('../../../database');
-const { LOCAL_DRAFTS_DIR, APPDATA_DRAFTS_DIR } = require('./firestore_client');
+const { getActiveDataDir, getActiveDraftsDir } = require('./firestore_client');
 
-const DATA_DIR = path.join(__dirname, '..', '..', '..', 'data');
-const CITIZENS_DIR = path.join(DATA_DIR, 'citizens');
-const AADHAAR_INDEX_FILE = path.join(DATA_DIR, 'aadhaar_citizen_index.json');
-
-if (!fs.existsSync(CITIZENS_DIR)) {
-    try { fs.mkdirSync(CITIZENS_DIR, { recursive: true }); } catch (_) {}
+function getAadhaarIndexFile() {
+    return path.join(getActiveDataDir(), 'aadhaar_citizen_index.json');
 }
 
 function normalizeCleanMobile(val) {
@@ -37,9 +36,10 @@ function normalizeCleanCard(val) {
 }
 
 function loadAadhaarIndex() {
-    if (!fs.existsSync(AADHAAR_INDEX_FILE)) return {};
+    const idxFile = getAadhaarIndexFile();
+    if (!fs.existsSync(idxFile)) return {};
     try {
-        return JSON.parse(fs.readFileSync(AADHAAR_INDEX_FILE, 'utf8')) || {};
+        return JSON.parse(fs.readFileSync(idxFile, 'utf8')) || {};
     } catch (_) {
         return {};
     }
@@ -47,18 +47,21 @@ function loadAadhaarIndex() {
 
 function saveAadhaarIndex(idx) {
     try {
-        fs.writeFileSync(AADHAAR_INDEX_FILE, JSON.stringify(idx, null, 2), 'utf8');
+        const idxFile = getAadhaarIndexFile();
+        fs.mkdirSync(path.dirname(idxFile), { recursive: true });
+        fs.writeFileSync(idxFile, JSON.stringify(idx, null, 2), 'utf8');
     } catch (_) {}
 }
 
 function getMasterFile(mobile) {
     const cleanMob = normalizeCleanMobile(mobile);
     if (!cleanMob) return null;
-    return path.join(CITIZENS_DIR, `${cleanMob}.json`);
+    return path.join(getActiveDraftsDir(), `${cleanMob}.json`);
 }
 
 /**
- * Looks up citizen by 10-digit mobile, 12-digit Aadhaar, or Smart Card number.
+ * Looks up citizen by 10-digit mobile, 12-digit Aadhaar, or Smart Card number
+ * strictly inside the single active drafts directory.
  */
 function lookupCitizen(query) {
     if (!query) return null;
@@ -67,32 +70,20 @@ function lookupCitizen(query) {
     const cleanAadhaar = normalizeCleanAadhaar(raw);
     const cleanCard = normalizeCleanCard(raw);
 
-    // 1. Check direct mobile match
+    // 1. Direct mobile match in single active drafts directory
     if (cleanMob && cleanMob.length === 10) {
-        const masterP = getMasterFile(cleanMob);
-        if (masterP && fs.existsSync(masterP)) {
-            try {
-                const c = JSON.parse(fs.readFileSync(masterP, 'utf8'));
-                if (c) return { citizen: c, foundBy: 'mobile', mobileNumber: cleanMob };
-            } catch (_) {}
-        }
         const profile = getCitizenProfile(cleanMob);
         if (profile && (profile.fullNameEng || profile.fullNameTam || profile.headAadhaar)) {
             return { citizen: profile, foundBy: 'mobile', mobileNumber: cleanMob };
         }
     }
 
-    // 2. Check Aadhaar Index (Head or Family Member)
+    // 2. Check Aadhaar Index (Head or Family Member) -> resolves to single active draft
     if (cleanAadhaar) {
         const idx = loadAadhaarIndex();
         const linked = idx[cleanAadhaar];
         if (linked && linked.mobileNumber) {
-            const masterP = getMasterFile(linked.mobileNumber);
-            let citizen = null;
-            if (masterP && fs.existsSync(masterP)) {
-                try { citizen = JSON.parse(fs.readFileSync(masterP, 'utf8')); } catch (_) {}
-            }
-            if (!citizen) citizen = getCitizenProfile(linked.mobileNumber);
+            const citizen = getCitizenProfile(linked.mobileNumber);
             if (citizen) {
                 return {
                     citizen,
@@ -104,31 +95,29 @@ function lookupCitizen(query) {
         }
     }
 
-    // 3. Scan local drafts for smart card or aadhaar match
-    const candidateDirs = [CITIZENS_DIR, LOCAL_DRAFTS_DIR, APPDATA_DRAFTS_DIR].filter(d => d && fs.existsSync(d));
-    for (const dir of candidateDirs) {
+    // 3. Scan strictly the single active drafts directory for Smart Card or Aadhaar match
+    const activeDir = getActiveDraftsDir();
+    if (activeDir && fs.existsSync(activeDir)) {
         try {
-            const files = fs.readdirSync(dir);
+            const files = fs.readdirSync(activeDir);
             for (const f of files) {
                 if (!f.endsWith('.json')) continue;
                 try {
-                    const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+                    const data = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8'));
+                    if (!data || data.isDeleted === true || data.status === 'TRASHED') continue;
                     const prof = data.citizenProfile || data;
                     const mob = normalizeCleanMobile(prof.mobileNumber || data.mobileNumber || f.replace('.json', ''));
-                    
-                    // Match Head Aadhaar
+
                     const hAadhaar = normalizeCleanAadhaar(prof.headAadhaar || prof.aadhaarNumber);
                     if (cleanAadhaar && hAadhaar === cleanAadhaar) {
                         return { citizen: prof, foundBy: 'head_aadhaar', mobileNumber: mob };
                     }
 
-                    // Match Smart Card
                     const cNo = normalizeCleanCard(prof.smartCardNumber || prof.subServiceData?.smartCardNumber);
                     if (cleanCard && cleanCard.length >= 10 && cNo === cleanCard) {
                         return { citizen: prof, foundBy: 'smart_card', mobileNumber: mob };
                     }
 
-                    // Match Family Members Aadhaar
                     if (cleanAadhaar && Array.isArray(prof.members)) {
                         for (const m of prof.members) {
                             const mAadhaar = normalizeCleanAadhaar(m.aadhaarNumber || m.aadhaarNo);
@@ -151,21 +140,14 @@ function lookupCitizen(query) {
 }
 
 /**
- * Saves/Updates Master Citizen Profile and updates indexes.
+ * Saves/Updates Master Citizen Profile strictly inside the single active drafts directory
+ * and refreshes the lightweight Aadhaar lookup index.
  */
 function saveCitizenMaster(mobileNumber, citizenData) {
     const cleanMob = normalizeCleanMobile(mobileNumber || citizenData?.mobileNumber);
     if (!cleanMob) return null;
 
-    const masterFile = getMasterFile(cleanMob);
-    let existing = {};
-    if (masterFile && fs.existsSync(masterFile)) {
-        try { existing = JSON.parse(fs.readFileSync(masterFile, 'utf8')) || {}; } catch (_) {}
-    } else {
-        const legacy = getCitizenProfile(cleanMob);
-        if (legacy) existing = { ...legacy };
-    }
-
+    const existing = getCitizenProfile(cleanMob) || {};
     const merged = {
         ...existing,
         ...citizenData,
@@ -173,23 +155,16 @@ function saveCitizenMaster(mobileNumber, citizenData) {
         lastUpdated: new Date().toISOString()
     };
 
-    if (masterFile) {
-        try {
-            fs.writeFileSync(masterFile, JSON.stringify(merged, null, 2), 'utf8');
-        } catch (_) {}
-    }
+    const saved = saveCitizenProfile(cleanMob, merged) || merged;
 
-    // Keep citizens.json synced
-    saveCitizenProfile(cleanMob, merged);
-
-    // Update Aadhaar Index
+    // Update lightweight Aadhaar lookup index inside active data directory
     const idx = loadAadhaarIndex();
-    const hAadhaar = normalizeCleanAadhaar(merged.headAadhaar || merged.aadhaarNumber);
+    const hAadhaar = normalizeCleanAadhaar(saved.headAadhaar || saved.aadhaarNumber);
     if (hAadhaar) {
-        idx[hAadhaar] = { mobileNumber: cleanMob, isMember: false, name: merged.fullNameTam || merged.fullNameEng };
+        idx[hAadhaar] = { mobileNumber: cleanMob, isMember: false, name: saved.fullNameTam || saved.fullNameEng };
     }
-    if (Array.isArray(merged.members)) {
-        merged.members.forEach(m => {
+    if (Array.isArray(saved.members)) {
+        saved.members.forEach(m => {
             const mAadhaar = normalizeCleanAadhaar(m.aadhaarNumber || m.aadhaarNo);
             if (mAadhaar) {
                 idx[mAadhaar] = {
@@ -203,7 +178,7 @@ function saveCitizenMaster(mobileNumber, citizenData) {
     }
     saveAadhaarIndex(idx);
 
-    return merged;
+    return saved;
 }
 
 module.exports = {

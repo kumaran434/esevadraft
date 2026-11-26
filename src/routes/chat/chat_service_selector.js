@@ -1,8 +1,37 @@
 const storageService = require('../../services/storage_service');
+const { saveCitizenDraft } = require('../../../firestore_db');
 const { handleServiceSelection, handleRationSubserviceWorkflow } = require('../../core/chat_fsm');
 const { resolveCartridge, getCartridgeById } = require('../../cartridges');
 
 const { persistSessions } = storageService;
+
+async function syncSelectedServiceDraft(ctx, sess) {
+    const mob = (ctx?.targetMobile || sess?.mobileNumber || sess?.citizenProfile?.mobileNumber || '').trim();
+    if (!mob || /^walkin_/i.test(mob)) return;
+    if (!sess?.citizenProfile || (!sess.citizenProfile.fullNameEng && !sess.citizenProfile.fullNameTam && !sess.citizenProfile.headAadhaar)) return;
+    try {
+        const mergedCleanDocs = {};
+        for (const [k, v] of Object.entries({ ...(sess.citizenProfile?.documents || {}), ...(sess.tempUploads || {}) })) {
+            if (v !== null && v !== undefined && v !== '') mergedCleanDocs[k] = v;
+        }
+        const saveKey = sess.draftId || mob;
+        await saveCitizenDraft(saveKey, {
+            draftId: saveKey,
+            mobileNumber: mob,
+            subService: sess.subService ?? null,
+            subServiceData: sess.subServiceData ?? null,
+            pluginId: sess.pluginId ?? null,
+            targetService: sess.targetService ?? null,
+            serviceId: sess.serviceId ?? null,
+            intakeState: sess.intakeState,
+            step: sess.intakeState || sess.step,
+            citizenProfile: sess.citizenProfile,
+            documents: mergedCleanDocs,
+            tempUploads: mergedCleanDocs,
+            chatHistory: Array.isArray(sess.chatHistory) ? sess.chatHistory : []
+        });
+    } catch (_) {}
+}
 
 const CAN_ACTION_TOKENS = new Set([
     'CAN_REGISTER_PROMPT', 'CAN_SEARCH_PROMPT', 'CAN_DIRECT_INPUT',
@@ -15,7 +44,7 @@ const CAN_ACTION_TOKENS = new Set([
 
 const CAN_ACTION_PREFIXES = [
     'FIRST_GRADUATE_', 'OBC_', 'LH_', 'LEGAL_HEIR_', 'WD_', 'WIDOW_',
-    'INC_', 'SELECT_MEMBER_', 'COMMUNITY_', 'RELIGION_'
+    'INC_', 'INCOME_', 'RESIDENCE_', 'SKIP_', 'SELECT_MEMBER_', 'COMMUNITY_', 'RELIGION_'
 ];
 
 async function handleServiceSelector(ctx, req, res) {
@@ -62,6 +91,7 @@ async function handleServiceSelector(ctx, req, res) {
             }
         } catch (_) {}
         persistSessions();
+        await syncSelectedServiceDraft(ctx, sess);
         const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
         const isWalkinMenuOnly = (!ctx.targetMobile || /^walkin_/i.test(String(ctx.targetMobile))) &&
             (sess.intakeState === 'SERVICE_SELECTION' || sess.intakeState === 'RATION_CARD_SERVICES' || sess.intakeState === 'REVENUE_DEPARTMENT_SERVICES');
@@ -70,16 +100,18 @@ async function handleServiceSelector(ctx, req, res) {
             citizenProfile: isWalkinMenuOnly ? null : sess.citizenProfile,
             step: sess.intakeState,
             intakeState: sess.intakeState,
-            subService: sess.subService || sess.citizenProfile?.subService,
-            subServiceData: sess.subServiceData || sess.citizenProfile?.subServiceData,
+            pluginId: sess.pluginId ?? null,
+            subService: sess.subService !== undefined ? sess.subService : (sess.citizenProfile?.subService ?? null),
+            subServiceData: sess.subServiceData !== undefined ? sess.subServiceData : (sess.citizenProfile?.subServiceData ?? null),
             botResponse: lastBotMsg ? lastBotMsg.text : ''
         });
         return true;
     }
 
     // 2. TNPDS Subservice Active Turn -> Route strictly to owning TNPDS Cartridge intake.js
+    const isHeadChangeCmd = Boolean(text && text.startsWith('HEAD_') && text !== 'HEAD_DETAILS_CONFIRMED' && text !== 'HEAD_PHOTO');
     const isSubserviceTurn = (sess.intakeState && sess.intakeState.startsWith('RATION_') && sess.intakeState !== 'RATION_CARD_SERVICES') ||
-        (text && (text.startsWith('ADD_MEMBER_') || text.startsWith('REMOVE_') || text.startsWith('HEAD_') || text.startsWith('ADDR_') || text === 'CHILD_UNDER_5' || text === 'ADULT_ABOVE_5' || text === 'RATION_ADD_MEMBER_RESET' || text === 'RATION_CHANGE_ADDRESS_RESET' || text === 'RATION_REMOVE_MEMBER_RESET'));
+        (text && (text.startsWith('ADD_MEMBER_') || text.startsWith('REMOVE_') || isHeadChangeCmd || text.startsWith('ADDR_') || text === 'CHILD_UNDER_5' || text === 'ADULT_ABOVE_5' || text === 'RATION_ADD_MEMBER_RESET' || text === 'RATION_CHANGE_ADDRESS_RESET' || text === 'RATION_REMOVE_MEMBER_RESET'));
 
     if (isSubserviceTurn) {
         let targetCartridge = null;
@@ -89,7 +121,7 @@ async function handleServiceSelector(ctx, req, res) {
             targetCartridge = getCartridgeById('TNPDS_REMOVE_MEMBER');
         } else if (text === 'RATION_CHANGE_ADDRESS_RESET' || (text && text.startsWith('ADDR_'))) {
             targetCartridge = getCartridgeById('TNPDS_CHANGE_ADDRESS');
-        } else if (text && text.startsWith('HEAD_')) {
+        } else if (isHeadChangeCmd) {
             targetCartridge = getCartridgeById('TNPDS_CHANGE_HEAD');
         } else {
             targetCartridge = resolveCartridge({ subService: sess.subService, intakeState: sess.intakeState });
@@ -103,6 +135,7 @@ async function handleServiceSelector(ctx, req, res) {
         const handled = await handleRationSubserviceWorkflow(text, sess, uploadedFile, null);
         if (handled) {
             persistSessions();
+            await syncSelectedServiceDraft(ctx, sess);
             const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
             res.json({
                 chatHistory: sess.chatHistory,

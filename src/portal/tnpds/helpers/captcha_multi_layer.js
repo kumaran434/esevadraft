@@ -39,7 +39,7 @@ async function solveCaptchaWithMultiLayerAi(imgInput, apiKey, options = {}) {
         try {
             const { GoogleGenAI } = require('@google/genai');
             const ai = new GoogleGenAI({ apiKey });
-            for (const mName of ['gemini-flash-latest', 'gemini-3.8-flash']) {
+            for (const mName of ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite']) {
                 try {
                     const ocrRes = await ai.models.generateContent({
                         model: mName,
@@ -52,7 +52,11 @@ async function solveCaptchaWithMultiLayerAi(imgInput, apiKey, options = {}) {
                                 ]
                             }
                         ],
-                        config: { systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.' }
+                        config: {
+                            temperature: 0,
+                            maxOutputTokens: 16,
+                            systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
+                        }
                     });
                     if (ocrRes && ocrRes.text) {
                         const rawText = ocrRes.text.trim();

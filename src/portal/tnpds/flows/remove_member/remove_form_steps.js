@@ -39,9 +39,6 @@ async function executeRemoveMemberFormSteps({
         const navMenuSelectors = [
             'a:has-text("உறுப்பினர் நீக்க")',
             'button:has-text("உறுப்பினர் நீக்க")',
-            'li:has-text("உறுப்பினர் நீக்க") a',
-            'span:has-text("உறுப்பினர் நீக்க")',
-            '[routerlink*="service-request"]',
             'a[href*="service-request"]'
         ];
         for (const mSel of navMenuSelectors) {

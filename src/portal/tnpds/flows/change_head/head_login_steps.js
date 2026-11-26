@@ -81,7 +81,7 @@ async function executeChangeHeadLoginSteps({ page, userMobile, onProgress, optio
         const curUrl = page.url();
         if (!curUrl.includes('/auth/login') && !curUrl.includes('/service-request') && !curUrl.includes('/cardmaintenance')) {
             try {
-                const navLink = page.locator('a:has-text("குடும்பத் தலைவர் மாற்றம்"), a:has-text("Change Family Head"), [routerlink*="service-request"], a[href*="service-request"]').first();
+                const navLink = page.locator('a:has-text("குடும்பத் தலைவர் மாற்றம்"), a:has-text("Change Family Head")').first();
                 if (await navLink.count() > 0 && await navLink.isVisible().catch(() => false)) {
                     onProgress('[படி 1/10] 🔗 முகப்பில் "குடும்பத் தலைவர் மாற்றம்" இணைப்பு கிளிக் செய்யப்படுகிறது...');
                     await navLink.click({ force: true }).catch(() => {});

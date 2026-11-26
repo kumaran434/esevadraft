@@ -1,6 +1,7 @@
 const storageService = require('../../services/storage_service');
-const { getCitizenDraft, saveCitizenDraft } = require('../../../firestore_db');
+const { saveCitizenDraft } = require('../../../firestore_db');
 const { saveCitizenProfile } = require('../../../database');
+const { generateUniqueDraftId, setActiveDraftIdForMobile, isSpecificDraftId, normalizeOperatorUid } = require('../../services/db/firestore_client');
 const { 
     SERVICE_OPTIONS, 
     RATION_CARD_SERVICE_OPTIONS, 
@@ -36,40 +37,42 @@ async function handlePhoneBind(ctx, req, res) {
             sess.citizenProfile.mobileNumber = newMobile;
         }
 
-        sessions.set(newMobile, sess);
+        const normOpUid = normalizeOperatorUid(reqOpUid || sess.operatorUid);
+        const draftId = (sess.draftId && isSpecificDraftId(sess.draftId) && sess.draftId.startsWith(`${newMobile}_`))
+            ? sess.draftId
+            : generateUniqueDraftId(newMobile);
+        sess.draftId = draftId;
+        sess.mobileNumber = newMobile;
+        setActiveDraftIdForMobile(newMobile, draftId, normOpUid);
+        sessions.set(draftId, sess);
+        if (normOpUid) {
+            sessions.set(`${normOpUid}::${newMobile}`, sess);
+        } else {
+            sessions.set(newMobile, sess);
+        }
         if (oldKey && oldKey !== newMobile && sessions.has(oldKey)) {
-            sessions.delete(oldKey);
+            const prevBare = sessions.get(oldKey);
+            if (!normOpUid || !normalizeOperatorUid(prevBare?.operatorUid) || normalizeOperatorUid(prevBare?.operatorUid) === normOpUid) {
+                sessions.delete(oldKey);
+            }
         }
         storageService.setActiveMobile(newMobile);
         ctx.targetMobile = newMobile;
-        saveCitizenProfile(newMobile, sess.citizenProfile);
+        saveCitizenProfile(draftId, sess.citizenProfile);
+
+        // Golden Rule 24 (100% Pure Fresh Mode):
+        // NEVER auto-restore an old saved draft into the live session when binding a mobile number in chat!
+        sess._isPureFreshSession = true;
+        sess._draftChecked = true;
+        sess.subService = null;
+        sess.subServiceData = null;
+        sess.tempUploads = {};
 
         try {
-            const existingDraft = await getCitizenDraft(newMobile);
-            if (existingDraft && existingDraft.citizenProfile && (existingDraft.citizenProfile.fullNameTam || existingDraft.citizenProfile.fullNameEng || existingDraft.subService || existingDraft.citizenProfile?.subService)) {
-                sess.citizenProfile = { ...createFreshProfile(newMobile), ...existingDraft.citizenProfile };
-                sess.tempUploads = existingDraft.documents || {};
-                if (existingDraft.subService || existingDraft.citizenProfile?.subService) {
-                    sess.subService = existingDraft.subService || existingDraft.citizenProfile?.subService;
-                }
-                if (existingDraft.subServiceData || existingDraft.citizenProfile?.subServiceData) {
-                    sess.subServiceData = existingDraft.subServiceData || existingDraft.citizenProfile?.subServiceData;
-                }
-                if (existingDraft.intakeState) {
-                    sess.intakeState = existingDraft.intakeState;
-                }
-            } else {
-                sess.subService = null;
-                sess.subServiceData = null;
-                sess.tempUploads = {};
-            }
-        } catch (e) {
-            console.warn('Draft restore error on phone bind:', e.message);
-        }
-
-        try {
-            await saveCitizenDraft(newMobile, {
-                operatorUid: reqOpUid || sess.operatorUid || null,
+            await saveCitizenDraft(draftId, {
+                draftId,
+                mobileNumber: newMobile,
+                operatorUid: normOpUid || null,
                 operatorName: sess.operatorName || null,
                 operatorMobile: sess.operatorMobile || null,
                 citizenProfile: sess.citizenProfile,
@@ -144,12 +147,13 @@ async function handlePhoneBind(ctx, req, res) {
             actionRequired: nextAct,
             uploadPrompt: nextPrompt
         });
-        persistSessions();
+        persistSessions(sess);
 
         res.json({
             chatHistory: sess.chatHistory,
             citizenProfile: sess.citizenProfile,
             step: sess.intakeState,
+            draftId: sess.draftId,
             customerMobile: newMobile,
             activeMobile: newMobile
         });

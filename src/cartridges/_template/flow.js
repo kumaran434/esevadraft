@@ -1,4 +1,6 @@
-// Golden Cartridge Template: flow.js
+// Golden Cartridge Template: flow.js (Golden Rule 24: 5-Basic Vault + Always-Fresh Service Run)
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
+
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'TEMPLATE_SERVICE';
     sess.intakeState = 'TEMPLATE_INTAKE';
@@ -6,6 +8,7 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'TEMPLATE_SERVICE';
     sess.pluginId = 'TEMPLATE_SERVICE';
     const flowStep = advanceFlow(sess, greeting);

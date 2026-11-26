@@ -38,8 +38,6 @@ async function handleIntake(ctx, req, res) {
             if (handled) return true;
         }
         if (text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
-            if (!sess.citizenProfile.caste) sess.citizenProfile.caste = text.trim();
-            persistSessions();
             const flowStep = advanceFlow(sess);
             sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
@@ -176,7 +174,7 @@ async function handleIntake(ctx, req, res) {
         return true;
     }
 
-    if ((sess.intakeState === 'COMMUNITY_CASTE_WAIT' || (text && (text.includes('சத்ரியர்') || text.includes('வேளாளர்') || text.includes('நாடார்') || text.includes('அகமுடையார்') || text.includes('மருத்துவர்') || text.includes('வண்ணார்') || text.includes('செட்டியார்') || text.includes('தேவர்') || text.includes('திராவிடர்') || text.includes('பறையர்') || text.includes('அருந்ததியர்')))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if (sess.intakeState === 'COMMUNITY_CASTE_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         sess.citizenProfile.caste = text.trim();
         persistSessions();
         const flowStep = advanceFlow(sess, `✅ சாதி உட்பிரிவு **${text.trim()}** எனப் பதிவானது!`);

@@ -44,8 +44,7 @@ async function executeMobileChangeFormSteps({
         const navMenuSelectors = [
             'a:has-text("கைபேசி எண் மாற்றம்")',
             'button:has-text("கைபேசி எண் மாற்றம்")',
-            'li:has-text("கைபேசி எண் மாற்றம்") a',
-            '[routerlink*="service-request"]',
+            'a[href*="service-request"]',
             'a[href*="service-request"]'
         ];
         for (const mSel of navMenuSelectors) {
@@ -187,14 +186,23 @@ async function executeMobileChangeFormSteps({
     }
 
     const newOtpVal = await waitForMobileChangeNewNumberOtp(page, newMobile, onProgress, requestOtpFromUser);
+    const cleanNewOtp = (newOtpVal && newOtpVal !== 'ALREADY_VERIFIED_ON_PORTAL' && newOtpVal !== 'CLOSED' && newOtpVal !== 'PAGE_REFRESHED_TO_LOGIN')
+        ? String(newOtpVal).replace(/\D/g, '') : '';
 
-    if (newOtpVal && newOtpVal !== 'PAGE_REFRESHED_TO_LOGIN') {
-        onProgress(`✍️ [OTP சரிபார்ப்பு] புதிய எண் OTP (${newOtpVal}) போர்ட்டல் மாடலில் உள்ளிடப்படுகிறது...`);
-        await showBrowserHud('[படி 10/10] OTP சரிபார்க்கப்படுகிறது', `OTP: ${newOtpVal}`);
+    if (!isMockSandboxMode && newOtpVal !== 'ALREADY_VERIFIED_ON_PORTAL' && cleanNewOtp.length !== 6) {
+        const otpHaltMsg = `படி 10: புதிய கைபேசி எண் (+91 ${newMobile}) OTP சரிபார்க்கப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.`;
+        await showBrowserHud('[படி 10/10] 🔴 OTP சரிபார்க்கப்படவில்லை', otpHaltMsg, 'error');
+        onProgress(`🛑 **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${otpHaltMsg}`);
+        return { success: false, message: otpHaltMsg };
+    }
+
+    if (cleanNewOtp.length === 6) {
+        onProgress(`✍️ [OTP சரிபார்ப்பு] புதிய எண் OTP (${cleanNewOtp}) போர்ட்டல் மாடலில் உள்ளிடப்படுகிறது...`);
+        await showBrowserHud('[படி 10/10] OTP சரிபார்க்கப்படுகிறது', `OTP: ${cleanNewOtp}`);
 
         const modalOtpInput = page.locator('input[formcontrolname="otp"], input[placeholder*="OTP"]').first();
         if (await modalOtpInput.count() > 0) {
-            await humanType(page, modalOtpInput, newOtpVal);
+            await humanType(page, modalOtpInput, cleanNewOtp);
             await modalOtpInput.dispatchEvent('input').catch(() => {});
             await modalOtpInput.dispatchEvent('change').catch(() => {});
             await page.waitForTimeout(500);

@@ -3,7 +3,7 @@
 // =========================================================================
 const fs = require('fs');
 const path = require('path');
-const { LOCAL_DRAFTS_DIR, APPDATA_DRAFTS_DIR, uploadDocToStorage, fileToBase64, isStorageAvailable } = require('./firestore_client');
+const { getActiveUploadsDir, uploadDocToStorage, fileToBase64, isStorageAvailable } = require('./firestore_client');
 
 async function processDraftDocuments(cleanMob, prof, docPackage, draftData, options = {}) {
     const storageUrls = {};
@@ -17,9 +17,7 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
                 const b64Data = base64Docs[`${docType}Base64`];
                 const raw = b64Data.includes('base64,') ? b64Data.split('base64,')[1] : b64Data;
                 const fName = base64Docs[`${docType}Name`] || `${docType}.jpg`;
-                const baseUploadDir = (APPDATA_DRAFTS_DIR && fs.existsSync(APPDATA_DRAFTS_DIR)) 
-                    ? path.join(APPDATA_DRAFTS_DIR, '..', 'uploads') 
-                    : path.join(LOCAL_DRAFTS_DIR, '..', 'uploads');
+                const baseUploadDir = getActiveUploadsDir();
                 const tempP = path.join(baseUploadDir, `${cleanMob}_${docType}_${fName}`);
                 const tempPDir = path.dirname(tempP);
                 if (!fs.existsSync(tempPDir)) fs.mkdirSync(tempPDir, { recursive: true });
@@ -30,6 +28,8 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
         if (!effectivePath || !fs.existsSync(effectivePath)) return;
         const fileName = path.basename(effectivePath);
         const storagePath = `drafts/${cleanMob}/${docType}/${fileName}`;
+        // Complete PC + Cloud Sync: upload every customer document (Master + Service Proofs + Receipts) to Cloud Storage!
+        // Deleted cleanly from both PC & Cloud when operator deletes the draft.
         if (shouldUploadToCloud && isStorageAvailable()) {
             const url = await uploadDocToStorage(effectivePath, storagePath);
             if (url) { storageUrls[docType] = url; }
@@ -83,22 +83,34 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
         base64Docs.gasBookName = base64Docs.residenceProofName || 'residenceProof.jpg';
     }
 
-    docPackage.headAadhaarFront = draftData.documents?.headAadhaarFront || prof.documents?.headAadhaarFront || draftData.tempUploads?.headAadhaarFront || prof.headAadhaarDocPath || null;
-    docPackage.headAadhaarBack = draftData.documents?.headAadhaarBack || prof.documents?.headAadhaarBack || draftData.tempUploads?.headAadhaarBack || null;
-    docPackage.memberAadhaarFront = draftData.documents?.memberAadhaarFront || prof.documents?.memberAadhaarFront || draftData.tempUploads?.memberAadhaarFront || null;
-    docPackage.memberAadhaarBack = draftData.documents?.memberAadhaarBack || prof.documents?.memberAadhaarBack || draftData.tempUploads?.memberAadhaarBack || null;
+    const headAadhaarFrontCand = draftData.documents?.headAadhaarFront || prof.documents?.headAadhaarFront || draftData.tempUploads?.headAadhaarFront || prof.headAadhaarDocPath || null;
+    const headAadhaarBackCand = draftData.documents?.headAadhaarBack || prof.documents?.headAadhaarBack || draftData.tempUploads?.headAadhaarBack || null;
+    const memberAadhaarFrontCand = draftData.documents?.memberAadhaarFront || prof.documents?.memberAadhaarFront || draftData.tempUploads?.memberAadhaarFront || null;
+    const memberAadhaarBackCand = draftData.documents?.memberAadhaarBack || prof.documents?.memberAadhaarBack || draftData.tempUploads?.memberAadhaarBack || null;
+    if (headAadhaarFrontCand) docPackage.headAadhaarFront = headAadhaarFrontCand; else delete docPackage.headAadhaarFront;
+    if (headAadhaarBackCand) docPackage.headAadhaarBack = headAadhaarBackCand; else delete docPackage.headAadhaarBack;
+    if (memberAadhaarFrontCand) docPackage.memberAadhaarFront = memberAadhaarFrontCand; else delete docPackage.memberAadhaarFront;
+    if (memberAadhaarBackCand) docPackage.memberAadhaarBack = memberAadhaarBackCand; else delete docPackage.memberAadhaarBack;
+
+    const hasExistingHeadMaster = Boolean(
+        prof.headPhotoPath ||
+        prof.headAadhaarDocPath ||
+        (prof.headAadhaar && String(prof.headAadhaar).replace(/\D/g, '').length === 12)
+    );
 
     if (isAddMemService) {
-        if (!docPackage.memberAadhaarFront && docPackage.headAadhaarFront) docPackage.memberAadhaarFront = docPackage.headAadhaarFront;
-        if (!docPackage.memberAadhaarBack && docPackage.headAadhaarBack) docPackage.memberAadhaarBack = docPackage.headAadhaarBack;
-        if (!docPackage.memberAadhaar && docPackage.headAadhaar) docPackage.memberAadhaar = docPackage.headAadhaar;
-        if (docPackage.headAadhaar && typeof docPackage.headAadhaar === 'string' && (docPackage.headAadhaar.toLowerCase().endsWith('.pdf') || docPackage.headAadhaar.toLowerCase().includes('merged'))) {
-            docPackage.memberAadhaar = docPackage.headAadhaar;
+        // NEVER copy an existing customer's Master headAadhaar into transient memberAadhaar!
+        if (!hasExistingHeadMaster) {
+            if (!docPackage.memberAadhaarFront && docPackage.headAadhaarFront) docPackage.memberAadhaarFront = docPackage.headAadhaarFront;
+            if (!docPackage.memberAadhaarBack && docPackage.headAadhaarBack) docPackage.memberAadhaarBack = docPackage.headAadhaarBack;
+            if (!docPackage.memberAadhaar && docPackage.headAadhaar) docPackage.memberAadhaar = docPackage.headAadhaar;
+            if (docPackage.headAadhaar && typeof docPackage.headAadhaar === 'string' && (docPackage.headAadhaar.toLowerCase().endsWith('.pdf') || docPackage.headAadhaar.toLowerCase().includes('merged'))) {
+                docPackage.memberAadhaar = docPackage.headAadhaar;
+            }
         }
-        const memDocCand = prof.subServiceData?.docPath || prof.tempMember?.docPath || prof.members?.[0]?.docPath || docPackage.memberAadhaar || docPackage.birthCertificate;
+        const memDocCand = prof.subServiceData?.docPath || prof.subServiceData?.aadhaarDocPath || docPackage.memberAadhaar || null;
         if (memDocCand) {
-            if (prof.subServiceData?.isChild) docPackage.birthCertificate = memDocCand;
-            else docPackage.memberAadhaar = memDocCand;
+            docPackage.memberAadhaar = memDocCand;
         }
         if (!prof.headPhotoPath && !prof.headAadhaarDocPath) {
             delete docPackage.headAadhaar;
@@ -113,9 +125,8 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
             }
         }
     }
-    if (prof.subServiceData?.docPath && !docPackage.memberAadhaar && !docPackage.birthCertificate) {
-        if (prof.subServiceData.isChild) docPackage.birthCertificate = prof.subServiceData.docPath;
-        else docPackage.memberAadhaar = prof.subServiceData.docPath;
+    if (isAddMemService && prof.subServiceData?.docPath && !docPackage.memberAadhaar) {
+        docPackage.memberAadhaar = prof.subServiceData.docPath;
     }
     if (prof.subServiceData?.addressProofDocPath) docPackage.newAddressProof = prof.subServiceData.addressProofDocPath;
 
@@ -183,6 +194,36 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
     await handleDoc(docPackage.newAddressProof, 'newAddressProof');
     await handleDoc(docPackage.surrenderProof, 'surrenderProof');
 
+    // Sync ALL additional service documents (Smart Card, Income/Community/Education/Death/Marriage proofs, etc.)
+    const EXTRA_ARCHIVE_DOC_KEYS = [
+        'smartCard', 'rationCard', 'removeProof', 'incomeProof', 'salaryCertificate', 'incomeTaxReturn',
+        'communityProof', 'communityCertificate', 'applicantEducationProof', 'fatherEducationProof',
+        'motherEducationProof', 'deathCertificate', 'deceasedAddressProof', 'marriageProof', 'marriageCertificate',
+        'panCard', 'voterId', 'bankPassbook', 'ebBill', 'propertyTax', 'canReceipt'
+    ];
+    for (const extraKey of EXTRA_ARCHIVE_DOC_KEYS) {
+        const extraPath = docPackage[extraKey] || prof.documents?.[extraKey] || prof[extraKey];
+        if (extraPath && typeof extraPath === 'string' && extraPath !== 'SELF_DECLARATION') {
+            await handleDoc(extraPath, extraKey);
+        }
+    }
+
+    // Sync End-Result Application Receipt PDF (if generated/downloaded locally) directly to Firebase Cloud Storage!
+    const appNo = String(draftData.applicationNumber || prof.applicationNumber || '').trim();
+    const rawAppPdf = draftData.applicationPdfUrl || prof.applicationPdfUrl || (appNo ? `/receipts/Application_${appNo}.pdf` : '');
+    if (rawAppPdf && typeof rawAppPdf === 'string' && !rawAppPdf.startsWith('http')) {
+        const pdfBase = path.basename(rawAppPdf);
+        const receiptCandidates = [
+            rawAppPdf,
+            path.join(__dirname, '..', '..', '..', 'public', 'receipts', pdfBase),
+            path.join(getActiveUploadsDir(), '..', 'receipts', pdfBase)
+        ];
+        const existingReceiptPdf = receiptCandidates.find(c => c && fs.existsSync(c));
+        if (existingReceiptPdf) {
+            await handleDoc(existingReceiptPdf, 'applicationPdf');
+        }
+    }
+
     if (Array.isArray(prof.members) && prof.members.length > 1) {
         docPackage.memberAadhaars = [];
         for (let i = 1; i < prof.members.length; i++) {
@@ -215,7 +256,7 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
         }
     }
 
-    if (isAddMemService) {
+    if (isAddMemService && !hasExistingHeadMaster) {
         if (!storageUrls.memberAadhaar && storageUrls.headAadhaar) storageUrls.memberAadhaar = storageUrls.headAadhaar;
         delete storageUrls.headAadhaar;
         delete storageUrls.headAadhaarFront;

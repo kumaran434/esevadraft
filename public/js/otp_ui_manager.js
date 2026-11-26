@@ -109,50 +109,54 @@
         }
 
         // 60-second countdown timer
-        let timeLeft = 60;
         const timerSpan = card.querySelector('#compactOtpTimer');
         const progressFill = card.querySelector('.compact-otp-progress-fill');
-        const interval = setInterval(() => {
-            timeLeft--;
-            if (!timerSpan || !card.parentNode) {
-                clearInterval(interval);
-                return;
-            }
-            if (timeLeft > 0) {
-                const m = Math.floor(timeLeft / 60);
-                const s = timeLeft % 60;
-                timerSpan.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-                if (progressFill) {
-                    progressFill.style.width = `${Math.max(0, Math.round((timeLeft / 60) * 100))}%`;
+        function startOtpCountdown() {
+            if (!card || !timerSpan) return;
+            let timeLeft = 60;
+            const interval = setInterval(() => {
+                if (!document.body.contains(card) || !timerSpan || !card.parentNode) {
+                    clearInterval(interval);
+                    return;
                 }
-            } else {
-                clearInterval(interval);
-                timerSpan.innerText = 'காலாவதியானது';
-                timerSpan.classList.add('is-expired');
-                if (progressFill) {
-                    progressFill.style.width = '0%';
+                if (timeLeft > 0) {
+                    timeLeft--;
+                    const m = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+                    const s = String(timeLeft % 60).padStart(2, '0');
+                    timerSpan.innerText = `${m}:${s}`;
+                    if (progressFill) {
+                        progressFill.style.width = `${Math.max(0, Math.round((timeLeft / 60) * 100))}%`;
+                    }
+                } else {
+                    clearInterval(interval);
+                    timerSpan.innerText = 'காலாவதியானது';
+                    timerSpan.classList.add('is-expired');
+                    if (progressFill) {
+                        progressFill.style.width = '0%';
+                    }
+                    if (!card.querySelector('#btnResendOtpInline')) {
+                        const resendBtn = document.createElement('button');
+                        resendBtn.id = 'btnResendOtpInline';
+                        resendBtn.type = 'button';
+                        resendBtn.className = 'btn-resend-otp-inline';
+                        resendBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> மீண்டும் அனுப்பு';
+                        resendBtn.onclick = () => {
+                            if (typeof onResendCallback === 'function') onResendCallback();
+                            else if (typeof window.requestResendOtp === 'function') window.requestResendOtp();
+                            resendBtn.remove();
+                            timerSpan.innerText = '01:00';
+                            timerSpan.classList.remove('is-expired');
+                            if (progressFill) {
+                                progressFill.style.width = '100%';
+                            }
+                            startOtpCountdown();
+                        };
+                        timerSpan.parentNode.appendChild(resendBtn);
+                    }
                 }
-                if (!card.querySelector('#btnResendOtpInline')) {
-                    const resendBtn = document.createElement('button');
-                    resendBtn.id = 'btnResendOtpInline';
-                    resendBtn.type = 'button';
-                    resendBtn.className = 'btn-resend-otp-inline';
-                    resendBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> மீண்டும் அனுப்பு';
-                    resendBtn.onclick = () => {
-                        if (typeof onResendCallback === 'function') onResendCallback();
-                        else if (typeof window.requestResendOtp === 'function') window.requestResendOtp();
-                        resendBtn.remove();
-                        timeLeft = 60;
-                        timerSpan.innerText = '01:00';
-                        timerSpan.classList.remove('is-expired');
-                        if (progressFill) {
-                            progressFill.style.width = '100%';
-                        }
-                    };
-                    timerSpan.parentNode.appendChild(resendBtn);
-                }
-            }
-        }, 1000);
+            }, 1000);
+        }
+        startOtpCountdown();
     }
 
     function updateOtpTimerElements() {}

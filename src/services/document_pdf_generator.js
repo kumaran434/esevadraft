@@ -515,10 +515,16 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
             for (const qRetry of [66, 52, 40]) {
                 if (!(fileSizeKB > 185)) break;
                 console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 185 KB). Re-encoding at quality ${qRetry} for strict universal compliance...`);
-                try { fs.unlinkSync(finalPdf); } catch (e) {}
-                finalPdf = await generatePdfAtQuality(qRetry);
-                if (finalPdf && fs.existsSync(finalPdf)) {
+                const retryPdf = await generatePdfAtQuality(qRetry);
+                if (retryPdf && fs.existsSync(retryPdf) && fs.statSync(retryPdf).size > 500) {
+                    const prevPdf = finalPdf;
+                    finalPdf = retryPdf;
                     fileSizeKB = fs.statSync(finalPdf).size / 1024;
+                    if (prevPdf !== finalPdf) {
+                        try { fs.unlinkSync(prevPdf); } catch (e) {}
+                    }
+                } else {
+                    break;
                 }
             }
             console.log(`✨ AI Merged 2-in-1 Government PDF Generated: ${finalPdf} (${fileSizeKB ? fileSizeKB.toFixed(1) : '?'} KB)`);

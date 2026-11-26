@@ -1,4 +1,15 @@
 // eSevaDraft Domain Module: submission_engine.js
+window.extractCleanMobile = window.extractCleanMobile || function(val) {
+    if (!val) return '';
+    const base = String(val).trim().split('_')[0];
+    let d = base.replace(/\D/g, '');
+    if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+    return d.length > 10 ? d.slice(-10) : d;
+};
+window.getActiveDraftKey = window.getActiveDraftKey || function() {
+    return (localStorage.getItem('eseva_active_draft_id') || '').trim() ||
+           (localStorage.getItem('eseva_active_customer_mobile') || '').trim();
+};
 
         async function proceedConfirmedSubmit(isRealLive = null, triggerOptions = {}) {
             // Mandatory Universal Edit-Modal Pre-Submit Gate (ALL services current & future):
@@ -9,10 +20,15 @@
                     return;
                 }
             }
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             const activeMob = localStorage.getItem('eseva_active_customer_mobile') || '';
-            if (activeMob && (!currentCitizenData || !currentCitizenData.subService || !currentCitizenData.headAadhaar)) {
+            const draftLookupKey = activeDraftId || activeMob;
+            if (draftLookupKey && (!currentCitizenData || !currentCitizenData.subService || !currentCitizenData.headAadhaar)) {
                 try {
-                    const dRes = await fetch(`/api/drafts/${activeMob}`);
+                    const opUidPre = localStorage.getItem('eseva_operator_uid') || '';
+                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(draftLookupKey)}`, {
+                        headers: opUidPre ? { 'x-operator-uid': opUidPre } : {}
+                    });
                     const dJson = await dRes.json();
                     if (dJson && dJson.draft) {
                         currentCitizenData = Object.assign({}, currentCitizenData || {}, dJson.draft, dJson.draft.citizenProfile || {});
@@ -104,10 +120,10 @@
                 return { valid: true };
             }
 
-            if (isTnegaActive && currentCitizenData && resolvedSubmitPlugin) {
+            if (currentCitizenData && resolvedSubmitPlugin) {
                 const preRes = evaluateCartridgePreSubmit(resolvedSubmitPlugin, currentCitizenData);
                 if (preRes && preRes.valid === false) {
-                    alert(preRes.errorMessage || '⚠️ தேவையான ஆவணங்கள் விடுபட்டுள்ளன.');
+                    alert(preRes.errorMessage || '⚠️ தேவையான விவரங்கள் அல்லது ஆவணங்கள் விடுபட்டுள்ளன.');
                     if (typeof openEditModal === 'function') openEditModal(activeMob);
                     return;
                 }
@@ -141,15 +157,17 @@
                 // Save and bind phone number
                 try {
                     const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
+                    const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
                     const opUid = localStorage.getItem('eseva_operator_uid') || '';
                     const res = await fetch('/api/profile/update', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'x-session-mobile': activeCustMob,
+                            'x-draft-id': activeDraftId,
                             'x-operator-uid': opUid
                         },
-                        body: JSON.stringify({ mobileNumber: entered })
+                        body: JSON.stringify({ mobileNumber: cleanMob, draftId: activeDraftId || undefined })
                     });
                     const updateRes = await res.json();
                     if (updateRes.updatedMobile) {
@@ -176,10 +194,15 @@
             window.isAutomationManuallyStopped = false;
             if (isDesktopApp && runAsRealLive) {
                 const activeMob = localStorage.getItem('eseva_active_customer_mobile') || '';
+                const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+                const fetchKey = activeDraftId || activeMob;
                 let draftData = Object.assign({}, currentCitizenData || {});
-                if (activeMob) {
+                if (fetchKey) {
                     try {
-                        const dRes = await fetch(`/api/drafts/${activeMob}`);
+                        const opUidDesk = localStorage.getItem('eseva_operator_uid') || '';
+                        const dRes = await fetch(`/api/drafts/${encodeURIComponent(fetchKey)}`, {
+                            headers: opUidDesk ? { 'x-operator-uid': opUidDesk } : {}
+                        });
                         const dJson = await dRes.json();
                         if (dJson && dJson.draft) {
                             const prof = dJson.draft.citizenProfile || {};
@@ -404,6 +427,8 @@
             else if (upperText === 'START_COMMUNITY_APPLY' || upperText === 'APPLY_COMMUNITY_NOW') currentCitizenData.subService = 'COMMUNITY';
             else if (upperText === 'START_FIRST_GRADUATE_APPLY') currentCitizenData.subService = 'FIRST_GRADUATE';
             else if (upperText === 'START_OBC_APPLY') currentCitizenData.subService = 'OBC';
+            else if (upperText === 'START_LEGAL_HEIR_APPLY') currentCitizenData.subService = 'LEGAL_HEIR';
+            else if (upperText === 'START_WIDOW_APPLY') currentCitizenData.subService = 'WIDOW';
             else if (upperText === 'LAUNCH_CAN_AUTOMATION') currentCitizenData.subService = 'CAN_REGISTER';
 
             const isTnegaStartCmd = [
@@ -414,6 +439,8 @@
                 'APPLY_COMMUNITY_NOW',
                 'START_FIRST_GRADUATE_APPLY',
                 'START_OBC_APPLY',
+                'START_LEGAL_HEIR_APPLY',
+                'START_WIDOW_APPLY',
                 'APPLY_VOTER_NOW',
                 'LAUNCH_CAN_AUTOMATION'
             ].includes(upperText) || /^(START_.*_(APPLY|NOW|AUTOMATION|SUBMIT)|APPLY_.*_NOW|LAUNCH_.*)$/i.test(upperText);
@@ -458,17 +485,22 @@
 
             try {
                 const isDev = isDevMockModeActive();
+                const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
                         'x-session-mobile': currentCustMob,
+                        'x-draft-id': activeDraftId,
                         'x-operator-uid': opUid,
                         'x-dev-mode': isDev ? 'true' : 'false'
                     },
-                    body: JSON.stringify({ message: text, mobileNumber: currentCustMob, ...extraPayload })
+                    body: JSON.stringify({ message: text, mobileNumber: currentCustMob, draftId: activeDraftId || undefined, ...extraPayload })
                 });
                 const data = await res.json();
+                if (data.draftId) {
+                    localStorage.setItem('eseva_active_draft_id', data.draftId);
+                }
                 if (data.activeMobile && /^[6-9]\d{9}$/.test(data.activeMobile)) {
                     localStorage.setItem('eseva_active_customer_mobile', data.activeMobile);
                 }
@@ -576,20 +608,26 @@
                 setStepState(stepOptimize, 'active');
             }, 4000));
 
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             const formData = new FormData();
             formData.append('file', file);
             if (currentCustMob) formData.append('mobileNumber', currentCustMob);
+            if (activeDraftId) formData.append('draftId', activeDraftId);
 
             try {
                 const res = await fetch('/api/chat', { 
                     method: 'POST', 
                     headers: {
                         'x-session-mobile': currentCustMob,
+                        'x-draft-id': activeDraftId,
                         'x-operator-uid': opUid
                     },
                     body: formData 
                 });
                 const data = await res.json();
+                if (data.draftId) {
+                    localStorage.setItem('eseva_active_draft_id', data.draftId);
+                }
                 if (data.activeMobile && /^[6-9]\d{9}$/.test(data.activeMobile)) {
                     localStorage.setItem('eseva_active_customer_mobile', data.activeMobile);
                 }
@@ -607,6 +645,7 @@
                 // Short delay so user clearly experiences the completed state
                 setTimeout(() => {
                     if (modal) modal.style.display = 'none';
+                    if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(activeDraftId || currentCustMob);
                     renderMessages(data.chatHistory, true);
                     updateSidebar(data);
                 }, 600);
@@ -631,7 +670,8 @@
         function extractDocumentsFromProfile(prof, mobile, appNo, appPdf) {
             if (!prof) return [];
             const docs = [];
-            const cleanMob = mobile || prof.mobileNumber || 'active_session';
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+            const cleanMob = (mobile && String(mobile).includes('_')) ? mobile : (activeDraftId || mobile || prof.draftId || prof.mobileNumber || 'active_session');
             const cacheBust = prof._updatedAt ? new Date(prof._updatedAt).getTime() : '1';
             const dMap = prof.documents || {};
             const b64Map = prof.base64Docs || {};
@@ -654,9 +694,9 @@
             }
 
             // 2. Aadhaar
-            if (!isAddMember && (prof.headAadhaar || prof.headAadhaarDocPath || dMap.headAadhaar || b64Map.headAadhaarBase64)) {
+            if (!isAddMember && (prof.headAadhaarDocPath || dMap.headAadhaar || dMap.headAadhaarFront || b64Map.headAadhaarBase64 || prof.members?.[0]?.docPath)) {
                 const headName = prof.fullNameTam || prof.fullNameEng || (isNewRationCard ? 'தலைவர்' : 'விண்ணப்பதாரர்');
-                const hDocStr = String(prof.headAadhaarDocPath || dMap.headAadhaar || '');
+                const hDocStr = String(prof.headAadhaarDocPath || dMap.headAadhaar || prof.members?.[0]?.docPath || dMap.headAadhaarFront || '');
                 docs.push({
                     type: 'headAadhaar',
                     title: isNewRationCard ? `குடும்பத் தலைவர் ஆதார் (${headName})` : `விண்ணப்பதாரர் ஆதார் (${headName})`,
@@ -804,8 +844,7 @@
                 (typeof dMap.memberAadhaarFront === 'string' && dMap.memberAadhaarFront.length > 5) ||
                 (typeof dMap.memberAadhaar === 'string' && dMap.memberAadhaar !== 'true' && dMap.memberAadhaar.length > 5) ||
                 (typeof b64Map.memberAadhaarBase64 === 'string' && b64Map.memberAadhaarBase64.length > 20) ||
-                (typeof b64Map.memberAadhaarFrontBase64 === 'string' && b64Map.memberAadhaarFrontBase64.length > 20) ||
-                (isAddMember && (prof.headAadhaarDocPath || dMap.headAadhaar))
+                (typeof b64Map.memberAadhaarFrontBase64 === 'string' && b64Map.memberAadhaarFrontBase64.length > 20)
             );
 
             if (isAddMember && hasRealSubMemberDoc) {

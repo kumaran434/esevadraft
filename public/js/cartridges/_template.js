@@ -21,7 +21,7 @@
             subtitle: 'விவரங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> விண்ணப்பிக்கத் தொடங்கு',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             docBoxes: { photo: true, headAadhaar: true, residence: false, smartCard: true, universalDocs: true, membersAadhaar: false },
             fieldWraps: {},

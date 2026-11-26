@@ -132,10 +132,10 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             const hasHeadWord = txt.includes('தலைவர்') || txt.includes('head');
             const hasEng = eng && txt.includes(eng.toLowerCase());
             const hasTam = tam && (memberTable.innerText || '').includes(tam);
-            return rows.length >= 1 && (hasHeadWord || hasEng || hasTam || rows.length >= 1);
+            return rows.length >= 1 && (hasHeadWord || hasEng || hasTam);
         }, { eng: citizenProfile.fullNameEng, tam: citizenProfile.fullNameTam }).catch(() => false);
 
-        if (isHeadInTable) break;
+        if (isHeadInTable && !(await checkAadhaarModal())) break;
 
         if (!copilotInstalled && (await checkAadhaarModal())) {
             await installOtpModalCopilot(page);
@@ -201,9 +201,9 @@ async function executeHeadAadhaarOtpSteps(page, citizenProfile, options, onProgr
             await showBrowserHud('[Co-Pilot] புது OTP அனுப்பப்பட்டது', 'புதிய SMS OTP-ஐ உள்ளிடவும்', 'info');
         }
 
-        // 3. Co-Pilot Resend: ஆபரேட்டர் Resend அழுத்தாமல், டைமர் 0 ஆகி 10s முடிந்தும் பெட்டி காலியாக இருந்தால் மட்டுமே ஆப் 1 முறை Resend அழுத்தும்!
-        if (shouldBotTriggerResend(modalInfo, lastBotResendAt, Date.now(), 10000)) {
-            const didResend = await performVisibleModalResend(page);
+        // 3. Co-Pilot Resend: ஆபரேட்டர் Resend அழுத்தாமல், டைமர் 0 ஆகி 4s முடிந்தும் பெட்டி காலியாக இருந்தால் மட்டுமே ஆப் 1 முறை Resend அழுத்தும்!
+        if (shouldBotTriggerResend(modalInfo, lastBotResendAt, Date.now(), 4000, 2)) {
+            const didResend = await performVisibleModalResend(page, { allowInlinePage: false });
             if (didResend) {
                 lastBotResendAt = Date.now();
                 lastSubmittedOtp = '';

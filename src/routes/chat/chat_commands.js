@@ -16,7 +16,8 @@ async function handleChatCommands(ctx, req, res) {
     const activeMobile = storageService.getActiveMobile();
 
     // 1. RESET / RESTART CONVERSATION
-    if (text.toLowerCase() === 'reset' || text.includes('மீண்டும்') || text.includes('புதிதாக') || text === 'START_NEW_CUSTOMER' || text === 'RESET_SCREEN') {
+    const trimmedCmd = String(text || '').trim();
+    if (trimmedCmd.toLowerCase() === 'reset' || trimmedCmd === 'மீண்டும் தொடங்கு' || trimmedCmd === 'புதிதாக தொடங்கு' || trimmedCmd === 'புதிதாகத் தொடங்கு' || trimmedCmd === 'START_NEW_CUSTOMER' || trimmedCmd === 'RESET_SCREEN') {
         await resetActiveSession();
         const freshSess = storageService.getOrCreateSession(activeMobile);
         res.json({
@@ -152,7 +153,7 @@ async function handleChatCommands(ctx, req, res) {
     }
 
     // 5. LIVE OTP WAITING
-    const liveOtpStatus = getLiveOtpStatus();
+    const liveOtpStatus = (await getLiveOtpStatus()) || {};
     let tnegaStatus = { isWaitingForCanOtp: false };
     try {
         const { getLiveTnegaStatus } = require('../../../tnega_can_automation');

@@ -2,8 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
-// Universal Multi-Location Environment Variable Loader
-const OFFICIAL_PRODUCTION_GEMINI_KEY = Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8');
+// Universal Multi-Location Environment Variable Loader (strictly from .env — never hardcodes secrets)
 try {
     const dotenv = require('dotenv');
     const envCandidates = [
@@ -18,9 +17,6 @@ try {
     }
     dotenv.config();
 } catch (_) {}
-if (!process.env.GEMINI_API_KEY) {
-    process.env.GEMINI_API_KEY = OFFICIAL_PRODUCTION_GEMINI_KEY;
-}
 
 // Global Process Crash Immunizers
 process.on('unhandledRejection', (reason) => {

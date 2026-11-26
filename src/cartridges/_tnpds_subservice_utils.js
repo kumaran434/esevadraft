@@ -1,4 +1,5 @@
 const storageService = require('../services/storage_service');
+const { saveCitizenDraft } = require('../../firestore_db');
 const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 
 const persistSessions = (...a) => storageService.persistSessions(...a);
@@ -30,9 +31,35 @@ async function runTnpdsSubserviceTurn({ ctx, req, res, handleFlowFn, onUploadedF
     sess.citizenProfile = sess.citizenProfile || {};
     sess.citizenProfile.subService = sess.subService;
     sess.citizenProfile.subServiceData = sess.subServiceData;
-    sess.citizenProfile.documents = sess.tempUploads || {};
+    const { extractMobileFromDraftKey } = require('../services/db/firestore_client');
+    const cleanTempDocs = {};
+    for (const [k, v] of Object.entries({ ...(sess.citizenProfile.documents || {}), ...(sess.tempUploads || {}) })) {
+        if (k.endsWith('BoundingBox')) continue;
+        if (typeof v === 'string' && v.trim() !== '') cleanTempDocs[k] = v;
+    }
+    sess.citizenProfile.documents = cleanTempDocs;
 
-    persistSessions();
+    const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
+    const saveKey = sess.draftId || activeMobile;
+    const cleanMob = extractMobileFromDraftKey(sess.citizenProfile?.mobileNumber || activeMobile || saveKey);
+    persistSessions(activeMobile);
+    if (saveKey && !/^walkin_/i.test(String(saveKey)) && sess.citizenProfile && (sess.citizenProfile.fullNameEng || sess.citizenProfile.fullNameTam || sess.citizenProfile.headAadhaar || Object.keys(cleanTempDocs).length > 0)) {
+        try {
+            await saveCitizenDraft(saveKey, {
+                draftId: saveKey,
+                mobileNumber: cleanMob,
+                subService: sess.subService ?? null,
+                subServiceData: sess.subServiceData ?? null,
+                pluginId: sess.pluginId ?? null,
+                intakeState: sess.intakeState,
+                step: sess.intakeState || sess.step,
+                citizenProfile: sess.citizenProfile,
+                documents: cleanTempDocs,
+                tempUploads: cleanTempDocs,
+                chatHistory: Array.isArray(sess.chatHistory) ? sess.chatHistory : []
+            });
+        } catch (_) {}
+    }
     const lastBotMsg = sess.chatHistory[sess.chatHistory.length - 1];
     res.json({
         chatHistory: sess.chatHistory,

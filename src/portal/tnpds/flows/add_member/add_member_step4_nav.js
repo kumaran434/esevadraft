@@ -22,10 +22,9 @@ async function executeStep4Nav(page, memberNameTam, memberNameEng, onProgress, s
         onProgress('🔍 [பக்கம் மாறுதல்] முகப்பு பக்கத்தில் "உறுப்பினரை சேர்க்க" இணைப்பு தேடப்படுகிறது...');
         const navMenuSelectors = [
             'a:has-text("உறுப்பினரை சேர்க்க")',
+            'a:has-text("உறுப்பினரைச் சேர்க்க")',
             'button:has-text("உறுப்பினரை சேர்க்க")',
-            'li:has-text("உறுப்பினரை சேர்க்க") a',
-            'span:has-text("உறுப்பினரை சேர்க்க")',
-            '[routerlink*="service-request"]',
+            'a:has-text("Add Member")',
             'a[href*="service-request"]'
         ];
 

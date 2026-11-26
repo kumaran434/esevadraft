@@ -9,6 +9,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+    installOtpModalCopilot,
+    tryCopilotAutoResendIfExpired
+} = require('../../../common/otp_copilot_watcher');
 
 const MOBILE_CHANGE_OTP_CONFIG = {
     serviceId: 'TNPDS_UPDATE_MOBILE',
@@ -42,6 +46,7 @@ async function waitForMobileChangeLoginOtp(page, userMobile, onProgress, request
 async function waitForMobileChangeNewNumberOtp(page, newMobile, onProgress = () => {}, requestOtpFromUser = null) {
     const expectedLen = MOBILE_CHANGE_OTP_CONFIG.stages.newMobileVerify.digits; // Strictly 6
     const promptMsg = `📱 உங்கள் புதிய கைபேசி எண்ணிற்கு (+91 ${newMobile}) வந்த அரசு ${expectedLen}-இலக்க SMS OTP எண்ணை உள்ளிடவும்:`;
+    await installOtpModalCopilot(page, { forceReset: false, allowInlinePage: false }).catch(() => {});
 
     const pendingOtpPaths = [
         path.join(process.cwd(), 'data', 'pending_otp.txt'),
@@ -52,6 +57,7 @@ async function waitForMobileChangeNewNumberOtp(page, newMobile, onProgress = () 
     return new Promise((resolve) => {
         let settled = false;
         let timer = null;
+        let isTickRunning = false;
         const finish = (val) => {
             if (settled) return;
             settled = true;
@@ -70,7 +76,9 @@ async function waitForMobileChangeNewNumberOtp(page, newMobile, onProgress = () 
         }
 
         timer = setInterval(async () => {
-            if (settled || !page || page.isClosed()) return finish('CLOSED');
+            if (settled || isTickRunning) return;
+            if (!page || page.isClosed()) return finish('CLOSED');
+            isTickRunning = true;
             try {
                 for (const pPath of pendingOtpPaths) {
                     if (fs.existsSync(pPath)) {
@@ -88,7 +96,17 @@ async function waitForMobileChangeNewNumberOtp(page, newMobile, onProgress = () 
                     return v.length === targetLen ? v : null;
                 }, expectedLen).catch(() => null);
                 if (domOtp) return finish(domOtp);
-            } catch (_) {}
+
+                await tryCopilotAutoResendIfExpired(page, {
+                    allowInlinePage: false,
+                    graceAfterZeroMs: 4000,
+                    maxAutoResends: 2,
+                    onProgress,
+                    stageLabel: 'புதிய கைபேசி OTP'
+                });
+            } catch (_) {} finally {
+                isTickRunning = false;
+            }
         }, 450);
     });
 }

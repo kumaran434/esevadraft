@@ -13,7 +13,7 @@ function resolveDocPath(raw) {
 }
 
 function fileOrDataExists(rawPath, base64Val, urlVal) {
-    if (urlVal && typeof urlVal === 'string' && urlVal.startsWith('http')) return true;
+    if (urlVal && typeof urlVal === 'string' && (urlVal.startsWith('http') || urlVal.startsWith('gs://'))) return true;
     if (base64Val && typeof base64Val === 'string' && base64Val.length > 500) return true;
     const p = resolveDocPath(rawPath);
     if (p && p.length > 3 && p !== 'true') {
@@ -29,6 +29,14 @@ function fileOrDataExists(rawPath, base64Val, urlVal) {
             if (fs.existsSync(absP) && fs.statSync(absP).size > 5) return true;
         } catch (_) {}
     }
+    return false;
+}
+
+function isInternalTempDocKey(k) {
+    if (!k || typeof k !== 'string') return true;
+    if (k.endsWith('Base64') || k.endsWith('Name') || k.endsWith('BoundingBox')) return true;
+    if (/^(temp_|currentMember|memberDoc_|memberFront_|memberBack_|memberAadhaar\d+|memberAadhaar_|headAadhaarFront|headAadhaarBack|mergedAadhaar|smartCardFront|smartCardBack|rationCardFront|rationCardBack|gasBookFront|gasBookBack|residenceProofFront|residenceProofBack)/i.test(k)) return true;
+    if (k === 'memberAadhaars') return true;
     return false;
 }
 
@@ -114,7 +122,7 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     const isNewRationCard = isExplicitNewCard || (!isAddMember && (draft?.service === 'புதிய ரேஷன் கார்டு' || prof.service === 'new_smart_card' || prof.service === 'புதிய ரேஷன் கார்டு' || activeSubService === 'NEW_CARD' || prof.subService === 'NEW_CARD'));
 
     const photoPath = dMap.profilePhoto || dMap.headPhoto || prof.headPhotoPath || sess?.citizenProfile?.headPhotoPath;
-    const aadhaarPath = dMap.headAadhaar || prof.headAadhaarDocPath || sess?.citizenProfile?.headAadhaarDocPath || dMap.headAadhaarFront;
+    const aadhaarPath = dMap.headAadhaar || prof.headAadhaarDocPath || sess?.citizenProfile?.headAadhaarDocPath || (!isAddMember ? prof.members?.[0]?.docPath : null) || dMap.headAadhaarFront;
     const gasPath = dMap.gasBook || prof.gasDetails?.gasBookPath || sess?.citizenProfile?.gasDetails?.gasBookPath;
     const resPath = dMap.residenceProof || prof.residenceProof?.docPath || sess?.citizenProfile?.residenceProof?.docPath;
     const sSub = (sess && sess.subServiceData) || (prof && prof.subServiceData);
@@ -126,7 +134,8 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     const hasMasterProfileDocs = hasPhoto || hasGas || hasRes || Boolean(aadhaarPath && (!subMemDoc || String(aadhaarPath) !== String(subMemDoc)));
 
     // When an explicit subService filter is passed (e.g. from right sidebar), strictly omit irrelevant documents!
-    const skipMasterDocsForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'CHANGE_ADDRESS');
+    const isUpdateMobileSub = activeSubService === 'UPDATE_MOBILE' || activeSubService === 'CHANGE_MOBILE' || activeSubService === 'CHANGE_OF_MOBILE_NUMBER';
+    const skipMasterDocsForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'CHANGE_ADDRESS' || activeSubService === 'CHANGE_HEAD' || isUpdateMobileSub);
 
     // 1. Photo (Strict real-file existence check)
     if (!skipMasterDocsForSubservice && hasPhoto) {
@@ -143,7 +152,7 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
 
     // 2. Aadhaar (Strict real-file existence check)
     const isSingleWalkinAddMemOnly = isAddMember && !hasMasterProfileDocs && Boolean(subMemDoc);
-    if (!skipMasterDocsForSubservice && !isSingleWalkinAddMemOnly && fileOrDataExists(aadhaarPath, b64Map.headAadhaarBase64, storageUrls.headAadhaar)) {
+    if (!skipMasterDocsForSubservice && !isSingleWalkinAddMemOnly && fileOrDataExists(aadhaarPath, b64Map.headAadhaarBase64 || b64Map.headAadhaarFrontBase64, storageUrls.headAadhaar || storageUrls.headAadhaarFront)) {
         const headName = prof.fullNameTam || prof.fullNameEng || (isNewRationCard ? 'தலைவர்' : 'விண்ணப்பதாரர்');
         docs.push({
             type: 'headAadhaar',
@@ -196,7 +205,8 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
 
     // 4. Gas Book (Strict real-file check: NEVER add dummy gas book if file doesn't exist!)
     const hasGasDoc = hasGas;
-    const skipGasForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService === 'RESIDENCE' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
+    const isExplicitAddrWithOwnGas = activeSubService === 'CHANGE_ADDRESS' && Boolean(sSub?.addressProofDocPath && gasPath && path.basename(String(sSub.addressProofDocPath)) === path.basename(String(gasPath)));
+    const skipGasForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'CHANGE_HEAD' || isUpdateMobileSub || (activeSubService === 'CHANGE_ADDRESS' && !isExplicitAddrWithOwnGas) || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService === 'RESIDENCE' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
     if (!skipGasForSubservice && hasGasDoc) {
         docs.push({
             type: 'gasBook',
@@ -210,7 +220,8 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     }
 
     // 5. Residence Proof (Strict real-file check)
-    const skipResForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
+    const isExplicitAddrWithOwnRes = activeSubService === 'CHANGE_ADDRESS' && Boolean(sSub?.addressProofDocPath && resPath && path.basename(String(sSub.addressProofDocPath)) === path.basename(String(resPath)));
+    const skipResForSubservice = isExplicitSidebarFilter && (activeSubService === 'ADD_MEMBER' || activeSubService === 'REMOVE_MEMBER' || activeSubService === 'CHANGE_HEAD' || isUpdateMobileSub || (activeSubService === 'CHANGE_ADDRESS' && !isExplicitAddrWithOwnRes) || activeSubService === 'COMMUNITY' || activeSubService === 'INCOME' || activeSubService.includes('FIRST_GRADUATE') || activeSubService.includes('OBC'));
     if (!skipResForSubservice && hasRes) {
         const proofName = prof.residenceProof?.typeTam || 'குடியிருப்புச் சான்று';
         docs.push({
@@ -243,33 +254,27 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     const memLabel = sName ? ` (${sName})` : '';
 
     const hasSubMemDoc = fileOrDataExists(subMemDoc, b64Map.memberAadhaarBase64, storageUrls.memberAadhaar);
-    const isDuplicateOfHeadAadhaar = docs.some(d => d.type === 'headAadhaar') && (
-        !sSub?.docPath ||
-        (aadhaarPath && subMemDoc && path.basename(String(subMemDoc)) === path.basename(String(aadhaarPath)))
+    const isDuplicateOfHeadAadhaar = Boolean(
+        aadhaarPath && subMemDoc && path.basename(String(subMemDoc)) === path.basename(String(aadhaarPath))
+    );
+    const hasExplicitMemberEvidence = Boolean(
+        sName ||
+        sSub?.docPath ||
+        (sess?.tempUploads?.memberAadhaarFront && (!aadhaarPath || path.basename(String(sess.tempUploads.memberAadhaarFront)) !== path.basename(String(aadhaarPath)))) ||
+        (sess?.tempUploads?.memberAadhaar && (!aadhaarPath || path.basename(String(sess.tempUploads.memberAadhaar)) !== path.basename(String(aadhaarPath)))) ||
+        (dMap.memberAadhaar && (!aadhaarPath || path.basename(String(dMap.memberAadhaar)) !== path.basename(String(aadhaarPath))))
     );
 
-    if (isAddMember && hasSubMemDoc && !isDuplicateOfHeadAadhaar && (sName || sSub?.docPath || sess?.tempUploads?.memberAadhaarFront || sess?.tempUploads?.memberAadhaar || dMap.memberAadhaar)) {
-        if (sSub?.isChild) {
-            docs.push({
-                type: 'birthCertificate',
-                title: `குழந்தையின் பிறப்புச் சான்றிதழ்${memLabel}`,
-                titleEng: `Child Birth Certificate${memLabel}`,
-                downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/birthCertificate?download=1`,
-                previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/birthCertificate`,
-                icon: 'fa-file-lines',
-                isPdf: isPhysicalPdf(subMemDoc, b64Map.birthCertificateBase64 || b64Map.memberAadhaarBase64)
-            });
-        } else {
-            docs.push({
-                type: 'memberAadhaar',
-                title: `உறுப்பினர் ஆதார் அட்டை${memLabel}`,
-                titleEng: `Member Aadhaar Card${memLabel}`,
-                downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar?download=1`,
-                previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar`,
-                icon: 'fa-id-card',
-                isPdf: isPhysicalPdf(subMemDoc, b64Map.memberAadhaarBase64)
-            });
-        }
+    if (isAddMember && hasSubMemDoc && !isDuplicateOfHeadAadhaar && hasExplicitMemberEvidence) {
+        docs.push({
+            type: 'memberAadhaar',
+            title: `உறுப்பினர் ஆதார் அட்டை${memLabel}`,
+            titleEng: `Member Aadhaar Card${memLabel}`,
+            downloadUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar?download=1`,
+            previewUrl: `/api/drafts/${encodeURIComponent(cleanMob)}/doc/memberAadhaar`,
+            icon: 'fa-id-card',
+            isPdf: isPhysicalPdf(subMemDoc, b64Map.memberAadhaarBase64)
+        });
     }
     if (!isAddMember && fileOrDataExists(dMap.birthCertificate, b64Map.birthCertificateBase64, storageUrls.birthCertificate)) {
         docs.push({
@@ -356,7 +361,14 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
         'surrenderProof', 'removeProof', 'newAddressProof', 'applicationPdf'
     ]);
 
+    const allowedTnpdsSubDocs = new Set(
+        activeSubService === 'CHANGE_HEAD' || activeSubService === 'REMOVE_MEMBER'
+            ? ['deathCertificate', 'marriageCertificate']
+            : []
+    );
+
     for (const [k, meta] of Object.entries(KNOWN_DOC_METADATA)) {
+        if (skipMasterDocsForSubservice && !allowedTnpdsSubDocs.has(k)) continue;
         if (!docs.some(d => d.type === k)) {
             const rawP = dMap[k] || prof[k] || sess?.tempUploads?.[k];
             const rawB64 = b64Map[`${k}Base64`] || b64Map[k];
@@ -382,7 +394,9 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
     ]);
 
     for (const k of allDocKeys) {
-        if (!internalKeysToSkip.has(k) && !docs.some(d => d.type === k) && !k.endsWith('Base64') && !k.startsWith('temp_')) {
+        if (skipMasterDocsForSubservice && !allowedTnpdsSubDocs.has(k)) continue;
+        if (isInternalTempDocKey(k)) continue;
+        if (!internalKeysToSkip.has(k) && !docs.some(d => d.type === k)) {
             const rawP = dMap[k] || prof.documents?.[k];
             const rawB64 = b64Map[`${k}Base64`] || b64Map[k];
             const rawUrl = storageUrls[k];
@@ -405,20 +419,100 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
         }
     }
 
-    // 7. Submitted Application PDF (if exists)
+    // 7. Submitted Application End-Result PDFs (current + all archived End-Result Receipt PDFs in full Vault view!)
     const appNo = (draft && draft.applicationNumber) || prof.applicationNumber || (sess && sess.applicationNumber);
     const appPdf = (draft && draft.applicationPdfUrl) || prof.applicationPdfUrl || (sess && sess.applicationPdfUrl);
+    const seenReceiptAppNos = new Set();
     if (appNo || appPdf) {
+        if (appNo) seenReceiptAppNos.add(String(appNo).trim());
+        const resolvedPdf = (storageUrls.applicationPdf && String(storageUrls.applicationPdf).startsWith('http')) ? storageUrls.applicationPdf : (appPdf || `/receipts/Application_${appNo}.pdf`);
         docs.push({
             type: 'applicationPdf',
-            title: `சமர்ப்பிக்கப்பட்ட TNPDS விண்ணப்பம் (${appNo || 'PDF'})`,
-            titleEng: 'Submitted TNPDS Application PDF',
-            downloadUrl: appPdf || `/receipts/Application_${appNo}.pdf`,
-            previewUrl: appPdf || `/receipts/Application_${appNo}.pdf`,
+            title: `சமர்ப்பிக்கப்பட்ட விண்ணப்ப ரசீது (${appNo || 'PDF'})`,
+            titleEng: 'Submitted Application Receipt PDF',
+            downloadUrl: resolvedPdf,
+            previewUrl: resolvedPdf,
             isTnpdsPdf: true,
             appNo: appNo,
             icon: 'fa-file-pdf'
         });
+    }
+
+    if (!isExplicitSidebarFilter) {
+        // Expose all past End-Result Receipt PDFs in Customer Locker / Drafts Desk view
+        const submittedList = Array.isArray(prof.submittedApplications) ? prof.submittedApplications : [];
+        for (const appEntry of submittedList) {
+            const aNo = String(appEntry?.applicationNumber || '').trim();
+            if (!aNo || seenReceiptAppNos.has(aNo)) continue;
+            seenReceiptAppNos.add(aNo);
+            const isHttpPdf = Boolean(appEntry.cloudPdfUrl && String(appEntry.cloudPdfUrl).startsWith('http'));
+            const rUrl = isHttpPdf ? appEntry.cloudPdfUrl : (appEntry.pdfUrl || `/receipts/Application_${aNo}.pdf`);
+            docs.push({
+                type: `applicationPdf_${aNo}`,
+                title: `விண்ணப்ப ரசீது — ${appEntry.service || 'அரசு சேவை'} (${aNo})`,
+                titleEng: `Submitted Receipt (${aNo})`,
+                downloadUrl: rUrl,
+                previewUrl: rUrl,
+                isTnpdsPdf: true,
+                appNo: aNo,
+                icon: 'fa-file-pdf'
+            });
+        }
+
+        // Expose all archived uploaded docs from savedVaultDocs[] not already listed
+        const vaultDocs = Array.isArray(prof.savedVaultDocs) ? prof.savedVaultDocs : [];
+        const headAadhaarBaseName = aadhaarPath ? path.basename(String(aadhaarPath)) : '';
+        const VAULT_ALIAS_CANONICAL = {
+            headPhoto: 'profilePhoto',
+            headAadhaarFront: 'headAadhaar',
+            headAadhaarBack: 'headAadhaar',
+            communityCertificate: 'communityProof',
+            familyCommunityProof: 'communityProof',
+            rationCard: 'smartCard'
+        };
+        const VAULT_DOC_LABELS = {
+            smartCard: 'ஸ்மார்ட் ரேஷன் கார்டு',
+            deathCertificate: 'இறப்புச் சான்றிதழ்',
+            deceasedAddressProof: 'இறந்தவர் முகவரிச் சான்று',
+            incomeProof: 'வருமான ஆதாரம்',
+            salaryCertificate: 'சம்பளச் சான்றிதழ்',
+            salarySlip: 'சம்பள ரசீது',
+            incomeTaxReturn: 'வருமான வரி படிவம் (ITR)',
+            communityProof: 'குடும்ப சாதிச் சான்றிதழ்',
+            applicantEducationProof: 'மாணவர் 12th TC / மதிப்பெண் பட்டியல்',
+            fatherEducationProof: 'தந்தையின் பள்ளி TC',
+            motherEducationProof: 'தாயின் பள்ளி TC',
+            marriageProof: 'திருமண ஆதாரம்',
+            gasBook: 'எரிவாயு இணைப்பு அட்டை / ரசீது',
+            residenceProof: 'குடியிருப்புச் சான்று'
+        };
+        for (let vi = 0; vi < vaultDocs.length; vi++) {
+            const vd = vaultDocs[vi];
+            if (!vd || !vd.docType) continue;
+            if (isInternalTempDocKey(vd.docType)) continue;
+            const canonType = VAULT_ALIAS_CANONICAL[vd.docType] || vd.docType;
+            if (isInternalTempDocKey(canonType)) continue;
+            if (docs.some(d => d.type === vd.docType || d.type === canonType)) continue;
+            // Never duplicate Master Head Aadhaar as memberAadhaar in Customer Vault
+            if ((canonType === 'memberAadhaar' || canonType === 'memberAadhaarFront' || canonType === 'memberAadhaarBack') &&
+                headAadhaarBaseName && vd.localPath && path.basename(String(vd.localPath)) === headAadhaarBaseName) {
+                continue;
+            }
+            if (!fileOrDataExists(vd.localPath, null, vd.cloudUrl)) continue;
+            const isDirectHttp = Boolean(vd.cloudUrl && String(vd.cloudUrl).startsWith('http'));
+            const dlUrl = isDirectHttp ? vd.cloudUrl : `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${encodeURIComponent(canonType)}?download=1`;
+            const pvUrl = isDirectHttp ? vd.cloudUrl : `/api/drafts/${encodeURIComponent(cleanMob)}/doc/${encodeURIComponent(canonType)}`;
+            docs.push({
+                type: canonType,
+                title: (vd.title && vd.title !== vd.docType) ? vd.title : (VAULT_DOC_LABELS[canonType] || `ஆவணம் (${canonType})`),
+                titleEng: canonType,
+                downloadUrl: dlUrl,
+                previewUrl: pvUrl,
+                icon: 'fa-file-lines',
+                isPdf: isPhysicalPdf(vd.localPath, null),
+                isArchivedVaultDoc: true
+            });
+        }
     }
 
     return docs;
@@ -426,5 +520,6 @@ function extractDraftDocumentsList(sessOrMob, draftArg, cleanMobArg, subServiceF
 
 module.exports = {
     extractDraftDocumentsList,
-    fileOrDataExists
+    fileOrDataExists,
+    isInternalTempDocKey
 };

@@ -87,9 +87,10 @@ async function syncAssetsSilently() {
         const userData = (typeof app !== 'undefined' && app.getPath) ? app.getPath('userData') : null;
         if (!userData) return;
 
-        // Skip in local development workspace to protect active edits
+        // Skip in local development workspace to protect active edits (even when running packaged EXE locally!)
         const workspaceLock = 'd:\\downloads\\ai assitant 2\\tnpds_automation.js';
-        if (fs.existsSync(workspaceLock) && !app.isPackaged) {
+        if (fs.existsSync(workspaceLock)) {
+            console.log('🔒 [OTA Sync] Local workspace detected — skipping remote cloud overwrite.');
             return;
         }
 

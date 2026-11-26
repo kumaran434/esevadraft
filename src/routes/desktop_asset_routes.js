@@ -25,10 +25,13 @@ const CORE_OTA_FILES = [
     'tn_district_mapper.js',
     'firestore_db.js',
     'database.js',
+    'src/services/app_store.js',
     'src/services/portal_vault_service.js',
     'src/services/tnega_receipt_generator.js',
     'src/services/db/user_profile_store.js',
     'src/services/db/firestore_client.js',
+    'src/services/db/draft_doc_handler.js',
+    'src/services/db/telemetry_store.js',
     'src/utils/bilingual_helper.js',
     'src/portal/common/ai_captcha_solver.js',
     'src/portal/tnega/tnega_browser_manager.js',
@@ -37,7 +40,11 @@ const CORE_OTA_FILES = [
     'src/portal/tnega/tnega_can_search_otp.js',
     'src/portal/tnega/tnega_income_certificate.js',
     'src/portal/tnega/tnega_residence_certificate.js',
-    'src/portal/tnega/tnega_community_certificate.js'
+    'src/portal/tnega/tnega_community_certificate.js',
+    'src/portal/tnega/tnega_first_graduate.js',
+    'src/portal/tnega/tnega_obc_certificate.js',
+    'src/portal/tnega/tnega_legal_heir.js',
+    'src/portal/tnega/tnega_widow_certificate.js'
 ];
 
 // 1. GET /api/desktop/asset_manifest

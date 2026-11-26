@@ -92,9 +92,15 @@
                 'குடும்ப உறுப்பினர் சேர்க்கை', 'உறுப்பினர் சேர்க்கை', 'ADD MEMBER'
             ],
             ownedStates: [
+                'RATION_ADD_MEMBER_RESUME_GATE',
+                'RATION_ADD_MEMBER_COUNT',
                 'RATION_ADD_MEMBER_TYPE',
                 'RATION_ADD_MEMBER_AADHAAR_FRONT',
                 'RATION_ADD_MEMBER_AADHAAR_BACK',
+                'RATION_ADD_MEMBER_BACK',
+                'RATION_ADD_MEMBER_NAME',
+                'RATION_ADD_MEMBER_AADHAAR_NO',
+                'RATION_ADD_MEMBER_DOB',
                 'RATION_ADD_MEMBER_DOC',
                 'RATION_ADD_MEMBER_RELATION',
                 'RATION_ADD_MEMBER_PROOF',
@@ -149,6 +155,7 @@
                 'முகவரி மாற்றம்', 'குடும்ப அட்டை முகவரி மாற்றம்', 'CHANGE ADDRESS'
             ],
             ownedStates: [
+                'RATION_CHANGE_ADDRESS_RESUME_GATE',
                 'RATION_CHANGE_ADDRESS_DOC',
                 'RATION_CHANGE_ADDRESS_UPLOAD',
                 'RATION_CHANGE_ADDRESS_CARD',
@@ -177,13 +184,20 @@
             ],
             ownedStates: [
                 'RATION_CHANGE_MOBILE',
+                'RATION_CHANGE_MOBILE_RESUME_GATE',
                 'RATION_CHANGE_MOBILE_INPUT',
                 'RATION_CHANGE_MOBILE_NUMBER',
                 'RATION_CHANGE_MOBILE_CARD',
                 'RATION_CHANGE_MOBILE_VERIFY'
             ],
             preSubmit: { requireSmartCard: false, requirePhoto: false, requiredDocGroups: [] },
-            editModal: { layoutMode: 'NEW_CARD', isRationHead: true }
+            editModal: {
+                layoutMode: 'UPDATE_MOBILE',
+                title: '📱 கைபேசி எண் மாற்ற விண்ணப்பம் (Update Mobile Number)',
+                subtitle: 'தற்போதைய எண் மற்றும் புதிய 10-இலக்க கைபேசி எண்ணைச் சரிபார்க்கவும்',
+                submitButtonHtml: '<i class="fa-solid fa-mobile-screen-button"></i> 🚀 கைபேசி எண் மாற்றம் செய்ய (Update Mobile in TNPDS)',
+                isRationHead: false
+            }
         },
         {
             id: 'TNPDS_CHANGE_HEAD',

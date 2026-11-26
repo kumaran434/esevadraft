@@ -11,10 +11,46 @@ const { inspectAndExtractDocument } = require('../../ai_document_extractor');
 const { validateUploadedDocument, isDoubleSidedCardComplete } = require('../services/document_validator');
 const { produceCompliantDocument, produceDualSidedDocument, produceCompliantPassportPhoto } = require('../../photo_studio');
 const { saveCitizenProfile } = require('../../database');
+const { getCitizenDraft, saveCitizenDraft } = require('../../firestore_db');
 const { applyExtractedAadhaarRelationsAndDob, applyExtractedSmartCardDetails } = require('../services/profile_helpers');
+const { hydrateBase64DocCache } = require('../services/doc_upload_primitives');
+const { resolveOrRestoreFile } = require('../services/draft_file_restorer');
 const { searchCitizenCan } = require('../../tnega_can_automation');
 
 const persistSessions = (...a) => storageService.persistSessions(...a);
+
+async function persistTnegaSessionDraft(sess, activeMobile) {
+    const { extractMobileFromDraftKey } = require('../services/db/firestore_client');
+    const cleanDocs = {};
+    for (const [k, v] of Object.entries({ ...(sess.citizenProfile?.documents || {}), ...(sess.tempUploads || {}) })) {
+        if (k.endsWith('BoundingBox')) continue;
+        if (typeof v === 'string' && v.trim() !== '') cleanDocs[k] = v;
+    }
+    if (sess.citizenProfile) sess.citizenProfile.documents = cleanDocs;
+    sess.tempUploads = { ...(sess.tempUploads || {}), ...cleanDocs };
+    const saveKey = sess.draftId || activeMobile;
+    const cleanMob = extractMobileFromDraftKey(sess.citizenProfile?.mobileNumber || activeMobile || saveKey);
+    if (saveKey) saveCitizenProfile(saveKey, sess.citizenProfile);
+    persistSessions(activeMobile);
+    if (saveKey) {
+        await saveCitizenDraft(saveKey, {
+            draftId: saveKey,
+            mobileNumber: cleanMob,
+            operatorUid: sess.operatorUid || null,
+            operatorName: sess.operatorName || null,
+            operatorMobile: sess.operatorMobile || null,
+            service: sess.service || null,
+            subService: sess.subService || sess.citizenProfile?.subService || null,
+            citizenProfile: sess.citizenProfile,
+            documents: cleanDocs,
+            base64Docs: sess.base64Docs || sess.citizenProfile?.base64Docs || {},
+            tempUploads: cleanDocs,
+            intakeState: sess.intakeState,
+            step: sess.step || 'draft',
+            chatHistory: sess.chatHistory || []
+        }).catch(() => {});
+    }
+}
 
 function isPhysicalDocValid(docPath, b64Data) {
     if (b64Data && typeof b64Data === 'string' && b64Data.length > 200) return true;
@@ -87,22 +123,53 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             sess.tempUploads.headAadhaarBack = uploadedFile.path;
             sess.tempUploads.headAadhaarBackBoundingBox = extractedBack?.documentBoundingBox || null;
 
-            const mergedPdf = await produceDualSidedDocument(
-                sess.tempUploads.headAadhaarFront,
-                sess.tempUploads.headAadhaarBack,
-                produceCompliantDocument,
-                {
-                    frontBoundingBox: sess.tempUploads.headAadhaarFrontBoundingBox,
-                    backBoundingBox: sess.tempUploads.headAadhaarBackBoundingBox
-                }
-            );
+            let frontPath = sess.tempUploads.headAadhaarFront ||
+                sess.citizenProfile.documents?.headAadhaarFront ||
+                sess.draftData?.documents?.headAadhaarFront ||
+                null;
+            if ((!frontPath || !fs.existsSync(frontPath)) && activeMobile && !sess._isPureFreshSession) {
+                try {
+                    const diskDraft = await getCitizenDraft(activeMobile);
+                    const cand = diskDraft?.documents?.headAadhaarFront || diskDraft?.citizenProfile?.documents?.headAadhaarFront || diskDraft?.tempUploads?.headAadhaarFront || null;
+                    const b64Front = diskDraft?.base64Docs?.headAadhaarFrontBase64 || sess.base64Docs?.headAadhaarFrontBase64 || null;
+                    const urlFront = diskDraft?.storageUrls?.headAadhaarFront || null;
+                    frontPath = await resolveOrRestoreFile(cand, b64Front, `${activeMobile}_headAadhaarFront`, urlFront);
+                } catch (_) {}
+            }
 
+            let mergedPdf = null;
+            if (frontPath && fs.existsSync(frontPath)) {
+                try {
+                    mergedPdf = await produceDualSidedDocument(
+                        frontPath,
+                        sess.tempUploads.headAadhaarBack,
+                        produceCompliantDocument,
+                        {
+                            frontBoundingBox: sess.tempUploads.headAadhaarFrontBoundingBox,
+                            backBoundingBox: sess.tempUploads.headAadhaarBackBoundingBox
+                        }
+                    );
+                } catch (e) {
+                    console.warn('[TNeGA Aadhaar Merge] Error:', e.message);
+                }
+            }
+            if (!mergedPdf || !fs.existsSync(mergedPdf) || fs.statSync(mergedPdf).size < 100) {
+                const fallbackSrc = (frontPath && fs.existsSync(frontPath)) ? frontPath : uploadedFile.path;
+                try {
+                    mergedPdf = await produceCompliantDocument(fallbackSrc);
+                } catch (_) {
+                    mergedPdf = fallbackSrc;
+                }
+            }
+
+            if (frontPath) sess.tempUploads.headAadhaarFront = frontPath;
             sess.tempUploads.headAadhaar = mergedPdf;
             sess.citizenProfile.headAadhaarDocPath = mergedPdf;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.headAadhaar = mergedPdf;
-            sess.citizenProfile.documents.headAadhaarFront = sess.tempUploads.headAadhaarFront;
+            if (frontPath) sess.citizenProfile.documents.headAadhaarFront = frontPath;
             sess.citizenProfile.documents.headAadhaarBack = sess.tempUploads.headAadhaarBack;
+            hydrateBase64DocCache(sess, 'headAadhaar', mergedPdf);
 
             const extracted = extractedBack || await inspectAndExtractDocument(mergedPdf, { skipFaceExtraction: true }).catch(() => null);
             if (extracted) {
@@ -120,8 +187,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
                 if (extracted.pincode) sess.citizenProfile.pincode = extracted.pincode;
             }
 
-            if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-            persistSessions();
+            await persistTnegaSessionDraft(sess, activeMobile);
 
             const fatherDisp = sess.citizenProfile.fatherNameTam
                 ? `${sess.citizenProfile.fatherNameTam}${sess.citizenProfile.fatherNameEng ? ` (${sess.citizenProfile.fatherNameEng})` : ''}`
@@ -213,15 +279,19 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         const isFullAadhaar = isDoubleSidedCardComplete(extracted, uploadedFile.originalname || uploadedFile.path, 'aadhaar');
 
         if (isFullAadhaar) {
-            const fullPdf = await produceCompliantDocument(uploadedFile.path);
+            let fullPdf = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+            if (!fullPdf || !fs.existsSync(fullPdf)) fullPdf = uploadedFile.path;
             sess.tempUploads.headAadhaar = fullPdf;
             sess.tempUploads.headAadhaarFront = uploadedFile.path;
-            sess.tempUploads.headAadhaarBack = null;
+            delete sess.tempUploads.headAadhaarBack;
             sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
 
             sess.citizenProfile.headAadhaarDocPath = fullPdf;
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             sess.citizenProfile.documents.headAadhaar = fullPdf;
+            sess.citizenProfile.documents.headAadhaarFront = uploadedFile.path;
+            delete sess.citizenProfile.documents.headAadhaarBack;
+            hydrateBase64DocCache(sess, 'headAadhaar', fullPdf);
 
             if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
             if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
@@ -241,8 +311,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             if (extracted.district) sess.citizenProfile.district = extracted.district;
             if (extracted.pincode) sess.citizenProfile.pincode = extracted.pincode;
 
-            if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-            persistSessions();
+            await persistTnegaSessionDraft(sess, activeMobile);
 
             const flowStep = advanceFlowFn(
                 sess,
@@ -266,11 +335,13 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         }
         if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
         sess.citizenProfile.documents.headAadhaar = uploadedFile.path;
+        sess.citizenProfile.documents.headAadhaarFront = uploadedFile.path;
         sess.citizenProfile.headAadhaarDocPath = uploadedFile.path;
+        hydrateBase64DocCache(sess, 'headAadhaarFront', uploadedFile.path);
+        hydrateBase64DocCache(sess, 'headAadhaar', uploadedFile.path);
 
         sess.intakeState = backWaitState;
-        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-        persistSessions();
+        await persistTnegaSessionDraft(sess, activeMobile);
 
         const detectedName = sess.citizenProfile.fullNameTam
             ? `${sess.citizenProfile.fullNameTam}${sess.citizenProfile.fullNameEng ? ` (${sess.citizenProfile.fullNameEng})` : ''}`
@@ -307,13 +378,17 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
     if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
 
     const syncSmartCardToProfile = async (finalPath, extracted) => {
+        if (!finalPath) return;
         sess.tempUploads.smartCard = finalPath;
         sess.citizenProfile.smartCard = finalPath;
         sess.citizenProfile.rationCard = finalPath;
+        sess.citizenProfile.smartCardDocPath = finalPath;
+        sess.citizenProfile.rationCardDocPath = finalPath;
         sess.citizenProfile.documents.smartCard = finalPath;
+        sess.citizenProfile.documents.rationCard = finalPath;
+        hydrateBase64DocCache(sess, 'smartCard', finalPath, { aliasSmartCard: true });
         if (extracted) applyExtractedSmartCardDetails(sess.citizenProfile, extracted);
-        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-        persistSessions();
+        await persistTnegaSessionDraft(sess, activeMobile);
     };
 
     if (sess.intakeState === backWaitState) {
@@ -348,16 +423,24 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
             }
             sess.tempUploads.smartCardBack = uploadedFile.path;
             sess.tempUploads.smartCardBackBoundingBox = extractedBack?.documentBoundingBox || null;
-            const mergedPdf = await produceDualSidedDocument(
-                sess.tempUploads.smartCardFront,
-                sess.tempUploads.smartCardBack,
-                produceCompliantDocument,
-                {
-                    frontBoundingBox: sess.tempUploads.smartCardFrontBoundingBox,
-                    backBoundingBox: sess.tempUploads.smartCardBackBoundingBox
-                }
-            );
-            sess.citizenProfile.documents.smartCardFront = sess.tempUploads.smartCardFront;
+            const scFront = sess.tempUploads.smartCardFront || sess.citizenProfile.documents?.smartCardFront || sess.citizenProfile.smartCard;
+            let mergedPdf = null;
+            if (scFront && fs.existsSync(scFront)) {
+                mergedPdf = await produceDualSidedDocument(
+                    scFront,
+                    sess.tempUploads.smartCardBack,
+                    produceCompliantDocument,
+                    {
+                        frontBoundingBox: sess.tempUploads.smartCardFrontBoundingBox,
+                        backBoundingBox: sess.tempUploads.smartCardBackBoundingBox
+                    }
+                ).catch(() => null);
+            }
+            if (!mergedPdf || !fs.existsSync(mergedPdf)) {
+                const fb = (scFront && fs.existsSync(scFront)) ? scFront : uploadedFile.path;
+                mergedPdf = await produceCompliantDocument(fb).catch(() => fb);
+            }
+            if (scFront) sess.citizenProfile.documents.smartCardFront = scFront;
             sess.citizenProfile.documents.smartCardBack = sess.tempUploads.smartCardBack;
             await syncSmartCardToProfile(mergedPdf, extractedBack);
 
@@ -412,9 +495,12 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         const isFullCard = isDoubleSidedCardComplete(extracted, uploadedFile.originalname || uploadedFile.path, 'smartCard');
 
         if (isFullCard) {
-            const fullPdf = await produceCompliantDocument(uploadedFile.path);
+            let fullPdf = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+            if (!fullPdf || !fs.existsSync(fullPdf)) fullPdf = uploadedFile.path;
             sess.tempUploads.smartCardFront = uploadedFile.path;
-            sess.tempUploads.smartCardBack = null;
+            delete sess.tempUploads.smartCardBack;
+            sess.citizenProfile.documents.smartCardFront = uploadedFile.path;
+            delete sess.citizenProfile.documents.smartCardBack;
             await syncSmartCardToProfile(fullPdf, extracted);
             const mCount = Array.isArray(sess.citizenProfile.smartCardMembers) ? sess.citizenProfile.smartCardMembers.length : 0;
             const flowStep = advanceFlowFn(
@@ -432,9 +518,10 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         if (extracted) applyExtractedSmartCardDetails(sess.citizenProfile, extracted);
         sess.citizenProfile.smartCard = uploadedFile.path;
         sess.citizenProfile.documents.smartCard = uploadedFile.path;
+        sess.citizenProfile.documents.smartCardFront = uploadedFile.path;
+        hydrateBase64DocCache(sess, 'smartCard', uploadedFile.path, { aliasSmartCard: true });
         sess.intakeState = backWaitState;
-        if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-        persistSessions();
+        await persistTnegaSessionDraft(sess, activeMobile);
 
         sess.chatHistory.push({
             sender: 'bot',
@@ -513,24 +600,10 @@ async function handleTnegaPassportPhotoUpload({ ctx, req, res, photoWaitState, a
         sess.citizenProfile.documents.profilePhoto = studioPhoto;
         if (!sess.tempUploads) sess.tempUploads = {};
         sess.tempUploads.profilePhoto = studioPhoto;
+        hydrateBase64DocCache(sess, 'profilePhoto', studioPhoto);
 
         const activeMobile = ctx.targetMobile || sess.mobileNumber || sess.citizenProfile?.mobileNumber || storageService.getActiveMobile();
-        if (activeMobile) {
-            saveCitizenProfile(activeMobile, sess.citizenProfile);
-            const { saveCitizenDraft } = require('../../firestore_db');
-            saveCitizenDraft(activeMobile, {
-                operatorUid: sess.operatorUid || null,
-                operatorName: sess.operatorName || null,
-                operatorMobile: sess.operatorMobile || null,
-                citizenProfile: sess.citizenProfile,
-                documents: sess.citizenProfile.documents || {},
-                tempUploads: sess.tempUploads || {},
-                intakeState: sess.intakeState,
-                step: sess.step,
-                chatHistory: sess.chatHistory
-            }).catch(() => {});
-        }
-        persistSessions();
+        await persistTnegaSessionDraft(sess, activeMobile);
 
         const flowStep = advanceFlowFn(
             sess,

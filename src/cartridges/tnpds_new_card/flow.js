@@ -1,6 +1,8 @@
 const newCardFsm = require('../../core/fsm/fsm_new_card_intake');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function enterService(sess, { greeting } = {}) {
+    resetTransientServiceInputs(sess);
     sess.service = 'ரேஷன் கார்டு';
     sess.subService = 'NEW_CARD';
     sess.pluginId = 'TNPDS_NEW_CARD';

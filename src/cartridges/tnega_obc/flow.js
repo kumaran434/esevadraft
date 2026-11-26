@@ -1,4 +1,5 @@
 const { isPhysicalDocValid, hasValidSmartCard, buildSmartCardPromptStep } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'OBC';
@@ -227,6 +228,7 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'OBC';
     sess.pluginId = 'TNEGA_OBC';
     if (sess.citizenProfile) {

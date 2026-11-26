@@ -23,19 +23,23 @@ const {
     sessions, 
     createFreshProfile, 
     getOrCreateSession, 
+    resolveSessionForRequest,
+    makeScopedSessionKey,
     getActiveMobile, 
     setActiveMobile, 
     setSessionState, 
     persistSessions 
 } = storageService;
+const { normalizeOperatorUid } = require('../services/db/firestore_client');
 
 // 1. GET /api/chat/history
 router.get('/api/chat/history', async (req, res) => {
     const isOpReq = !!(req.headers['x-operator-uid'] || req.query.role === 'operator');
     const reqOpUid = req.headers['x-operator-uid'] || req.query.operatorUid || null;
+    const requestedDraftId = String(req.query.draftId || req.headers['x-draft-id'] || '').trim();
     const targetMobile = (req.query.mobile || req.headers['x-session-mobile'] || '').trim();
 
-    if (isOpReq && !targetMobile) {
+    if (isOpReq && !targetMobile && !requestedDraftId) {
         return res.json({
             chatHistory: [getInitialWelcomeMessage()],
             citizenProfile: null,
@@ -45,15 +49,26 @@ router.get('/api/chat/history', async (req, res) => {
     }
 
     const mobile = targetMobile || getActiveMobile();
-    const sess = mobile ? getOrCreateSession(mobile) : storageService.getSessionState();
+    const sess = (requestedDraftId || reqOpUid)
+        ? resolveSessionForRequest({ draftId: requestedDraftId, mobile, operatorUid: reqOpUid })
+        : (mobile ? getOrCreateSession(mobile) : storageService.getSessionState());
+    if (sess === null && requestedDraftId) {
+        return res.status(403).json({
+            error: 'இந்த வாடிக்கையாளர் விவரங்கள் மற்றொரு மையத்திற்குரியவை.',
+            chatHistory: [getInitialWelcomeMessage()],
+            citizenProfile: null,
+            step: 'READY',
+            noCustomerActive: true
+        });
+    }
     if (!sess) {
         return res.json({ chatHistory: [getInitialWelcomeMessage()], citizenProfile: null, step: 'READY' });
     }
 
-    // STRICT TENANT BOUNDARY: Check if session belongs to another operator
+    // STRICT TENANT BOUNDARY: Only reject if explicitly requesting another operator's draftId
     if (isOpReq && reqOpUid && sess.operatorUid) {
-        const normSessOp = String(sess.operatorUid).trim();
-        const normReqOp = String(reqOpUid).trim();
+        const normSessOp = normalizeOperatorUid(sess.operatorUid);
+        const normReqOp = normalizeOperatorUid(reqOpUid);
         if (normSessOp && normReqOp && normSessOp !== normReqOp) {
             return res.status(403).json({
                 error: 'இந்த வாடிக்கையாளர் விவரங்கள் மற்றொரு மையத்திற்குரியவை.',
@@ -69,11 +84,17 @@ router.get('/api/chat/history', async (req, res) => {
         sess.operatorUid = reqOpUid;
     }
 
-    const needsDraftRestore = mobile && (
-        !sess._draftChecked || 
-        !sess.citizenProfile || 
-        !sess.citizenProfile.fullNameEng ||
-        (sess.citizenProfile.gasDetails && !sess.citizenProfile.gasDetails.consumerNumber)
+    // Golden Rule 24 (100% Pure Fresh Mode):
+    // NEVER resurrect an old saved draft from disk into a fresh session during /api/chat/history polling!
+    const needsDraftRestore = mobile && !sess._isPureFreshSession && (
+        !sess._draftChecked ||
+        !sess.citizenProfile ||
+        (
+            !sess.citizenProfile.fullNameEng &&
+            !sess.citizenProfile.fullNameTam &&
+            !sess.subService &&
+            (!Array.isArray(sess.citizenProfile.members) || sess.citizenProfile.members.length === 0)
+        )
     );
     if (needsDraftRestore) {
         sess._draftChecked = true;
@@ -113,7 +134,14 @@ router.get('/api/chat/history', async (req, res) => {
                 sess.step = sess.step || draft.step;
                 sess.subService = draft.subService || draftProf.subService || sess.subService || null;
                 sess.subServiceData = draft.subServiceData || draftProf.subServiceData || sess.subServiceData || null;
-                sess.tempUploads = draft.documents || sess.tempUploads || {};
+                const restoredTempUploads = {};
+                for (const [k, v] of Object.entries(draft.documents || {})) {
+                    if (v !== null && v !== undefined && v !== '') restoredTempUploads[k] = v;
+                }
+                for (const [k, v] of Object.entries(sess.tempUploads || {})) {
+                    if (v !== null && v !== undefined && v !== '') restoredTempUploads[k] = v;
+                }
+                sess.tempUploads = restoredTempUploads;
                 const isSubServiceActive = !!(sess.subService || sess.citizenProfile?.subService || (sess.intakeState && (sess.intakeState.startsWith('RATION_ADD_MEMBER') || sess.intakeState.startsWith('RATION_CHANGE_ADDRESS') || sess.intakeState.startsWith('RATION_REMOVE_MEMBER'))));
                 if (!isSubServiceActive) {
                     sess.applicationNumber = draft.applicationNumber || sess.applicationNumber;
@@ -150,6 +178,10 @@ router.get('/api/chat/history', async (req, res) => {
                                    lastMsgInHist.text.includes('எந்த அரசு சேவைக்கு விண்ணப்பிக்க')
                                )));
 
+    const isSubSvcActive = Boolean(
+        sess.subService &&
+        !['NEW_CARD', 'NEW_RATION_CARD', 'NEW_SMART_CARD'].includes(String(sess.subService).toUpperCase())
+    );
     if (isBrowsingServices && !isSubServiceReady) {
         sess.intakeState = sess.intakeState || 'SERVICE_SELECTION';
         sess.step = sess.step || 'SERVICE_SELECTION';
@@ -166,7 +198,7 @@ router.get('/api/chat/history', async (req, res) => {
                 sess.chatHistory = [getInitialWelcomeMessage(sess.citizenProfile, mobile)];
             }
         }
-    } else if (sess.citizenProfile && !isBrowsingServices && (sess.intakeState === 'READY_TO_APPLY' || sess.step === 'ready_to_apply')) {
+    } else if (sess.citizenProfile && !isBrowsingServices && !isSubSvcActive && (sess.intakeState === 'READY_TO_APPLY' || sess.step === 'ready_to_apply')) {
         const memCount = sess.citizenProfile.members ? sess.citizenProfile.members.length : 1;
         const targetCount = sess.targetMemberCount || memCount;
         if (targetCount <= memCount) {
@@ -231,7 +263,7 @@ router.get('/api/chat/history', async (req, res) => {
     }
 
     const activeSub = sess.subService || sess.citizenProfile?.subService || null;
-    const docsList = extractDraftDocumentsList(sess, sess.draftData || null, mobile, activeSub);
+    const docsList = extractDraftDocumentsList(sess, sess._isPureFreshSession ? null : (sess.draftData || null), mobile, activeSub);
     const cleanChatHistory = (Array.isArray(sess.chatHistory) ? sess.chatHistory : []).filter(m => {
         if (!m || !m.text) return false;
         const t = m.text;
@@ -252,14 +284,26 @@ router.get('/api/chat/history', async (req, res) => {
     sess.chatHistory = cleanChatHistory;
 
     // Sync active session state to draft storage so API & edit modal are always 100% in sync
+    const mergedCleanDocs = {};
+    for (const [k, v] of Object.entries({ ...(sess.citizenProfile?.documents || {}), ...(sess.tempUploads || {}) })) {
+        if (v !== null && v !== undefined && v !== '') mergedCleanDocs[k] = v;
+    }
     if (mobile && sess.citizenProfile && (sess.citizenProfile.fullNameEng || sess.citizenProfile.fullNameTam || sess.citizenProfile.headAadhaar)) {
-        saveCitizenDraft(mobile, {
+        const saveKey = sess.draftId || mobile;
+        saveCitizenDraft(saveKey, {
+            draftId: saveKey,
+            mobileNumber: mobile,
+            operatorUid: sess.operatorUid || reqOpUid || null,
+            operatorName: sess.operatorName || null,
+            operatorMobile: sess.operatorMobile || null,
             subService: sess.subService || sess.citizenProfile?.subService || null,
             subServiceData: sess.subServiceData || sess.citizenProfile?.subServiceData || null,
             intakeState: sess.intakeState,
             step: sess.intakeState || sess.step,
             citizenProfile: sess.citizenProfile,
-            documents: sess.tempUploads || sess.citizenProfile?.documents || {},
+            documents: mergedCleanDocs,
+            base64Docs: sess.base64Docs || sess.citizenProfile?.base64Docs || {},
+            tempUploads: mergedCleanDocs,
             chatHistory: cleanChatHistory
         }).catch(err => console.warn('Background draft sync from chat error:', err.message));
     }
@@ -269,7 +313,7 @@ router.get('/api/chat/history', async (req, res) => {
         citizenProfile: sess.citizenProfile,
         subService: sess.subService || sess.citizenProfile?.subService || null,
         subServiceData: sess.subServiceData || sess.citizenProfile?.subServiceData || null,
-        documents: sess.tempUploads || sess.citizenProfile?.documents || {},
+        documents: mergedCleanDocs,
         documentsList: docsList,
         step: sess.step === 'submitted' ? 'submitted' : (sess.intakeState || sess.step),
         intakeState: sess.intakeState,
@@ -313,8 +357,12 @@ router.post('/api/chat/live-step', async (req, res) => {
     try {
         const text = req.body.text || req.body.message || '';
         const targetMobile = req.body.mobile || req.body.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile();
+        const reqDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
+        const reqOpUid = req.headers['x-operator-uid'] || req.body.operatorUid || null;
         if (targetMobile && text) {
-            const sess = getOrCreateSession(targetMobile);
+            const sess = (typeof resolveSessionForRequest === 'function' && (reqDraftId || reqOpUid))
+                ? resolveSessionForRequest({ draftId: reqDraftId, mobile: targetMobile, operatorUid: reqOpUid })
+                : getOrCreateSession(targetMobile);
             const stepMatch = text.match(/(?:\[\s*(?:படி|படிகள்|Step)\s*|(?:படி|படிகள்|Step)\s+)(\d+)(?:\s*-\s*\d+)?\s*\/\s*(\d+)\]?/i);
             if (stepMatch) {
                 sess.automationStep = parseInt(stepMatch[1], 10);
@@ -328,7 +376,7 @@ router.post('/api/chat/live-step', async (req, res) => {
             if (Array.isArray(sess.chatHistory)) {
                 sess.chatHistory = sess.chatHistory.filter(m => !m.text.includes('[படி ') && !m.text.includes('Toast Message') && !m.text.includes('சரிபார்க்கப்படுகிறது') && !m.text.includes('பூட்டப்பட்டது') && !m.text.includes('Google Chrome'));
             }
-            persistSessions();
+            persistSessions(sess);
         }
         res.json({ success: true });
     } catch (e) {
@@ -339,6 +387,8 @@ router.post('/api/chat/live-step', async (req, res) => {
 // 5. POST /api/chat/reset
 router.post('/api/chat/reset', async (req, res) => {
     const forceClean = req.body?.forceClean === true || req.body?.isOp === true;
+    const reqOpUid = normalizeOperatorUid(req.headers['x-operator-uid'] || req.body?.operatorUid || null);
+    const reqDraftId = String(req.body?.draftId || req.headers['x-draft-id'] || '').trim();
     const targetMobile = (req.body?.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile() || '').trim();
     try {
         await stopTnpdsAutomation().catch(e => console.warn('TNPDS stop warn on reset:', e.message));
@@ -347,91 +397,75 @@ router.post('/api/chat/reset', async (req, res) => {
         }
     } catch (e) {}
 
-    let existingProfile = null;
-    let existingDocs = {};
+    if (reqDraftId && sessions.has(reqDraftId)) {
+        const prevD = sessions.get(reqDraftId);
+        if (!reqOpUid || !normalizeOperatorUid(prevD?.operatorUid) || normalizeOperatorUid(prevD?.operatorUid) === reqOpUid) {
+            sessions.delete(reqDraftId);
+        }
+    }
+    if (reqOpUid && targetMobile) {
+        const scopedKey = makeScopedSessionKey(targetMobile, reqOpUid);
+        if (sessions.has(scopedKey)) sessions.delete(scopedKey);
+    }
     if (targetMobile && sessions.has(targetMobile)) {
         const prev = sessions.get(targetMobile);
-        if (!forceClean) {
-            existingProfile = prev.citizenProfile;
-            existingDocs = prev.tempUploads || {};
-            delete existingDocs.memberAadhaarFront;
-            delete existingDocs.memberAadhaarBack;
-            delete existingDocs.memberAadhaar;
-            delete existingDocs.memberAadhaars;
-            if (existingProfile?.documents) {
-                delete existingProfile.documents.memberAadhaarFront;
-                delete existingProfile.documents.memberAadhaarBack;
-                delete existingProfile.documents.memberAadhaar;
-                delete existingProfile.documents.memberAadhaars;
-            }
+        if (!reqOpUid || !normalizeOperatorUid(prev?.operatorUid) || normalizeOperatorUid(prev?.operatorUid) === reqOpUid) {
+            sessions.delete(targetMobile);
         }
-        sessions.delete(targetMobile);
     }
     if (forceClean) {
         setActiveMobile(null);
     }
-    if (targetMobile && !forceClean) {
+    // 1 Application = 1 Independent File Law:
+    // Clicking "துடை (Clear)" ONLY clears the active screen in memory & detaches the active draftId router.
+    // It MUST NEVER overwrite or corrupt already-saved application files on disk (e.g. wiping subService='CHANGE_ADDRESS' to null)!
+    if (targetMobile) {
         try {
-            const diskDraft = await getCitizenDraft(targetMobile);
-            if (diskDraft) {
-                diskDraft.subService = null;
-                diskDraft.subServiceData = null;
-                if (diskDraft.citizenProfile) {
-                    diskDraft.citizenProfile.subService = null;
-                    diskDraft.citizenProfile.subServiceData = null;
-                    if (diskDraft.citizenProfile.documents) {
-                        delete diskDraft.citizenProfile.documents.memberAadhaarFront;
-                        delete diskDraft.citizenProfile.documents.memberAadhaarBack;
-                        delete diskDraft.citizenProfile.documents.memberAadhaar;
-                        delete diskDraft.citizenProfile.documents.memberAadhaars;
-                    }
-                }
-                if (diskDraft.documents) {
-                    delete diskDraft.documents.memberAadhaarFront;
-                    delete diskDraft.documents.memberAadhaarBack;
-                    delete diskDraft.documents.memberAadhaar;
-                    delete diskDraft.documents.memberAadhaars;
-                }
-                diskDraft.intakeState = 'SERVICE_SELECTION';
-                diskDraft.step = 'SERVICE_SELECTION';
-                diskDraft.chatHistory = [getInitialWelcomeMessage(diskDraft.citizenProfile, targetMobile)];
-                await saveCitizenDraft(targetMobile, diskDraft);
-            }
-        } catch (e) {
-            console.warn('Draft cleanup warn on reset:', e.message);
-        }
-    } else if (targetMobile && forceClean) {
-        try {
-            storageService.purgeSession(targetMobile);
+            const { clearActiveDraftId } = require('../services/db/firestore_client');
+            clearActiveDraftId(targetMobile, reqOpUid);
+            if (forceClean && !reqOpUid) storageService.purgeSession(targetMobile);
         } catch (_) {}
     }
-    const hasValidProfile = !forceClean && existingProfile && (existingProfile.fullNameEng || existingProfile.fullNameTam || (existingProfile.members && existingProfile.members.length > 0));
-    if (existingProfile) {
-        existingProfile.subService = null;
-        existingProfile.subServiceData = null;
+    const { generateUniqueDraftId, setActiveDraftIdForMobile } = require('../services/db/firestore_client');
+    const nextFreshDraftId = (targetMobile && !forceClean && !String(targetMobile).startsWith('walkin_'))
+        ? generateUniqueDraftId(targetMobile)
+        : null;
+    if (nextFreshDraftId) {
+        setActiveDraftIdForMobile(targetMobile, nextFreshDraftId, reqOpUid);
     }
     const freshSession = {
+        draftId: nextFreshDraftId || undefined,
+        mobileNumber: forceClean ? '' : targetMobile,
+        operatorUid: reqOpUid || null,
         intakeState: 'SERVICE_SELECTION',
-        targetMemberCount: (hasValidProfile && existingProfile.members?.length) || 1,
-        currentMemberIdx: (hasValidProfile && existingProfile.members?.length) || 1,
-        tempUploads: hasValidProfile ? existingDocs : {},
+        targetMemberCount: 1,
+        currentMemberIdx: 1,
+        tempUploads: {},
         tempMember: null,
         step: 'SERVICE_SELECTION',
         subService: null,
         subServiceData: null,
-        citizenProfile: hasValidProfile ? existingProfile : createFreshProfile(forceClean ? '' : targetMobile),
-        chatHistory: [getInitialWelcomeMessage(hasValidProfile ? existingProfile : null, targetMobile)],
+        citizenProfile: createFreshProfile(forceClean ? '' : targetMobile),
+        chatHistory: [getInitialWelcomeMessage(null, forceClean ? '' : targetMobile)],
         applicationNumber: null,
         automationStep: 0,
         automationTotal: 51,
         isAutomating: false,
-        isAutomationRunning: false
+        isAutomationRunning: false,
+        _draftChecked: true,
+        _isPureFreshSession: true
     };
-    if (targetMobile && !forceClean) {
-        sessions.set(targetMobile, freshSession);
+    if (targetMobile) {
+        if (reqOpUid) {
+            sessions.set(makeScopedSessionKey(targetMobile, reqOpUid), freshSession);
+        }
+        const bareExisting = sessions.get(targetMobile);
+        if (!bareExisting || !reqOpUid || !normalizeOperatorUid(bareExisting?.operatorUid) || normalizeOperatorUid(bareExisting?.operatorUid) === reqOpUid) {
+            sessions.set(targetMobile, freshSession);
+        }
+        if (nextFreshDraftId) sessions.set(nextFreshDraftId, freshSession);
     }
     setSessionState(freshSession);
-    persistSessions();
     res.json({
         success: true,
         chatHistory: freshSession.chatHistory,
@@ -449,7 +483,7 @@ router.post('/api/chat/confirm_submit', async (req, res) => {
             if (submitResult.applicationNumber) {
                 activeState.applicationNumber = submitResult.applicationNumber;
             } else {
-                const refMatch = submitResult.message.match(/[\d]{8,}/);
+                const refMatch = String(submitResult.message || '').match(/[\d]{8,}/);
                 if (refMatch) activeState.applicationNumber = refMatch[0];
             }
 

@@ -1,6 +1,6 @@
 const storageService = require('../../services/storage_service');
 const { getCitizenDraft } = require('../../../firestore_db');
-const { createFreshProfile, getOrCreateSession } = storageService;
+const { createFreshProfile, getOrCreateSession, resolveSessionForRequest } = storageService;
 
 async function resolveChatContext(req) {
     const text = (req.body.text || req.body.message || '').trim();
@@ -9,7 +9,8 @@ async function resolveChatContext(req) {
     console.log(`\n💬 Received - Text: "${text}", File: ${uploadedFile ? uploadedFile.filename : 'None'}`);
 
     const isDevReq = req.headers['x-dev-mode'] === 'true' || req.body.isDevMode === true;
-    const reqOpUid = req.headers['x-operator-uid'] || req.body.operatorUid;
+    const reqOpUid = req.headers['x-operator-uid'] || req.body.operatorUid || null;
+    const reqDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
     let targetMobile = (req.body.mobileNumber || req.body.mobile || req.headers['x-session-mobile'] || '').trim();
 
     if (!targetMobile && reqOpUid) {
@@ -18,14 +19,19 @@ async function resolveChatContext(req) {
         targetMobile = 'walkin_session';
     }
 
-    const sess = getOrCreateSession(targetMobile || storageService.getActiveMobile());
-    if (reqOpUid) sess.operatorUid = reqOpUid;
+    const effectiveMobile = targetMobile || storageService.getActiveMobile();
+    const sess = (typeof resolveSessionForRequest === 'function'
+        ? resolveSessionForRequest({ draftId: reqDraftId, mobile: effectiveMobile, operatorUid: reqOpUid })
+        : null) || getOrCreateSession(effectiveMobile);
+    if (reqOpUid && !sess.operatorUid) sess.operatorUid = reqOpUid;
     storageService.setSessionState(sess);
-    storageService.setActiveMobile(targetMobile || storageService.getActiveMobile());
+    storageService.setActiveMobile(effectiveMobile);
 
-    if (targetMobile && (!sess.citizenProfile || !sess.citizenProfile.fullNameEng) && (!sess.subServiceData || Object.keys(sess.subServiceData).length === 0)) {
+    // Golden Rule 24 (100% Pure Fresh Mode):
+    // NEVER resurrect an old saved draft from disk into an active Pure Fresh session during POST /api/chat!
+    if (targetMobile && !sess._isPureFreshSession && (!sess.citizenProfile || !sess.citizenProfile.fullNameEng) && (!sess.subServiceData || Object.keys(sess.subServiceData).length === 0)) {
         try {
-            const existingDraft = await getCitizenDraft(targetMobile);
+            const existingDraft = await getCitizenDraft(reqDraftId || targetMobile, reqOpUid);
             if (existingDraft && existingDraft.citizenProfile && (existingDraft.citizenProfile.fullNameEng || existingDraft.citizenProfile.fullNameTam || existingDraft.subService || existingDraft.citizenProfile?.subService)) {
                 sess.citizenProfile = {
                     ...createFreshProfile(targetMobile),

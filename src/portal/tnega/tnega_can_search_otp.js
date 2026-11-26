@@ -1,5 +1,6 @@
 const { getTnegaState, launchTnegaBrowser } = require('./tnega_browser_manager');
 const { initTnegaHud, updateTnegaHud } = require('./tnega_hud');
+const { installOtpModalCopilot, tryCopilotAutoResendIfExpired } = require('../common/otp_copilot_watcher');
 
 async function loginTnegaOperator(credentials = {}, onProgress = () => {}, options = {}) {
     const state = getTnegaState();
@@ -204,8 +205,27 @@ async function generateCanOtp(canNumber, onProgress = () => {}, options = {}) {
             onProgress('📱 போர்ட்டல் மூலம் OTP அனுப்பப்பட்டது. தயவுசெய்து OTP-யை உள்ளிடவும்.');
         }
 
+        await installOtpModalCopilot(tnegaPage, { forceReset: true, allowInlinePage: true }).catch(() => {});
         return new Promise((resolve, reject) => {
+            let resendPollTick = false;
+            const resendPoll = setInterval(async () => {
+                if (resendPollTick || !state.isWaitingForCanOtp || !tnegaPage || tnegaPage.isClosed()) return;
+                resendPollTick = true;
+                try {
+                    await tryCopilotAutoResendIfExpired(tnegaPage, {
+                        allowInlinePage: true,
+                        graceAfterZeroMs: 4000,
+                        maxAutoResends: 2,
+                        onProgress,
+                        stageLabel: 'CAN தேடல் OTP'
+                    });
+                } catch (_) {} finally {
+                    resendPollTick = false;
+                }
+            }, 1000);
+
             state.pendingCanOtpResolver = async (otp) => {
+                clearInterval(resendPoll);
                 try {
                     state.isWaitingForCanOtp = false;
                     const inpOtp = tnegaPage.locator('input#txtOTP, input[name*="txtOTP"]').first();

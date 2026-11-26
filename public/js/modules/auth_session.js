@@ -55,6 +55,7 @@
                             badge.style.display = 'inline-flex';
                         }
                         localStorage.removeItem('eseva_active_customer_mobile');
+                        localStorage.removeItem('eseva_active_draft_id');
                         localStorage.removeItem('eseva_active_customer_name');
                         applyRoleUi('operator', dispName);
                         resetSidebarToOperatorView(dispName);
@@ -557,6 +558,7 @@
                         localStorage.removeItem('eseva_operator_mobile');
                     }
                     localStorage.removeItem('eseva_active_customer_mobile');
+                    localStorage.removeItem('eseva_active_draft_id');
                     localStorage.removeItem('eseva_active_customer_name');
                     if (mobileNumber) localStorage.setItem('eseva_user_mobile', mobileNumber);
                     if (displayName && displayName !== 'மையம்' && displayName !== 'குமரன் இ-சேவை மையம்') {
@@ -608,6 +610,7 @@
                     if (actualRole === 'operator') {
                         if (!window._instantOperatorBootDone || !localStorage.getItem('eseva_active_customer_mobile')) {
                             localStorage.removeItem('eseva_active_customer_mobile');
+                            localStorage.removeItem('eseva_active_draft_id');
                             localStorage.removeItem('eseva_active_customer_name');
                             resetSidebarToOperatorView(finalName);
                             if (data.chatHistory && data.chatHistory.length > 0) {
@@ -727,26 +730,21 @@
                 const sView = document.getElementById('citizenServicesView');
                 if (sView) sView.style.display = 'none';
 
-                const activeCust = (localStorage.getItem('eseva_active_customer_mobile') || '').replace(/\D/g, '').slice(-10);
-                const draftList = window.allOperatorDrafts || (typeof allOperatorDrafts !== 'undefined' ? allOperatorDrafts : []);
-                const draftExists = activeCust && Array.isArray(draftList) && draftList.some(d => (d.mobileNumber || '').replace(/\D/g, '').slice(-10) === activeCust);
-
-                if (!activeCust || !draftExists) {
-                    if (typeof clearAutomationScreenSession === 'function') {
-                        clearAutomationScreenSession();
-                    } else if (typeof resetIntakeChat === 'function') {
-                        resetIntakeChat();
-                    } else {
-                        localStorage.removeItem('eseva_active_customer_mobile');
-                        localStorage.removeItem('eseva_active_customer_name');
-                        currentCitizenData = null;
-                        lastRenderedChatHistoryJson = '';
-                        lastRenderedChatHistoryLength = 0;
-                        if (typeof resetSidebarToOperatorView === 'function') resetSidebarToOperatorView();
-                        const titleEl = document.getElementById('activeCustomerTitle');
-                        if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
-                        if (typeof renderDefaultWelcomeMessage === 'function') renderDefaultWelcomeMessage();
+                const activeCust = (localStorage.getItem('eseva_active_customer_mobile') || '').split('_')[0].replace(/\D/g, '').slice(-10);
+                if (activeCust) {
+                    // Non-destructive return to active customer: NEVER clear or call /api/chat/reset!
+                    if (typeof fetchHistory === 'function') {
+                        fetchHistory();
                     }
+                } else {
+                    // No active customer selected: render clean operator home screen locally without wiping any draft
+                    currentCitizenData = null;
+                    lastRenderedChatHistoryJson = '';
+                    lastRenderedChatHistoryLength = 0;
+                    if (typeof resetSidebarToOperatorView === 'function') resetSidebarToOperatorView();
+                    const titleEl = document.getElementById('activeCustomerTitle');
+                    if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
+                    if (typeof renderDefaultWelcomeMessage === 'function') renderDefaultWelcomeMessage();
                 }
             } else {
                 switchTab('citizen');

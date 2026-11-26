@@ -1,5 +1,6 @@
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { isPhysicalDocValid, hasValidSmartCard, buildSmartCardPromptStep } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'INCOME';
@@ -359,24 +360,13 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'INCOME';
     sess.pluginId = 'TNEGA_INCOME';
     if (sess.citizenProfile) {
         sess.citizenProfile.subService = 'INCOME';
         sess.citizenProfile.pluginId = 'TNEGA_INCOME';
-        delete sess.citizenProfile.familyMemberCount;
-        delete sess.citizenProfile.annualIncome;
-        delete sess.citizenProfile.profession;
-        delete sess.citizenProfile.incomeMembers;
-        delete sess.citizenProfile.incomeMembersConfirmed;
-        delete sess.citizenProfile.incomeSelectedIndices;
-        delete sess.citizenProfile.incomeExtraAddedMembers;
-        delete sess.citizenProfile.salaryProofPrompted;
     }
-    delete sess.annualIncome;
-    delete sess.profession;
-    delete sess.familyMemberCount;
-    delete sess.incomeMembers;
     if (isDirectOperator) {
         sess.intakeState = 'INCOME_INTAKE';
         if (createAppFn && cleanMobile) { try { createAppFn(cleanMobile, 'INCOME_CERT', sess.citizenProfile); } catch (_) {} }

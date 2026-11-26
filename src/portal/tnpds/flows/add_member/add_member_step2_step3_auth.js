@@ -106,7 +106,7 @@ async function executeSteps2And3Auth(page, userMobile, options, onProgress, shar
         // If on /pages/home or root without mobInput, click "உறுப்பினரை சேர்க்க" or navigate to service-request so we enter /auth/login or /pages/service-request
         const curUrlStart = page.url().toLowerCase();
         if (curUrlStart.includes('/pages/home') || curUrlStart.endsWith('tnpds.gov.in/')) {
-            const addLink = page.locator('a:has-text("உறுப்பினரை சேர்க்க"), li:has-text("உறுப்பினரை சேர்க்க") a, span:has-text("உறுப்பினரை சேர்க்க"), [routerlink*="service-request"], a[href*="service-request"]').first();
+            const addLink = page.locator('a:has-text("உறுப்பினரை சேர்க்க"), a:has-text("உறுப்பினரைச் சேர்க்க"), a:has-text("Add Member")').first();
             if (await addLink.count() > 0 && await addLink.isVisible().catch(() => false)) {
                 await addLink.click({ timeout: 5000 }).catch(() => {});
                 await page.waitForTimeout(2000);
@@ -323,6 +323,13 @@ async function executeSteps2And3Auth(page, userMobile, options, onProgress, shar
         if (isLoginComplete) break;
         if (resetToLogin) continue;
         break;
+    }
+
+    if (!isLoginComplete) {
+        const loginHaltMsg = 'TNPDS உள்நுழைவு OTP சரிபார்க்கப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.';
+        onProgress(`🛑 **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${loginHaltMsg}`);
+        await showBrowserHud('🔴 உள்நுழைவு நிறுத்தம்', loginHaltMsg, 'error');
+        return { success: false, message: loginHaltMsg };
     }
 
     onProgress('🎉 [படி 3/12] TNPDS போர்ட்டலில் வெற்றிகரமாக உள்நுழைந்தது!');

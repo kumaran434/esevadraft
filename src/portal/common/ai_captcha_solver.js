@@ -3,7 +3,7 @@
  * Module: ai_captcha_solver.js
  * 
  * Standalone Multimodal OCR Service
- * - Active Google Gemini Models: gemini-flash-latest, gemini-3.8-flash
+ * - Active Google Gemini Models: gemini-flash-lite-latest, gemini-2.5-flash-lite (thinkingBudget: 0)
  * - Dynamic JPEG / PNG byte inspection
  * - Local SDK first -> Local API -> Cloud /api/ocr/captcha fallback
  */
@@ -185,7 +185,7 @@ class AiCaptchaSolver {
             } catch (_) {}
         }
 
-        // Fast Strategy 2: Local Gemini SDK (Warm Client Connection Pool)
+        // Fast Strategy 2: Local Gemini SDK (Warm Client Connection Pool - Flash Lite ONLY with 0 thinking tokens)
         const GoogleGenAI = this.resolveGenAiPackage();
         if (apiKey && GoogleGenAI) {
             try {
@@ -193,7 +193,7 @@ class AiCaptchaSolver {
                     this._cachedAiClient = new GoogleGenAI({ apiKey });
                 }
                 const ai = this._cachedAiClient;
-                const models = ['gemini-flash-latest'];
+                const models = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
 
                 for (const mName of models) {
                     try {
@@ -212,6 +212,7 @@ class AiCaptchaSolver {
                             }],
                             config: {
                                 temperature: 0,
+                                maxOutputTokens: 16,
                                 systemInstruction: 'You are an ultra-fast, high-precision CAPTCHA OCR engine for Tamil Nadu government portals. Output strictly the 5 uppercase alphanumeric characters without any spaces, quotes, or explanations.'
                             }
                         });

@@ -18,23 +18,32 @@ function renderSubserviceReadySummary(sess) {
                       `• 🏠 **முகவரி:** ${address}\n` +
                       `• 📄 **இணைக்கப்பட்ட ஆவணங்கள்:** புகைப்படம், ஆதார் மற்றும் முகவரிச் சான்று ✅\n`;
     } else if (subService === 'ADD_MEMBER') {
-        const isChild = sess.subServiceData?.isChild;
-        svcNameTam = isChild ? 'குடும்ப உறுப்பினர் சேர்க்கை (குழந்தை)' : 'குடும்ப உறுப்பினர் சேர்க்கை (பெரியவர்)';
-        const rel = sess.subServiceData?.relationshipTam || 'உறுப்பினர்';
-        const name = sess.subServiceData?.memberName || (sess.tempMember && (sess.tempMember.nameTam || sess.tempMember.nameEng)) || 'புதிய உறுப்பினர்';
-        const isSonDaughter = sess.subServiceData?.memberCategory === 'SON_DAUGHTER';
-        let memberExtra = '';
-        if (sess.subServiceData?.aadhaarNo) {
-            memberExtra += `• 🪪 **ஆதார் எண்:** ${(sess.subServiceData.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()} ✅\n`;
+        const list = Array.isArray(sess.subServiceData?.addMembersList) && sess.subServiceData.addMembersList.length > 0
+            ? sess.subServiceData.addMembersList
+            : null;
+        if (list && list.length > 1) {
+            svcNameTam = `குடும்ப உறுப்பினர் சேர்க்கை (${list.length} நபர்கள்)`;
+            detailsList = list.map((m, i) => {
+                const n = m.memberNameTam ? (m.memberNameEng ? `${m.memberNameTam} (${m.memberNameEng})` : m.memberNameTam) : (m.memberName || '—');
+                const aStr = m.aadhaarNo ? ` | ஆதார்: ${String(m.aadhaarNo).replace(/(\d{4})/g, '$1 ').trim()}` : '';
+                return `• 👤 **${i + 1}. ${n}** (${m.relationshipTam || 'உறுப்பினர்'})${aStr} ✅`;
+            }).join('\n') + `\n• 📄 **இணைக்கப்பட்ட ஆவணம்:** ஆதார் அட்டை (Aadhaar Card) ✅\n`;
+        } else {
+            const isChild = sess.subServiceData?.isChild;
+            svcNameTam = isChild ? 'குடும்ப உறுப்பினர் சேர்க்கை (குழந்தை)' : 'குடும்ப உறுப்பினர் சேர்க்கை';
+            const rel = sess.subServiceData?.relationshipTam || 'உறுப்பினர்';
+            const name = sess.subServiceData?.memberNameTam || sess.subServiceData?.memberName || sess.subServiceData?.memberNameEng || (sess.tempMember && (sess.tempMember.nameTam || sess.tempMember.nameEng)) || '—';
+            let memberExtra = '';
+            if (sess.subServiceData?.aadhaarNo) {
+                memberExtra += `• 🪪 **ஆதார் எண்:** ${(sess.subServiceData.aadhaarNo || '').replace(/(\d{4})/g, '$1 ').trim()} ✅\n`;
+            }
+            if (sess.subServiceData?.dob) {
+                memberExtra += `• 📅 **பிறந்த தேதி:** ${sess.subServiceData.dob}\n`;
+            }
+            detailsList = `• 👤 **சேர்க்கப்படும் நபர்:** ${name} (${rel})\n` +
+                          memberExtra +
+                          `• 📄 **இணைக்கப்பட்ட ஆவணம்:** ஆதார் அட்டை (Aadhaar Card) ✅\n`;
         }
-        if (sess.subServiceData?.dob) {
-            memberExtra += `• 📅 **பிறந்த தேதி:** ${sess.subServiceData.dob}\n`;
-        }
-        detailsList = `• 👶/👤 **சேர்க்கப்படும் நபர்:** ${name} (${rel})\n` +
-                      memberExtra +
-                      (isChild ? `• 📄 **இணைக்கப்பட்ட ஆவணம்:** ஆதார் அட்டை (Aadhaar Card) ✅\n` 
-                               : (isSonDaughter ? `• 📄 **இணைக்கப்பட்ட ஆவணம்:** ஆதார் அட்டை (Aadhaar Card) ✅\n`
-                                                : `• 📄 **இணைக்கப்பட்ட ஆவணங்கள்:** ஆதார் அட்டை ✅, நீக்கல்/திருமணச் சான்று ✅\n`));
     } else if (subService === 'REMOVE_MEMBER') {
         svcNameTam = 'குடும்ப உறுப்பினர் நீக்கம்';
         const reason = sess.subServiceData?.reason || 'இறப்பு / திருமணம்';
@@ -46,9 +55,10 @@ function renderSubserviceReadySummary(sess) {
     } else if (subService === 'CHANGE_HEAD') {
         svcNameTam = 'குடும்பத் தலைவர் மாற்றம்';
         const reason = sess.subServiceData?.reason || 'குடும்ப விருப்பம்';
-        detailsList = `• 👤 **புதிய குடும்பத் தலைவர்:** சரிபார்க்கப்பட்ட உறுப்பினர்\n` +
+        const newHead = sess.subServiceData?.newHeadNameTam || sess.subServiceData?.newHeadName || 'சரிபார்க்கப்பட்ட உறுப்பினர்';
+        detailsList = `• 👤 **புதிய குடும்பத் தலைவர்:** ${newHead}\n` +
                       `• 📋 **காரணம்:** ${reason}\n` +
-                      `• 📄 **ஆவணம்:** புதிய தலைவர் ஆதார் அட்டை ✅\n`;
+                      `• 📄 **ஆவணம்:** புதிய தலைவர் ஆதார் / சான்று ✅\n`;
     } else if (subService === 'CHANGE_ADDRESS') {
         svcNameTam = 'முகவரி மாற்றம்';
         const proof = sess.subServiceData?.proofType || 'மின் கட்டண ரசீது (EB Bill)';
@@ -61,9 +71,10 @@ function renderSubserviceReadySummary(sess) {
                       `• 📄 **சுய உறுதிமொழி:** பெறப்பட்டது ✅\n`;
     } else if (subService === 'UPDATE_MOBILE') {
         svcNameTam = 'கைபேசி எண் மாற்றம் / பதிவு';
+        const regMob = String(sess.citizenProfile?.mobileNumber || sess.mobileNumber || '').replace(/\D/g, '').slice(-10);
         const newMob = sess.subServiceData?.newMobile || 'பதிவு செய்யப்பட்ட எண்';
-        detailsList = `• 📱 **புதிய கைபேசி எண்:** ${newMob}\n` +
-                      `• 📄 **சான்று:** தலைவரின் ஆதார் சரிபார்க்கப்பட்டது ✅\n`;
+        detailsList = (regMob ? `• 📞 **தற்போதைய பதிவு எண்:** +91 ${regMob}\n` : '') +
+                      `• 📱 **புதிய கைபேசி எண்:** +91 ${newMob} ✅\n`;
     } else if (subService === 'LPG_UPDATE') {
         svcNameTam = 'எரிவாயு (LPG) விவரங்கள் திருத்தம்';
         const cyl = sess.subServiceData?.cylinders || '1 சிலிண்டர்';

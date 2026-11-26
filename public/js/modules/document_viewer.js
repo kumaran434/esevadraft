@@ -15,34 +15,17 @@
             const isAddMem = curSub === 'ADD_MEMBER' || curState.startsWith('RATION_ADD_MEMBER') || svcName.includes('உறுப்பினர் சேர்க்கை') || svcName.includes('ADD_MEMBER');
             const isRemMem = curSub === 'REMOVE_MEMBER' || curState.startsWith('RATION_REMOVE_MEMBER') || svcName.includes('உறுப்பினர் நீக்க') || svcName.includes('REMOVE_MEMBER');
             const isAddrChange = curSub === 'CHANGE_ADDRESS' || curState.startsWith('RATION_CHANGE_ADDRESS') || svcName.includes('முகவரி மாற்றம்') || svcName.includes('CHANGE_ADDRESS');
+            const isUpdateMob = curSub === 'UPDATE_MOBILE' || curSub === 'CHANGE_MOBILE' || curState.startsWith('RATION_CHANGE_MOBILE');
 
             const rawList = Array.isArray(documents) ? [...documents] : [];
             let filteredDocs = [];
 
             if (isAddMem) {
                 // ADD_MEMBER: Government portal requires strictly ONLY Member Aadhaar or Birth Certificate, Surrender Proof, and Smart Card.
-                // NEVER Applicant Passport Photo or Gas Consumer Book!
-                const subData = currentCitizenData?.subServiceData || window.lastSubServiceData;
-                const memberName = subData?.memberNameTam || subData?.memberName || currentCitizenData?.fullNameTam || '';
-                const memberLabel = memberName ? ` (${memberName})` : '';
-
-                // Look for memberAadhaar or birthCertificate
+                // NEVER Applicant Passport Photo, Head Aadhaar, or Gas Consumer Book!
                 const memDoc = rawList.find(d => d.type === 'memberAadhaar' || (d.type && d.type.startsWith('memberAadhaar')) || d.type === 'birthCertificate');
                 if (memDoc) {
                     filteredDocs.push(memDoc);
-                } else {
-                    // If no explicit memberAadhaar in list, check if headAadhaar was passed/uploaded for this session
-                    const headAadhaarDoc = rawList.find(d => d.type === 'headAadhaar');
-                    if (headAadhaarDoc) {
-                        filteredDocs.push({
-                            ...headAadhaarDoc,
-                            type: 'memberAadhaar',
-                            title: `உறுப்பினர் ஆதார் அட்டை${memberLabel}`,
-                            titleEng: `Member Aadhaar Card${memberLabel}`,
-                            downloadUrl: headAadhaarDoc.downloadUrl.replace('/doc/headAadhaar', '/doc/memberAadhaar'),
-                            previewUrl: headAadhaarDoc.previewUrl ? headAadhaarDoc.previewUrl.replace('/doc/headAadhaar', '/doc/memberAadhaar') : undefined
-                        });
-                    }
                 }
 
                 // Check for surrender proof or marriage proof
@@ -61,11 +44,20 @@
                 if (smartCardDoc) filteredDocs.push(smartCardDoc);
 
             } else if (isAddrChange) {
-                // CHANGE_ADDRESS: Only new address proof, residence proof, or gas book (as address proof), and smart card
-                const addrDoc = rawList.find(d => d.type === 'newAddressProof' || d.type === 'residenceProof' || d.type === 'gasBook');
+                // CHANGE_ADDRESS: Only new address proof (or explicitly confirmed address proof) and smart card
+                const sData = currentCitizenData?.subServiceData || window.lastSubServiceData || {};
+                const addrDoc = rawList.find(d => d.type === 'newAddressProof') ||
+                    (sData.addressProofDocPath ? rawList.find(d => d.type === 'residenceProof' || d.type === 'gasBook') : null);
                 if (addrDoc) filteredDocs.push(addrDoc);
                 const smartCardDoc = rawList.find(d => d.type === 'smartCard');
                 if (smartCardDoc) filteredDocs.push(smartCardDoc);
+
+            } else if (isUpdateMob) {
+                // UPDATE_MOBILE: Only Smart Card (optional reference) & Application PDF — never unrelated Head/Gas/Address docs
+                const smartCardDoc = rawList.find(d => d.type === 'smartCard' || d.type === 'rationCard');
+                if (smartCardDoc) filteredDocs.push(smartCardDoc);
+                const appPdfDoc = rawList.find(d => d.type === 'applicationPdf');
+                if (appPdfDoc) filteredDocs.push(appPdfDoc);
 
             } else {
                 // Master Profile / New Ration Card / default
@@ -184,25 +176,24 @@
         function clearCustomerDocCache(mobile) {
             if (!mobile) return;
             const raw = String(mobile).trim();
-            const clean = raw.replace(/\D/g, '').slice(-10);
-            if (raw) {
-                delete cachedServerDocsByMobile[raw];
-                delete cachedDocsFetchedAtByMobile[raw];
-                delete cachedDocsSubByMobile[raw];
-            }
-            if (clean) {
-                delete cachedServerDocsByMobile[clean];
-                delete cachedDocsFetchedAtByMobile[clean];
-                delete cachedDocsSubByMobile[clean];
+            const clean = raw.split('_')[0].replace(/\D/g, '').slice(-10);
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+            for (const k of [raw, clean, activeDraftId]) {
+                if (k) {
+                    delete cachedServerDocsByMobile[k];
+                    delete cachedDocsFetchedAtByMobile[k];
+                    delete cachedDocsSubByMobile[k];
+                }
             }
             lastRenderedDocsSignature = '';
         }
         window.clearCustomerDocCache = clearCustomerDocCache;
 
         async function fetchSidebarDocuments(mobile) {
-            const cleanMob = mobile || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session';
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+            const cleanMob = (mobile && String(mobile).includes('_')) ? mobile : (activeDraftId || mobile || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session');
             const curSub = currentCitizenData?.subService || window.lastSubService || '';
-            const subQuery = curSub ? `?subService=${encodeURIComponent(curSub)}` : '';
+            const subQuery = curSub ? `?subService=${encodeURIComponent(curSub)}&liveOnly=1` : '?liveOnly=1';
             cachedDocsFetchedAtByMobile[cleanMob] = Date.now();
             cachedDocsSubByMobile[cleanMob] = curSub;
             try {
@@ -283,7 +274,7 @@
         function renderActiveCustomerHeader(custName, mob) {
             const titleEl = document.getElementById('activeCustomerTitle');
             if (!titleEl) return;
-            const cleanMob = mob ? String(mob).replace(/\D/g, '').slice(-10) : '';
+            const cleanMob = mob ? String(mob).split('_')[0].replace(/\D/g, '').slice(-10) : '';
             const phoneText = cleanMob ? `(+91 ${cleanMob})` : '';
 
             if (custName && custName !== 'வாடிக்கையாளர்') {
@@ -323,11 +314,14 @@
             const pdfUrl = data.applicationPdfUrl || (a && a.applicationPdfUrl);
 
             if (a) {
-                if (data?.subService) a.subService = data.subService;
-                if (data?.subServiceData) a.subServiceData = data.subServiceData;
+                if (data && 'subService' in data) a.subService = data.subService;
+                if (data && 'subServiceData' in data) a.subServiceData = data.subServiceData;
+                if (data && 'pluginId' in data) a.pluginId = data.pluginId;
+                if (data && 'intakeState' in data) a.intakeState = data.intakeState;
+                if (data?.step) a.step = data.step;
                 if (data?.documents) a.documents = { ...(a.documents || {}), ...data.documents };
-                window.lastSubService = a.subService || window.lastSubService || null;
-                window.lastSubServiceData = a.subServiceData || null;
+                window.lastSubService = (data && 'subService' in data) ? (data.subService || null) : (a.subService || null);
+                window.lastSubServiceData = (data && 'subServiceData' in data) ? (data.subServiceData || null) : (a.subServiceData || null);
                 currentCitizenData = a;
             }
 
@@ -350,23 +344,34 @@
             } else {
                 if (docsBoxEarly) docsBoxEarly.style.display = 'block';
                 const activeSubNow = (a && a.subService) || window.lastSubService || '';
+                const prevCachedDocs = cachedServerDocsByMobile[targetMobile];
+                const hasMoreIncomingDocs = Boolean(data?.documents && Object.values(data.documents).filter(Boolean).length > (prevCachedDocs ? prevCachedDocs.length : 0));
+                if (hasMoreIncomingDocs) {
+                    delete cachedServerDocsByMobile[targetMobile];
+                    delete cachedDocsFetchedAtByMobile[targetMobile];
+                }
+                if (Array.isArray(data?.documentsList)) {
+                    cachedServerDocsByMobile[targetMobile] = data.documentsList;
+                    cachedDocsFetchedAtByMobile[targetMobile] = Date.now();
+                    cachedDocsSubByMobile[targetMobile] = activeSubNow;
+                }
                 const cachedDocs = cachedServerDocsByMobile[targetMobile];
                 const cachedSub = cachedDocsSubByMobile[targetMobile] || '';
                 const fetchedAt = cachedDocsFetchedAtByMobile[targetMobile] || 0;
                 const cacheMatchesSub = Array.isArray(cachedDocs) && cachedSub === activeSubNow;
                 const cacheIsFresh = cacheMatchesSub && cachedDocs.length > 0 && (Date.now() - fetchedAt < 8000);
 
-                if (cacheMatchesSub && cachedDocs.length > 0) {
+                if (Array.isArray(data?.documentsList)) {
+                    renderSidebarDocuments(data.documentsList);
+                } else if (cacheMatchesSub && cachedDocs.length > 0) {
                     renderSidebarDocuments(cachedDocs);
                 } else {
                     const instantDocs = extractDocumentsFromProfile(a, targetMobile, appNo, pdfUrl);
-                    if (instantDocs.length > 0) {
-                        renderSidebarDocuments(instantDocs);
-                    }
+                    renderSidebarDocuments(instantDocs);
                 }
 
-                // 2. Refresh from server only when cache is missing, service switched, or stale (> 8s)
-                if (targetMobile && !cacheIsFresh) {
+                // 2. Refresh from server when cache is missing, service switched, new docs arrived, or stale (> 8s)
+                if (targetMobile && !cacheIsFresh && !Array.isArray(data?.documentsList)) {
                     fetchSidebarDocuments(targetMobile);
                 }
             }
@@ -408,13 +413,16 @@
                     setVal('infoHeadName', '');
                 }
                 
-                // Dynamically sync active customer title & localStorage with extracted official name
+                // Dynamically sync active customer title & localStorage ONLY from the live session profile (NEVER stale localStorage fallback!)
                 if (activeCustMob && !/^walkin_/i.test(activeCustMob)) {
-                    const resolvedName = resolveCustomerDisplayName(a, localStorage.getItem('eseva_active_customer_name'));
+                    const resolvedName = resolveCustomerDisplayName(a, '');
                     if (resolvedName && resolvedName !== 'வாடிக்கையாளர்') {
                         localStorage.setItem('eseva_active_customer_name', resolvedName);
+                        renderActiveCustomerHeader(resolvedName, activeCustMob);
+                    } else {
+                        localStorage.removeItem('eseva_active_customer_name');
+                        renderActiveCustomerHeader('', activeCustMob);
                     }
-                    renderActiveCustomerHeader(resolvedName, activeCustMob);
                 }
 
                 // Ensure clear buttons in header and sidebar are visible
@@ -468,8 +476,8 @@
                 const allSidebarBoxIds = [
                     'sidebarIncomeBox', 'sidebarResidenceBox', 'sidebarCommunityBox',
                     'sidebarFirstGraduateBox', 'sidebarObcBox', 'sidebarWidowBox',
-                    'sidebarAddMemberBox', 'sidebarChangeAddressBox', 'sidebarRemoveMemberBox',
-                    'sidebarDynamicServiceBox'
+                    'sidebarAddMemberBox', 'sidebarChangeAddressBox', 'sidebarUpdateMobileBox',
+                    'sidebarRemoveMemberBox', 'sidebarDynamicServiceBox'
                 ];
                 for (const boxId of allSidebarBoxIds) {
                     const el = document.getElementById(boxId);
@@ -491,10 +499,17 @@
                     }
                 }
 
-                // 3.5 Address Box (Shown only when a specific service is chosen and relevant, NEVER empty in Add Member or Service Selection!)
+                // 3.5 Address Box (2-Lane Rule: hide old Master Address on ALL 5 TNPDS card modification services!)
+                const isTnpdsModService = [
+                    'TNPDS_ADD_MEMBER',
+                    'TNPDS_REMOVE_MEMBER',
+                    'TNPDS_CHANGE_ADDRESS',
+                    'TNPDS_UPDATE_MOBILE',
+                    'TNPDS_CHANGE_HEAD'
+                ].includes(vpId);
                 const addrBox = document.getElementById('sidebarAddressBox');
                 if (addrBox) {
-                    addrBox.style.display = (isServiceSelectionOnly || (isAddMemberService && !addr)) ? 'none' : 'block';
+                    addrBox.style.display = (isServiceSelectionOnly || isTnpdsModService) ? 'none' : 'block';
                 }
 
                 // 3.6 Documents Box (Shown only when a specific service is chosen, NEVER during service selection!)
@@ -546,9 +561,11 @@
                 }
 
                 // Dynamic Family Members Rendering
+                // In ADD_MEMBER subservice, #sidebarAddMemberBox already renders the single new member card;
+                // rendering #membersSidebarContainer too caused 3 duplicate member cards for 1 upload!
                 const membersContainer = document.getElementById('membersSidebarContainer');
                 if (membersContainer) {
-                    if (!isNewRationCardService && !isAddMemberService) {
+                    if (!isNewRationCardService || isAddMemberService) {
                         membersContainer.innerHTML = '';
                         membersContainer.style.display = 'none';
                     } else {
@@ -741,6 +758,7 @@
         }
 
         function openHitlApprovalModal(approvalData) {
+            approvalData = approvalData || {};
             if (isDevMockModeActive()) {
                 isHitlModalOpen = false;
                 const modal = document.getElementById('hitlApprovalModal');
@@ -840,7 +858,10 @@
         function openImageZoomModal(imgUrl) {
             const modal = document.getElementById('imageZoomModal');
             const img = document.getElementById('imageZoomModalImg');
-            if (img && imgUrl) img.src = imgUrl;
+            if (img && imgUrl) {
+                img.src = imgUrl;
+                img.style.display = 'block';
+            }
             if (modal) modal.style.display = 'flex';
         }
 

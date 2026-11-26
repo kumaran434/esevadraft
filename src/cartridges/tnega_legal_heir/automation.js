@@ -20,8 +20,8 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
         bannerText: `${modeText}யில் தமிழ்நாடு அரசு **TNeGA சட்ட வாரிசு சான்றிதழ் (REV-114)** ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
             `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
-            `• 🕊️ **இறந்தவர்:** ${p.deceasedNameTam || p.deceasedNameEng || p.fatherNameTam || '—'} (தேதி: ${p.dateOfDeath || '15-Jan-2025'})\n` +
-            `• 📜 **இறப்புச் சான்றிதழ் எண்:** ${p.deathCertificateNo || 'DC-2025-88412'}\n\n` +
+            `• 🕊️ **இறந்தவர்:** ${p.deceasedNameTam || p.deceasedNameEng || p.fatherNameTam || '—'} (தேதி: ${p.dateOfDeath || '—'})\n` +
+            `• 📜 **இறப்புச் சான்றிதழ் எண்:** ${p.deathCertificateNo || '—'}\n\n` +
             `Chrome உலாவியில் TNeGA REV-114 படிவம் திறக்கப்பட்டு, ஆப்ரேட்டர் Submit-க்குப் பிறகு 4 ஆவணங்களும் பதிவேற்றப்பட்டு **Pre-Submit Gate** வரை தானாக இயங்கும்...`,
         extraJson: { subService: 'LEGAL_HEIR', serviceId: 'LEGAL_HEIR_CERTIFICATE', targetService: 'LEGAL_HEIR' }
     });

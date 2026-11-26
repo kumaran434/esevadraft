@@ -37,12 +37,6 @@ async function handleIntake(ctx, req, res) {
             if (handled) return true;
         }
         if (text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
-            if (!sess.citizenProfile.yearsOfResidence) {
-                sess.citizenProfile.yearsOfResidence = text.trim();
-            } else if (!sess.citizenProfile.purposeOfCertificate) {
-                sess.citizenProfile.purposeOfCertificate = text.trim();
-            }
-            persistSessions();
             const flowStep = advanceFlow(sess);
             sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
@@ -105,7 +99,7 @@ async function handleIntake(ctx, req, res) {
         }
     }
 
-    if ((sess.intakeState === 'RESIDENCE_YEARS_WAIT' || (text && (text.includes('ஆண்டு') || text.includes('பிறப்பிலிருந்து') || text.includes('Years') || /^\d{1,2}$/.test(text)))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if (sess.intakeState === 'RESIDENCE_YEARS_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         sess.citizenProfile.yearsOfResidence = text.trim();
         persistSessions();
         const flowStep = advanceFlow(sess, `✅ தமிழ்நாட்டில் வசிக்கும் காலம் **${text.trim()}** எனப் பதிவானது!`);
@@ -114,7 +108,7 @@ async function handleIntake(ctx, req, res) {
         return true;
     }
 
-    if ((sess.intakeState === 'RESIDENCE_PURPOSE_WAIT' || (text && (text.includes('பயன்பாடு') || text.includes('கல்வி') || text.includes('வேலை') || text.includes('நலத்திட்டம்') || text.includes('பொது')))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+    if (sess.intakeState === 'RESIDENCE_PURPOSE_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         sess.citizenProfile.purposeOfCertificate = text.trim();
         persistSessions();
         const flowStep = advanceFlow(sess, `✅ சான்றிதழ் நோக்கம் **${text.trim()}** எனப் பதிவானது!`);

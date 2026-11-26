@@ -15,8 +15,9 @@ class PortalActionGuards {
      */
     static normalizeMobile(val) {
         if (!val) return '';
-        const digits = String(val).replace(/\D/g, '');
-        return digits.length > 10 && digits.startsWith('91') ? digits.slice(-10) : digits;
+        const base = String(val).trim().split('_')[0];
+        const digits = base.replace(/\D/g, '');
+        return digits.length > 10 && digits.startsWith('91') ? digits.slice(-10) : (digits.length > 10 ? digits.slice(-10) : digits);
     }
 
     /**

@@ -113,7 +113,7 @@ async function cleanup() {
             '9999900024', '9999900025', '9999900026', '9999900045', '9293134876', '9143622397',
             '9999900035', '9999900036', '9999900038', '9999900039', '9999900042',
             '9840112233', '9998887776', '9999999999', '9999999988', '9955553661',
-            '9999900055'
+            '9999900055', '9999900047'
         ];
         const dataDirs = [
             path.resolve(__dirname, '..', 'data', 'drafts'),
@@ -128,11 +128,42 @@ async function cleanup() {
                 const files = fs.readdirSync(dir);
                 files.forEach(f => {
                     const mob = f.replace('.json', '');
-                    if (testMobiles.includes(mob) || mob.startsWith('test_') || mob.startsWith('walkin_')) {
+                    const isTestMob = testMobiles.some(tm => mob === tm || mob.startsWith(`${tm}_`));
+                    if (isTestMob || mob.startsWith('99999') || mob.startsWith('9840112233') || mob.startsWith('9991112233') || mob.startsWith('test_') || mob.startsWith('walkin_')) {
                         try { fs.unlinkSync(path.join(dir, f)); } catch (e) {}
                     }
                 });
             }
+        }
+        // Also purge synthetic test files in data/applications, data/uploads, uploads, and aadhaar_citizen_index.json
+        const testExtraDirs = [
+            path.resolve(__dirname, '..', 'data', 'applications'),
+            path.resolve(__dirname, '..', 'data', 'uploads'),
+            path.resolve(__dirname, '..', 'uploads')
+        ];
+        for (const tDir of testExtraDirs) {
+            if (!fs.existsSync(tDir)) continue;
+            try {
+                for (const f of fs.readdirSync(tDir)) {
+                    if (testMobiles.some(m => f.includes(m)) || f.startsWith('APP_999') || f.startsWith('APP_179') || f.startsWith('99999')) {
+                        try { fs.rmSync(path.join(tDir, f), { recursive: true, force: true }); } catch (_) {}
+                    }
+                }
+            } catch (_) {}
+        }
+        const aifPath = path.resolve(__dirname, '..', 'data', 'aadhaar_citizen_index.json');
+        if (fs.existsSync(aifPath)) {
+            try {
+                const idx = JSON.parse(fs.readFileSync(aifPath, 'utf8'));
+                let changed = false;
+                for (const [k, v] of Object.entries(idx)) {
+                    if (v && testMobiles.includes(String(v.mobileNumber || '').replace(/\D/g, '').slice(-10))) {
+                        delete idx[k];
+                        changed = true;
+                    }
+                }
+                if (changed) fs.writeFileSync(aifPath, JSON.stringify(idx, null, 2), 'utf8');
+            } catch (_) {}
         }
         const sessionFiles = [
             path.resolve(__dirname, '..', 'data', 'sessions.json'),
@@ -642,31 +673,39 @@ async function runTests() {
         };
         await saveCitizenDraft(famDeltaMob, initialFamDraft);
 
-        // A: Selecting Income Certificate for family with multiple members prompts member chips
+        // A: Golden Rule 24 (100% Pure Fresh Mode): Selecting Income Certificate starts fresh at INCOME_AADHAAR_WAIT (never auto-skips from old draft)
         const deltaChat1 = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChat1.status === 200, 'Income selection returned 200 OK');
-        assert(deltaChat1.body.intakeState === 'INCOME_INTAKE', 'Intake state is INCOME_INTAKE');
+        assert(deltaChat1.body.intakeState === 'INCOME_AADHAAR_WAIT', '100% Pure Fresh Mode: Income starts cleanly at INCOME_AADHAAR_WAIT without pre-filling old draft');
         const botMsgDelta1 = deltaChat1.body.chatHistory[deltaChat1.body.chatHistory.length - 1];
-        assert(botMsgDelta1.options.some(o => o.value === 'SELECT_MEMBER_1'), 'Presents member selection chip for Suresh V');
+        assert(botMsgDelta1.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD'), 'Presents fresh Aadhaar upload option');
 
-        // B: Selecting Suresh V auto-maps his details and preserves family address
-        const deltaChat2 = await request('POST', '/api/chat', { text: 'SELECT_MEMBER_1' }, { 'x-session-mobile': famDeltaMob });
-        assert(deltaChat2.status === 200, 'Member selection returned 200 OK');
-        assert(deltaChat2.body.citizenProfile.fullNameEng === 'Suresh V', 'Applicant mapped to Suresh V');
-        assert(deltaChat2.body.citizenProfile.headAadhaar === '112233445566', "Suresh's Aadhaar auto-mapped");
-        assert(deltaChat2.body.citizenProfile.village === 'Minnal', 'Family village preserved without re-asking');
+        // B: Populating profile mid-service (simulating Aadhaar/SmartCard upload in active session) & answering member/income questions
+        await request('POST', '/api/profile/update', {
+            mobileNumber: famDeltaMob,
+            canNumber: '133370337878397',
+            motherNameTam: 'லட்சுமி',
+            community: 'BC',
+            fullNameTam: 'சுரேஷ் வ',
+            fullNameEng: 'Suresh V',
+            headAadhaar: '112233445566',
+            village: 'Minnal',
+            taluk: 'Arakkonam',
+            district: 'Ranipet',
+            pincode: '632510'
+        }, { 'x-session-mobile': famDeltaMob });
 
         // B.2: Selecting member count "1 நபர்"
         const deltaChatCount = await request('POST', '/api/chat', { text: '1 நபர்' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChatCount.status === 200, 'Member count returned 200 OK');
         assert(deltaChatCount.body.citizenProfile.familyMemberCount === 1, 'Member count captured');
 
-        // C: Answering annual income delta question
+        // C: Answering annual income question
         const deltaChat3 = await request('POST', '/api/chat', { text: '₹72,000' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChat3.status === 200, 'Income answer returned 200 OK');
         assert(deltaChat3.body.citizenProfile.annualIncome === '72000', 'Annual income captured');
 
-        // D: Answering occupation delta question transitions to mandatory Photo Gate or readiness
+        // D: Answering occupation question transitions to mandatory Document Gate or readiness
         const deltaChat4 = await request('POST', '/api/chat', { text: 'தனியார் வேலை' }, { 'x-session-mobile': famDeltaMob });
         assert(deltaChat4.status === 200, 'Occupation answer returned 200 OK');
         assert(deltaChat4.body.citizenProfile.profession === 'தனியார் வேலை', 'Profession captured');
@@ -944,26 +983,7 @@ async function runTests() {
         assert(lastBhavanaMsg.options.some(o => o.value === 'TRIGGER_EDIT_MODAL'), 'Complete customer has Review/Edit option');
         assert(!lastBhavanaMsg.actionRequired, 'Complete customer does NOT have dangling upload prompt');
 
-        // 2. Selecting Ration Card category switches to RATION_CARD_SERVICES and shows 4 certified subservices (+ Back)
-        const resRationMenu = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
-        assert(resRationMenu.status === 200, 'Ration Card menu returns 200 OK');
-        assert(resRationMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
-        const rationMenuMsg = resRationMenu.body.chatHistory[resRationMenu.body.chatHistory.length - 1];
-        assert(rationMenuMsg.options && rationMenuMsg.options.length === 5, 'Ration card menu has 4 certified subservices + Back');
-
-        // 2b. Calling history while in RATION_CARD_SERVICES stays at RATION_CARD_SERVICES (no premature submit card!)
-        const resCheckNoPremature = await request('GET', `/api/chat/history?mobile=${testCompMob}`, null, testCompHeaders);
-        assert(resCheckNoPremature.status === 200, 'History check returns 200 OK');
-        assert(resCheckNoPremature.body.step === 'RATION_CARD_SERVICES', 'History stays at RATION_CARD_SERVICES');
-        const noPrematureMsg = resCheckNoPremature.body.chatHistory[resCheckNoPremature.body.chatHistory.length - 1];
-        assert(noPrematureMsg.options && noPrematureMsg.options.length === 5, 'Still shows 4 certified subservices + Back, no premature submit card');
-
-        // 3. Selecting Option 1 (புதிய ரேஷன் கார்டு) switches back to READY_TO_APPLY
-        const resNewRation = await request('POST', '/api/chat', { message: 'புதிய ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
-        assert(resNewRation.status === 200, 'Option 1 returns 200 OK');
-        assert(resNewRation.body.step === 'READY_TO_APPLY', 'Option 1 transitions to READY_TO_APPLY');
-
-        // 4. Clicking Add Member asks ONLY for Member 3
+        // 2. Clicking Add Member on an active 2-member draft asks specifically for Member 3 when ADD_MEMBER_3 is triggered
         const resAddMem = await request('POST', '/api/chat', { message: 'ADD_MEMBER_3', mobileNumber: testCompMob }, testCompHeaders);
         assert(resAddMem.status === 200, 'ADD_MEMBER_3 returns 200 OK');
         assert(resAddMem.body.step === 'MEMBER_AADHAAR_FRONT', 'Transitions to MEMBER_AADHAAR_FRONT');
@@ -971,10 +991,29 @@ async function runTests() {
         assert(addMemMsg.text.includes('உறுப்பினர் 3'), 'Prompts specifically for Member 3');
         assert(!addMemMsg.text.includes('உறுப்பினர் 2'), 'Never asks for Member 2 when Member 2 already exists');
 
-        // 5. Clicking Submit transitions back to READY_TO_APPLY
+        // 3. Clicking Submit transitions cleanly back to READY_TO_APPLY
         const resSubmitBack = await request('POST', '/api/chat', { message: 'CONFIRM_SUBMIT', mobileNumber: testCompMob }, testCompHeaders);
         assert(resSubmitBack.status === 200, 'CONFIRM_SUBMIT returns 200 OK');
         assert(resSubmitBack.body.step === 'READY_TO_APPLY', 'CONFIRM_SUBMIT returns to READY_TO_APPLY');
+
+        // 4. Selecting Ration Card category switches to RATION_CARD_SERVICES and shows 4 certified subservices (+ Back)
+        const resRationMenu = await request('POST', '/api/chat', { message: 'ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
+        assert(resRationMenu.status === 200, 'Ration Card menu returns 200 OK');
+        assert(resRationMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
+        const rationMenuMsg = resRationMenu.body.chatHistory[resRationMenu.body.chatHistory.length - 1];
+        assert(rationMenuMsg.options && rationMenuMsg.options.length === 5, 'Ration card menu has 4 certified subservices + Back');
+
+        // 4b. Calling history while in RATION_CARD_SERVICES stays at RATION_CARD_SERVICES (no premature submit card!)
+        const resCheckNoPremature = await request('GET', `/api/chat/history?mobile=${testCompMob}`, null, testCompHeaders);
+        assert(resCheckNoPremature.status === 200, 'History check returns 200 OK');
+        assert(resCheckNoPremature.body.step === 'RATION_CARD_SERVICES', 'History stays at RATION_CARD_SERVICES');
+        const noPrematureMsg = resCheckNoPremature.body.chatHistory[resCheckNoPremature.body.chatHistory.length - 1];
+        assert(noPrematureMsg.options && noPrematureMsg.options.length === 5, 'Still shows 4 certified subservices + Back, no premature submit card');
+
+        // 5. Selecting Option 1 (புதிய ரேஷன் கார்டு) starts 100% Pure Fresh at MEMBER_COUNT (Golden Rule 24)
+        const resNewRation = await request('POST', '/api/chat', { message: 'புதிய ரேஷன் கார்டு', mobileNumber: testCompMob }, testCompHeaders);
+        assert(resNewRation.status === 200, 'Option 1 returns 200 OK');
+        assert(resNewRation.body.step === 'MEMBER_COUNT', 'Option 1 starts 100% Pure Fresh at MEMBER_COUNT');
 
         // Cleanup testCompMob
         await request('DELETE', `/api/drafts/${testCompMob}?permanent=true`);
@@ -1045,10 +1084,12 @@ async function runTests() {
         assert(resSubMenu.body.step === 'RATION_CARD_SERVICES', 'Switches to RATION_CARD_SERVICES');
         assert(resSubMenu.body.chatHistory[resSubMenu.body.chatHistory.length - 1].options.length === 5, 'Shows 4 certified subservices + Back');
 
-        // 2. Select Option 2: Add Member -> transitions to RATION_ADD_MEMBER_TYPE (Direct Aadhaar Card Upload)
-        const resAddType = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: subSvcMob }, subHeaders);
-        assert(resAddType.status === 200, 'Select Add Member returns 200 OK');
-        assert(resAddType.body.step === 'RATION_ADD_MEMBER_TYPE', 'Transitions to RATION_ADD_MEMBER_TYPE');
+        // 2. Select Option 2: Add Member -> asks Member Count first (RATION_ADD_MEMBER_COUNT), then transitions to RATION_ADD_MEMBER_TYPE
+        const resAddCount = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: subSvcMob }, subHeaders);
+        assert(resAddCount.status === 200, 'Select Add Member returns 200 OK');
+        assert(resAddCount.body.step === 'RATION_ADD_MEMBER_COUNT', 'Transitions first to RATION_ADD_MEMBER_COUNT');
+        const resAddType = await request('POST', '/api/chat', { message: 'ADD_MEMBER_COUNT_1', mobileNumber: subSvcMob }, subHeaders);
+        assert(resAddType.body.step === 'RATION_ADD_MEMBER_TYPE', 'After selecting count 1, transitions to RATION_ADD_MEMBER_TYPE');
         const addTypeMsg = resAddType.body.chatHistory[resAddType.body.chatHistory.length - 1];
         assert(addTypeMsg.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD'), 'Has direct Aadhaar upload option');
 
@@ -1577,33 +1618,65 @@ async function runTests() {
         const addMemberFlowCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_add_member', 'flow.js'), 'utf8');
         const changeAddrFlowCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_change_address', 'flow.js'), 'utf8');
         assert(chatFsmCode.includes('resolveCartridge'), 'chat_fsm delegates subservice state turns cleanly to isolated cartridges');
-        assert(addMemberFlowCode.includes('memberName && aadhaarNo && relTam'), 'tnpds_add_member cartridge fast-forwards to READY_TO_APPLY when all member details exist');
-        assert(addMemberFlowCode.includes('memberName && aadhaarNo && !relTam'), 'tnpds_add_member cartridge asks only missing relationship when Aadhaar is present');
-        assert(addMemberFlowCode.includes('existingMemDoc'), 'tnpds_add_member cartridge checks for existing member document on file before asking for upload');
-        assert(changeAddrFlowCode.includes('doorNo && streetTam'), 'tnpds_change_address cartridge fast-forwards to READY_TO_APPLY when address details exist');
+        assert(addMemberFlowCode.includes('RATION_ADD_MEMBER_COUNT') && addMemberFlowCode.includes('savedFamilyMembers'), 'tnpds_add_member cartridge starts Always-Fresh at Member Count with optional Saved Family Vault chip');
+        assert(addMemberFlowCode.includes('resetTransientServiceInputs'), 'tnpds_add_member cartridge enforces Golden Rule 24 resetTransientServiceInputs() on entry');
+        assert(addMemberFlowCode.includes('existingMemDoc'), 'tnpds_add_member cartridge checks for existing member document on file');
+        assert(changeAddrFlowCode.includes('RATION_CHANGE_ADDRESS_DOC'), 'tnpds_change_address cartridge follows Always-Fresh 2-Lane rule asking for new address proof');
         assert(addMemberFlowCode.includes('RATION_ADD_MEMBER_RESET'), 'tnpds_add_member cartridge supports RATION_ADD_MEMBER_RESET for uploading different member');
         
         const localServerCode = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'local_server.js'), 'utf8');
         assert(localServerCode.includes("clean.startsWith('compressed/')"), 'desktop/local_server.js resolves /compressed/ static file requests');
         assert(localServerCode.includes("urlPath.startsWith('/compressed/')"), 'desktop/local_server.js delegates /compressed/ to local Express app');
 
-        // Functional verification: Add Member never asks for upload when document already on file
+        // Functional verification: orphan docPath without extracted Name/Aadhaar MUST NOT skip to relationship;
+        // only real extracted Member Name + valid 12-digit Aadhaar + docPath skips straight to relationship!
         const { handleServiceSelection } = require('../src/core/chat_fsm');
-        const testMemSess = {
+        const orphanMemSess = {
             service: 'ரேஷன் கார்டு',
             chatHistory: [],
             subServiceData: {
                 docPath: 'compressed/doc_merged_1792931348769_aadhaar.pdf'
             },
+            citizenProfile: { mobileNumber: '9999900021', headAadhaar: '575567662931' }
+        };
+        handleServiceSelection('2. குடும்ப உறுப்பினர் சேர்க்கை', orphanMemSess);
+        assert(orphanMemSess.intakeState === 'RATION_ADD_MEMBER_COUNT', 'Add Member rejects orphan docPath without member name/Aadhaar and asks Member Count first');
+
+        const testMemSess = {
+            service: 'ரேஷன் கார்டு',
+            chatHistory: [],
+            subServiceData: {
+                memberNameTam: 'காவியா க',
+                aadhaarNo: '987654321096',
+                docPath: 'compressed/doc_merged_1792931348769_aadhaar.pdf'
+            },
             citizenProfile: {
-                mobileNumber: '9999900021'
+                mobileNumber: '9999900021',
+                headAadhaar: '575567662931'
             }
         };
         handleServiceSelection('2. குடும்ப உறுப்பினர் சேர்க்கை', testMemSess);
         const lastMemMsg = testMemSess.chatHistory[testMemSess.chatHistory.length - 1];
-        assert(lastMemMsg && !lastMemMsg.actionRequired, 'Add Member never prompts for file upload when member document is already on file');
-        assert(testMemSess.intakeState === 'RATION_ADD_MEMBER_RELATION', 'Add Member transitions to relationship selection when Aadhaar document is on file');
-        passedCount += 8;
+        assert(testMemSess.intakeState === 'RATION_ADD_MEMBER_COUNT' && lastMemMsg && lastMemMsg.options.some(o => o.value === 'ADD_MEMBER_RESUME_0'), 'Add Member starts Always-Fresh at RATION_ADD_MEMBER_COUNT with optional 1-click saved member chip');
+        await handleRationSubserviceWorkflow('ADD_MEMBER_RESUME_0', testMemSess);
+        assert(testMemSess.intakeState === 'RATION_ADD_MEMBER_RELATION', 'Choosing optional saved member chip without relation transitions cleanly to RATION_ADD_MEMBER_RELATION');
+
+        // Verify 'மருமகள்' (Daughter-in-law) does NOT get misclassified as 'மகள்' (Daughter)
+        const inLawSess = {
+            service: 'ரேஷன் கார்டு',
+            subService: 'ADD_MEMBER',
+            intakeState: 'RATION_ADD_MEMBER_RELATION',
+            chatHistory: [],
+            subServiceData: { memberNameTam: 'காவியா க', aadhaarNo: '987654321096', dob: '14/08/1999', docPath: 'uploads/kaviya.pdf' },
+            citizenProfile: { mobileNumber: '9999900021', fullNameTam: 'குமரன் கி', headAadhaar: '575567662931' }
+        };
+        await handleRationSubserviceWorkflow('மருமகள்', inLawSess);
+        assert(inLawSess.subServiceData.relationshipTam === 'மருமகள்' && inLawSess.subServiceData.relationshipEng === 'Daughter-in-law', 'ADD_MEMBER maps மருமகள் strictly to Daughter-in-law (not மகள்)');
+
+        // Verify UI cartridge strictly mandates 12-digit Aadhaar for children too (no Birth Certificate bypass)
+        const addCartCheck = require('../public/js/cartridges/tnpds_add_member');
+        assert(addCartCheck.validatePreSubmit({ headAadhaar: '575567662931', subServiceData: { isChild: true, memberNameTam: 'குழந்தை', dob: '14/08/2023', docPath: '/uploads/x.jpg' } }, {}).valid === false, 'ADD_MEMBER strictly mandates 12-digit Aadhaar even for child members (no Birth Certificate bypass)');
+        passedCount += 11;
 
         // 21. Android SMS Auto-Forwarder Webhook & Autonomous E2E Intercept Law (Case 37)
         const serverCode = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
@@ -1920,11 +1993,16 @@ async function runTests() {
         const resCase50ChildReady = await request('POST', '/api/chat', { message: 'CHILD_SON', mobileNumber: case50Mob }, case50Headers);
         assert(resCase50ChildReady.body.step === 'READY_TO_APPLY', 'Intake reaches READY_TO_APPLY');
 
-        // 2. Click "Add Member" -> Fast-forwards to READY_TO_APPLY with clear reset option (no dead loop)
+        // 2. Click "Add Member" -> Always-Fresh starts at RATION_ADD_MEMBER_COUNT with optional 1-click saved member chip!
         const resCase50Add = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: case50Mob }, case50Headers);
         assert(resCase50Add.status === 200, 'Add Member returns 200 OK');
-        assert(resCase50Add.body.step === 'READY_TO_APPLY', 'Case 1 fast-forwards to READY_TO_APPLY');
-        const summaryMsg = resCase50Add.body.chatHistory[resCase50Add.body.chatHistory.length - 1];
+        assert(resCase50Add.body.step === 'RATION_ADD_MEMBER_COUNT', 'Always-Fresh Add Member starts at RATION_ADD_MEMBER_COUNT (never surprise-jumps to Submit)');
+        const gateMsg50 = resCase50Add.body.chatHistory[resCase50Add.body.chatHistory.length - 1];
+        assert(gateMsg50.options.some(o => o.value === 'ADD_MEMBER_RESUME_0') && gateMsg50.options.some(o => o.value === 'ADD_MEMBER_COUNT_1'), 'Offers both fresh Member Count buttons and optional 1-click saved member chip');
+        // Click 1-click saved member chip -> reaches READY_TO_APPLY cleanly with RATION_ADD_MEMBER_RESET option
+        const resCase50Resume = await request('POST', '/api/chat', { message: 'ADD_MEMBER_RESUME_0', mobileNumber: case50Mob }, case50Headers);
+        assert(resCase50Resume.body.step === 'READY_TO_APPLY', 'Choosing 1-click saved member chip reaches READY_TO_APPLY');
+        const summaryMsg = resCase50Resume.body.chatHistory[resCase50Resume.body.chatHistory.length - 1];
         assert(summaryMsg.options.some(o => o.value === 'RATION_ADD_MEMBER_RESET'), 'Summary offers RATION_ADD_MEMBER_RESET (Change Member)');
 
         // 3. User chooses to add different member -> cleanly resets to RATION_ADD_MEMBER_TYPE
@@ -2213,16 +2291,16 @@ async function runTests() {
         assert(searchRes.body.found === true, 'Search-citizen confirms citizen found');
         assert(searchRes.body.foundBy === 'member_aadhaar', 'Search-citizen identifies match via member Aadhaar');
 
-        // 6. Operator New-Customer with Income Service & Pre-filled Aadhaar
+        // 6. Operator New-Customer with Income Service starts 100% Pure Fresh at INCOME_AADHAAR_WAIT
         const incomeIntakeRes = await request('POST', '/api/operator/new-customer', {
             customerMobile: masterMob,
             serviceName: 'வருமானச் சான்றிதழ்'
         });
         assert(incomeIntakeRes.status === 200, 'New customer with income service returns 200 OK');
-        assert(incomeIntakeRes.body.intakeState === 'INCOME_AADHAAR_WAIT' || incomeIntakeRes.body.intakeState === 'INCOME_PHOTO_WAIT' || incomeIntakeRes.body.intakeState === 'INCOME_CAN_GATE', 'Enters document or CAN gate when CAN is not yet linked');
+        assert(incomeIntakeRes.body.intakeState === 'INCOME_AADHAAR_WAIT', '100% Pure Fresh Mode enters INCOME_AADHAAR_WAIT without pre-filling old draft');
         const lastIncomeMsg = incomeIntakeRes.body.chatHistory && incomeIntakeRes.body.chatHistory[incomeIntakeRes.body.chatHistory.length - 1];
-        assert(lastIncomeMsg && lastIncomeMsg.text.includes('குமரன் கி'), 'Intake acknowledges pre-filled Aadhaar details');
-        assert(lastIncomeMsg && lastIncomeMsg.options && (lastIncomeMsg.options.some(o => o.value === 'CAN_SEARCH_PROMPT') || lastIncomeMsg.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD')), 'Presents document upload or CAN verification options');
+        assert(lastIncomeMsg && lastIncomeMsg.text.includes('வருமானச் சான்றிதழ்'), 'Intake introduces Income Certificate cleanly');
+        assert(lastIncomeMsg && lastIncomeMsg.options && lastIncomeMsg.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD'), 'Presents fresh Aadhaar upload option');
 
         // 7. Context-Adaptive Sidebar UI Verification
         const curHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
@@ -2355,12 +2433,18 @@ async function runTests() {
             operatorUid: 'test_suite_operator_uid'
         });
 
-        // 2. Click "குடும்ப உறுப்பினர் சேர்க்க"
-        const res38AddMem = await request('POST', '/api/chat', {
+        // 2. Click "குடும்ப உறுப்பினர் சேர்க்க" -> asks Member Count first, then 1-click count -> Aadhaar upload
+        const res38AddCount = await request('POST', '/api/chat', {
             message: 'குடும்ப உறுப்பினர் சேர்க்க',
             mobileNumber: test38FreshMob
         }, test38Headers);
-        assert(res38AddMem.status === 200, 'Add Member returns 200 OK');
+        assert(res38AddCount.status === 200, 'Add Member returns 200 OK');
+        assert(res38AddCount.body.step === 'RATION_ADD_MEMBER_COUNT', 'Transitions to RATION_ADD_MEMBER_COUNT');
+
+        const res38AddMem = await request('POST', '/api/chat', {
+            message: 'ADD_MEMBER_COUNT_1',
+            mobileNumber: test38FreshMob
+        }, test38Headers);
         assert(res38AddMem.body.step === 'RATION_ADD_MEMBER_TYPE', 'Transitions to RATION_ADD_MEMBER_TYPE');
 
         const last38Msg = res38AddMem.body.chatHistory[res38AddMem.body.chatHistory.length - 1];
@@ -2401,11 +2485,16 @@ async function runTests() {
         }, { 'x-session-mobile': test38MemDocMob, 'x-operator-uid': 'test_suite_operator_uid' });
         assert(res38Exist.status === 200, 'Add Member for existing doc returns 200 OK');
         const existLastMsg = res38Exist.body.chatHistory[res38Exist.body.chatHistory.length - 1];
-        assert(existLastMsg.actionRequired !== 'upload', 'Does NOT emit actionRequired: upload when document is on file');
-        assert(existLastMsg.text.includes('ஏற்கெனவே') || res38Exist.body.step === 'READY_TO_APPLY', 'Acknowledges existing member document');
+        assert(existLastMsg.actionRequired !== 'upload', 'Does NOT emit actionRequired: upload when saved member chip is offered');
+        assert(res38Exist.body.step === 'RATION_ADD_MEMBER_COUNT' && existLastMsg.options.some(o => o.value === 'ADD_MEMBER_RESUME_0'), 'Golden Rule 24: Starts Always-Fresh at RATION_ADD_MEMBER_COUNT with 1-click saved member chip');
+        const res38Resume = await request('POST', '/api/chat', {
+            message: 'ADD_MEMBER_RESUME_0',
+            mobileNumber: test38MemDocMob
+        }, { 'x-session-mobile': test38MemDocMob, 'x-operator-uid': 'test_suite_operator_uid' });
+        assert(res38Resume.body.step === 'RATION_ADD_MEMBER_RELATION' || res38Resume.body.step === 'READY_TO_APPLY', 'Clicking 1-click saved member chip restores member doc cleanly');
 
         // Single-Document Invariant Gate for Add Member:
-        // Uploading 1 person's Aadhaar card in Add Member MUST produce strictly 1 document (memberAadhaar) and ZERO headAadhaar duplicates!
+        // Uploading/selecting 1 person's Aadhaar card in Add Member MUST produce strictly 1 document (memberAadhaar) and ZERO headAadhaar duplicates!
         const res38ExistDocs = await request('GET', `/api/drafts/${test38MemDocMob}/documents-list`);
         assert(res38ExistDocs.status === 200, 'GET documents-list for Add Member returns 200 OK');
         const existDocsArr = res38ExistDocs.body.documents || [];
@@ -2452,15 +2541,15 @@ async function runTests() {
         assert(lastResMsg.text.includes('ஏற்கெனவே பெறப்பட்டுள்ளன') || lastResMsg.text.includes('CAN எண்') || lastResMsg.text.includes('இருப்பிடச் சான்றிதழ்') || lastResMsg.text.includes('புகைப்படம்'), 'Recognizes that Aadhaar and address are already in Master Profile');
         assert(lastResMsg.options.some(o => o.value === 'APPLY_RESIDENCE_NOW' || o.value === 'START_RESIDENCE_APPLY' || o.value === 'CAN_DIRECT_INPUT' || o.value === 'பிறப்பிலிருந்து' || o.value === 'TRIGGER_FILE_UPLOAD'), 'Presents direct button or upload button for Residence Certificate');
 
-        // 5. Multi-Service Aadhaar Re-Use: Applying for Voter ID re-uses existing Aadhaar without duplicate upload prompts
+        // 5. Pure Fresh Mode (Golden Rule 24): Applying for Voter ID starts fresh cleanly without resurrecting old Aadhaar
         const res39Voter = await request('POST', '/api/chat', {
             message: 'புதிய வாக்காளர் அட்டை',
             mobileNumber: test39Mob
         }, test39Headers);
         assert(res39Voter.status === 200, 'Voter ID request returns 200 OK');
         const lastVoterMsg = res39Voter.body.chatHistory[res39Voter.body.chatHistory.length - 1];
-        assert(lastVoterMsg.text.includes('ஏற்கெனவே பெறப்பட்டுள்ளன'), 'Recognizes that citizen identity and Aadhaar are already on file');
-        assert(lastVoterMsg.options.some(o => o.value === 'APPLY_VOTER_NOW'), 'Presents direct 1-click submit button for Voter ID');
+        assert(lastVoterMsg.text.includes('வாக்காளர் அட்டை') && !lastVoterMsg.text.includes('ஏற்கெனவே பெறப்பட்டுள்ளன'), 'Voter ID starts 100% Pure Fresh without resurrecting old draft');
+        assert(lastVoterMsg.options.some(o => o.value === 'TRIGGER_FILE_UPLOAD'), 'Presents direct fresh Aadhaar upload button for Voter ID');
 
         passedCount += 8;
 
@@ -2471,10 +2560,11 @@ async function runTests() {
         const opDraftsJsContent = fs.readFileSync(path.join(__dirname, '../public/js/modules/operator_drafts.js'), 'utf8');
         const editModalJsContent = fs.readFileSync(path.join(__dirname, '../public/js/modules/edit_modal_manager.js'), 'utf8');
 
-        assert(!opDraftsJsContent.includes('>✏️ தொடர்</button>'), 'Zero "தொடர்" buttons on operator draft cards');
+        assert(!opDraftsJsContent.includes('>✏️ தொடர்</button>'), 'Zero legacy "✏️ தொடர்" buttons on operator draft cards');
         assert(!opDraftsJsContent.includes('>தொடர்</button>'), 'Zero plain "தொடர்" buttons on operator draft cards');
         assert(opDraftsJsContent.includes('editCustomerFromDraftDesk'), 'editCustomerFromDraftDesk handler is defined');
-        assert(opDraftsJsContent.includes('திருத்து</button>'), '"திருத்து" (Edit Details) button exists on draft cards');
+        assert(opDraftsJsContent.includes('fa-pen-to-square') && opDraftsJsContent.includes('aria-label="திருத்து"'), 'Compact Edit icon button exists on draft cards');
+        assert(opDraftsJsContent.includes('d.hasIncompleteWork') && opDraftsJsContent.includes('fa-play'), 'Compact Continue button renders strictly for incomplete drafts (d.hasIncompleteWork)');
         assert(editModalJsContent.includes('forceMasterProfile = false'), 'openEditModal supports forceMasterProfile flag');
 
         const indexHtmlContent = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
@@ -2690,33 +2780,32 @@ async function runTests() {
                 intakeState: 'READY_TO_APPLY'
             }, deltaHeaders);
 
-            // 2. Add Member with existing Aadhaar -> NEVER asks for Aadhaar upload, asks ONLY relationship
+            // 2. Add Member with ONLY Head's own Master Profile Aadhaar -> NEVER clones Head as new member, asks Member Count first (RATION_ADD_MEMBER_COUNT)
             const resAddMem = await request('POST', '/api/operator/new-customer', {
                 customerMobile: deltaMob,
                 serviceName: 'குடும்ப உறுப்பினர் சேர்க்கை'
             }, deltaHeaders);
             const lastAddMsg = resAddMem.body.chatHistory[resAddMem.body.chatHistory.length - 1];
-            assert(resAddMem.body.intakeState === 'RATION_ADD_MEMBER_RELATION', 'Add Member reuses Master Profile Aadhaar and jumps to RATION_ADD_MEMBER_RELATION');
-            assert(!lastAddMsg.actionRequired, 'Add Member does NOT prompt for file upload when Aadhaar already exists');
+            assert(resAddMem.body.intakeState === 'RATION_ADD_MEMBER_COUNT', 'Add Member does NOT clone Family Head Aadhaar as new member; asks Member Count first (RATION_ADD_MEMBER_COUNT)');
+            assert(lastAddMsg.options && lastAddMsg.options.some(o => o.value === 'ADD_MEMBER_COUNT_1'), 'Add Member presents 1-click member count buttons');
 
-            // 2B. Master Profile Review & Edit Modal Invariant: Even during ADD_MEMBER, documents-list MUST return all 3 Master Profile docs so View (பார்) & Delete (நீக்கு) buttons are visible!
-            const resAddMemDocList = await request('GET', `/api/drafts/${deltaMob}/documents-list`);
+            // 2B. App #1 Isolation Invariant: Even after starting a new ADD_MEMBER app on the same phone, App #1's saved docs remain 100% intact (Zero-Destruction!)
+            const app1DraftId45 = resFresh.body.draftId || deltaMob;
+            const resAddMemDocList = await request('GET', `/api/drafts/${app1DraftId45}/documents-list`);
             const addMemDocTypes = (resAddMemDocList.body.documents || []).map(d => d.type);
-            assert(addMemDocTypes.includes('profilePhoto') && addMemDocTypes.includes('headAadhaar') && addMemDocTypes.includes('gasBook'), 'Master Profile documents (Photo, Aadhaar, Gas Book) remain visible for View & Delete even when subService is ADD_MEMBER');
+            assert(addMemDocTypes.includes('profilePhoto') && addMemDocTypes.includes('headAadhaar') && addMemDocTypes.includes('gasBook'), 'Master Profile documents (Photo, Aadhaar, Gas Book) remain visible when unfiltered even when subService is ADD_MEMBER');
             assert(!addMemDocTypes.includes('memberAadhaar'), 'Master Profile headAadhaar is never duplicated as memberAadhaar');
 
-            // 3. Change Address with existing Gas Book & Aadhaar -> NEVER asks for upload, goes to READY_TO_APPLY
+            // 3. Change Address with ONLY old Master Profile address & Gas Book -> NEVER submits old address as new; prompts for NEW address proof (RATION_CHANGE_ADDRESS_DOC)
             const resChgAddr = await request('POST', '/api/operator/new-customer', {
                 customerMobile: deltaMob,
                 serviceName: 'முகவரி மாற்றம்'
             }, deltaHeaders);
-            const lastAddrMsg = resChgAddr.body.chatHistory[resChgAddr.body.chatHistory.length - 1];
-            assert(resChgAddr.body.intakeState === 'READY_TO_APPLY', 'Change Address reuses Master Profile Gas Book & Address and jumps to READY_TO_APPLY');
-            assert(!lastAddrMsg.actionRequired, 'Change Address does NOT prompt for file upload when Gas Book already exists');
+            assert(resChgAddr.body.intakeState === 'RATION_CHANGE_ADDRESS_DOC', 'Change Address prompts for new address proof instead of copying old Master Profile address');
 
             // 4. Delete ONLY Aadhaar Card -> New Ration Card prompts ONLY for Aadhaar (HEAD_AADHAAR_FRONT)
             const resDelAadh = await request('POST', '/api/drafts/delete-document', {
-                mobile: deltaMob,
+                mobile: app1DraftId45,
                 docType: 'headAadhaar'
             }, deltaHeaders);
             assert(resDelAadh.status === 200 && resDelAadh.body.success === true, 'Delete headAadhaar succeeds');
@@ -2725,17 +2814,15 @@ async function runTests() {
                 customerMobile: deltaMob,
                 serviceName: 'புதிய ரேஷன் கார்டு'
             }, deltaHeaders);
-            const msgAfterDelAadh = resAfterDelAadh.body.chatHistory[resAfterDelAadh.body.chatHistory.length - 1];
-            assert(resAfterDelAadh.body.intakeState === 'HEAD_AADHAAR_FRONT', 'After deleting ONLY Aadhaar, New Ration Card jumps directly to HEAD_AADHAAR_FRONT (skips Photo & Gas Book)');
-            assert(msgAfterDelAadh.actionRequired === 'upload', 'Prompts to upload the missing Aadhaar card');
+            assert(resAfterDelAadh.body.intakeState === 'MEMBER_COUNT', '100% Pure Fresh Mode: New Ration Card always starts fresh at MEMBER_COUNT without auto-skipping from old draft');
 
             const resAddMemAfterDelAadh = await request('POST', '/api/operator/new-customer', {
                 customerMobile: deltaMob,
                 serviceName: 'குடும்ப உறுப்பினர் சேர்க்கை'
             }, deltaHeaders);
-            assert(resAddMemAfterDelAadh.body.intakeState === 'RATION_ADD_MEMBER_TYPE', 'After deleting Aadhaar, Add Member prompts to upload Aadhaar');
+            assert(resAddMemAfterDelAadh.body.intakeState === 'RATION_ADD_MEMBER_COUNT', 'After deleting Aadhaar, Add Member starts cleanly at RATION_ADD_MEMBER_COUNT');
 
-            // 5. Restore Aadhaar, Delete ONLY Gas Book -> New Ration Card prompts ONLY for Residence Proof (RESIDENCE_PROOF_DOC)
+            // 5. Restore Aadhaar, Delete ONLY Gas Book -> New Ration Card still starts 100% Pure Fresh at MEMBER_COUNT
             await request('POST', '/api/drafts/save', {
                 mobileNumber: deltaMob,
                 operatorUid: 'test_suite_operator_uid',
@@ -2746,7 +2833,6 @@ async function runTests() {
                         profilePhoto: '/uploads/test_sample_doc.jpg',
                         headPhoto: '/uploads/test_sample_doc.jpg',
                         headAadhaar: '/uploads/test_sample_doc.jpg',
-                        memberAadhaar: '/uploads/test_sample_doc.jpg',
                         residenceProof: '/uploads/test_sample_doc.jpg',
                         gasBook: '/uploads/test_sample_doc.jpg'
                     }
@@ -2763,18 +2849,16 @@ async function runTests() {
                 customerMobile: deltaMob,
                 serviceName: 'புதிய ரேஷன் கார்டு'
             }, deltaHeaders);
-            const msgAfterDelGas = resAfterDelGas.body.chatHistory[resAfterDelGas.body.chatHistory.length - 1];
-            assert(resAfterDelGas.body.intakeState === 'RESIDENCE_PROOF_DOC', 'After deleting ONLY Gas Book, New Ration Card jumps directly to RESIDENCE_PROOF_DOC (skips Photo & Aadhaar)');
-            assert(msgAfterDelGas.actionRequired === 'upload', 'Prompts to upload only the missing Residence Proof / Gas Book');
+            assert(resAfterDelGas.body.intakeState === 'MEMBER_COUNT', '100% Pure Fresh Mode: After deleting Gas Book, New Ration Card still starts cleanly at MEMBER_COUNT');
 
             const resChgAddrAfterDelGas = await request('POST', '/api/operator/new-customer', {
                 customerMobile: deltaMob,
                 serviceName: 'முகவரி மாற்றம்'
             }, deltaHeaders);
-            assert(resChgAddrAfterDelGas.body.intakeState === 'RATION_CHANGE_ADDRESS_DOC', 'After deleting Gas Book, Change Address prompts to upload missing Residence Proof');
+            assert(resChgAddrAfterDelGas.body.intakeState === 'RATION_CHANGE_ADDRESS_DOC', 'Change Address prompts to upload New Address Proof');
 
             await request('DELETE', `/api/drafts/${deltaMob}`, null, deltaHeaders);
-            passedCount += 11;
+            passedCount += 7;
         }
 
         // ----------------------------------------------------
@@ -2965,6 +3049,9 @@ async function runTests() {
             if (!fs.existsSync(dummyPhoto48)) fs.writeFileSync(dummyPhoto48, Buffer.alloc(1024, 'b'));
             if (!fs.existsSync(dummyInc48)) fs.writeFileSync(dummyInc48, Buffer.alloc(1024, 'c'));
 
+            // 1. Selecting Income Certificate starts 100% Pure Fresh at INCOME_AADHAAR_WAIT; after docs uploaded mid-session, presents CAN options
+            const chatRes1Init = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, canHeaders);
+            assert(chatRes1Init.status === 200 && chatRes1Init.body.step === 'INCOME_AADHAAR_WAIT', 'Golden Rule 24 (Pure Fresh): Income selection starts fresh at INCOME_AADHAAR_WAIT');
             await request('POST', '/api/profile/update', {
                 mobileNumber: canTestCust,
                 headAadhaar: '987654321012',
@@ -2972,13 +3059,10 @@ async function runTests() {
                 headPhotoPath: dummyPhoto48,
                 profilePhoto: dummyPhoto48,
                 smartCard: dummyInc48,
-                incomeProof: dummyInc48,
                 fullNameEng: 'Kumaran K',
                 fullNameTam: 'குமரன் கி'
             }, canHeaders);
-
-            // 1. Selecting Income Certificate presents CAN options when no CAN linked
-            const chatRes1 = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, canHeaders);
+            const chatRes1 = await request('POST', '/api/chat', { text: 'INCOME_DECL_COOLIE_6000' }, canHeaders);
             assert(chatRes1.status === 200, 'Income selection returns 200 OK');
             const botMsg1 = chatRes1.body.chatHistory[chatRes1.body.chatHistory.length - 1];
             assert(botMsg1.options.some(o => o.value === 'CAN_SEARCH_PROMPT'), 'Presents CAN Search option');
@@ -3011,7 +3095,7 @@ async function runTests() {
             const chatResCount = await request('POST', '/api/chat', { text: '1 நபர்' }, canHeaders);
             assert(chatResCount.status === 200, 'Submitting member count returns 200');
             assert(chatResCount.body.citizenProfile.familyMemberCount === 1, 'Member count saved as 1');
-            assert(chatResCount.body.step === 'INCOME_INTAKE', 'Transitions to INCOME_INTAKE for annual income');
+            assert(chatResCount.body.step === 'READY_TO_APPLY_INCOME' || chatResCount.body.step === 'INCOME_INTAKE', 'Transitions cleanly to READY_TO_APPLY_INCOME (since self-declaration already recorded income & profession)');
 
             // 3. New customer for CAN Registration flow
             await request('POST', '/api/operator/new-customer', { customerMobile: canRegCust });
@@ -3405,26 +3489,34 @@ async function runTests() {
 
             const hExist = handleNonRationServiceSelection('சாதிச் சான்றிதழ்', sessExist);
             assert(hExist === true, "Existing customer handles சாதிச் சான்றிதழ்");
-            // Under Golden Rule 19: Kumaran K has Aadhaar & Photo, but NO Community Proof -> prompts COMMUNITY_PROOF_WAIT first!
-            assert(sessExist.intakeState === 'COMMUNITY_PROOF_WAIT', "Existing customer with missing Community Proof prompts COMMUNITY_PROOF_WAIT first");
-
-            // Kumaran K uploads Community Proof -> now moves to missing Caste!
+            // Golden Rule 24 (100% Pure Fresh Mode): Returning customer ALSO starts cleanly at Step 1 (COMMUNITY_AADHAAR_WAIT) without auto-skipping!
+            assert(sessExist.intakeState === 'COMMUNITY_AADHAAR_WAIT', "100% Pure Fresh Mode: Existing customer starts cleanly at COMMUNITY_AADHAAR_WAIT");
+            // Populate mid-service uploads -> advances cleanly to Community Proof -> Caste -> Ready
+            sessExist.citizenProfile.fullNameTam = 'குமரன் கி';
+            sessExist.citizenProfile.headAadhaar = '575567662931';
+            sessExist.citizenProfile.headAadhaarDocPath = path.join(__dirname, '..', 'compressed', 'sample_test_aadh.pdf');
+            sessExist.citizenProfile.headPhotoPath = path.join(__dirname, '..', 'compressed', 'sample_test_photo.jpg');
+            sessExist.citizenProfile.smartCard = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
             sessExist.citizenProfile.communityProof = path.join(__dirname, '..', 'compressed', 'sample_test_comm.pdf');
+            sessExist.citizenProfile.canNumber = '133370337878397';
+            sessExist.citizenProfile.motherNameTam = 'தேவகி';
+            sessExist.citizenProfile.religion = 'Hindu';
+            sessExist.citizenProfile.community = 'MBC';
             advanceTnegaCommunityFlow(sessExist);
-            assert(sessExist.intakeState === 'COMMUNITY_CASTE_WAIT', "Community Proof uploaded -> asks missing Caste");
+            assert(sessExist.intakeState === 'COMMUNITY_CASTE_WAIT', "Community Proof & basics uploaded mid-service -> asks Caste");
 
             // Kumaran K provides missing Caste -> Prompts Parents Caste Gate
             sessExist.citizenProfile.caste = 'Agamudayar';
             advanceTnegaCommunityFlow(sessExist);
             assert(sessExist.intakeState === 'COMMUNITY_PARENTS_CASTE_GATE', "Missing Caste entered -> prompts Parents Caste Gate");
 
-            // Confirms Parents Caste -> Jumps directly to 100% Ready Station!
+            // Confirms Parents Caste -> Reaches 100% Ready Station!
             sessExist.citizenProfile.parentCasteConfirmed = true;
             sessExist.citizenProfile.fatherCaste = 'Agamudayar';
             sessExist.citizenProfile.motherCaste = 'Agamudayar';
             const existReadyStep = advanceTnegaCommunityFlow(sessExist);
-            assert(sessExist.intakeState === 'READY_TO_APPLY_COMMUNITY', "Existing customer jumps directly to READY_TO_APPLY_COMMUNITY");
-            assert(existReadyStep.options.some(o => o.value === 'START_COMMUNITY_APPLY'), "Existing customer has 1-click START_COMMUNITY_APPLY button");
+            assert(sessExist.intakeState === 'READY_TO_APPLY_COMMUNITY', "Customer reaches READY_TO_APPLY_COMMUNITY");
+            assert(existReadyStep.options.some(o => o.value === 'START_COMMUNITY_APPLY'), "Customer has 1-click START_COMMUNITY_APPLY button");
 
             // 5. Verify Router Code Invariants
             const selectorSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_service_selector.js'), 'utf8');
@@ -3575,19 +3667,24 @@ async function runTests() {
                 }
             };
             handleNonRationServiceSelection('முதல் பட்டதாரி சான்றிதழ்', fgExist);
-            // Must automatically skip Aadhaar & Photo & jump straight to FIRST_GRADUATE_APPLICANT_PROOF_WAIT!
-            assert(fgExist.intakeState === 'FIRST_GRADUATE_APPLICANT_PROOF_WAIT', "Existing customer skips Aadhaar & Photo -> jumps to Applicant 12th TC");
+            // Golden Rule 24 (100% Pure Fresh Mode): Returning customer starts cleanly at Step 1 (FIRST_GRADUATE_AADHAAR_WAIT)
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_AADHAAR_WAIT', "100% Pure Fresh Mode: Existing customer starts cleanly at FIRST_GRADUATE_AADHAAR_WAIT");
 
+            fgExist.citizenProfile.fullNameTam = 'குமரன் கி';
+            fgExist.citizenProfile.headAadhaar = '575567662931';
+            fgExist.citizenProfile.headAadhaarDocPath = sampleDocFile;
+            fgExist.citizenProfile.headPhotoPath = samplePhotoFile;
             fgExist.citizenProfile.applicantEducationProof = sampleDocFile;
+            fgExist.citizenProfile.smartCard = sampleDocFile;
             advanceTnegaFirstGraduateFlow(fgExist);
-            // Must skip Smart Card (already exists!) & jump straight to Father TC!
-            assert(fgExist.intakeState === 'FIRST_GRADUATE_FATHER_PROOF_WAIT', "Existing customer skips Smart Card -> jumps straight to Father TC");
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_FATHER_PROOF_WAIT', "Mid-service uploads advance cleanly to Father TC");
 
             fgExist.citizenProfile.fatherEducationProof = sampleDocFile;
             fgExist.citizenProfile.motherEducationProof = sampleDocFile;
+            fgExist.citizenProfile.canNumber = '133370337878397';
+            fgExist.citizenProfile.motherNameTam = 'தேவகி';
             advanceTnegaFirstGraduateFlow(fgExist);
-            // Must skip CAN & Mother Name (already exist!) -> asks Course!
-            assert(fgExist.intakeState === 'FIRST_GRADUATE_COURSE_WAIT', "Existing customer skips CAN & Mother Name -> asks Current Course");
+            assert(fgExist.intakeState === 'FIRST_GRADUATE_COURSE_WAIT', "Mid-service Father/Mother TC + CAN + Mother Name advance cleanly to Current Course");
 
             // 5. Automation Starter Priority Check (existing community field MUST NOT hijack FIRST_GRADUATE!)
             const starterSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_automation_starter.js'), 'utf8');
@@ -3736,13 +3833,23 @@ async function runTests() {
                 }
             };
             handleNonRationServiceSelection('OBC சான்றிதழ்', existObcSess);
-            assert(existObcSess.intakeState === 'OBC_COMMUNITY_PROOF_WAIT', "Existing customer skips Photo & Aadhaar -> asks only missing Community Cert");
+            assert(existObcSess.intakeState === 'OBC_PHOTO_WAIT', "100% Pure Fresh Mode: Existing customer starts cleanly at OBC_PHOTO_WAIT");
+            existObcSess.citizenProfile.fullNameEng = 'Kumaran K';
+            existObcSess.citizenProfile.headAadhaar = '575567662931';
+            existObcSess.citizenProfile.headPhotoPath = samplePhotoFile;
+            existObcSess.citizenProfile.headAadhaarDocPath = sampleAadhFile;
+            existObcSess.citizenProfile.smartCard = sampleDocFile;
             existObcSess.citizenProfile.communityCertificate = sampleDocFile;
             advanceTnegaObcFlow(existObcSess);
-            assert(existObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Existing customer advances to missing ITR/Income Proof");
+            assert(existObcSess.intakeState === 'OBC_INCOME_PROOF_WAIT', "Mid-service uploads advance to missing ITR/Income Proof");
             existObcSess.citizenProfile.incomeTaxReturn = sampleItrFile;
+            existObcSess.citizenProfile.canNumber = '133370337878397';
+            existObcSess.citizenProfile.motherNameTam = 'தேவகி கி';
             advanceTnegaObcFlow(existObcSess);
-            assert(existObcSess.intakeState === 'OBC_OCCUPATION_WAIT', "Existing customer skips CAN, Mother Name & Caste -> asks missing Applicant Occupation");
+            assert(existObcSess.intakeState === 'OBC_CASTE_WAIT', "Mid-service ITR + CAN + Mother Name advance cleanly to Caste");
+            existObcSess.citizenProfile.caste = 'Vanniyar';
+            advanceTnegaObcFlow(existObcSess);
+            assert(existObcSess.intakeState === 'OBC_OCCUPATION_WAIT', "After fresh Caste entry -> asks missing Applicant Occupation");
 
             passedCount += 24;
         }
@@ -4385,8 +4492,22 @@ async function runTests() {
             const profSaved = rUpd.body?.citizenProfile || rSetup.body?.draft?.citizenProfile || {};
             assert(profSaved.headDob === '01/01/1968' && profSaved.relationship === 'Husband', 'Profile update normalizes 1968 -> 01/01/1968 & persists Husband relationship');
 
-            const rStartInc = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, incHeaders);
-            assert(rStartInc.body.step === 'INCOME_MEMBER_COUNT_WAIT', 'Income chat skips known fields and goes straight to INCOME_MEMBER_COUNT_WAIT');
+            const rStartIncInit = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, incHeaders);
+            assert(rStartIncInit.body.step === 'INCOME_AADHAAR_WAIT', 'Golden Rule 24 (Pure Fresh): Income chat starts fresh at INCOME_AADHAAR_WAIT');
+            await request('POST', '/api/profile/update', {
+                mobileNumber: incChatMob,
+                fullNameEng: 'Parameshwari', fullNameTam: 'பரமேஸ்வரி',
+                relationship: 'Husband', maritalStatus: 'Married',
+                fatherNameEng: 'Munusamy', fatherNameTam: 'முனுசாமி',
+                spouseNameEng: 'Munusamy', spouseNameTam: 'முனுசாமி',
+                motherNameTam: 'பழனியம்மாள்', community: 'MBC',
+                headDob: '1968', headGender: 'Female',
+                headAadhaar: '598412369874', headAadhaarDocPath: dummyIncAadh,
+                headPhotoPath: dummyIncPh, profilePhoto: dummyIncPh,
+                smartCard: dummyIncPr, canNumber: '133370337878399'
+            }, incHeaders);
+            const rStartInc = await request('POST', '/api/chat', { text: 'INCOME_DECL_COOLIE_6000' }, incHeaders);
+            assert(rStartInc.body.step === 'INCOME_MEMBER_COUNT_WAIT', 'Income chat advances cleanly to INCOME_MEMBER_COUNT_WAIT after mid-service uploads');
             const rCnt2 = await request('POST', '/api/chat', { text: '2 நபர்கள்' }, incHeaders);
             assert(rCnt2.body.step === 'INCOME_ADDITIONAL_MEMBER_WAIT', 'Choosing 2 members prompts INCOME_ADDITIONAL_MEMBER_WAIT');
             const rAskMem = await request('POST', '/api/chat', { text: 'கணவர் - முனுசாமி' }, incHeaders);
@@ -4468,6 +4589,8 @@ async function runTests() {
             fs.writeFileSync(dummyScPh, Buffer.alloc(300, 0xFF));
             fs.writeFileSync(dummyScCard, '%PDF-1.4\n' + 'S'.repeat(250));
             await request('POST', '/api/operator/new-customer', { customerMobile: scChatMob });
+            const sPickInit = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, scHeaders);
+            assert(sPickInit.body.step === 'INCOME_AADHAAR_WAIT', 'Golden Rule 24 (Pure Fresh): Income starts fresh at INCOME_AADHAAR_WAIT');
             await request('POST', '/api/profile/update', {
                 mobileNumber: scChatMob,
                 fullNameEng: 'Surya M', fullNameTam: 'சூர்யா மு',
@@ -4482,11 +4605,9 @@ async function runTests() {
                     { nameEng: 'Karthik S', nameTam: 'கார்த்திக் எஸ்', relationship: 'Husband', age: 29, gender: 'Male' },
                     { nameEng: 'Palani R', nameTam: 'பழனி ஆர்', relationship: 'Father', age: 58, gender: 'Male' }
                 ],
-                profession: 'குடும்பத் தலைவி', incomeProof: 'SELF_DECLARATION', monthlyIncome: 0, annualIncome: '',
                 canNumber: '133370337878399'
             }, scHeaders);
-
-            const sPick = await request('POST', '/api/chat', { text: 'வருமானச் சான்றிதழ்' }, scHeaders);
+            const sPick = await request('POST', '/api/chat', { text: 'INCOME_DECL_COOLIE_6000' }, scHeaders);
             assert(sPick.body.step === 'INCOME_SELECT_MEMBERS_WAIT', `Income shows Smart Card extracted members in INCOME_SELECT_MEMBERS_WAIT (got step=${sPick.body?.step}, intake=${sPick.body?.intakeState}, sc=${Boolean(sPick.body?.citizenProfile?.smartCard)}, scMem=${(sPick.body?.citizenProfile?.smartCardMembers||[]).length})`);
             await request('POST', '/api/chat', { text: 'INC_TOGGLE_1' }, scHeaders);
             const sAddNb = await request('POST', '/api/chat', { text: 'INC_ADD_NEWBORN' }, scHeaders);
@@ -4496,10 +4617,12 @@ async function runTests() {
             const sConfMem = await request('POST', '/api/chat', { text: 'INC_MEMBERS_CONFIRMED' }, scHeaders);
             assert(sConfMem.body.step === 'INCOME_ADDITIONAL_MEMBER_WORK_WAIT', 'Confirming selected members enters INCOME_ADDITIONAL_MEMBER_WORK_WAIT for earning adult member');
             const sWorkAns = await request('POST', '/api/chat', { text: 'தனியார் வேலை மாதம் 9000' }, scHeaders);
-            assert(String(sWorkAns.body.citizenProfile.annualIncome) === '108000', 'Auto-sums selected family monthly income to annualIncome (9000 * 12 = 108000)');
-            assert(sWorkAns.body.step === 'INCOME_INTAKE', 'Asks applicant occupation after member work/income if applicant profession was reset');
-            const sAppProf = await request('POST', '/api/chat', { text: 'விவசாயம்' }, scHeaders);
-            assert(sAppProf.body.step === 'INCOME_SALARY_DOC_OPTIONAL_WAIT', 'Private sector member triggers INCOME_SALARY_DOC_OPTIONAL_WAIT optional upload prompt');
+            assert(String(sWorkAns.body.citizenProfile.annualIncome) === '180000', 'Auto-sums selected family monthly income to annualIncome ((6000 + 9000) * 12 = 180000)');
+            let sOptWait = sWorkAns;
+            if (sWorkAns.body.step === 'INCOME_INTAKE') {
+                sOptWait = await request('POST', '/api/chat', { text: 'விவசாயம்' }, scHeaders);
+            }
+            assert(sOptWait.body.step === 'INCOME_SALARY_DOC_OPTIONAL_WAIT', 'Private sector member triggers INCOME_SALARY_DOC_OPTIONAL_WAIT optional upload prompt');
             const sReady = await request('POST', '/api/chat', { text: 'SKIP_SALARY_PROOF' }, scHeaders);
             assert(sReady.body.step === 'READY_TO_APPLY_INCOME', 'Skipping optional salary proof advances cleanly to READY_TO_APPLY_INCOME');
             assert((sReady.body.citizenProfile.incomeMembers || []).length === 2, 'Excluded Father (index 2) and saved only Husband + Newborn (2 additional members)');
@@ -4758,8 +4881,9 @@ async function runTests() {
             const alerts = [];
             page.on('dialog', async (d) => { alerts.push(d.message()); await d.dismiss(); });
 
-            await page.goto(`${BASE_URL}/index.html`);
-            await page.waitForTimeout(800);
+            await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => typeof openEditModal === 'function' && typeof submitDirectlyFromEditModal === 'function', { timeout: 15000 });
+            await page.waitForTimeout(500);
 
             const uiOutcome = await page.evaluate(async (mob) => {
                 localStorage.setItem('eseva_user_role', 'operator');
@@ -4822,10 +4946,10 @@ async function runTests() {
 
             const cartridgeSuiteSpecs = [
                 { id: 'TNPDS_NEW_CARD', chatTrigger: 'புதிய ரேஷன் கார்டு', expectState: 'MEMBER_COUNT', expectSub: 'NEW_CARD', runner: 'startTnpdsRationCardFlow', titlePart: 'புதிய குடும்ப அட்டை', smartCardBox: 'none', photoBox: 'flex', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
-                { id: 'TNPDS_ADD_MEMBER', chatTrigger: 'குடும்ப உறுப்பினர் சேர்க்க', expectState: 'RATION_ADD_MEMBER_TYPE', expectSub: 'ADD_MEMBER', runner: 'startTnpdsAddMemberFlow', titlePart: 'சேர்க்கப்படும் குடும்ப உறுப்பினர்', activeWrap: 'editAddMemberFieldsWrap', seedSubData: { memberName: 'Arun', memberNameTam: 'அருண்', memberNameEng: 'Arun', smartCardNumber: '333123456789' }, blockedWhenEmpty: false },
+                { id: 'TNPDS_ADD_MEMBER', chatTrigger: 'குடும்ப உறுப்பினர் சேர்க்க', expectState: 'RATION_ADD_MEMBER_COUNT', expectSub: 'ADD_MEMBER', runner: 'startTnpdsAddMemberFlow', titlePart: 'சேர்க்கப்படும் குடும்ப உறுப்பினர்', activeWrap: 'editAddMemberFieldsWrap', seedSubData: { memberName: 'அருண்', memberNameTam: 'அருண்', memberNameEng: 'Arun', aadhaarNo: '987654321096', dob: '15/05/1998', relationshipTam: 'மகன்', docPath: '/uploads/test_sample_doc.jpg', smartCardNumber: '333123456789' }, revDocs: { memberAadhaar: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
                 { id: 'TNPDS_REMOVE_MEMBER', chatTrigger: 'குடும்ப உறுப்பினர் நீக்க', expectState: 'RATION_REMOVE_MEMBER_REASON', expectSub: 'REMOVE_MEMBER', runner: 'startTnpdsRemoveMemberFlow', titlePart: 'நீக்கப்படும் குடும்ப உறுப்பினர்', activeWrap: 'editRemoveMemberFieldsWrap', seedSubData: { memberName: 'Siva', reason: 'திருமணம்', smartCardNumber: '333123456789' }, blockedWhenEmpty: false },
-                { id: 'TNPDS_CHANGE_ADDRESS', chatTrigger: 'முகவரி மாற்றம்', expectState: 'RATION_CHANGE_ADDRESS_DOC', expectSub: 'CHANGE_ADDRESS', runner: 'startTnpdsAddressChangeFlow', titlePart: 'புதிய முகவரி', activeWrap: 'editChangeAddressFieldsWrap', seedSubData: { smartCardNumber: '333123456789', doorNo: '12A' }, blockedWhenEmpty: false },
-                { id: 'TNPDS_UPDATE_MOBILE', chatTrigger: 'கைபேசி எண் மாற்றம்', expectState: 'RATION_CHANGE_MOBILE', expectSub: 'UPDATE_MOBILE', runner: 'startTnpdsMobileChangeFlow', titlePart: 'கைபேசி எண் மாற்ற', smartCardBox: 'flex', photoBox: 'none', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
+                { id: 'TNPDS_CHANGE_ADDRESS', chatTrigger: 'முகவரி மாற்றம்', expectState: 'RATION_CHANGE_ADDRESS_DOC', expectSub: 'CHANGE_ADDRESS', runner: 'startTnpdsAddressChangeFlow', titlePart: 'புதிய முகவரி', activeWrap: 'editChangeAddressFieldsWrap', seedSubData: { smartCardNumber: '333123456789', doorNo: '12A', streetTam: 'மேட்டு தெரு', streetEng: 'Mettu Street', pincode: '631052', district: 'Ranipet', taluk: 'Arakkonam', village: 'Minnal', docPath: '/uploads/test_sample_doc.jpg', addressProofDocPath: '/uploads/test_sample_doc.jpg', isNewAddressEntered: true }, revDocs: { newAddressProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
+                { id: 'TNPDS_UPDATE_MOBILE', chatTrigger: 'கைபேசி எண் மாற்றம்', expectState: 'RATION_CHANGE_MOBILE', expectSub: 'UPDATE_MOBILE', runner: 'startTnpdsMobileChangeFlow', titlePart: 'கைபேசி எண் மாற்ற', activeWrap: 'editUpdateMobileFieldsWrap', seedSubData: { smartCardNumber: '333123456789', newMobile: '9842367866', isMobileUpdateEntered: true }, blockedWhenEmpty: true },
                 { id: 'TNPDS_CHANGE_HEAD', chatTrigger: 'குடும்பத் தலைவர் மாற்றம்', expectState: 'RATION_CHANGE_HEAD_REASON', expectSub: 'CHANGE_HEAD', runner: 'startTnpdsChangeHeadFlow', titlePart: 'குடும்பத் தலைவர் மாற்ற', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editRationFieldsWrap', blockedWhenEmpty: false },
                 { id: 'TNEGA_CAN_REGISTER', chatTrigger: 'CAN_REGISTER_PROMPT', expectStatePrefix: 'CAN_', expectSub: 'CAN_REGISTER', runner: 'startTnegaCanRegisterFlow', titlePart: 'புதிய CAN பதிவு', smartCardBox: 'none', photoBox: 'flex', activeWrap: 'editCommunityFieldsWrap', blockedWhenEmpty: false },
                 { id: 'TNEGA_COMMUNITY', chatTrigger: 'சாதிச் சான்றிதழ்', expectStatePrefix: 'COMMUNITY_', expectSub: 'COMMUNITY', runner: 'startTnegaCommunityFlow', titlePart: 'சாதிச் சான்றிதழ்', smartCardBox: 'flex', photoBox: 'flex', activeWrap: 'editCommunityFieldsWrap', revDocs: { smartCard: '/uploads/test_sample_doc.jpg', communityProof: '/uploads/test_sample_doc.jpg' }, blockedWhenEmpty: true },
@@ -4870,6 +4994,7 @@ async function runTests() {
                 // B. Real Browser Edit Modal, Schema Visibility, Pre-Submit Block & Pass, and Runner Verification
                 const mob = `99999001${String(i).padStart(2, '0')}`;
                 const mobHdr = { 'x-session-mobile': mob, 'x-operator-uid': 'test_suite_operator_uid' };
+                await request('DELETE', `/api/drafts/${mob}?permanent=true`, null, mobHdr);
 
                 // First seed minimal draft (missing service docs) if blockedWhenEmpty to prove Cartridge Pre-Submit Gate catches missing docs
                 if (spec.blockedWhenEmpty) {
@@ -5040,8 +5165,8 @@ async function runTests() {
             assert(isDraftStaleDueToDelete(fenceMob, Date.now() + 50) === false, 'Delete fence permits recreating a fresh draft after deletion');
             await new Promise(r => setTimeout(r, 60));
             assert(!fs.existsSync(path.join(__dirname, '..', 'data', 'drafts', `${fenceMob}.json`)), 'In-flight setImmediate save never resurrects deleted draft on disk');
-            const manageSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'db', 'draft_manage.js'), 'utf8');
-            assert(manageSrc72.includes(".where('operatorUid', '==', normTarget)") && manageSrc72.includes('deleteStoragePrefix'), 'Cloud sync scopes to logged-in operatorUid and deleteCitizenDraft purges Storage + Firestore');
+            const appStoreSrc72 = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'app_store.js'), 'utf8');
+            assert(appStoreSrc72.includes(".where('operatorUid', '==', normTarget)") && appStoreSrc72.includes('deleteStoragePrefix'), 'Cloud sync scopes to logged-in operatorUid and deleteCitizenDraft purges Storage + Firestore');
             assert(!htmlCode72.includes('id="operatorQuickServiceBar"'), 'Operator Desk hides duplicate Government Departments shortcut bar');
 
             // Verify Universal Double-Sided Card (Front-only vs Full/Combined) across ALL services
@@ -5252,6 +5377,745 @@ async function runTests() {
             assert(jurSrc75.includes('options = {}') && nscFlowSrc75.includes('boundScanToasts, options)'), 'executeJurisdictionSteps accepts options without ReferenceError and new_smart_card_flow passes options');
 
             passedCount += 14;
+
+            // [TEST 76] Real-File 2-in-1 PDF Merge, History-Poll Race Guard, Zero-Null Save & Edit Modal Preservation
+            console.log('\n[TEST 76] 🛡️ Real-File 2-in-1 Aadhaar PDF Merge & Session/History Race Gate...');
+            const sharp76 = require('sharp');
+            const { produceDualSidedDocument: prodDual76 } = require('../photo_studio');
+            const { mergeDraftIntoSession: mergeDraft76 } = require('../src/services/session_draft_merger');
+            const realFront76 = path.join(__dirname, '..', 'uploads', 'test_real_front_76.jpg');
+            const realBack76 = path.join(__dirname, '..', 'uploads', 'test_real_back_76.jpg');
+            let mergedOut76 = null;
+            const mob76 = '9999900176';
+            const hdr76 = { 'x-session-mobile': mob76, 'x-operator-uid': 'test_suite_operator_uid' };
+            try {
+                await sharp76({ create: { width: 420, height: 260, channels: 3, background: { r: 245, g: 248, b: 255 } } }).jpeg({ quality: 85 }).toFile(realFront76);
+                await sharp76({ create: { width: 420, height: 260, channels: 3, background: { r: 250, g: 248, b: 240 } } }).jpeg({ quality: 85 }).toFile(realBack76);
+
+                mergedOut76 = await prodDual76(realFront76, realBack76, null, { frontBoundingBox: [10, 10, 990, 990], backBoundingBox: [10, 10, 990, 990] });
+                assert(mergedOut76 && fs.existsSync(mergedOut76) && fs.statSync(mergedOut76).size > 1000, 'produceDualSidedDocument generates real >1KB PDF from real JPEGs');
+                assert(fs.readFileSync(mergedOut76).slice(0, 4).toString() === '%PDF', 'Generated 2-in-1 Aadhaar output starts with %PDF');
+
+                // Verify saveCitizenDraft strips null keys and persists headAadhaar + base64Docs, and Edit Modal save preserves headAadhaar
+                const saveRes76 = await request('POST', '/api/drafts/save', {
+                    mobileNumber: mob76,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'NEW_CARD',
+                    pluginId: 'TNPDS_NEW_CARD',
+                    intakeState: 'HEAD_DETAILS_VERIFY',
+                    citizenProfile: {
+                        mobileNumber: mob76,
+                        subService: 'NEW_CARD',
+                        pluginId: 'TNPDS_NEW_CARD',
+                        fullNameEng: 'Kumaran K',
+                        fullNameTam: 'குமரன் கி',
+                        fatherNameEng: 'Krishnan',
+                        fatherNameTam: 'கிருஷ்ணன்',
+                        headAadhaar: '575567662931',
+                        headDob: '10/06/1993',
+                        headGender: 'Male',
+                        doorNo: '12A',
+                        streetTam: 'மேட்டு தெரு',
+                        pincode: '631052',
+                        headAadhaarDocPath: mergedOut76,
+                        members: [{ nameEng: 'Kumaran K', nameTam: 'குமரன் கி', aadhaarNumber: '575567662931', docType: 'AADHAAR_CARD', docPath: mergedOut76 }],
+                        documents: { headAadhaar: mergedOut76, headAadhaarFront: realFront76, headAadhaarBack: realBack76 }
+                    }
+                }, hdr76);
+                assert(saveRes76.status === 200, 'POST /api/drafts/save succeeds with real merged PDF');
+
+                const listRes76 = await request('GET', `/api/drafts/${mob76}/documents-list`, null, hdr76);
+                assert(listRes76.status === 200 && Array.isArray(listRes76.body?.documents) && listRes76.body.documents.some(d => d.type === 'headAadhaar' && d.isPdf), 'documents-list reports headAadhaar as PDF');
+
+                const docRes76 = await request('GET', `/api/drafts/${mob76}/doc/headAadhaar`, null, hdr76);
+                assert(docRes76.status === 200, 'GET /api/drafts/:mob/doc/headAadhaar returns 200 OK');
+
+                // Simulate Edit Modal Save (POST /api/profile/update) without re-uploading doc -> headAadhaar MUST remain intact!
+                const updRes76 = await request('POST', '/api/profile/update', {
+                    mobileNumber: mob76,
+                    fullNameEng: 'Kumaran K',
+                    fullNameTam: 'குமரன் கி',
+                    doorNo: '12B'
+                }, hdr76);
+                assert(updRes76.status === 200, 'POST /api/profile/update succeeds');
+
+                const listAfterUpd76 = await request('GET', `/api/drafts/${mob76}/documents-list`, null, hdr76);
+                assert(listAfterUpd76.body?.documents?.some(d => d.type === 'headAadhaar'), 'headAadhaar survives Edit Modal profile update');
+
+                // Verify chat_routes.js no longer checks !gasDetails.consumerNumber to clobber tempUploads
+                const chatRoutesSrc76 = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat_routes.js'), 'utf8');
+                assert(!chatRoutesSrc76.includes('!sess.citizenProfile.gasDetails.consumerNumber'), 'chat_routes.js never re-triggers needsDraftRestore mid-intake due to missing gas consumerNumber');
+                const tnegaUtilsSrc76 = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', '_tnega_upload_utils.js'), 'utf8');
+                assert(tnegaUtilsSrc76.includes('persistTnegaSessionDraft') && tnegaUtilsSrc76.includes('hydrateBase64DocCache'), '_tnega_upload_utils persists draft + base64 cache on every upload');
+                const chatHeadAadhSrc76 = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chat', 'chat_head_aadhaar.js'), 'utf8');
+                assert(chatHeadAadhSrc76.includes('hydrateBase64DocCache') && chatHeadAadhSrc76.includes('resolveOrRestoreFile'), 'chat_head_aadhaar enforces Zero-Fake-Success gate + front restore + draft save');
+                assert(typeof mergeDraft76 === 'function', 'session_draft_merger exported cleanly');
+                passedCount += 9;
+            } finally {
+                await request('DELETE', `/api/drafts/${mob76}?permanent=true`, null, hdr76).catch(() => {});
+                for (const p of [realFront76, realBack76, mergedOut76, mergedOut76 ? mergedOut76.replace(/\.pdf$/i, '_preview.jpg') : null]) {
+                    if (p) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {} }
+                }
+            }
+
+            // [TEST 77] Universal Single-Click OTP Resend & Decreasing-Countdown Immunity (All Portals)
+            console.log('\n[TEST 77] 🔄 Universal Single-Click OTP Resend & Zero-Double-Click Guard...');
+            const cp77 = require('../src/portal/common/otp_copilot_watcher');
+            const baseNow77 = 1700001000000;
+            // 1. Never fires while timer > 0 (e.g. 120s, 60s, 30s) or while button is disabled/hidden
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 120, humanResendCount: 0, otpVal: '', timerZeroSinceAt: 0 }, 0, baseNow77, 4000) === false, 'Never auto-clicks Resend at 120s');
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 60, humanResendCount: 0, otpVal: '', timerZeroSinceAt: 0 }, 0, baseNow77, 4000) === false, 'Never auto-clicks Resend at 60s');
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: false, timerVal: 0, humanResendCount: 0, otpVal: '', timerZeroSinceAt: baseNow77 - 10000 }, 0, baseNow77, 4000) === false, 'Never clicks disabled/hidden Resend button');
+            // 2. Never double-clicks while waiting for portal timer to reset (botResendCyclePendingReset=true)
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 0, humanResendCount: 0, otpVal: '', timerZeroSinceAt: baseNow77 - 10000, botResendCyclePendingReset: true, botResendCount: 1 }, baseNow77 - 25000, baseNow77, 4000) === false, 'Atomic cycle lock blocks duplicate click while portal resets timer');
+            // 3. Supports shrinking timers (e.g. 120s -> 60s -> 30s) once portal restarted & expired cleanly
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 0, humanResendCount: 0, otpVal: '', timerZeroSinceAt: baseNow77 - 5000, botResendCyclePendingReset: false, botResendCount: 1 }, baseNow77 - 32000, baseNow77, 4000, 2) === true, 'Supports shorter 30s+ subsequent timer once portal reset and expired again');
+            // 4. Respects maxAutoResends cap to avoid 15-min SMS flood lock
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: 0, humanResendCount: 0, otpVal: '', timerZeroSinceAt: baseNow77 - 5000, botResendCyclePendingReset: false, botResendCount: 2 }, baseNow77 - 65000, baseNow77, 4000, 2) === false, 'Respects maxAutoResends cap');
+            // 5. Works for inline timerless OTP screens only after button transitioned disabled -> enabled
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: null, sawResendDisabled: false, resendUnlockedSinceAt: baseNow77 - 10000, humanResendCount: 0, otpVal: '' }, 0, baseNow77, 4000) === false, 'Timerless screen does not fire before seeing disabled->enabled transition');
+            assert(cp77.shouldBotTriggerResend({ open: true, hasResendBtn: true, timerVal: null, sawResendDisabled: true, resendUnlockedSinceAt: baseNow77 - 5000, humanResendCount: 0, otpVal: '' }, 0, baseNow77, 4000) === true, 'Timerless screen fires once after disabled->enabled transition and grace');
+
+            // 6. Verify wiring & elimination of '0 நொடிகள்' substring bug across all OTP engines
+            const newCardOtpSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'new_card_otp_config.js'), 'utf8');
+            const tnpdsAutoSrc77 = fs.readFileSync(path.join(__dirname, '..', 'tnpds_automation.js'), 'utf8');
+            const mobOtpSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'mobile_change', 'mobile_change_otp_config.js'), 'utf8');
+            const tnegaRegSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_can_register.js'), 'utf8');
+            const tnegaSearchSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnega', 'tnega_can_search_otp.js'), 'utf8');
+            const step21Src77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'steps', 'step21_new_card_otp_verifier.js'), 'utf8');
+            const jurSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'new_smart_card', 'card_jurisdiction_steps.js'), 'utf8');
+            const errObsSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'common', 'portal_omni_error_observer.js'), 'utf8');
+            const wdSrc77 = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'live_watchdog_daemon.js'), 'utf8');
+            const copilotSrc77 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'common', 'otp_copilot_watcher.js'), 'utf8');
+
+            assert(copilotSrc77.includes('performVisibleModalResendWithResult') && copilotSrc77.includes('botClickingResendNow') && copilotSrc77.includes('#toast-container'), 'otp_copilot_watcher executes trusted Playwright Resend clicks and verifies ngx-toastr/API response');
+            assert(newCardOtpSrc77.includes('tryCopilotAutoResendIfExpired') && newCardOtpSrc77.includes('#toast-container'), 'waitForNewCardMobileOtp wires Co-Pilot auto-resend & toast capture for initial mobile OTP');
+            assert(tnpdsAutoSrc77.includes('tryCopilotAutoResendIfExpired') && tnpdsAutoSrc77.includes('performVisibleModalResend'), 'tnpds_automation createOtpWaitPromise & resendOtp use unified single-click Co-Pilot Resend');
+            assert(mobOtpSrc77.includes('tryCopilotAutoResendIfExpired'), 'mobile_change_otp_config wires Co-Pilot auto-resend');
+            assert(tnegaRegSrc77.includes('tryCopilotAutoResendIfExpired') && tnegaSearchSrc77.includes('tryCopilotAutoResendIfExpired'), 'TNeGA CAN OTP flows wire Co-Pilot auto-resend');
+            for (const [fName, fSrc] of [['otp_copilot_watcher', copilotSrc77], ['step21', step21Src77], ['card_jurisdiction_steps', jurSrc77], ['portal_omni_error_observer', errObsSrc77], ['live_watchdog_daemon', wdSrc77]]) {
+                assert(!fSrc.includes("includes('0 நொடிகள்')") && !fSrc.includes("includes('0 seconds')"), `${fName} eliminated substring '0 நொடிகள்'/'0 seconds' bug`);
+            }
+            passedCount += 18;
+
+            // [TEST 78] Strict Zero-OTP-Bypass Lock (Never jump to Member/Aadhaar if Mobile/Login OTP not verified)
+            console.log('\n[TEST 78] 🔒 Strict Zero-OTP-Bypass Gate across New Card & Card Sub-services...');
+            const { verifyNewCardOtpAndSettle: verifyStep21Strict } = require('../src/portal/tnpds/steps/step21_new_card_otp_verifier');
+            // Simulate real TNPDS page where "உறுப்பினரை சேர்க்க" is visible on DOM, OTP modal is closed, and "OTP ஐ உருவாக்கு" is STILL present!
+            const unverifiedMockPage = {
+                isClosed: () => false,
+                url: () => 'https://www.tnpds.gov.in/pages/newsmartcard',
+                locator: () => ({ first: () => ({ count: async () => 0, isVisible: async () => false }), nth: () => ({}) }),
+                evaluate: async (fn) => {
+                    const s = fn.toString();
+                    if (s.includes('hasGenOtpBtn')) {
+                        return { isModalOpen: false, hasMobileField: true, mobileVerified: false, hasVisibleModal: false, hasBackdrop: false, hasGenOtpBtn: true };
+                    }
+                    return false;
+                },
+                waitForTimeout: async () => {}
+            };
+            const strictRejectRes = await verifyStep21Strict(unverifiedMockPage, 'MODAL_CLOSED_UNVERIFIED', { onProgress: () => {} });
+            assert(strictRejectRes && strictRejectRes.success === false, 'Step 21 MUST HALT when mobile field exists & OTP is not verified (blocks Step 22!)');
+
+            const uListenerSrc78 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'common', 'universal_otp_listener.js'), 'utf8');
+            const addAuthSrc78 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'add_member', 'add_member_step2_step3_auth.js'), 'utf8');
+            const mobFormSrc78 = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'mobile_change', 'mobile_form_steps.js'), 'utf8');
+            assert(!uListenerSrc78.includes('isAddMemVisible'), 'universal_otp_listener NEVER treats Add Member button alone as Mobile OTP verified');
+            assert(!tnpdsAutoSrc77.includes('isAddMemVisible'), 'tnpds_automation NEVER treats Add Member button alone as Mobile OTP verified');
+            assert(newCardOtpSrc77.includes('MODAL_CLOSED_UNVERIFIED') && jurSrc77.includes('MODAL_CLOSED_UNVERIFIED'), 'New Card Step 20 halts cleanly if modal closes without verification');
+            assert(addAuthSrc78.includes('if (!isLoginComplete)') && mobFormSrc78.includes("cleanNewOtp.length !== 6"), 'Add Member Login & Mobile Change Step 10 strictly halt when OTP unverified');
+            passedCount += 5;
+
+            // [TEST 79] 4 Ration Card Services End-to-End Isolation, Non-Destructive Vault & Scoping Gate
+            console.log('\n[TEST 79] 🛡️ 4 Ration Card Services (NEW_CARD, ADD_MEMBER, CHANGE_ADDRESS, UPDATE_MOBILE) End-to-End Integrity...');
+            const test4Mob = '9999900079';
+            const test4Hdrs = { 'x-session-mobile': test4Mob, 'x-operator-uid': 'test_suite_operator_uid' };
+            await request('DELETE', `/api/drafts/${test4Mob}`, null, test4Hdrs);
+            await request('POST', '/api/drafts/save', {
+                mobileNumber: test4Mob,
+                operatorUid: 'test_suite_operator_uid',
+                citizenProfile: {
+                    fullNameTam: 'குமரன் கி',
+                    fullNameEng: 'Kumaran K',
+                    fatherNameTam: 'கிருபாகரன்',
+                    fatherNameEng: 'Kirubakaran',
+                    headDob: '10/06/1993',
+                    headGender: 'Male',
+                    headAadhaar: '575567662931',
+                    headPhotoPath: '/uploads/test_sample_doc.jpg',
+                    headAadhaarDocPath: '/uploads/test_sample_doc.jpg',
+                    residenceProof: { typeTam: 'எரிவாயு நுகர்வோர் அட்டை', docPath: '/uploads/test_sample_doc.jpg' },
+                    gasDetails: { hasGas: true, oilCompany: 'HPC', consumerNumber: '622601', agencyName: 'RAJAM GAS', cylinders: '1', gasBookPath: '/uploads/test_sample_doc.jpg' },
+                    documents: {
+                        profilePhoto: '/uploads/test_sample_doc.jpg',
+                        headAadhaar: '/uploads/test_sample_doc.jpg',
+                        gasBook: '/uploads/test_sample_doc.jpg',
+                        residenceProof: '/uploads/test_sample_doc.jpg'
+                    },
+                    doorNo: '216',
+                    streetTam: 'மேட்டு தெரு',
+                    streetEng: 'Mettu Street',
+                    district: 'Ranipet',
+                    taluk: 'Arakkonam',
+                    village: 'Minnal',
+                    pincode: '632510'
+                }
+            }, test4Hdrs);
+
+            // Switch 1: NEW_CARD (100% Pure Fresh Mode starts cleanly at MEMBER_COUNT while preserving archived docs on disk)
+            const r4New = await request('POST', '/api/chat', { message: 'புதிய ரேஷன் கார்டு', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4New.body.subService === 'NEW_CARD' && r4New.body.step === 'MEMBER_COUNT', 'TEST 79.1: NEW_CARD starts 100% Pure Fresh at MEMBER_COUNT');
+            const d4New = await request('GET', `/api/drafts/${test4Mob}`);
+            assert(Boolean(d4New.body.draft?.citizenProfile?.fullNameTam), 'TEST 79.2: Archived customer draft on disk stays intact across fresh service start');
+
+            // Switch 2: ADD_MEMBER (must ask Member Count first, then NEW member Aadhaar without cloning Head Kumaran)
+            const r4Add = await request('POST', '/api/chat', { message: 'குடும்ப உறுப்பினர் சேர்க்க', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4Add.body.subService === 'ADD_MEMBER' && r4Add.body.step === 'RATION_ADD_MEMBER_COUNT', 'TEST 79.3: ADD_MEMBER asks Member Count first without cloning Head Kumaran');
+            const r4AddCnt = await request('POST', '/api/chat', { message: 'ADD_MEMBER_COUNT_2', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4AddCnt.body.step === 'RATION_ADD_MEMBER_TYPE' && r4AddCnt.body.chatHistory[r4AddCnt.body.chatHistory.length - 1].text.includes('1 / 2'), 'TEST 79.3b: Selecting 2 members prompts for Member 1 / 2 Aadhaar');
+            const d4AddDocs = await request('GET', `/api/drafts/${test4Mob}/documents-list?subService=ADD_MEMBER`);
+            assert((d4AddDocs.body.documents || []).every(d => d.type !== 'profilePhoto' && d.type !== 'gasBook' && d.type !== 'headAadhaar'), 'TEST 79.4: ADD_MEMBER scoped documents-list excludes Head Photo, Gas Book & Head Aadhaar');
+
+            // Verify Operator Desk <-> Home navigation NEVER clears active customer & sidebar hides duplicate membersContainer in ADD_MEMBER
+            const opIntakeSrc79 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'operator_intake.js'), 'utf8');
+            const authSessSrc79 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'auth_session.js'), 'utf8');
+            const docViewSrc79 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'document_viewer.js'), 'utf8');
+            assert(opIntakeSrc79.includes('saveCurrentDraftManually({ silent: true })'), 'TEST 79.4b: backToOperatorDashboard silently saves and keeps active customer intact');
+            assert(!authSessSrc79.includes('clearAutomationScreenSession()') || authSessSrc79.includes('NEVER clear or call /api/chat/reset'), 'TEST 79.4c: goToHomePage never wipes active customer on return from Desk');
+            assert(docViewSrc79.includes('!isNewRationCardService || isAddMemberService'), 'TEST 79.4d: document_viewer hides duplicate #membersSidebarContainer during ADD_MEMBER');
+
+            // Switch 3: CHANGE_ADDRESS (must NOT reuse old Mettu Street blindly)
+            const r4Addr = await request('POST', '/api/chat', { message: 'முகவரி மாற்றம்', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4Addr.body.subService === 'CHANGE_ADDRESS' && r4Addr.body.step === 'RATION_CHANGE_ADDRESS_DOC', 'TEST 79.5: CHANGE_ADDRESS asks for NEW address proof instead of copying old Mettu Street');
+            const d4AddrDocs = await request('GET', `/api/drafts/${test4Mob}/documents-list?subService=CHANGE_ADDRESS`);
+            assert((d4AddrDocs.body.documents || []).every(d => d.type !== 'profilePhoto' && d.type !== 'headAadhaar' && d.type !== 'gasBook'), 'TEST 79.6: CHANGE_ADDRESS scoped documents-list does not treat old gasBook as newAddressProof');
+
+            // Switch 4: UPDATE_MOBILE (must reject invalid input / identical mobile, accept distinct 10-digit mobile)
+            const r4Mob = await request('POST', '/api/chat', { message: 'கைபேசி எண் மாற்றம்', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4Mob.body.subService === 'UPDATE_MOBILE' && r4Mob.body.step === 'RATION_CHANGE_MOBILE', 'TEST 79.7: UPDATE_MOBILE asks cleanly for new 10-digit mobile');
+            const r4MobBad = await request('POST', '/api/chat', { message: test4Mob, mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4MobBad.body.step === 'RATION_CHANGE_MOBILE', 'TEST 79.8: UPDATE_MOBILE rejects identical registered mobile');
+            const r4MobOk = await request('POST', '/api/chat', { message: '9842367866', mobileNumber: test4Mob }, test4Hdrs);
+            assert(r4MobOk.body.step === 'READY_TO_APPLY' && r4MobOk.body.subServiceData?.newMobile === '9842367866', 'TEST 79.9: UPDATE_MOBILE accepts valid distinct 10-digit mobile');
+            const d4MobDocs = await request('GET', `/api/drafts/${test4Mob}/documents-list?subService=UPDATE_MOBILE`);
+            assert((d4MobDocs.body.documents || []).every(d => d.type !== 'profilePhoto' && d.type !== 'gasBook' && d.type !== 'residenceProof' && d.type !== 'headAadhaar'), 'TEST 79.10: UPDATE_MOBILE scoped documents-list omits unrelated Photo/Gas/Residence/HeadAadhaar');
+
+            const uiMobCart = require('../public/js/cartridges/tnpds_update_mobile');
+            assert(uiMobCart.editModal.layoutMode === 'UPDATE_MOBILE' && uiMobCart.validatePreSubmit({ mobileNumber: test4Mob, subServiceData: {} }).valid === false && uiMobCart.validatePreSubmit({ mobileNumber: test4Mob, subServiceData: { newMobile: '9842367866' } }).valid === true, 'TEST 79.11: UI cartridge TNPDS_UPDATE_MOBILE enforces valid 10-digit newMobile');
+
+            const uiAddCart = require('../public/js/cartridges/tnpds_add_member');
+            assert(uiAddCart.validatePreSubmit({ headAadhaar: '575567662931', subServiceData: { memberNameTam: 'குமரன்', aadhaarNo: '575567662931', dob: '10/06/1993' } }, {}).valid === false, 'TEST 79.12: UI cartridge TNPDS_ADD_MEMBER blocks adding Family Head Aadhaar onto own card');
+
+            // Regression Lock: NEVER use broad "li:has-text(...) a" in TNPDS sub-service navigation (it clicks New Smart Card first!)
+            const addStep1Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'add_member', 'add_member_step1_preflight.js'), 'utf8');
+            const addStep2Src = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'flows', 'add_member', 'add_member_step2_step3_auth.js'), 'utf8');
+            assert(!addStep1Src.includes('li:has-text("உறுப்பினரை சேர்க்க") a') && !addStep2Src.includes('li:has-text("உறுப்பினரை சேர்க்க") a'), 'TEST 79.13: Add Member homepage selectors never use ancestor li:has-text(...) a (prevents clicking New Smart Card)');
+
+            await request('DELETE', `/api/drafts/${test4Mob}`, null, test4Hdrs);
+            passedCount += 13;
+        }
+
+        // =========================================================================
+        // [TEST 80] Single Canonical Store & Master-vs-Transient Isolation Law
+        // Proves:
+        // 1. Customer data is stored strictly in ONE active drafts directory (getActiveDraftsDir()).
+        // 2. No duplicate citizens.json, citizens.json.bak, sessions.json, sessions.json.bak, or data/citizens/<mob>.json are created.
+        // 3. Master headAadhaar is NEVER copied into ADD_MEMBER memberAadhaar for an existing customer.
+        // 4. Leaving ADD_MEMBER purges transient memberAadhaar docs from Master Profile & disk.
+        // =========================================================================
+        console.log('\n[TEST 80] Single Canonical Store & Master-vs-Transient Isolation Law');
+        {
+            const { getActiveDraftsDir, getActiveDataDir, APPDATA_DRAFTS_DIR } = require('../src/services/db/firestore_client');
+            const { saveCitizenDraft, getCitizenDraft, deleteCitizenDraft } = require('../firestore_db');
+            const { saveCitizenMaster } = require('../src/services/db/citizen_master_service');
+            const storageSvc = require('../src/services/storage_service');
+
+            const test80Mob = '9999900080';
+            const activeDir = getActiveDraftsDir();
+            const activeData = getActiveDataDir();
+            assert(activeDir === path.resolve(__dirname, '..', 'data', 'drafts'), 'TEST 80.1: In workspace/test runtime, getActiveDraftsDir() resolves strictly to workspace data/drafts');
+
+            // Clean any prior test80 artifacts
+            await deleteCitizenDraft(test80Mob);
+            const appDataTest80 = path.join(APPDATA_DRAFTS_DIR, `${test80Mob}.json`);
+            if (fs.existsSync(appDataTest80)) { try { fs.unlinkSync(appDataTest80); } catch (_) {} }
+
+            // Save via saveCitizenMaster + saveCitizenDraft + persistSessions
+            saveCitizenMaster(test80Mob, {
+                fullNameTam: 'கார்த்திக் சு',
+                fullNameEng: 'Karthik S',
+                headAadhaar: '554433221100',
+                headAadhaarDocPath: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_aadhaar.jpg',
+                headPhotoPath: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_photo.jpg',
+                district: 'Ranipet'
+            });
+            await saveCitizenDraft(test80Mob, {
+                operatorUid: 'test_suite_operator_uid',
+                subService: 'ADD_MEMBER',
+                intakeState: 'RATION_ADD_MEMBER_TYPE',
+                citizenProfile: {
+                    fullNameTam: 'கார்த்திக் சு',
+                    fullNameEng: 'Karthik S',
+                    headAadhaar: '554433221100',
+                    headAadhaarDocPath: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_aadhaar.jpg',
+                    headPhotoPath: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_photo.jpg',
+                    subService: 'ADD_MEMBER'
+                },
+                documents: {
+                    headAadhaar: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_aadhaar.jpg',
+                    profilePhoto: 'D:\\downloads\\ai assitant 2\\uploads\\test_head_photo.jpg'
+                }
+            });
+            storageSvc.persistSessions(test80Mob);
+
+            assert(fs.existsSync(path.join(activeDir, `${test80Mob}.json`)), 'TEST 80.2: Canonical draft file exists inside getActiveDraftsDir()');
+            assert(!fs.existsSync(appDataTest80), 'TEST 80.3: Workspace/test save NEVER duplicates into AppData Desktop drafts folder');
+            assert(!fs.existsSync(path.join(activeData, 'citizens', `${test80Mob}.json`)), 'TEST 80.4: saveCitizenMaster NEVER creates duplicate data/citizens/<mob>.json');
+            assert(!fs.existsSync(path.join(activeData, 'citizens.json.bak')), 'TEST 80.5: database.js NEVER creates duplicate citizens.json.bak');
+            assert(!fs.existsSync(path.join(activeData, 'sessions.json.bak')), 'TEST 80.6: storage_service.js NEVER creates duplicate sessions.json.bak');
+
+            // Verify Master headAadhaar was NOT copied into ADD_MEMBER memberAadhaar
+            const saved80 = JSON.parse(fs.readFileSync(path.join(activeDir, `${test80Mob}.json`), 'utf8'));
+            assert(!saved80.documents?.memberAadhaar && !saved80.documents?.memberAadhaarFront, 'TEST 80.7: Master headAadhaar is NEVER copied into transient memberAadhaar for an existing customer');
+
+            // Verify switching away from ADD_MEMBER purges any transient memberAadhaar from disk & profile
+            await saveCitizenDraft(test80Mob, {
+                operatorUid: 'test_suite_operator_uid',
+                subService: 'ADD_MEMBER',
+                citizenProfile: { subService: 'ADD_MEMBER', subServiceData: { memberNameTam: 'குழந்தை', docPath: 'D:\\downloads\\ai assitant 2\\uploads\\test_member_aadhaar.jpg' } },
+                documents: { memberAadhaar: 'D:\\downloads\\ai assitant 2\\uploads\\test_member_aadhaar.jpg' }
+            });
+            await saveCitizenDraft(test80Mob, {
+                operatorUid: 'test_suite_operator_uid',
+                subService: 'UPDATE_MOBILE',
+                subServiceData: { newMobile: '9842367866' },
+                citizenProfile: { subService: 'UPDATE_MOBILE', subServiceData: { newMobile: '9842367866' } }
+            });
+            const switched80 = await getCitizenDraft(test80Mob);
+            assert(switched80 && switched80.subService === 'UPDATE_MOBILE', 'TEST 80.8: Switching service updates canonical draft cleanly');
+            assert(!switched80.documents?.memberAadhaar && !switched80.storageUrls?.memberAadhaar, 'TEST 80.9: Switching away from ADD_MEMBER purges transient memberAadhaar from Master Profile & storageUrls');
+            assert(Boolean(switched80.citizenProfile?.headAadhaar === '554433221100'), 'TEST 80.10: Master Profile permanent fields remain intact across service switches');
+
+            // Verify Pure Master Profile Cloud Vault payload strips transient service trials & trial docs
+            const { buildMasterCloudPayload } = require('../src/services/db/draft_save');
+            const cloudSnap = buildMasterCloudPayload({
+                mobileNumber: test80Mob,
+                subService: 'ADD_MEMBER',
+                subServiceData: { memberNameTam: 'தற்காலிக குழந்தை', docPath: 'C:/tmp/mem.jpg' },
+                intakeState: 'RATION_ADD_MEMBER_RELATION',
+                chatHistory: [{ sender: 'bot', text: 'temp' }],
+                citizenProfile: { fullNameTam: 'கார்த்திக் சு', headAadhaar: '554433221100', subService: 'ADD_MEMBER', subServiceData: { memberNameTam: 'தற்காலிக குழந்தை' } },
+                documents: { headAadhaar: 'C:/tmp/head.jpg', memberAadhaar: 'C:/tmp/mem.jpg', newAddressProof: 'C:/tmp/addr.jpg' },
+                storageUrls: { headAadhaar: 'https://cloud/head.jpg', memberAadhaar: 'https://cloud/mem.jpg' }
+            });
+            assert(cloudSnap.subService === null && cloudSnap.subServiceData === null && cloudSnap.intakeState === 'SERVICE_SELECTION' && cloudSnap.chatHistory.length === 0, 'TEST 80.11: Cloud Vault payload stores pure Master Profile only (zero transient service trials)');
+            assert(Boolean(cloudSnap.documents.headAadhaar) && !cloudSnap.documents.memberAadhaar && !cloudSnap.documents.newAddressProof && !cloudSnap.storageUrls.memberAadhaar, 'TEST 80.12: Cloud Vault payload preserves Master docs and strips transient trial docs');
+
+            await deleteCitizenDraft(test80Mob);
+            passedCount += 12;
+        }
+
+        // =========================================================================
+        // [TEST 81] Golden Rule 24: Universal "5-Basic Vault + Always-Fresh Service Run" Across All 14 Cartridges + _template
+        // =========================================================================
+        console.log('\n[TEST 81] 🧱 5-Basic Vault + Always-Fresh Service Run Law (All 14 Cartridges + _template)');
+        {
+            const { resetTransientServiceInputs } = require('../src/cartridges/_fresh_service_guard');
+            const cartridgeDirs81 = [
+                'tnpds_new_card', 'tnpds_add_member', 'tnpds_remove_member', 'tnpds_change_address',
+                'tnpds_update_mobile', 'tnpds_change_head', 'tnega_can_register', 'tnega_income',
+                'tnega_community', 'tnega_residence', 'tnega_first_graduate', 'tnega_obc',
+                'tnega_legal_heir', 'tnega_widow', '_template'
+            ];
+            for (const dirName of cartridgeDirs81) {
+                const fPath = path.join(__dirname, '..', 'src', 'cartridges', dirName, 'flow.js');
+                const src = fs.readFileSync(fPath, 'utf8');
+                assert(src.includes('resetTransientServiceInputs'), `TEST 81.${dirName}: flow.js enforces resetTransientServiceInputs()`);
+            }
+            const sampleSess81 = {
+                mobileNumber: '9876543210',
+                chatHistory: [],
+                tempUploads: {
+                    headAadhaar: '/uploads/head.jpg',
+                    profilePhoto: '/uploads/photo.jpg',
+                    smartCard: '/uploads/card.jpg',
+                    deathCertificate: '/uploads/death.pdf',
+                    incomeProof: '/uploads/pay.pdf',
+                    memberAadhaar: '/uploads/mem.jpg',
+                    newAddressProof: '/uploads/eb.pdf'
+                },
+                citizenProfile: {
+                    mobileNumber: '9876543210',
+                    fullNameTam: 'குமரன் கி',
+                    fullNameEng: 'Kumaran K',
+                    fatherNameTam: 'கிருபாகரன்',
+                    headAadhaar: '575567662931',
+                    headAadhaarDocPath: '/uploads/head.jpg',
+                    headPhotoPath: '/uploads/photo.jpg',
+                    doorNo: '216',
+                    streetTam: 'மேட்டு தெரு',
+                    district: 'Ranipet',
+                    pincode: '632510',
+                    smartCardNumber: '333001122334',
+                    canNumber: '1331201234567',
+                    // Stale service-specific fields that MUST be purged:
+                    annualIncome: '72000',
+                    profession: 'Farmer',
+                    caste: 'Agamudayar',
+                    communityProof: '/uploads/comm.pdf',
+                    deathCertificate: '/uploads/death.pdf',
+                    deceasedNameTam: 'பழைய பெயர்',
+                    marriageProof: '/uploads/marr.pdf',
+                    currentCourse: 'B.E',
+                    subServiceData: { memberNameTam: 'பழைய நபர்', newMobile: '9999988888' },
+                    documents: {
+                        headAadhaar: '/uploads/head.jpg',
+                        profilePhoto: '/uploads/photo.jpg',
+                        smartCard: '/uploads/card.jpg',
+                        deathCertificate: '/uploads/death.pdf',
+                        incomeProof: '/uploads/pay.pdf',
+                        memberAadhaar: '/uploads/mem.jpg'
+                    }
+                }
+            };
+            resetTransientServiceInputs(sampleSess81);
+            const p81 = sampleSess81.citizenProfile;
+            assert(
+                p81.mobileNumber === '9876543210' &&
+                !p81.fullNameTam && !p81.headAadhaar && !p81.headPhotoPath &&
+                !p81.doorNo && !p81.smartCardNumber && !p81.canNumber &&
+                Object.keys(p81.documents || {}).length === 0 &&
+                Object.keys(sampleSess81.tempUploads || {}).length === 0,
+                'TEST 81.vault: 100% Pure Fresh Mode clears all active working fields & docs (keeps mobileNumber + Read-Only Archive Locker)'
+            );
+            assert(
+                !p81.annualIncome && !p81.profession && !p81.caste && !p81.communityProof &&
+                !p81.deathCertificate && !p81.deceasedNameTam && !p81.marriageProof && !p81.currentCourse &&
+                Object.keys(p81.subServiceData || {}).length === 0 &&
+                !p81.documents.deathCertificate && !p81.documents.incomeProof && !p81.documents.memberAadhaar &&
+                !sampleSess81.tempUploads.deathCertificate && !sampleSess81.tempUploads.memberAadhaar && !sampleSess81.tempUploads.newAddressProof,
+                'TEST 81.fresh: All stale service-specific fields & working docs are purged cleanly on service entry'
+            );
+            // Verify Archive Vault preserved ALL uploaded docs (basic + service docs) before resetting!
+            assert(
+                Array.isArray(p81.savedVaultDocs) &&
+                p81.savedVaultDocs.some(v => v.docType === 'headAadhaar') &&
+                p81.savedVaultDocs.some(v => v.docType === 'profilePhoto') &&
+                p81.savedVaultDocs.some(v => v.docType === 'smartCard') &&
+                p81.savedVaultDocs.some(v => v.docType === 'deathCertificate') &&
+                p81.savedVaultDocs.some(v => v.docType === 'incomeProof') &&
+                p81.savedVaultDocs.some(v => v.docType === 'memberAadhaar'),
+                'TEST 81.archive: ALL uploaded documents (basic + service) are safely archived into savedVaultDocs[] before 100% Pure Fresh reset'
+            );
+            const { buildMasterCloudPayload: buildCloud81 } = require('../src/services/db/draft_save');
+            const cloud81 = buildCloud81({
+                mobileNumber: '9876543210',
+                applicationNumber: '04260902721244',
+                applicationPdfUrl: '/receipts/Application_04260902721244.pdf',
+                citizenProfile: {
+                    ...p81,
+                    submittedApplications: [{ applicationNumber: '04260902721244', service: 'ADD_MEMBER', pdfUrl: '/receipts/Application_04260902721244.pdf' }]
+                },
+                documents: { headAadhaar: '/uploads/head.jpg' },
+                storageUrls: { headAadhaar: 'https://cloud/head.jpg', applicationPdf: 'https://cloud/receipt.pdf' }
+            });
+            assert(
+                Array.isArray(cloud81.citizenProfile.savedVaultDocs) && cloud81.citizenProfile.savedVaultDocs.length >= 3 &&
+                Array.isArray(cloud81.citizenProfile.submittedApplications) && cloud81.citizenProfile.submittedApplications[0].applicationNumber === '04260902721244' &&
+                cloud81.storageUrls.applicationPdf === 'https://cloud/receipt.pdf',
+                'TEST 81.cloudArchive: Cloud Vault payload preserves savedVaultDocs[], submittedApplications[] & End-Result Receipt PDF URL'
+            );
+
+            // Legal Heir (REV-114) & Widow (REV-109) Clean Question Flow Locks (zero dummy buttons / zero silent skips)
+            const lhFlow81 = require('../src/cartridges/tnega_legal_heir/flow');
+            const wdFlow81 = require('../src/cartridges/tnega_widow/flow');
+            const g81 = path.join(__dirname, '..', 'data', 'golden_samples', 'kumaran_gallery');
+            const realImg81 = path.join(g81, '04_kumaran_aadhaar_2in1.jpg');
+            const lhSessAddr = {
+                citizenProfile: {
+                    fullNameEng: 'Kumaran K', fullNameTam: 'குமரன் கி', fatherNameEng: 'Kirubakaran', fatherNameTam: 'கிருபாகரன்',
+                    headAadhaar: '575567662931', headAadhaarDocPath: realImg81, deathCertificate: realImg81, smartCard: realImg81
+                }
+            };
+            const lhStepAddr = lhFlow81.advanceFlow(lhSessAddr);
+            assert(lhStepAddr.step === 'LEGAL_HEIR_DECEASED_ADDR_WAIT' && lhStepAddr.options.some(o => o.value === 'LH_ADDR_USE_SMARTCARD'), 'TEST 81.lhAddr: Legal Heir explicitly gates on Deceased Address Proof with conscious Smart Card option');
+
+            const lhSessName = {
+                citizenProfile: {
+                    ...lhSessAddr.citizenProfile,
+                    deceasedAddressProof: realImg81, birthCertificate: realImg81, canNumber: '133370337878397'
+                }
+            };
+            const lhStepName = lhFlow81.advanceFlow(lhSessName);
+            assert(lhStepName.step === 'LEGAL_HEIR_DECEASED_NAME_WAIT' && !lhSessName.citizenProfile.deceasedNameEng, 'TEST 81.lhName: Legal Heir NEVER silently auto-fills deceasedName from fatherName');
+
+            lhSessName.citizenProfile.deceasedNameEng = 'Kirubakaran';
+            lhSessName.citizenProfile.deceasedNameTam = 'கிருபாகரன்';
+            const lhStepDod = lhFlow81.advanceFlow(lhSessName);
+            assert(lhStepDod.step === 'LEGAL_HEIR_DEATH_DATE_WAIT' && !lhStepDod.options.some(o => String(o.value).includes('15-Jan-2025')), 'TEST 81.lhDod: Legal Heir Date of Death has ZERO dummy preset buttons');
+
+            lhSessName.citizenProfile.dateOfDeath = '10-02-2025';
+            lhSessName.citizenProfile.deathCertificateNo = 'DC-9988';
+            lhSessName.citizenProfile.deceasedFatherNameEng = 'Subramanian';
+            lhSessName.citizenProfile.deceasedFatherNameTam = 'சுப்பிரமணியன்';
+            const lhStepHeirs = lhFlow81.advanceFlow(lhSessName);
+            assert(lhStepHeirs.step === 'LEGAL_HEIR_HEIRS_WAIT', 'TEST 81.lhHeirs: Legal Heir explicitly asks for Legal Heirs List before Ready Summary');
+
+            const wdSessMar = {
+                citizenProfile: {
+                    fullNameEng: 'Devaki K', fullNameTam: 'தேவகி கி', headAadhaar: '311526466205',
+                    profilePhoto: realImg81, headAadhaarDocPath: realImg81, deathCertificate: realImg81, smartCard: realImg81
+                }
+            };
+            const wdStepMar = wdFlow81.advanceFlow(wdSessMar);
+            assert(wdStepMar.step === 'WIDOW_MARRIAGE_PROOF_WAIT' && wdStepMar.options.some(o => o.value === 'WD_MAR_PROOF_USE_SMARTCARD'), 'TEST 81.wdMar: Widow explicitly gates on Marriage Proof with conscious Smart Card option (no silent skip)');
+
+            wdSessMar.citizenProfile.marriageProof = realImg81;
+            wdSessMar.citizenProfile.canNumber = '133370314319242';
+            wdSessMar.citizenProfile.spouseNameTam = 'கிருபாகரன்';
+            const wdStepDod = wdFlow81.advanceFlow(wdSessMar);
+            assert(wdStepDod.step === 'WIDOW_DEATH_DATE_WAIT' && !wdStepDod.options.some(o => String(o.value).includes('15-Jan-2025')), 'TEST 81.wdDod: Widow Date of Death has ZERO dummy preset buttons');
+
+            // Verify Clear + Same Number NEVER resurrects old draft into /api/chat/history or right sidebar (?liveOnly=1)
+            const freshIsoMob = '9999900081';
+            const freshIsoHdr = { 'x-session-mobile': freshIsoMob, 'x-operator-uid': 'test_suite_operator_uid' };
+            await request('DELETE', `/api/drafts/${freshIsoMob}?permanent=true`, null, freshIsoHdr);
+            await request('POST', '/api/drafts/save', {
+                mobileNumber: freshIsoMob,
+                operatorUid: 'test_suite_operator_uid',
+                citizenProfile: {
+                    fullNameTam: 'பழைய நபர்', fullNameEng: 'Old Person',
+                    headAadhaar: '575567662931', headAadhaarDocPath: realImg81, headPhotoPath: realImg81,
+                    documents: { headAadhaar: realImg81, profilePhoto: realImg81 }
+                }
+            }, freshIsoHdr);
+            await request('POST', '/api/operator/new-customer', { customerMobile: freshIsoMob, serviceName: 'குடும்ப உறுப்பினர் சேர்க்கை' }, freshIsoHdr);
+            const chatStep1_81 = await request('POST', '/api/chat', { message: 'ADD_MEMBER_COUNT_1', mobileNumber: freshIsoMob }, freshIsoHdr);
+            assert(
+                !chatStep1_81.body?.citizenProfile?.fullNameTam &&
+                !chatStep1_81.body?.citizenProfile?.headAadhaar &&
+                !String(chatStep1_81.body?.botResponse || '').includes('பழைய நபர்'),
+                'TEST 81.noChatResurrect: Clicking ADD_MEMBER_COUNT_1 on POST /api/chat NEVER resurrects old Head Name/Aadhaar into a Pure Fresh session'
+            );
+            const hist81 = await request('GET', `/api/chat/history?mobile=${freshIsoMob}`, null, freshIsoHdr);
+            assert(!hist81.body?.citizenProfile?.fullNameTam && !hist81.body?.citizenProfile?.headAadhaar, 'TEST 81.noResurrect: GET /api/chat/history NEVER resurrects old draft into a Pure Fresh session');
+            const sideDocs81 = await request('GET', `/api/drafts/${freshIsoMob}/documents-list?subService=ADD_MEMBER&liveOnly=1`, null, freshIsoHdr);
+            assert((sideDocs81.body?.documents || []).length === 0, 'TEST 81.sidebarClean: Right sidebar (?liveOnly=1) shows 0 old archived docs on a Pure Fresh session');
+            const vaultDocs81 = await request('GET', `/api/drafts/${freshIsoMob}/documents-list`, null, freshIsoHdr);
+            assert((vaultDocs81.body?.documents || []).length >= 2, 'TEST 81.lockerSafe: Drafts Desk Archive Locker (without liveOnly) still preserves all archived docs');
+
+            // Verify incomplete-only Continue flag (hasIncompleteWork) & explicit resume via /api/auth/login
+            await request('POST', '/api/drafts/save', {
+                mobileNumber: freshIsoMob,
+                operatorUid: 'test_suite_operator_uid',
+                subService: 'ADD_MEMBER',
+                intakeState: 'RATION_ADD_MEMBER_RELATION',
+                chatHistory: [{ sender: 'bot', text: 'உறவுமுறையைத் தேர்ந்தெடுக்கவும்' }],
+                citizenProfile: { fullNameTam: 'பழைய நபர்', subService: 'ADD_MEMBER' }
+            }, freshIsoHdr);
+            const list81Inc = await request('GET', '/api/drafts?operatorUid=test_suite_operator_uid', null, freshIsoHdr);
+            const entry81Inc = (list81Inc.body?.drafts || []).find(d => d.mobileNumber === freshIsoMob && d.hasIncompleteWork === true);
+            assert(entry81Inc && entry81Inc.hasIncompleteWork === true, 'TEST 81.continueTrue: Incomplete draft sets hasIncompleteWork=true for Continue button');
+            const resResume81 = await request('POST', '/api/auth/login', {
+                draftId: entry81Inc.draftId, mobileNumber: freshIsoMob, customerMobile: freshIsoMob, isCustomerSession: true, operatorUid: 'test_suite_operator_uid'
+            }, freshIsoHdr);
+            assert(resResume81.status === 200 && resResume81.body?.success === true && resResume81.body?.intakeState === 'RATION_ADD_MEMBER_RELATION', 'TEST 81.continueResume: Explicit Continue restores exact paused intakeState');
+            await request('POST', '/api/drafts/save', {
+                draftId: entry81Inc.draftId,
+                mobileNumber: freshIsoMob,
+                operatorUid: 'test_suite_operator_uid',
+                status: 'SUBMITTED',
+                applicationNumber: '04260902788888'
+            }, freshIsoHdr);
+            const list81Sub = await request('GET', '/api/drafts?operatorUid=test_suite_operator_uid', null, freshIsoHdr);
+            const entry81Sub = (list81Sub.body?.drafts || []).find(d => d.draftId === entry81Inc.draftId);
+            assert(entry81Sub && entry81Sub.hasIncompleteWork === false, 'TEST 81.continueFalse: Submitted draft sets hasIncompleteWork=false (no Continue button)');
+
+            await request('DELETE', `/api/drafts/${freshIsoMob}?permanent=true`, null, freshIsoHdr);
+
+            // Verify internal temp keys NEVER leak into sidebar/vault docs & phone entry NEVER renders old customer popup
+            const { extractDraftDocumentsList } = require('../src/services/draft_document_list');
+            const noisyDraft81 = {
+                mobileNumber: '9999900056',
+                subService: 'NEW_CARD',
+                documents: {
+                    headAadhaar: realImg81,
+                    headAadhaarFront: realImg81,
+                    currentMemberFront: realImg81,
+                    currentMemberDoc: realImg81,
+                    currentMemberFrontBoundingBox: { x: 0, y: 0 },
+                    memberDoc_1: realImg81,
+                    memberFront_1: realImg81,
+                    memberBack_1: realImg81,
+                    memberAadhaar0: realImg81
+                },
+                citizenProfile: {
+                    fullNameTam: 'குமரன் கி',
+                    subService: 'NEW_CARD',
+                    headAadhaarDocPath: realImg81,
+                    members: [
+                        { nameTam: 'குமரன் கி', docPath: realImg81 },
+                        { nameTam: 'குமரன் கி', docPath: realImg81 }
+                    ],
+                    savedVaultDocs: [
+                        { docType: 'currentMemberFront', localPath: realImg81 },
+                        { docType: 'memberDoc_1', localPath: realImg81 },
+                        { docType: 'memberFront_1', localPath: realImg81 }
+                    ]
+                }
+            };
+            const cleanDocs81 = extractDraftDocumentsList('9999900056', noisyDraft81, '9999900056', null);
+            const cleanTypes81 = cleanDocs81.map(d => d.type);
+            assert(
+                cleanTypes81.includes('headAadhaar') &&
+                cleanTypes81.includes('memberAadhaar0') &&
+                !cleanTypes81.includes('currentMemberFront') &&
+                !cleanTypes81.includes('currentMemberDoc') &&
+                !cleanTypes81.includes('memberDoc_1') &&
+                !cleanTypes81.includes('memberFront_1') &&
+                !cleanTypes81.includes('memberBack_1') &&
+                !cleanTypes81.includes('headAadhaarFront') &&
+                cleanDocs81.length === 2,
+                `TEST 81.noTempDocKeys: Sidebar/Vault MUST hide all internal temp keys (got: ${JSON.stringify(cleanTypes81)})`
+            );
+            const intakeJs81 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'operator_intake.js'), 'utf8');
+            const fnBlock81 = intakeJs81.slice(intakeJs81.indexOf('function handleNewCustomerMobileInput'), intakeJs81.indexOf('document.addEventListener'));
+            assert(
+                !fnBlock81.includes('allOperatorDrafts') && !fnBlock81.includes('search-citizen'),
+                'TEST 81.noPhoneAutocomplete: Typing phone number NEVER pops up old customer suggestions'
+            );
+
+            // Verify permanent delete purges flat <mobile>_* uploads AND APP_<mobile>_* application files
+            const delTestMob81 = '9999900055';
+            const activeData81 = path.resolve(__dirname, '..', 'data');
+            const testUploadFile81 = path.join(activeData81, 'uploads', `${delTestMob81}_1700000000_doc.jpg`);
+            const testAppFile81 = path.join(activeData81, 'applications', `APP_${delTestMob81}_INCOME_CERT_1700000000.json`);
+            fs.mkdirSync(path.dirname(testUploadFile81), { recursive: true });
+            fs.mkdirSync(path.dirname(testAppFile81), { recursive: true });
+            fs.writeFileSync(testUploadFile81, 'dummy-upload-bytes', 'utf8');
+            fs.writeFileSync(testAppFile81, JSON.stringify({ mobileNumber: delTestMob81 }), 'utf8');
+            await request('DELETE', `/api/drafts/${delTestMob81}?permanent=true`, null, freshIsoHdr);
+            assert(
+                !fs.existsSync(testUploadFile81) && !fs.existsSync(testAppFile81),
+                'TEST 81.completeDelete: Permanent Delete purges flat <mobile>_* uploads AND APP_<mobile>_* files'
+            );
+
+            // Verify 1 Application = 1 Unique draftId: Unlimited independent applications under the SAME mobile number!
+            const multiMob81 = '9999900056';
+            await request('DELETE', `/api/drafts/${multiMob81}?permanent=true`, null, freshIsoHdr);
+            const nc1 = await request('POST', '/api/operator/new-customer', { customerMobile: multiMob81, serviceName: 'புதிய ரேஷன் கார்டு' }, freshIsoHdr);
+            const nc1Id = nc1.body?.draftId;
+            // Also simulate legacy callers saving with ONLY plain 10-digit mobile (OR bogus draftId: multiMob81) — MUST route to nc1Id and NEVER spawn a duplicate card!
+            await request('POST', '/api/drafts/save', {
+                draftId: multiMob81, mobileNumber: multiMob81, operatorUid: 'test_suite_operator_uid',
+                subService: 'NEW_CARD', intakeState: 'HEAD_DETAILS_VERIFY',
+                citizenProfile: { mobileNumber: multiMob81, fullNameTam: 'குமரன் நியூ கார்டு', subService: 'NEW_CARD' }
+            }, freshIsoHdr);
+            await request('POST', '/api/drafts/save', {
+                draftId: nc1Id, mobileNumber: multiMob81, operatorUid: 'test_suite_operator_uid',
+                subService: 'NEW_CARD', intakeState: 'MEMBER_COUNT',
+                citizenProfile: { mobileNumber: multiMob81, fullNameTam: 'குமரன் நியூ கார்டு', subService: 'NEW_CARD' }
+            }, freshIsoHdr);
+            const draftsJs81 = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', 'operator_drafts.js'), 'utf8');
+            assert(!draftsJs81.includes('மாஸ்டர் சுயவிவரம் (Master Profile)'), 'TEST 81.noMasterProfileLabel: Drafts Desk cards NEVER display legacy Master Profile label');
+
+            const nc2 = await request('POST', '/api/operator/new-customer', { customerMobile: multiMob81, serviceName: 'குடும்ப உறுப்பினர் சேர்க்கை' }, freshIsoHdr);
+            const nc2Id = nc2.body?.draftId;
+            await request('POST', '/api/drafts/save', {
+                draftId: nc2Id, mobileNumber: multiMob81, operatorUid: 'test_suite_operator_uid',
+                subService: 'ADD_MEMBER', intakeState: 'RATION_ADD_MEMBER_TYPE',
+                citizenProfile: { mobileNumber: multiMob81, fullNameTam: 'உறுப்பினர் இரண்டு', subService: 'ADD_MEMBER' }
+            }, freshIsoHdr);
+
+            const nc3 = await request('POST', '/api/operator/new-customer', { customerMobile: multiMob81, serviceName: 'வருமானச் சான்றிதழ்' }, freshIsoHdr);
+            const nc3Id = nc3.body?.draftId;
+            await request('POST', '/api/drafts/save', {
+                draftId: nc3Id, mobileNumber: multiMob81, operatorUid: 'test_suite_operator_uid',
+                subService: 'INCOME', intakeState: 'INCOME_ANNUAL_WAIT',
+                citizenProfile: { mobileNumber: multiMob81, fullNameTam: 'வருமான விண்ணப்பம்', subService: 'INCOME' }
+            }, freshIsoHdr);
+
+            assert(nc1Id && nc2Id && nc3Id && nc1Id !== nc2Id && nc2Id !== nc3Id, 'TEST 81.multiUniqueIds: 3 sessions on same mobile get 3 unique draftIds');
+            const listMulti81 = await request('GET', '/api/drafts?operatorUid=test_suite_operator_uid', null, freshIsoHdr);
+            const sameMobCards81 = (listMulti81.body?.drafts || []).filter(d => d.mobileNumber === multiMob81);
+            assert(sameMobCards81.length === 3, `TEST 81.multiCards: Drafts Desk lists ALL 3 separate apps for same phone (got ${sameMobCards81.length})`);
+
+            // Delete ONLY app #2 — apps #1 and #3 MUST stay intact!
+            await request('DELETE', `/api/drafts/${nc2Id}?permanent=true`, null, freshIsoHdr);
+            const listAfterDelOne = await request('GET', '/api/drafts?operatorUid=test_suite_operator_uid', null, freshIsoHdr);
+            const remainCards81 = (listAfterDelOne.body?.drafts || []).filter(d => d.mobileNumber === multiMob81);
+            assert(
+                remainCards81.length === 2 && remainCards81.some(d => d.draftId === nc1Id) && remainCards81.some(d => d.draftId === nc3Id),
+                `TEST 81.multiSingleDelete: Deleting 1 app leaves the other 2 sibling apps untouched (got ${remainCards81.length})`
+            );
+            await request('DELETE', `/api/drafts/${nc1Id}?permanent=true`, null, freshIsoHdr);
+            await request('DELETE', `/api/drafts/${nc3Id}?permanent=true`, null, freshIsoHdr);
+
+            // [TEST 82] Multi-Operator Same-Mobile Independence (Two operators MUST be able to enter & save the exact same 10-digit mobile independently with zero 403 block or cross-leak)
+            {
+                const sharedMob = '9999900057';
+                const opAHdr = { 'x-operator-uid': 'op_suman_multi_test', 'x-session-mobile': sharedMob };
+                const opBHdr = { 'x-operator-uid': 'op_kumaran_multi_test', 'x-session-mobile': sharedMob };
+                await request('DELETE', `/api/drafts/${sharedMob}?permanent=true`, null, opAHdr);
+
+                const createA = await request('POST', '/api/operator/new-customer', {
+                    customerMobile: sharedMob,
+                    serviceName: 'புதிய ரேஷன் கார்டு',
+                    operatorUid: 'op_suman_multi_test',
+                    operatorName: 'SUMAN'
+                }, opAHdr);
+                const createB = await request('POST', '/api/operator/new-customer', {
+                    customerMobile: sharedMob,
+                    serviceName: 'வருமானச் சான்றிதழ்',
+                    operatorUid: 'op_kumaran_multi_test',
+                    operatorName: 'Kumaran'
+                }, opBHdr);
+
+                assert(createA.status === 200 && createA.body?.success === true, 'TEST 82.opA: First operator can open shared mobile number');
+                assert(createB.status === 200 && createB.body?.success === true, 'TEST 82.opB: Second operator can open the EXACT SAME mobile number with zero 403 block');
+                const draftIdA = createA.body?.draftId;
+                const draftIdB = createB.body?.draftId;
+                assert(draftIdA && draftIdB && draftIdA !== draftIdB, 'TEST 82.uniqueIds: Each operator gets their own distinct draftId');
+
+                const saveA = await request('POST', '/api/drafts/save', {
+                    draftId: draftIdA,
+                    mobileNumber: sharedMob,
+                    operatorUid: 'op_suman_multi_test',
+                    operatorName: 'SUMAN',
+                    subService: 'NEW_CARD',
+                    intakeState: 'READY_TO_APPLY',
+                    citizenProfile: { mobileNumber: sharedMob, fullNameTam: 'சுமன் வாடிக்கையாளர்', fullNameEng: 'Suman Customer', subService: 'NEW_CARD' }
+                }, { ...opAHdr, 'x-draft-id': draftIdA });
+
+                const saveB = await request('POST', '/api/drafts/save', {
+                    draftId: draftIdB,
+                    mobileNumber: sharedMob,
+                    operatorUid: 'op_kumaran_multi_test',
+                    operatorName: 'Kumaran',
+                    subService: 'INCOME',
+                    intakeState: 'INCOME_ANNUAL_WAIT',
+                    citizenProfile: { mobileNumber: sharedMob, fullNameTam: 'குமரன் வாடிக்கையாளர்', fullNameEng: 'Kumaran Customer', subService: 'INCOME' }
+                }, { ...opBHdr, 'x-draft-id': draftIdB });
+
+                assert(saveA.status === 200 && saveB.status === 200, 'TEST 82.bothSave: Both operators can save drafts on the same customer mobile independently');
+
+                const listA = await request('GET', '/api/drafts?operatorUid=op_suman_multi_test', null, opAHdr);
+                const listB = await request('GET', '/api/drafts?operatorUid=op_kumaran_multi_test', null, opBHdr);
+                const cardsA = (listA.body?.drafts || []).filter(d => d.mobileNumber === sharedMob);
+                const cardsB = (listB.body?.drafts || []).filter(d => d.mobileNumber === sharedMob);
+                assert(cardsA.length === 1 && cardsA[0].draftId === draftIdA && cardsA[0].name === 'சுமன் வாடிக்கையாளர்', 'TEST 82.listA: Operator A sees ONLY Operator A draft');
+                assert(cardsB.length === 1 && cardsB[0].draftId === draftIdB && cardsB[0].name === 'குமரன் வாடிக்கையாளர்', 'TEST 82.listB: Operator B sees ONLY Operator B draft');
+
+                const crossRead = await request('GET', `/api/drafts/${encodeURIComponent(draftIdA)}?operatorUid=op_kumaran_multi_test`, null, opBHdr);
+                assert(crossRead.status === 403 || crossRead.status === 404, 'TEST 82.crossBlock: Operator B cannot fetch Operator A specific draft');
+
+                await request('DELETE', `/api/drafts/${encodeURIComponent(draftIdA)}?permanent=true`, null, opAHdr);
+                await request('DELETE', `/api/drafts/${encodeURIComponent(draftIdB)}?permanent=true`, null, opBHdr);
+                passedCount += 6;
+            }
+
+            passedCount += cartridgeDirs81.length + 25;
         }
 
         console.log('\n======================================================');

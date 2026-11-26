@@ -1,5 +1,6 @@
 const { evaluateServiceChecklist } = require('../../core/services_registry');
 const { isPhysicalDocValid, hasValidSmartCard, buildSmartCardPromptStep } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'RESIDENCE';
@@ -176,16 +177,13 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'RESIDENCE';
     sess.pluginId = 'TNEGA_RESIDENCE';
     if (sess.citizenProfile) {
         sess.citizenProfile.subService = 'RESIDENCE';
         sess.citizenProfile.pluginId = 'TNEGA_RESIDENCE';
-        delete sess.citizenProfile.yearsOfResidence;
-        delete sess.citizenProfile.purposeOfCertificate;
     }
-    delete sess.yearsOfResidence;
-    delete sess.purposeOfCertificate;
     if (isDirectOperator) {
         sess.intakeState = 'RESIDENCE_INTAKE';
         if (createAppFn && cleanMobile) { try { createAppFn(cleanMobile, 'RESIDENCE_CERT', sess.citizenProfile); } catch (_) {} }

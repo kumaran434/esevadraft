@@ -74,24 +74,27 @@ router.get('/api/drafts/verified-documents', async (req, res) => {
     const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
 
     try {
-        const digitsOnly = cleanMob.replace(/\D/g, '').slice(-10);
+        const { isSpecificDraftId, extractMobileFromDraftKey } = require('../services/db/firestore_client');
+        const digitsOnly = extractMobileFromDraftKey(cleanMob);
         let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob, opUid) : null;
-        if (!draft && digitsOnly) {
+        if (!draft && !isSpecificDraftId(cleanMob) && digitsOnly && digitsOnly !== cleanMob) {
             draft = await getCitizenDraft(digitsOnly, opUid);
         }
         const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
-        if (!draft && activeMob && activeMob !== cleanMob) {
+        if (!draft && !isSpecificDraftId(cleanMob) && activeMob && activeMob !== cleanMob) {
             draft = await getCitizenDraft(activeMob, opUid);
         }
         const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
             ? sessions.get(cleanMob)
-            : ((digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || null));
+            : ((!isSpecificDraftId(cleanMob) && digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((!isSpecificDraftId(cleanMob) && ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()))) || null));
 
         if ((!draft || draft.isDeleted || draft.status === 'TRASHED') && !sess) {
             return res.json({ success: true, mobileNumber: cleanMob, count: 0, documents: [] });
         }
         const filterSubService = req.query.subService || req.query.service || null;
-        const docs = extractDraftDocumentsList(sess, draft, cleanMob, filterSubService);
+        const isLiveSidebarOnly = req.query.liveOnly === '1' || req.query.liveOnly === 'true';
+        const effectiveDraft = (isLiveSidebarOnly && (!sess || sess._isPureFreshSession !== false)) ? null : draft;
+        const docs = extractDraftDocumentsList(sess, effectiveDraft, cleanMob, filterSubService);
         res.json({ success: true, mobileNumber: cleanMob, count: docs.length, documents: docs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -205,19 +208,22 @@ router.get('/api/drafts/:mobileNumber/doc/:docType', async (req, res) => {
 
 // 3.5. GET /api/drafts/:mobileNumber/application-pdf — Official Application Form / Summary PDF
 router.get('/api/drafts/:mobileNumber/application-pdf', async (req, res) => {
-    const rawKey = req.params.mobileNumber || '';
-    const cleanMob = String(rawKey).trim().replace(/\D/g, '').slice(-10);
-    if (!cleanMob) return res.status(400).send('Mobile number required');
+    const rawKey = String(req.params.mobileNumber || '').trim();
+    const { isSpecificDraftId, extractMobileFromDraftKey } = require('../services/db/firestore_client');
+    const lookupKey = isSpecificDraftId(rawKey) ? rawKey : extractMobileFromDraftKey(rawKey);
+    const cleanMob = extractMobileFromDraftKey(rawKey);
+    if (!lookupKey) return res.status(400).send('Mobile number required');
 
+    const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
     try {
-        let draft = await getCitizenDraft(cleanMob).catch(() => null);
+        let draft = await getCitizenDraft(lookupKey, opUid).catch(() => null);
         const { getCitizenProfile } = require('../../database');
-        let prof = (draft && draft.citizenProfile) || (getCitizenProfile ? getCitizenProfile(cleanMob) : {}) || {};
+        let prof = (draft && draft.citizenProfile) || (getCitizenProfile ? getCitizenProfile(lookupKey) : {}) || {};
 
-        const tmpPath = path.join(os.tmpdir(), `Application_Draft_${cleanMob}_${Date.now()}.pdf`);
+        const tmpPath = path.join(os.tmpdir(), `Application_Draft_${cleanMob || lookupKey}_${Date.now()}.pdf`);
         await generateDraftApplicationPdf(tmpPath, {
             ...prof,
-            mobileNumber: cleanMob,
+            mobileNumber: cleanMob || lookupKey,
             applicationNumber: draft?.applicationNumber || null,
             service: draft?.service || prof?.service || 'புதிய ரேஷன் கார்டு',
             members: prof?.members || []
@@ -225,7 +231,7 @@ router.get('/api/drafts/:mobileNumber/application-pdf', async (req, res) => {
 
         if (fs.existsSync(tmpPath)) {
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="Application_Draft_${cleanMob}.pdf"`);
+            res.setHeader('Content-Disposition', `attachment; filename="Application_Draft_${cleanMob || lookupKey}.pdf"`);
             const stream = fs.createReadStream(tmpPath);
             stream.pipe(res);
             stream.on('finish', () => {
@@ -247,24 +253,27 @@ router.get('/api/drafts/:mobileNumber/documents-list', async (req, res) => {
     const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || null;
 
     try {
-        const digitsOnly = cleanMob.replace(/\D/g, '').slice(-10);
+        const { isSpecificDraftId, extractMobileFromDraftKey } = require('../services/db/firestore_client');
+        const digitsOnly = extractMobileFromDraftKey(cleanMob);
         let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob, opUid) : null;
-        if (!draft && digitsOnly) {
+        if (!draft && !isSpecificDraftId(cleanMob) && digitsOnly && digitsOnly !== cleanMob) {
             draft = await getCitizenDraft(digitsOnly, opUid);
         }
         const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
-        if (!draft && activeMob && activeMob !== cleanMob) {
+        if (!draft && !isSpecificDraftId(cleanMob) && activeMob && activeMob !== cleanMob) {
             draft = await getCitizenDraft(activeMob, opUid);
         }
         const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
             ? sessions.get(cleanMob)
-            : ((digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || null));
+            : ((!isSpecificDraftId(cleanMob) && digitsOnly && sessions && sessions.has(digitsOnly)) ? sessions.get(digitsOnly) : ((!isSpecificDraftId(cleanMob) && ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()))) || null));
 
         if ((!draft || draft.isDeleted || draft.status === 'TRASHED') && !sess) {
             return res.json({ success: true, mobileNumber: cleanMob, count: 0, documents: [] });
         }
         const filterSubService = req.query.subService || req.query.service || null;
-        const docs = extractDraftDocumentsList(sess, draft, cleanMob, filterSubService);
+        const isLiveSidebarOnly = req.query.liveOnly === '1' || req.query.liveOnly === 'true';
+        const effectiveDraft = (isLiveSidebarOnly && (!sess || sess._isPureFreshSession !== false)) ? null : draft;
+        const docs = extractDraftDocumentsList(sess, effectiveDraft, cleanMob, filterSubService);
         res.json({ success: true, mobileNumber: cleanMob, count: docs.length, documents: docs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -282,7 +291,16 @@ router.post('/api/drafts/save', async (req, res) => {
         return res.status(400).json({ error: 'செயலில் உள்ள வாடிக்கையாளர் எண் இல்லை.' });
     }
 
-    const sess = getOrCreateSession(targetMobile);
+    const { resolveSessionForRequest } = storageService;
+    const { isSpecificDraftId, extractMobileFromDraftKey, getActiveDraftIdForMobile } = require('../services/db/firestore_client');
+    const requestedDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
+    const routedId = (!isSpecificDraftId(requestedDraftId) && typeof getActiveDraftIdForMobile === 'function')
+        ? getActiveDraftIdForMobile(targetMobile, opUid)
+        : null;
+    const effectiveSaveDraftId = isSpecificDraftId(requestedDraftId) ? requestedDraftId : (routedId || '');
+    const sess = (typeof resolveSessionForRequest === 'function'
+        ? resolveSessionForRequest({ draftId: effectiveSaveDraftId, mobile: targetMobile, operatorUid: opUid })
+        : null) || getOrCreateSession(effectiveSaveDraftId || targetMobile);
 
     if (req.body.citizenProfile && typeof req.body.citizenProfile === 'object') {
         sess.citizenProfile = { ...sess.citizenProfile, ...req.body.citizenProfile };
@@ -309,9 +327,18 @@ router.post('/api/drafts/save', async (req, res) => {
     if (req.body.base64Docs && typeof req.body.base64Docs === 'object') {
         sess.base64Docs = { ...(sess.base64Docs || {}), ...req.body.base64Docs };
     }
-    if (req.body.subService) {
+    if (req.body.subService !== undefined) {
         sess.subService = req.body.subService;
         if (sess.citizenProfile) sess.citizenProfile.subService = req.body.subService;
+    } else if (req.body.citizenProfile?.subService !== undefined) {
+        sess.subService = req.body.citizenProfile.subService;
+    }
+    const incomingSubData = req.body.subServiceData !== undefined
+        ? req.body.subServiceData
+        : req.body.citizenProfile?.subServiceData;
+    if (incomingSubData !== undefined) {
+        sess.subServiceData = incomingSubData;
+        if (sess.citizenProfile) sess.citizenProfile.subServiceData = incomingSubData;
     }
 
     if (targetMobile.startsWith('walkin_')) {
@@ -328,26 +355,35 @@ router.post('/api/drafts/save', async (req, res) => {
     }
 
     try {
-        await saveCitizenDraft(targetMobile, {
+        const saveKey = effectiveSaveDraftId || sess.draftId || requestedDraftId || targetMobile;
+        const cleanDisplayMob = extractMobileFromDraftKey(targetMobile);
+        sess.draftId = saveKey;
+        if (opUid && !sess.operatorUid) sess.operatorUid = opUid;
+        if (saveKey && sessions && !sessions.has(saveKey)) sessions.set(saveKey, sess);
+
+        await saveCitizenDraft(saveKey, {
+            draftId: saveKey,
+            mobileNumber: cleanDisplayMob,
             operatorUid: opUid || sess.operatorUid || null,
             operatorName: opName || sess.operatorName || null,
             operatorMobile: opMobile || sess.operatorMobile || null,
             citizenProfile: sess.citizenProfile,
             documents: sess.tempUploads || {},
             base64Docs: sess.base64Docs || req.body.base64Docs || {},
-            subService: req.body.subService || sess.subService || sess.citizenProfile?.subService || null,
+            subService: req.body.subService !== undefined ? req.body.subService : (sess.subService || sess.citizenProfile?.subService || null),
+            subServiceData: sess.subServiceData !== undefined ? sess.subServiceData : (sess.citizenProfile?.subServiceData ?? null),
             chatHistory: sess.chatHistory,
             intakeState: sess.intakeState,
             applicationNumber: sess.applicationNumber || (sess.citizenProfile && sess.citizenProfile.applicationNumber) || null,
             applicationPdfUrl: sess.applicationPdfUrl || (sess.citizenProfile && sess.citizenProfile.applicationPdfUrl) || null,
-            step: 'WAITING_FOR_OTP',
+            step: sess.step || sess.intakeState || 'draft',
             status: sess.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
         });
 
-        saveCitizenProfile(targetMobile, sess.citizenProfile);
+        saveCitizenProfile(saveKey, sess.citizenProfile);
         persistSessions();
 
-        res.json({ success: true, message: 'Draft saved successfully', citizenProfile: sess.citizenProfile });
+        res.json({ success: true, draftId: saveKey, mobileNumber: cleanDisplayMob, message: 'Draft saved successfully', citizenProfile: sess.citizenProfile });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -359,7 +395,9 @@ router.delete('/api/drafts/:mobileNumber', async (req, res) => {
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'வரைவு அடையாளம் அல்லது மொபைல் எண் தேவை.' });
     const isTrash = req.query.trash === 'true' || req.body?.trash === true;
-    const cleanDigits = draftKey.replace(/\D/g, '');
+    const { isSpecificDraftId } = require('../services/db/firestore_client');
+    const isSingleDraft = isSpecificDraftId(draftKey);
+    const cleanDigits = isSingleDraft ? '' : draftKey.replace(/\D/g, '');
     try {
         if (isTrash) {
             await trashCitizenDraft(draftKey);
@@ -389,11 +427,12 @@ router.delete('/api/drafts/:mobileNumber', async (req, res) => {
 
 // 7. POST /api/drafts/delete
 router.post('/api/drafts/delete', async (req, res) => {
-    const rawKey = req.body?.mobileNumber || '';
+    const rawKey = req.body?.draftId || req.body?.mobileNumber || '';
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'வரைவு அடையாளம் அல்லது மொபைல் எண் தேவை.' });
     const isTrash = req.query.trash === 'true' || req.body?.trash === true;
-    const cleanDigits = draftKey.replace(/\D/g, '');
+    const { isSpecificDraftId } = require('../services/db/firestore_client');
+    const cleanDigits = isSpecificDraftId(draftKey) ? '' : draftKey.replace(/\D/g, '');
     try {
         if (isTrash) {
             await trashCitizenDraft(draftKey);
@@ -427,7 +466,8 @@ router.post('/api/drafts/:mobileNumber/trash', async (req, res) => {
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
     const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || req.body?.operatorUid || null;
-    const cleanDigits = draftKey.replace(/\D/g, '');
+    const { isSpecificDraftId } = require('../services/db/firestore_client');
+    const cleanDigits = isSpecificDraftId(draftKey) ? '' : draftKey.replace(/\D/g, '');
     try {
         const existing = await getCitizenDraft(draftKey);
         const exOpTrash = normalizeOperatorUid(existing?.operatorUid);
@@ -457,7 +497,8 @@ router.post('/api/drafts/:mobileNumber/restore', async (req, res) => {
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
     const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || req.body?.operatorUid || null;
-    const cleanDigits = draftKey.replace(/\D/g, '');
+    const { isSpecificDraftId } = require('../services/db/firestore_client');
+    const cleanDigits = isSpecificDraftId(draftKey) ? '' : draftKey.replace(/\D/g, '');
     try {
         const existing = await getCitizenDraft(draftKey);
         const exOpRestore = normalizeOperatorUid(existing?.operatorUid);
@@ -479,7 +520,8 @@ router.post('/api/drafts/:mobileNumber/permanent-delete', async (req, res) => {
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'மொபைல் எண் தேவை.' });
     const opUid = req.query.operatorUid || req.headers['x-operator-uid'] || req.body?.operatorUid || null;
-    const cleanDigits = draftKey.replace(/\D/g, '');
+    const { isSpecificDraftId } = require('../services/db/firestore_client');
+    const cleanDigits = isSpecificDraftId(draftKey) ? '' : draftKey.replace(/\D/g, '');
     try {
         const existing = await getCitizenDraft(draftKey);
         const exOpDel = normalizeOperatorUid(existing?.operatorUid);
@@ -513,26 +555,37 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
 
         const docType = req.body.docType || 'headPhoto';
         const activeMob = getActiveMobile();
+        const requestedDraftId = String(req.body.draftId || req.headers['x-draft-id'] || '').trim();
         const rawMobile = req.body.mobileNumber || req.headers['x-session-mobile'] || activeMob || '';
         const memberIndex = parseInt(req.body.memberIndex || '0', 10);
         const opUid = req.headers['x-operator-uid'] || req.body.operatorUid || null;
 
-        let cleanMobile = String(rawMobile).replace(/\D/g, '');
-        if (cleanMobile.length === 12 && cleanMobile.startsWith('91')) cleanMobile = cleanMobile.slice(2);
-        const targetMobile = cleanMobile.length === 10 ? cleanMobile : (rawMobile || activeMob || 'walkin_session');
+        const { isSpecificDraftId, extractMobileFromDraftKey } = require('../services/db/firestore_client');
+        const cleanMobile = extractMobileFromDraftKey(rawMobile);
+        const targetMobile = isSpecificDraftId(requestedDraftId)
+            ? requestedDraftId
+            : (isSpecificDraftId(rawMobile) ? String(rawMobile).trim() : (cleanMobile.length === 10 ? cleanMobile : (rawMobile || activeMob || 'walkin_session')));
 
         const rawOldMobile = req.body.oldMobileNumber || req.headers['x-old-session-mobile'] || '';
-        let cleanOldMobile = String(rawOldMobile).replace(/\D/g, '');
-        if (cleanOldMobile.length === 12 && cleanOldMobile.startsWith('91')) cleanOldMobile = cleanOldMobile.slice(2);
+        const cleanOldMobile = extractMobileFromDraftKey(rawOldMobile);
         const fallbackOldMobile = cleanOldMobile.length === 10 ? cleanOldMobile : '';
 
-        const sess = getOrCreateSession(targetMobile);
-        if (opUid) sess.operatorUid = opUid;
-        if (!sess.citizenProfile || !sess.citizenProfile.fullNameEng || !sess.citizenProfile.members || sess.citizenProfile.members.length === 0) {
+        const { resolveSessionForRequest } = storageService;
+        const { getActiveDraftIdForMobile } = require('../services/db/firestore_client');
+        const routedIdUp = (!isSpecificDraftId(requestedDraftId) && typeof getActiveDraftIdForMobile === 'function')
+            ? getActiveDraftIdForMobile(targetMobile, opUid)
+            : null;
+        const effectiveUpDraftId = isSpecificDraftId(requestedDraftId) ? requestedDraftId : (routedIdUp || '');
+        const sess = (typeof resolveSessionForRequest === 'function'
+            ? resolveSessionForRequest({ draftId: effectiveUpDraftId, mobile: targetMobile, operatorUid: opUid })
+            : null) || getOrCreateSession(effectiveUpDraftId || targetMobile);
+        if (effectiveUpDraftId || requestedDraftId) sess.draftId = effectiveUpDraftId || requestedDraftId;
+        if (opUid && !sess.operatorUid) sess.operatorUid = opUid;
+        if (sess._isPureFreshSession === false && (!sess.citizenProfile || !sess.citizenProfile.fullNameEng || !sess.citizenProfile.members || sess.citizenProfile.members.length === 0)) {
             try {
-                let existingDraft = await getCitizenDraft(targetMobile);
+                let existingDraft = await getCitizenDraft(sess.draftId || targetMobile, opUid);
                 if ((!existingDraft || !existingDraft.citizenProfile) && fallbackOldMobile) {
-                    existingDraft = await getCitizenDraft(fallbackOldMobile);
+                    existingDraft = await getCitizenDraft(fallbackOldMobile, opUid);
                 }
                 if (existingDraft && existingDraft.citizenProfile && (existingDraft.citizenProfile.fullNameEng || existingDraft.citizenProfile.fullNameTam)) {
                     const existingMembers = existingDraft.citizenProfile.members || [];
@@ -585,8 +638,13 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
             }
         }
 
-        saveCitizenProfile(targetMobile, sess.citizenProfile);
-        await saveCitizenDraft(targetMobile, {
+        const saveKey = requestedDraftId || sess.draftId || targetMobile;
+        const displayMobile = extractMobileFromDraftKey(saveKey);
+        sess.draftId = saveKey;
+        saveCitizenProfile(saveKey, sess.citizenProfile);
+        await saveCitizenDraft(saveKey, {
+            draftId: saveKey,
+            mobileNumber: displayMobile,
             operatorUid: sess.operatorUid || null,
             operatorName: sess.operatorName || null,
             operatorMobile: sess.operatorMobile || null,
@@ -617,7 +675,7 @@ router.post('/api/drafts/upload-document', upload.single('file'), async (req, re
 
 // 12. POST /api/drafts/delete-document
 router.post('/api/drafts/delete-document', async (req, res) => {
-    const rawMobile = req.body.mobileNumber || req.body.mobile || req.headers['x-session-mobile'] || getActiveMobile() || '';
+    const rawMobile = req.body.draftId || req.headers['x-draft-id'] || req.body.mobileNumber || req.body.mobile || req.headers['x-session-mobile'] || getActiveMobile() || '';
     const cleanMob = String(rawMobile).trim();
     const docType = req.body.docType || '';
     const memberIndex = parseInt(req.body.memberIndex || '0', 10);

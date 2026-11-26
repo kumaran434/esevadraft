@@ -1,6 +1,4 @@
 const { startTnpdsAddressChangeFlow } = require('../../portal/tnpds/flows/address_change_flow');
-const { isProfileDataComplete } = require('../../services/profile_helpers');
-const { MEMBER_COUNT_OPTIONS } = require('../../core/fsm/fsm_options_registry');
 const { persistSessions, ensureValidTnpdsChatMobile, ensureTnpdsSharedContext } = require('../_tnpds_subservice_utils');
 
 async function run(payload, onProgress, options, sharedContext) {
@@ -18,25 +16,29 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
         delete sess.citizenProfile.subServiceData.isChild;
     }
 
-    const hasHead = sess.citizenProfile && (
-        sess.citizenProfile.headAadhaar ||
-        (sess.citizenProfile.members && sess.citizenProfile.members.length > 0)
+    const sData = sess.subServiceData;
+    const hasNewAddressFields = Boolean(
+        sData.doorNo && (sData.streetTam || sData.streetEng) &&
+        (sData.addressProofDocPath || sData.docPath || sess.tempUploads?.newAddressProof || sess.citizenProfile?.documents?.newAddressProof)
     );
-    const isComplete = isProfileDataComplete(sess.citizenProfile, sess.tempUploads);
-    if (isComplete) sess.intakeState = 'READY_TO_APPLY';
 
-    if (!hasHead || (!isComplete && sess.intakeState !== 'READY_TO_APPLY')) {
-        sess.intakeState = 'MEMBER_COUNT';
+    if (!isMockTest && !hasNewAddressFields) {
+        sess.intakeState = 'RATION_CHANGE_ADDRESS_DOC';
         sess.chatHistory.push({
             sender: 'bot',
-            text: `⚠️ **முகவரி மாற்ற விண்ணப்ப விவரங்கள் இன்னும் முழுமையாகப் பெறப்படவில்லை!**\n\n` +
-                  `தயவுசெய்து விண்ணப்ப விவரங்களைப் பூர்த்தி செய்யவும்:`,
-            options: MEMBER_COUNT_OPTIONS
+            text: `⚠️ **புதிய முகவரி விவரங்கள் மற்றும் முகவரிச் சான்று இன்னும் முழுமையாகப் பெறப்படவில்லை!**\n\n` +
+                  `தயவுசெய்து புதிய முகவரிக்கான சான்று ஆவணத்தைப் பதிவேற்றவும் அல்லது படிவத்தில் நிரப்பவும்:`,
+            options: [
+                { label: "✏️ புதிய முகவரியைப் படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" },
+                { label: "⚡ மின் கட்டண ரசீது (EB Bill)", value: "ADDR_PROOF_EB" },
+                { label: "🪪 புதிய முகவரி ஆதார் அட்டை (Aadhaar)", value: "ADDR_PROOF_AADHAAR" }
+            ]
         });
         persistSessions();
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
         return true;
     }
+    sess.intakeState = 'READY_TO_APPLY';
 
     if (!ensureValidTnpdsChatMobile({ sess, activeMobile, isMockTest, res })) return true;
 

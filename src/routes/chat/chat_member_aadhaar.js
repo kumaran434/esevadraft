@@ -124,14 +124,17 @@ async function handleMemberAadhaar(ctx, req, res) {
         sess.citizenProfile.documents = sess.citizenProfile.documents || {};
         const memDocSlotKey = `memberDoc_${sess.currentMemberIdx}`;
         const memDocKey = `memberAadhaar${Math.max(0, sess.currentMemberIdx - 1)}`;
+        const memFrontKey = `memberFront_${sess.currentMemberIdx}`;
         sess.citizenProfile.documents[memDocSlotKey] = compliantPdf;
         sess.citizenProfile.documents[memDocKey] = compliantPdf;
+        sess.citizenProfile.documents[memFrontKey] = uploadedFile.path;
         if (!isBirthCert) {
             sess.citizenProfile.documents.memberAadhaar = compliantPdf;
         }
         sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads[memDocSlotKey] = compliantPdf;
         sess.tempUploads[memDocKey] = compliantPdf;
+        sess.tempUploads[memFrontKey] = uploadedFile.path;
 
         const hasBothSides = isBirthCert || isDoubleSidedCardComplete(extracted, uploadedFile.path, 'aadhaar');
 
@@ -251,20 +254,25 @@ async function handleMemberAadhaar(ctx, req, res) {
 
         const backRawExtracted = await inspectAndExtractDocument(uploadedFile.path).catch(() => ({}));
         const fs = require('fs');
+        const path = require('path');
+        const memFrontKey = `memberFront_${sess.currentMemberIdx}`;
+        const memFrontPath = sess.tempUploads.currentMemberFront || sess.citizenProfile?.documents?.[memFrontKey] || sess.tempUploads[memFrontKey] || null;
         let finalDocPdf = null;
-        if (sess.tempUploads.currentMemberFront && fs.existsSync(sess.tempUploads.currentMemberFront)) {
+        if (memFrontPath && fs.existsSync(memFrontPath)) {
             try {
                 finalDocPdf = await produceDualSidedDocument(
-                    sess.tempUploads.currentMemberFront,
+                    memFrontPath,
                     sess.tempUploads.currentMemberBack,
                     null,
-                    sess.tempUploads.currentMemberFrontBoundingBox || null,
-                    backRawExtracted?.documentBoundingBox || null
+                    {
+                        frontBoundingBox: sess.tempUploads.currentMemberFrontBoundingBox || null,
+                        backBoundingBox: backRawExtracted?.documentBoundingBox || null
+                    }
                 );
             } catch (_) {}
         }
         if (!finalDocPdf || !fs.existsSync(finalDocPdf)) {
-            finalDocPdf = await produceCompliantDocument(uploadedFile.path);
+            finalDocPdf = await produceCompliantDocument((memFrontPath && fs.existsSync(memFrontPath)) ? memFrontPath : uploadedFile.path);
         }
 
         const extracted = await inspectAndExtractDocument(finalDocPdf || uploadedFile.path).catch(() => backRawExtracted || {});
@@ -328,6 +336,25 @@ async function handleMemberAadhaar(ctx, req, res) {
         sess.tempUploads[memDocKeyMerged] = finalDocPdf;
         sess.tempUploads.memberAadhaar = finalDocPdf;
 
+        if (finalDocPdf && fs.existsSync(finalDocPdf) && sess.currentMemberIdx >= 1) {
+            try {
+                const memB64 = fs.readFileSync(finalDocPdf).toString('base64');
+                const slotIdx = sess.currentMemberIdx - 1;
+                const entry = {
+                    name: path.basename(finalDocPdf),
+                    docType: 'AADHAAR_CARD',
+                    memberIdx: sess.currentMemberIdx,
+                    base64: memB64
+                };
+                sess.base64Docs = sess.base64Docs || {};
+                sess.citizenProfile.base64Docs = sess.citizenProfile.base64Docs || {};
+                if (!Array.isArray(sess.base64Docs.memberAadhaarsBase64)) sess.base64Docs.memberAadhaarsBase64 = [];
+                if (!Array.isArray(sess.citizenProfile.base64Docs.memberAadhaarsBase64)) sess.citizenProfile.base64Docs.memberAadhaarsBase64 = [];
+                sess.base64Docs.memberAadhaarsBase64[slotIdx] = entry;
+                sess.citizenProfile.base64Docs.memberAadhaarsBase64[slotIdx] = entry;
+            } catch (_) {}
+        }
+
         sess.intakeState = 'MEMBER_RELATIONSHIP';
         sess.chatHistory.push({
             sender: 'bot',
@@ -341,6 +368,8 @@ async function handleMemberAadhaar(ctx, req, res) {
         if (activeMobile) {
             saveCitizenDraft(activeMobile, {
                 citizenProfile: sess.citizenProfile,
+                documents: sess.tempUploads,
+                base64Docs: sess.base64Docs || {},
                 chatHistory: sess.chatHistory,
                 intakeState: sess.intakeState,
                 targetMemberCount: sess.targetMemberCount,

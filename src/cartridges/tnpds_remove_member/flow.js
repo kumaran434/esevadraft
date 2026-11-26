@@ -1,17 +1,23 @@
 const { renderSubserviceReadySummary } = require('../../core/fsm/fsm_summary_formatter');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function enterService(sess) {
+    resetTransientServiceInputs(sess);
     sess.intakeState = 'RATION_REMOVE_MEMBER_REASON';
+    sess.step = 'RATION_REMOVE_MEMBER_REASON';
     sess.subService = 'REMOVE_MEMBER';
     sess.pluginId = 'TNPDS_REMOVE_MEMBER';
+    // 2-Lane Always-Fresh Rule: clear stale previous removal attempt cleanly while keeping Master Profile intact
+    sess.subServiceData = {};
     if (sess.citizenProfile) {
         sess.citizenProfile.subService = 'REMOVE_MEMBER';
         sess.citizenProfile.pluginId = 'TNPDS_REMOVE_MEMBER';
+        sess.citizenProfile.subServiceData = {};
     }
     sess.chatHistory.push({
         sender: 'bot',
         text: `➖ **குடும்ப உறுப்பினர் நீக்கம் (Remove Family Member)**\n\n` +
-              `குடும்ப அட்டையிலிருந்து உறுப்பினரை நீக்குவதற்கான காரணம் என்ன?\n\n` +
+              `1️⃣ **குடும்ப அட்டையிலிருந்து உறுப்பினரை நீக்குவதற்கான காரணம் என்ன?**\n\n` +
               `கீழே உள்ள காரணங்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:`,
         options: [
             { label: "🕊️ இறப்பு காரணமாக (Death of Member)", value: "REMOVE_REASON_DEATH" },
@@ -23,7 +29,29 @@ function enterService(sess) {
     return true;
 }
 
-function handleFlow(text, sess) {
+function collectKnownFamilyMembers(sess) {
+    const out = [];
+    const seen = new Set();
+    const pushM = (m) => {
+        if (!m) return;
+        const name = String(m.nameTam || m.memberNameTam || m.nameEng || m.memberNameEng || m.name || m.memberName || '').trim();
+        if (!name || name === 'வாடிக்கையாளர்' || name === 'புதிய குடும்ப உறுப்பினர்') return;
+        const key = name.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({
+            nameTam: m.nameTam || m.memberNameTam || name,
+            nameEng: m.nameEng || m.memberNameEng || name,
+            relationshipTam: m.relationshipTam || m.relationship || 'உறுப்பினர்',
+            aadhaarNumber: m.aadhaarNumber || m.aadhaarNo || ''
+        });
+    };
+    if (Array.isArray(sess?.citizenProfile?.members)) sess.citizenProfile.members.forEach(pushM);
+    if (Array.isArray(sess?.citizenProfile?.savedFamilyMembers)) sess.citizenProfile.savedFamilyMembers.forEach(pushM);
+    return out;
+}
+
+function handleFlow(text, sess, uploadedDoc = null, extractedDoc = null) {
     if (!sess) return false;
     const currentState = sess.intakeState;
 
@@ -51,19 +79,14 @@ function handleFlow(text, sess) {
         }
 
         sess.subServiceData = { ...(sess.subServiceData || {}), reason, docType };
+        if (sess.citizenProfile) sess.citizenProfile.subServiceData = sess.subServiceData;
         sess.intakeState = 'RATION_REMOVE_MEMBER_DOC';
 
-        const memberOptions = [];
-        const existingMembers = (sess.citizenProfile && Array.isArray(sess.citizenProfile.members)) ? sess.citizenProfile.members : [];
-        existingMembers.forEach((m, idx) => {
-            const mName = m.nameTam || m.nameEng || m.name;
-            if (mName && mName !== 'வாடிக்கையாளர்') {
-                memberOptions.push({
-                    label: `👤 ${mName} (${m.relationshipTam || m.relationship || 'உறுப்பினர்'})`,
-                    value: `REMOVE_SELECT_MEMBER_${idx}`
-                });
-            }
-        });
+        const knownMembers = collectKnownFamilyMembers(sess);
+        const memberOptions = knownMembers.slice(0, 5).map((m, idx) => ({
+            label: `👤 ${m.nameTam} (${m.relationshipTam})`,
+            value: `REMOVE_SELECT_MEMBER_${idx}`
+        }));
 
         const defaultOptions = [
             ...memberOptions,
@@ -75,7 +98,7 @@ function handleFlow(text, sess) {
         sess.chatHistory.push({
             sender: 'bot',
             text: `➖ **${reason} காரணமாக உறுப்பினர் நீக்கம்**\n\n` +
-                  (memberOptions.length > 0 ? `கீழே உள்ள பட்டியலில் நீக்கப்பட வேண்டிய உறுப்பினரைத் தேர்ந்தெடுக்கவும் (அல்லது பெயரைத் தட்டச்சு செய்யவும்):\n\n` : `நீக்கப்பட வேண்டிய நபரின் பெயரைத் தட்டச்சு செய்யவும்:\n\n`) +
+                  (memberOptions.length > 0 ? `2️⃣ **கீழே உள்ள பட்டியலில் நீக்கப்பட வேண்டிய உறுப்பினரைத் தேர்ந்தெடுக்கவும்** (அல்லது வேறு நபரின் பெயரைத் தட்டச்சு செய்யவும்):\n\n` : `2️⃣ **நீக்கப்பட வேண்டிய நபரின் பெயரைத் தட்டச்சு செய்யவும்** (அல்லது சான்றிதழைப் பதிவேற்றவும்):\n\n`) +
                   `📄 **தேவையான ஆவணம்:** ${docType} பதிவேற்றப்பட வேண்டும்.`,
             actionRequired: 'upload',
             uploadPrompt: `${docType} பதிவேற்றுக`,
@@ -86,15 +109,30 @@ function handleFlow(text, sess) {
 
     if (currentState === 'RATION_REMOVE_MEMBER_DOC') {
         sess.subServiceData = sess.subServiceData || {};
+        if (uploadedDoc && uploadedDoc.path) {
+            sess.subServiceData.proofDocPath = uploadedDoc.path;
+            sess.subServiceData.docPath = uploadedDoc.path;
+            sess.tempUploads = sess.tempUploads || {};
+            sess.tempUploads.removeProof = uploadedDoc.path;
+            if (sess.citizenProfile) {
+                sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+                sess.citizenProfile.documents.removeProof = uploadedDoc.path;
+            }
+            if (extractedDoc && !sess.subServiceData.memberNameTam && (extractedDoc.fullNameTam || extractedDoc.fullNameEng)) {
+                sess.subServiceData.memberNameTam = extractedDoc.fullNameTam || extractedDoc.fullNameEng;
+                sess.subServiceData.memberNameEng = extractedDoc.fullNameEng || extractedDoc.fullNameTam;
+                sess.subServiceData.memberName = sess.subServiceData.memberNameTam;
+            }
+        }
         if (text && text.startsWith('REMOVE_SELECT_MEMBER_')) {
             const mIdx = parseInt(text.replace('REMOVE_SELECT_MEMBER_', ''), 10);
-            const existingMembers = (sess.citizenProfile && Array.isArray(sess.citizenProfile.members)) ? sess.citizenProfile.members : [];
-            const selectedMember = existingMembers[mIdx];
+            const knownMembers = collectKnownFamilyMembers(sess);
+            const selectedMember = knownMembers[mIdx];
             if (selectedMember) {
-                sess.subServiceData.memberName = selectedMember.nameEng || selectedMember.nameTam || selectedMember.name;
-                sess.subServiceData.memberNameTam = selectedMember.nameTam || selectedMember.name;
-                sess.subServiceData.memberNameEng = selectedMember.nameEng || selectedMember.name;
-                sess.subServiceData.relationshipTam = selectedMember.relationshipTam || selectedMember.relationship || '';
+                sess.subServiceData.memberName = selectedMember.nameEng || selectedMember.nameTam;
+                sess.subServiceData.memberNameTam = selectedMember.nameTam;
+                sess.subServiceData.memberNameEng = selectedMember.nameEng;
+                sess.subServiceData.relationshipTam = selectedMember.relationshipTam || '';
                 sess.subServiceData.aadhaarNo = selectedMember.aadhaarNumber || '';
             }
         } else if (text && text !== 'TRIGGER_FILE_UPLOAD' && text !== 'REMOVE_DOC_CONFIRMED') {
@@ -102,6 +140,7 @@ function handleFlow(text, sess) {
             sess.subServiceData.memberNameTam = text;
             sess.subServiceData.memberNameEng = text;
         }
+        if (sess.citizenProfile) sess.citizenProfile.subServiceData = sess.subServiceData;
 
         sess.intakeState = 'READY_TO_APPLY';
         sess.step = 'READY';

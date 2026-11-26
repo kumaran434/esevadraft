@@ -20,8 +20,8 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
         bannerText: `${modeText}யில் தமிழ்நாடு அரசு **TNeGA விதவைச் சான்றிதழ் (REV-109)** ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
             `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
-            `• 🕊️ **கணவர் பெயர்:** ${p.spouseNameTam || p.spouseNameEng || p.husbandNameTam || p.fatherNameTam || '—'} (இறந்த தேதி: ${p.dateOfDeath || '15-Jan-2025'})\n` +
-            `• 📜 **இறப்புச் சான்றிதழ் எண்:** ${p.deathCertificateNo || 'DC-2025-88412'}\n\n` +
+            `• 🕊️ **கணவர் பெயர்:** ${p.spouseNameTam || p.spouseNameEng || p.husbandNameTam || p.fatherNameTam || '—'} (இறந்த தேதி: ${p.dateOfDeath || '—'})\n` +
+            `• 📜 **இறப்புச் சான்றிதழ் எண்:** ${p.deathCertificateNo || '—'}\n\n` +
             `Chrome உலாவியில் TNeGA REV-109 படிவம் திறக்கப்பட்டு, ஆப்ரேட்டர் Submit-க்குப் பிறகு 4 ஆவணங்களும் பதிவேற்றப்பட்டு **Pre-Submit Gate** வரை தானாக இயங்கும்...`,
         extraJson: { subService: 'WIDOW', serviceId: 'WIDOW_CERTIFICATE', targetService: 'WIDOW' }
     });

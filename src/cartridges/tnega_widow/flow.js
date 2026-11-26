@@ -1,4 +1,5 @@
 const { isPhysicalDocValid, hasValidSmartCard, buildSmartCardPromptStep } = require('../_tnega_upload_utils');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     sess.subService = 'WIDOW';
@@ -74,18 +75,20 @@ function advanceFlow(sess, prefixMessage = '') {
     }
 
     const hasMarriageProof = isPhysicalDocValid(
-        p.marriageProof || p.marriageCertificate || docs.marriageProof || docs.marriageCertificate || tu.marriageProof || p.smartCard || docs.smartCard || tu.smartCard,
-        b64.marriageProofBase64 || b64.marriageCertificateBase64 || b64.smartCardBase64
+        p.marriageProof || p.marriageCertificate || docs.marriageProof || docs.marriageCertificate || tu.marriageProof,
+        b64.marriageProofBase64 || b64.marriageCertificateBase64
     );
     if (!hasMarriageProof) {
         sess.intakeState = 'WIDOW_MARRIAGE_PROOF_WAIT';
+        const hasSmartCardForReuse = hasValidSmartCard(p, sess);
         const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
             `💍 **ஆவணம் 4/4: திருமண ஆதாரம் (Marriage Proof — Code 201)**\n\n` +
             `திருமணத்தை உறுதிப்படுத்த **திருமணப் பதிவுச் சான்றிதழ் / திருமண அழைப்பிதழ் / குடும்ப ஸ்மார்ட் கார்டு** பதிவேற்றவும்:`;
         return {
             text,
             options: [
-                { label: "💍 திருமண ஆதாரம் / ஸ்மார்ட் கார்டு பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                { label: "💍 திருமண ஆதாரம் / அழைப்பிதழ் பதிவேற்றுக", value: "TRIGGER_FILE_UPLOAD" },
+                ...(hasSmartCardForReuse ? [{ label: "📑 பதிவேற்றிய குடும்ப ஸ்மார்ட் கார்டையே திருமண ஆதாரமாகப் பயன்படுத்துக", value: "WD_MAR_PROOF_USE_SMARTCARD" }] : []),
                 { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
             ],
             step: sess.intakeState
@@ -114,7 +117,7 @@ function advanceFlow(sess, prefixMessage = '') {
         sess.intakeState = 'WIDOW_SPOUSE_NAME_WAIT';
         const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
             `🕊️ **காலமான கணவரின் பெயர் (Spouse's Name)** என்ன?\n` +
-            `கீழே தட்டச்சு செய்யவும் (எ.கா: Late Kirubakaran / கிருபாகரன்):`;
+            `இறப்புச் சான்றிதழில் உள்ளபடி கணவரின் முழுப் பெயரைக் கீழே தட்டச்சு செய்யவும்:`;
         return {
             text,
             options: [{ label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }],
@@ -126,11 +129,10 @@ function advanceFlow(sess, prefixMessage = '') {
         sess.intakeState = 'WIDOW_DEATH_DATE_WAIT';
         const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
             `📅 **கணவர் இறந்த தேதி (Date of Death)** என்ன?\n` +
-            `கீழே தேர்ந்தெடுக்கவும் அல்லது உள்ளிடவும் (எ.கா: 15-Jan-2025):`;
+            `இறப்புச் சான்றிதழில் உள்ளபடி தேதியைத் தட்டச்சு செய்யவும் *(எ.கா: 15-01-2025)*:`;
         return {
             text,
             options: [
-                { label: "📅 15-Jan-2025", value: "WD_DOD:15-Jan-2025" },
                 { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
             ],
             step: sess.intakeState
@@ -140,12 +142,11 @@ function advanceFlow(sess, prefixMessage = '') {
     if (!p.deathCertificateNo) {
         sess.intakeState = 'WIDOW_DEATH_CERT_NO_WAIT';
         const text = (prefixMessage ? prefixMessage + '\n\n' : '') +
-            `🔢 **இறப்புச் சான்றிதழ் எண் (Death Certificate No.)** என்ன?\n` +
-            `கீழே தேர்ந்தெடுக்கவும் அல்லது தட்டச்சு செய்யவும்:`;
+            `🔢 **இறப்புச் சான்றிதழ் பதிவு எண் (Death Certificate Registration No.)** என்ன?\n` +
+            `சான்றிதழில் உள்ள பதிவு எண்ணைக் கீழே தட்டச்சு செய்யவும்:`;
         return {
             text,
             options: [
-                { label: "🔢 DC-2025-88412", value: "WD_DCNO:DC-2025-88412" },
                 { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
             ],
             step: sess.intakeState
@@ -193,6 +194,7 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false, cleanMobile = '', createAppFn = null } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'WIDOW';
     sess.pluginId = 'TNEGA_WIDOW';
     if (sess.citizenProfile) {
@@ -215,10 +217,13 @@ function onDocumentDeleted(sess, docType) {
     sess.subService = 'WIDOW';
     sess.chatHistory = Array.isArray(sess.chatHistory) ? sess.chatHistory : [];
     const p = sess.citizenProfile || {};
-    if (docType === 'deathCertificate') {
+    if (docType === 'deathCertificate' || docType === 'husbandDeathCertificate') {
         delete p.deathCertificate;
         delete p.deathCertificatePath;
-    } else if (docType === 'widowMarriageProof') {
+        delete p.husbandDeathCertificate;
+    } else if (docType === 'marriageProof' || docType === 'marriageCertificate' || docType === 'widowMarriageProof') {
+        delete p.marriageProof;
+        delete p.marriageCertificate;
         delete p.widowMarriageProof;
     } else if (docType === 'smartCard' || docType === 'rationCard') {
         delete p.smartCard;

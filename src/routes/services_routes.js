@@ -20,20 +20,7 @@ router.get('/api/desktop/engine', (req, res) => {
     return res.status(404).send('Engine file not found.');
 });
 
-// 2. GET /api/desktop/asset/:name
-router.get('/api/desktop/asset/:name', (req, res) => {
-    const allowed = ['tnpds_automation.js', 'govt_automation_core.js', 'photo_studio.js', 'tn_district_mapper.js'];
-    const assetName = req.params.name;
-    if (!allowed.includes(assetName)) {
-        return res.status(403).send('Asset not allowed.');
-    }
-    const assetPath = path.join(__dirname, '..', '..', assetName);
-    if (fs.existsSync(assetPath)) {
-        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        return res.sendFile(assetPath);
-    }
-    return res.status(404).send('Asset not found.');
-});
+// (Note: /api/desktop/asset/* is served cleanly by desktop_asset_routes.js)
 
 // 3. GET /api/services
 router.get('/api/services', (req, res) => {
@@ -169,15 +156,15 @@ router.get('/api/download/desktop-app', (req, res) => {
             return res.download(path.join(distDir, latestExe), latestExe);
         }
     }
-    let latestVer = '1.1.42';
-    try { latestVer = require('../../package.json').version || '1.1.42'; } catch (_) {}
+    let latestVer = '1.1.43';
+    try { latestVer = require('../../package.json').version || '1.1.43'; } catch (_) {}
     return res.redirect(`https://github.com/kumaran434/esevadraft/releases/download/v${latestVer}/eSevaDraft-Desktop-Setup-${latestVer}.exe`);
 });
 
 // 8. GET /api/download/version - Returns latest available desktop application version info
 router.get('/api/download/version', (req, res) => {
-    let latestVer = '1.1.42';
-    try { latestVer = require('../../package.json').version || '1.1.42'; } catch (_) {}
+    let latestVer = '1.1.43';
+    try { latestVer = require('../../package.json').version || '1.1.43'; } catch (_) {}
     res.json({
         success: true,
         latestVersion: latestVer,

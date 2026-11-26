@@ -1,5 +1,39 @@
 // eSevaDraft Domain Module: operator_intake.js
 
+        // 🛡️ Electron Windows Anti-Freeze Guard:
+        // Native browser alert() permanently kills Chromium <input> keyboard focus on Windows Electron!
+        // Route alert() cleanly to non-blocking in-app toast inside Desktop App & auto-restore focus after file pickers.
+        (function installElectronFocusShield() {
+            if (window.__esevaElectronFocusShieldInstalled) return;
+            window.__esevaElectronFocusShieldInstalled = true;
+            const restoreDesktopFocus = () => {
+                if (window.esevaDesktopBridge && typeof window.esevaDesktopBridge.restoreFocus === 'function') {
+                    window.esevaDesktopBridge.restoreFocus().catch(() => {});
+                } else if (window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp) {
+                    fetch('/api/desktop/window-action?action=focus').catch(() => {});
+                }
+            };
+            window.restoreDesktopKeyboardFocus = restoreDesktopFocus;
+            if (window.esevaDesktopBridge && window.esevaDesktopBridge.isDesktopApp) {
+                window._nativeBrowserAlert = window.alert;
+                window.alert = function(msg) {
+                    const text = String(msg || '').trim();
+                    if (typeof window.showInAppToast === 'function') {
+                        window.showInAppToast(text, true);
+                    } else if (typeof window.showEsevaToast === 'function') {
+                        window.showEsevaToast(text, 'error');
+                    }
+                    setTimeout(restoreDesktopFocus, 50);
+                };
+                // After any native Windows file picker closes, restore Chromium WebContents keyboard focus
+                document.addEventListener('change', (e) => {
+                    if (e.target && e.target.type === 'file') {
+                        setTimeout(restoreDesktopFocus, 120);
+                    }
+                }, true);
+            }
+        })();
+
         function openNewCustomerModal() {
             const mobInput = document.getElementById('newCustomerMobileInput');
             const svcBadge = document.getElementById('modalSelectedServiceBadge');
@@ -23,9 +57,12 @@
             }
             const modal = document.getElementById('newCustomerModal');
             if (modal) modal.style.display = 'flex';
-            fetch('/api/desktop/window-action?action=focus').catch(() => {});
+            if (typeof window.restoreDesktopKeyboardFocus === 'function') {
+                window.restoreDesktopKeyboardFocus();
+            } else {
+                fetch('/api/desktop/window-action?action=focus').catch(() => {});
+            }
             if (mobInput) {
-                mobInput.focus();
                 setTimeout(() => {
                     const el = document.getElementById('newCustomerMobileInput');
                     if (el) {
@@ -33,13 +70,13 @@
                         el.readOnly = false;
                         el.focus();
                     }
-                }, 40);
+                }, 60);
                 setTimeout(() => {
                     const el = document.getElementById('newCustomerMobileInput');
                     if (el && document.activeElement !== el) {
                         el.focus();
                     }
-                }, 140);
+                }, 200);
             }
         }
 
@@ -50,103 +87,13 @@
             if (box) { box.style.display = 'none'; box.innerHTML = ''; }
         }
 
-        // Live Search-bar Style Autocomplete Dropdown
+        // Pure Fresh Mobile Entry: NEVER show old-customer suggestions or auto-restore popups while typing
         function handleNewCustomerMobileInput(rawVal) {
             const box = document.getElementById('customerSuggestionsBox');
-            if (!box) return;
-
-            const val = String(rawVal || '').trim().toLowerCase();
-            const digits = val.replace(/\D/g, '');
-
-            // Only show dropdown when operator starts typing (like modern search bar)
-            if (!val && !digits) {
+            if (box) {
                 box.style.display = 'none';
                 box.innerHTML = '';
-                return;
             }
-
-            const draftsList = Array.isArray(allOperatorDrafts) ? allOperatorDrafts : [];
-            const matches = draftsList.filter(d => {
-                const mob = String(d.mobileNumber || '');
-                const name = String(d.name || '').toLowerCase();
-                return (digits && mob.includes(digits)) || (val && name.includes(val));
-            }).slice(0, 5);
-
-            if (matches.length === 0) {
-                if (digits.length === 12) {
-                    fetch('/api/operator/search-citizen', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: digits })
-                    }).then(r => r.json()).then(data => {
-                        if (data.found && data.mobileNumber) {
-                            const mTitle = data.foundBy === 'member_aadhaar' ? 'குடும்ப உறுப்பினர் ஆதார்' : 'ஆதார் எண்';
-                            box.style.display = 'block';
-                            box.innerHTML = `
-                                <div onclick="selectExistingCustomerSuggestion('${data.mobileNumber}', '${(data.displayName || '').replace(/'/g, "\\'")}')" 
-                                     style="padding: 10px 12px; font-size: 12px; color: #1e40af; background: #eff6ff; display: flex; align-items: center; justify-content: space-between; cursor: pointer; border-radius: 6px; margin: 4px; border: 1px solid #bfdbfe;">
-                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                        <i class="fa-solid fa-address-card" style="font-size: 13px;"></i>
-                                        <span><b>${data.displayName}</b> (${mTitle} அடையாளம்) · +91 ${data.mobileNumber}</span>
-                                    </div>
-                                    <span style="font-size: 11px; font-weight: 700; color: #2563eb; background: white; padding: 2px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">திறக்கவும் &rarr;</span>
-                                </div>
-                            `;
-                        }
-                    }).catch(() => {});
-                }
-                if (digits.length >= 6) {
-                    box.style.display = 'block';
-                    box.innerHTML = `
-                        <div onclick="startCustomerSessionFromModal()" style="padding: 10px 12px; font-size: 12px; color: #15803d; background: #f0fdf4; display: flex; align-items: center; justify-content: space-between; cursor: pointer; border-radius: 6px; margin: 4px;" onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <i class="fa-solid fa-circle-plus" style="font-size: 13px;"></i>
-                                <span>புதிய வாடிக்கையாளர் (+91 <b>${digits}</b>)</span>
-                            </div>
-                            <span style="font-size: 11px; font-weight: 700; color: #16a34a; background: white; padding: 2px 8px; border-radius: 4px; border: 1px solid #bbf7d0;">தொடங்கு &rarr;</span>
-                        </div>
-                    `;
-                } else {
-                    box.style.display = 'none';
-                }
-                return;
-            }
-
-            box.style.display = 'block';
-            box.innerHTML = matches.map(d => {
-                let badgeText = 'வரைவு';
-                let badgeStyle = 'color: #0284c7; background: #f0f9ff;';
-                if (d.status === 'SUBMITTED' || d.applicationNumber) {
-                    badgeText = 'சமர்ப்பிக்கப்பட்டது';
-                    badgeStyle = 'color: #16a34a; background: #f0fdf4;';
-                } else if (d.status === 'WAITING_FOR_OTP_CALL') {
-                    badgeText = 'OTP';
-                    badgeStyle = 'color: #d97706; background: #fefce8;';
-                }
-
-                // Highlight matching digits in phone number
-                let mobDisplay = d.mobileNumber || '';
-                if (digits && mobDisplay.includes(digits)) {
-                    const idx = mobDisplay.indexOf(digits);
-                    mobDisplay = mobDisplay.substring(0, idx) + `<span style="color: #16a34a; font-weight: 700;">${digits}</span>` + mobDisplay.substring(idx + digits.length);
-                }
-
-                const safeName = (d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'");
-
-                return `
-                    <div onclick="selectExistingCustomerSuggestion('${d.mobileNumber}', '${safeName}')" 
-                         style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f8fafc; transition: background 0.1s ease;"
-                         onmouseover="this.style.background='#f1f5f9';"
-                         onmouseout="this.style.background='transparent';">
-                        <div style="display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;">
-                            <i class="fa-regular fa-user" style="font-size: 11px; color: #94a3b8; flex-shrink: 0;"></i>
-                            <span style="font-size: 12.5px; font-weight: 600; color: #0f172a;">${d.name || 'வாடிக்கையாளர்'}</span>
-                            <span style="font-size: 11.5px; color: #64748b;">· +91 ${mobDisplay}</span>
-                        </div>
-                        <span style="font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; ${badgeStyle}">${badgeText}</span>
-                    </div>
-                `;
-            }).join('');
         }
 
         document.addEventListener('click', function(e) {
@@ -158,16 +105,17 @@
         });
 
 
-        function selectExistingCustomerSuggestion(mobile, name) {
+        function selectExistingCustomerSuggestion(mobile) {
             const mobInput = document.getElementById('newCustomerMobileInput');
             if (mobInput) mobInput.value = mobile;
 
-            showCustomerLoading(`${name || 'வாடிக்கையாளர்'} விவரங்கள் ஏற்றப்படுகின்றன...`, `+91 ${mobile} தரவுகள் திறக்கப்படுகின்றன`);
+            showCustomerLoading('புதிய சேவை அமர்வு தொடங்குகிறது...', `+91 ${mobile} தயாராகிறது`);
 
             startCustomerSessionFromModal();
         }
 
-        // Option 1: Just enter and save 10-digit phone number (No name field to cause typos)
+        // Option 1: Always start a 100% Pure Fresh service session bound to the 10-digit mobile number
+        // (Zero auto-resume / zero old-draft pre-fill confusion; past docs remain safely in Drafts Desk Locker)
         async function startCustomerSessionFromModal() {
             const mobInput = document.getElementById('newCustomerMobileInput');
             let mob = (mobInput ? mobInput.value : '').trim().replace(/\D/g, '');
@@ -182,25 +130,18 @@
 
             const targetService = window.pendingSelectedService || null;
 
-            // SMART RESUME: Only resume directly if same ration service target specifically requested
-            const existingDraft = allOperatorDrafts.find(d => d.mobileNumber === mob);
-            const isRationTarget = targetService && (targetService === 'புதிய ரேஷன் கார்டு' || targetService === 'NEW_RATION_CARD');
-            if (existingDraft && isRationTarget && existingDraft.status === 'READY_TO_APPLY' && (!existingDraft.subService || existingDraft.subService === 'NEW_CARD')) {
-                closeNewCustomerModal();
-                await resumeCustomerSession(mob);
-                return;
-            }
-
             closeNewCustomerModal();
-            showCustomerLoading('வாடிக்கையாளர் அமர்வு தொடங்குகிறது...', `+91 ${mob} தயாராகிறது`);
+            showCustomerLoading('புதிய சேவை அமர்வு தொடங்குகிறது...', `+91 ${mob} தயாராகிறது`);
 
             if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(mob);
             if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
             currentCitizenData = null;
             window.currentCitizenData = null;
+            window.lastSubService = null;
+            window.lastSubServiceData = null;
 
             if (window.recordFlightEvent) {
-                window.recordFlightEvent('SESSION_START', `Starting customer session: +91 ${mob}`, { targetService, hasExistingDraft: !!existingDraft });
+                window.recordFlightEvent('SESSION_START', `Starting fresh customer session: +91 ${mob}`, { targetService });
             }
 
             const opUid = localStorage.getItem('eseva_operator_uid') || '';
@@ -213,7 +154,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         customerMobile: mob,
-                        customerName: (existingDraft && existingDraft.name) || '',
+                        customerName: '',
                         serviceName: targetService,
                         operatorUid: opUid,
                         operatorName: opName,
@@ -224,10 +165,15 @@
                 if (data.success) {
                     hideCustomerLoading();
                     localStorage.setItem('eseva_active_customer_mobile', mob);
+                    localStorage.setItem('eseva_active_draft_id', data.draftId || mob);
                     const custName = (typeof resolveCustomerDisplayName === 'function') 
-                        ? resolveCustomerDisplayName(data.citizenProfile, (existingDraft && existingDraft.name) || '')
-                        : ((data.citizenProfile && (data.citizenProfile.fullNameTam || data.citizenProfile.fullNameEng)) || (existingDraft && existingDraft.name) || 'வாடிக்கையாளர்');
-                    localStorage.setItem('eseva_active_customer_name', custName);
+                        ? resolveCustomerDisplayName(data.citizenProfile, '')
+                        : ((data.citizenProfile && (data.citizenProfile.fullNameTam || data.citizenProfile.fullNameEng)) || 'வாடிக்கையாளர்');
+                    if (custName && custName !== 'வாடிக்கையாளர்') {
+                        localStorage.setItem('eseva_active_customer_name', custName);
+                    } else {
+                        localStorage.removeItem('eseva_active_customer_name');
+                    }
 
                     const rBanner = document.getElementById('resumeBanner');
                     if (rBanner) { rBanner.classList.remove('show'); rBanner.style.display = 'none'; }
@@ -254,7 +200,13 @@
                     }
                     currentCitizenData = data.citizenProfile || {};
                     window.currentCitizenData = currentCitizenData;
-                    updateSidebar({ citizenProfile: data.citizenProfile, subService: data.subService || null, subServiceData: data.subServiceData || null, step: data.step || 'SERVICE_SELECTION' });
+                    updateSidebar({
+                        citizenProfile: data.citizenProfile,
+                        subService: data.subService || data.citizenProfile?.subService || null,
+                        subServiceData: data.subServiceData || null,
+                        documentsList: Array.isArray(data.documentsList) ? data.documentsList : [],
+                        step: data.step || 'SERVICE_SELECTION'
+                    });
 
                     if (window.pendingSelectedService) {
                         window.pendingSelectedService = null;
@@ -313,25 +265,28 @@
                 try {
                     await fetch(`/api/drafts/${activeCustMob}`, { method: 'DELETE' });
                 } catch (e) {}
+                localStorage.removeItem('eseva_active_customer_mobile');
+                localStorage.removeItem('eseva_active_draft_id');
+                localStorage.removeItem('eseva_active_customer_name');
+                currentCitizenData = null;
+                lastRenderedChatHistoryJson = '';
+                lastRenderedChatHistoryLength = 0;
+                resetSidebarToOperatorView();
+                const titleEl = document.getElementById('activeCustomerTitle');
+                if (titleEl) {
+                    titleEl.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
+                }
+                if (typeof renderDefaultWelcomeMessage === 'function') {
+                    renderDefaultWelcomeMessage();
+                }
             } else if (activeCustMob) {
+                // Non-destructive navigation: silently save active customer draft & KEEP customer active
+                // so returning Home NEVER clears the operator's in-progress work!
                 try {
-                    await saveCurrentDraftManually();
+                    await saveCurrentDraftManually({ silent: true });
                 } catch (e) {}
             }
 
-            localStorage.removeItem('eseva_active_customer_mobile');
-            localStorage.removeItem('eseva_active_customer_name');
-            currentCitizenData = null;
-            lastRenderedChatHistoryJson = '';
-            lastRenderedChatHistoryLength = 0;
-            resetSidebarToOperatorView();
-            const titleEl = document.getElementById('activeCustomerTitle');
-            if (titleEl) {
-                titleEl.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
-            }
-            if (typeof renderDefaultWelcomeMessage === 'function') {
-                renderDefaultWelcomeMessage();
-            }
             switchTab('operator');
             fetchOperatorDrafts();
         }
@@ -487,15 +442,18 @@
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>சேமிக்கிறது...</span>';
             }
 
+            const activeDraftId = localStorage.getItem('eseva_active_draft_id') || '';
             try {
                 const res = await fetch('/api/drafts/save', { 
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
                         'x-operator-uid': opUid,
-                        'x-session-mobile': activeCustMob
+                        'x-session-mobile': activeCustMob,
+                        ...(activeDraftId ? { 'x-draft-id': activeDraftId } : {})
                     },
                     body: JSON.stringify({
+                        draftId: activeDraftId || undefined,
                         mobileNumber: activeCustMob,
                         operatorUid: opUid,
                         operatorName: opName,
@@ -505,6 +463,9 @@
                 });
                 const data = await res.json();
                 if (data.success) {
+                    if (data.draftId) {
+                        localStorage.setItem('eseva_active_draft_id', data.draftId);
+                    }
                     if (data.citizenProfile) {
                         currentCitizenData = data.citizenProfile;
                     }

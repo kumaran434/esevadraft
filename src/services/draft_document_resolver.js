@@ -10,14 +10,16 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     const sessions = storageService.sessions;
     const getActiveMobile = storageService.getActiveMobile;
     const getOrCreateSession = storageService.getOrCreateSession;
+    const { isSpecificDraftId } = require('./db/firestore_client');
+    const isSpecific = isSpecificDraftId(cleanMob);
     let draft = (cleanMob !== 'active_session') ? await getCitizenDraft(cleanMob) : null;
     const activeMob = typeof getActiveMobile === 'function' ? getActiveMobile() : null;
-    if (!draft && activeMob && activeMob !== cleanMob) {
+    if (!draft && !isSpecific && activeMob && activeMob !== cleanMob) {
         try { draft = await getCitizenDraft(activeMob); } catch (e) {}
     }
     const sess = (cleanMob && cleanMob !== 'active_session' && sessions && sessions.has(cleanMob))
         ? sessions.get(cleanMob)
-        : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || ((typeof getOrCreateSession === 'function') ? getOrCreateSession(cleanMob) : null));
+        : (isSpecific ? null : ((sessions && sessions.get(activeMob)) || (storageService.getSessionState && storageService.getSessionState()) || ((typeof getOrCreateSession === 'function') ? getOrCreateSession(cleanMob) : null)));
     if (!draft && !sess) return res.status(404).send('Draft not found.');
 
     const b64Docs = (draft && draft.base64Docs) || (draft?.citizenProfile?.base64Docs) || (sess && sess.base64Docs) || {};
@@ -34,6 +36,19 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     if (docType === 'gasBook' && !docPath) docPath = draft?.citizenProfile?.gasDetails?.gasBookPath || sess?.citizenProfile?.gasDetails?.gasBookPath || docs.residenceProof || draft?.citizenProfile?.residenceProof?.docPath || sess?.citizenProfile?.residenceProof?.docPath;
     if (docType === 'residenceProof' && !docPath) docPath = draft?.citizenProfile?.residenceProof?.docPath || sess?.citizenProfile?.residenceProof?.docPath || docs.gasBook || draft?.citizenProfile?.gasDetails?.gasBookPath || sess?.citizenProfile?.gasDetails?.gasBookPath;
     if (docType === 'communityProof' && !docPath) docPath = docs.communityProof || draft?.citizenProfile?.communityCertificatePath || draft?.citizenProfile?.familyCommunityProofPath || draft?.citizenProfile?.communityProof || sess?.citizenProfile?.communityCertificatePath || sess?.tempUploads?.communityProof;
+
+    // Archive Vault Fallback: Resolve archived past-service docs from savedVaultDocs[] (PC localPath or Cloud Storage gs://)
+    let vaultMatchedUrl = null;
+    if (!docPath) {
+        const vaultList = Array.isArray(draft?.citizenProfile?.savedVaultDocs)
+            ? draft.citizenProfile.savedVaultDocs
+            : (Array.isArray(sess?.citizenProfile?.savedVaultDocs) ? sess.citizenProfile.savedVaultDocs : []);
+        const vaultEntry = [...vaultList].reverse().find(v => v && v.docType === docType);
+        if (vaultEntry) {
+            docPath = vaultEntry.localPath || vaultEntry.cloudUrl || null;
+            vaultMatchedUrl = vaultEntry.cloudUrl || null;
+        }
+    }
 
     if ((docType === 'gasBook' || docType === 'residenceProof') && (!docPath || !fs.existsSync(docPath))) {
         const appDataDir = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'uploads', cleanMob);
@@ -91,15 +106,17 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
     const memIdxMatch = docType.toLowerCase().includes('member') ? docType.match(/\d+/) : null;
     const isIndexedMemReq = Boolean(memIdxMatch);
     const reqMemSlot = memIdxMatch ? (parseInt(memIdxMatch[0], 10) + 1) : 0;
+    let fCand = null;
+    let bCand = null;
     if (!isIndexedMemReq) {
         const isHead = docType === 'headAadhaar';
         const sUrls = draft?.storageUrls || {};
-        let fCand = isAadhaarReq
+        fCand = isAadhaarReq
             ? (isHead
                 ? (docs.headAadhaarFront || draft?.citizenProfile?.documents?.headAadhaarFront || draft?.documents?.headAadhaarFront || sess?.tempUploads?.headAadhaarFront || docs.headAadhaar)
                 : (docs.memberAadhaarFront || draft?.citizenProfile?.documents?.memberAadhaarFront || draft?.documents?.memberAadhaarFront || docs[`memberAadhaarFront_0`] || sess?.tempUploads?.memberAadhaarFront || docs.memberAadhaar))
             : (docs[`${docType}Front`] || draft?.citizenProfile?.documents?.[`${docType}Front`] || draft?.documents?.[`${docType}Front`] || sess?.tempUploads?.[`${docType}Front`] || docs[docType]);
-        let bCand = isAadhaarReq
+        bCand = isAadhaarReq
             ? (isHead
                 ? (docs.headAadhaarBack || draft?.citizenProfile?.documents?.headAadhaarBack || draft?.documents?.headAadhaarBack || sess?.tempUploads?.headAadhaarBack)
                 : (docs.memberAadhaarBack || draft?.citizenProfile?.documents?.memberAadhaarBack || draft?.documents?.memberAadhaarBack || docs[`memberAadhaarBack_0`] || sess?.tempUploads?.memberAadhaarBack))
@@ -183,7 +200,7 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
         }
     }
 
-    let sUrl = draft?.storageUrls?.[docType];
+    let sUrl = draft?.storageUrls?.[docType] || vaultMatchedUrl;
     if (docType.toLowerCase().includes('member') && (!sUrl || !sUrl.toLowerCase().endsWith('.pdf'))) {
         if (draft?.storageUrls?.headAadhaar && draft.storageUrls.headAadhaar.toLowerCase().endsWith('.pdf')) {
             sUrl = draft.storageUrls.headAadhaar;
@@ -316,7 +333,7 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
     const sess = storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : (storageService.sessions?.get(cleanMob) || null);
 
     const isPhoto = docType === 'headPhoto' || docType === 'profilePhoto';
-    const isHeadAadhaar = docType === 'headAadhaar' || (docType === 'memberAadhaar' && (!memberIndex || memberIndex === 0));
+    const isHeadAadhaar = docType === 'headAadhaar';
     const isResidence = docType === 'residenceProof' || docType === 'gasBook' || docType === 'newAddressProof';
     const isSmartCard = docType === 'smartCard' || docType === 'rationCard';
     const isCommunity = docType === 'communityProof' || docType === 'communityCertificate' || docType === 'familyCommunityProof';
@@ -721,62 +738,15 @@ async function removeDraftDocument(cleanMob, docType, memberIndex = 0) {
         }
         draft.lastUpdated = new Date().toISOString();
 
-        const draftsDirs = Array.from(new Set([
-            path.resolve(__dirname, '..', '..', 'data', 'drafts'),
-            path.join('d:', 'downloads', 'ai assitant 2', 'data', 'drafts'),
-            path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts'),
-            path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'data', 'drafts')
-        ]));
-        for (const dDir of draftsDirs) {
-            const targetFile = path.join(dDir, `${cleanMob}.json`);
-            if (fs.existsSync(targetFile)) {
-                try {
-                    fs.writeFileSync(targetFile, JSON.stringify(draft, null, 2), 'utf8');
-                } catch (_) {}
-            }
+        // Single Canonical Store Law: update strictly the ONE active draft JSON on disk
+        const { getActiveDraftsDir } = require('./db/firestore_client');
+        const targetDraftKey = draft.draftId || cleanMob;
+        const targetFile = path.join(getActiveDraftsDir(), `${targetDraftKey}.json`);
+        if (fs.existsSync(targetFile)) {
+            try {
+                fs.writeFileSync(targetFile, JSON.stringify(draft, null, 2), 'utf8');
+            } catch (_) {}
         }
-    }
-
-    // 4. Master Citizen & Database Clean-up across all data directories (prevents resurrection on /api/operator/new-customer)
-    const dataDirs = Array.from(new Set([
-        path.resolve(__dirname, '..', '..', 'data'),
-        path.join('d:', 'downloads', 'ai assitant 2', 'data'),
-        path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data'),
-        path.join(process.env.LOCALAPPDATA || 'C:\\Users\\ADMIN\\AppData\\Local', 'Programs', 'eSevaDraft Desktop', 'resources', 'data')
-    ]));
-
-    for (const dataDir of dataDirs) {
-        try {
-            const masterFile = path.join(dataDir, 'citizens', `${cleanMob}.json`);
-            if (fs.existsSync(masterFile)) {
-                const masterObj = JSON.parse(fs.readFileSync(masterFile, 'utf8'));
-                if (isPhoto) {
-                    unlinkSafe(masterObj?.documents?.profilePhoto);
-                    unlinkSafe(masterObj?.headPhotoPath);
-                } else if (isHeadAadhaar) {
-                    unlinkSafe(masterObj?.documents?.headAadhaar);
-                    unlinkSafe(masterObj?.headAadhaarDocPath);
-                } else if (isResidence) {
-                    unlinkSafe(masterObj?.documents?.residenceProof);
-                    unlinkSafe(masterObj?.documents?.gasBook);
-                    unlinkSafe(masterObj?.residenceProof?.docPath);
-                    unlinkSafe(masterObj?.gasDetails?.gasBookPath);
-                }
-                purgeProfileObject(masterObj);
-                fs.writeFileSync(masterFile, JSON.stringify(masterObj, null, 2), 'utf8');
-            }
-        } catch (_) {}
-
-        try {
-            const dbFile = path.join(dataDir, 'citizens.json');
-            if (fs.existsSync(dbFile)) {
-                const dbObj = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
-                if (dbObj && dbObj[cleanMob]) {
-                    purgeProfileObject(dbObj[cleanMob]);
-                    fs.writeFileSync(dbFile, JSON.stringify(dbObj, null, 2), 'utf8');
-                }
-            }
-        } catch (_) {}
     }
 
     if (storageService.persistSessions) storageService.persistSessions();

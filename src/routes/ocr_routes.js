@@ -9,8 +9,10 @@ router.post(['/api/ocr/captcha', '/api/operator/solve-captcha'], async (req, res
             return res.status(400).json({ success: false, message: 'Missing imageBase64 payload' });
         }
 
-        const OFFICIAL_PRODUCTION_GEMINI_KEY = Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8');
-        const apiKey = process.env.GEMINI_API_KEY || OFFICIAL_PRODUCTION_GEMINI_KEY;
+        const apiKey = process.env.GEMINI_API_KEY || '';
+        if (!apiKey) {
+            return res.status(503).json({ success: false, message: 'GEMINI_API_KEY is not configured' });
+        }
 
         const { GoogleGenAI } = require('@google/genai');
         const ai = new GoogleGenAI({ apiKey });
@@ -20,7 +22,7 @@ router.post(['/api/ocr/captcha', '/api/operator/solve-captcha'], async (req, res
         const mimeType = isJpeg ? 'image/jpeg' : 'image/png';
 
         let detectedCode = '';
-        const candidateModels = ['gemini-flash-latest', 'gemini-3.8-flash'];
+        const candidateModels = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
         for (const mName of candidateModels) {
             try {
                 const ocrRes = await ai.models.generateContent({
@@ -35,6 +37,8 @@ router.post(['/api/ocr/captcha', '/api/operator/solve-captcha'], async (req, res
                         }
                     ],
                     config: {
+                        temperature: 0,
+                        maxOutputTokens: 16,
                         systemInstruction: 'You are an automated OCR tool for reading CAPTCHAs. Your output must strictly be only the alphanumeric characters in the image. No formatting, no words, no explanations.'
                     }
                 });

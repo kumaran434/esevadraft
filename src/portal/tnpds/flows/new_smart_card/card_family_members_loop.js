@@ -394,8 +394,8 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                     onProgress(`⌨️ [Co-Pilot] உறுப்பினர் ${memNum}: ஆப்ரேட்டர் "OTP மீண்டும் அனுப்பவும்" அழுத்தினார் — புது OTP-க்காகக் காத்திருக்கிறது.`);
                 }
 
-                if (shouldBotTriggerResend(modalSnap, lastBotMemResendAt, Date.now(), 10000)) {
-                    const didResend = await performVisibleModalResend(page);
+                if (shouldBotTriggerResend(modalSnap, lastBotMemResendAt, Date.now(), 4000, 2)) {
+                    const didResend = await performVisibleModalResend(page, { allowInlinePage: false });
                     if (didResend) {
                         lastBotMemResendAt = Date.now();
                         lastMemOtpSubmitted = '';

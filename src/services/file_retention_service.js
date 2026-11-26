@@ -5,15 +5,15 @@
 const fs = require('fs');
 const path = require('path');
 
+const { getActiveDraftsDir } = require('./db/firestore_client');
+
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
 const COMPRESSED_DIR = path.join(ROOT_DIR, 'compressed');
-const LOCAL_DRAFTS_DIR = path.join(ROOT_DIR, 'data', 'drafts');
-const APPDATA_DRAFTS_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts');
 
 function collectReferencedFilePaths() {
     const activePaths = new Set();
-    const scanDirs = [LOCAL_DRAFTS_DIR, APPDATA_DRAFTS_DIR];
+    const scanDirs = [getActiveDraftsDir()];
 
     for (const d of scanDirs) {
         if (!fs.existsSync(d)) continue;

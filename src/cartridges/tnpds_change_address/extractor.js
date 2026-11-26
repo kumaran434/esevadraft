@@ -26,7 +26,9 @@ async function processEditModalUpload({ sess, docType, uploadedFile }) {
         sess.subServiceData = sess.subServiceData || {};
         sess.citizenProfile.subServiceData = sess.citizenProfile.subServiceData || {};
         sess.subServiceData.addressDocPath = optimizedPath;
+        sess.subServiceData.addressProofDocPath = optimizedPath;
         sess.citizenProfile.subServiceData.addressDocPath = optimizedPath;
+        sess.citizenProfile.subServiceData.addressProofDocPath = optimizedPath;
         if (extractedData) {
             extractNewAddressProofFields(sess.subServiceData, extractedData);
             extractNewAddressProofFields(sess.citizenProfile.subServiceData, extractedData);

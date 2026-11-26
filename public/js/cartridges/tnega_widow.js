@@ -20,7 +20,7 @@
             subtitle: 'கணவர் விவரங்கள், இறப்புச் சான்றிதழ் & 4 கட்டாய ஆவணங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> 🚀 விதவைச் சான்றிதழ் விண்ணப்பிக்க (Start Widow Apply)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'newCard',
             docBoxes: {

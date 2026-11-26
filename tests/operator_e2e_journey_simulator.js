@@ -274,10 +274,32 @@ async function runOperatorJourneySimulator() {
     };
     incSess.chatHistory = [];
 
-    // Step 1: Customer with NO CAN selects Income Certificate
+    // Step 1: Golden Rule 24 (100% Pure Fresh Mode) -> Always starts fresh at INCOME_AADHAAR_WAIT
     handleServiceSelection('வருமானச் சான்றிதழ்', incSess);
+    assert.strictEqual(incSess.intakeState, 'INCOME_AADHAAR_WAIT', 'Golden Rule 24 (Pure Fresh): Always starts fresh at INCOME_AADHAAR_WAIT on service entry');
+    // Simulate mid-service document uploads (Aadhaar, Photo, Smart Card, Income Proof) -> transitions to INCOME_CAN_GATE
+    incSess.citizenProfile = {
+        ...incSess.citizenProfile,
+        fullNameTam: 'குமரன் கி',
+        fullNameEng: 'Kumaran K',
+        headAadhaar: '123456789012',
+        headAadhaarDocPath: dummyTestAadh,
+        headPhotoPath: dummyTestPhoto,
+        smartCard: dummyTestInc,
+        incomeProof: dummyTestInc,
+        fatherNameTam: 'கிருபாகரன்',
+        fatherNameEng: 'Kirubakaran',
+        doorNo: '12/4',
+        streetTam: 'மேட்டு தெரு, நரசிங்கபுரம்',
+        district: 'Ranipet',
+        taluk: 'Arakkonam',
+        village: 'Minnal'
+    };
+    const { advanceFlow: advanceIncomeForSim } = require('../src/cartridges/tnega_income/flow');
+    const canGateRes = advanceIncomeForSim(incSess);
+    incSess.chatHistory.push({ sender: 'bot', text: canGateRes.text, options: canGateRes.options });
     const lastMsg1 = incSess.chatHistory[incSess.chatHistory.length - 1];
-    assert.strictEqual(incSess.intakeState, 'INCOME_CAN_GATE', 'Must transition to INCOME_CAN_GATE');
+    assert.strictEqual(incSess.intakeState, 'INCOME_CAN_GATE', 'Must transition to INCOME_CAN_GATE after Income Proof');
     assert.strictEqual(lastMsg1.options.length, 3, 'Must present EXACTLY 3 CAN options');
     assert.ok(lastMsg1.options.some(o => o.value === 'CAN_SEARCH_PROMPT'), 'Must offer CAN search');
     assert.ok(lastMsg1.options.some(o => o.value === 'CAN_REGISTER_PROMPT'), 'Must offer CAN register');

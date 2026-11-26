@@ -20,7 +20,7 @@
             subtitle: 'இறந்தவர் விவரங்கள், வாரிசுதாரர்கள் மற்றும் 4 ஆவணங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> 🚀 வாரிசு சான்றிதழ் விண்ணப்பிக்க (Start Legal Heir Apply)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'newCard',
             docBoxes: {

@@ -1,5 +1,6 @@
 const { startTnpdsMobileChangeFlow } = require('../../portal/tnpds/flows/mobile_change_flow');
 const { persistSessions, ensureValidTnpdsChatMobile, ensureTnpdsSharedContext } = require('../_tnpds_subservice_utils');
+const { extractMobileFromDraftKey } = require('../../services/db/firestore_client');
 
 async function run(payload, onProgress, options, sharedContext) {
     return startTnpdsMobileChangeFlow(payload, onProgress, options, ensureTnpdsSharedContext(payload, options, sharedContext));
@@ -9,6 +10,22 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
     sess.subService = 'UPDATE_MOBILE';
     if (sess.citizenProfile) sess.citizenProfile.subService = 'UPDATE_MOBILE';
     if (!ensureValidTnpdsChatMobile({ sess, activeMobile, isMockTest, res })) return true;
+
+    const regMob = extractMobileFromDraftKey(sess.citizenProfile?.mobileNumber || targetMobile || activeMobile || '');
+    const newMob = extractMobileFromDraftKey(sess.subServiceData?.newMobile || sess.citizenProfile?.subServiceData?.newMobile || '');
+    if (!isMockTest && (!/^[6-9]\d{9}$/.test(newMob) || newMob === regMob)) {
+        sess.intakeState = 'RATION_CHANGE_MOBILE';
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `⚠️ **புதிய 10-இலக்க கைபேசி எண் இன்னும் உள்ளிடப்படவில்லை (அல்லது பழைய எண்ணுடன் ஒத்துள்ளது)!**\n\nதயவுசெய்து புதிய 10-இலக்க கைபேசி எண்ணை உள்ளிடவும்:`,
+            options: [
+                { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" }
+            ]
+        });
+        persistSessions();
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        return true;
+    }
 
     const targetMob = targetMobile || activeMobile;
     const modeText = isMockTest ? '🧪 சுயகற்றல் சோதனை முறை (Mock Sandbox)' : '🚀 நேரலை முறை (Live Production)';

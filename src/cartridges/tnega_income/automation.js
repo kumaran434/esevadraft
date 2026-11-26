@@ -12,7 +12,7 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
     const p = sess.citizenProfile || {};
 
     const incomeDocPath = p.incomeProof || p.salaryCertificatePath || p.salaryCertificate || p.documents?.incomeProof || p.documents?.salaryCertificate || sess.tempUploads?.incomeProof;
-    if (!Boolean(incomeDocPath && fs.existsSync(incomeDocPath))) {
+    if (!Boolean(incomeDocPath === 'SELF_DECLARATION' || (incomeDocPath && fs.existsSync(incomeDocPath)))) {
         return blockChatStartMissingDoc({
             sess, res, nextState: 'INCOME_PROOF_WAIT',
             text: `🛑 **விண்ணப்பிக்க முடியாது! (வருமான ஆதாரம் விடுபட்டுள்ளது)**\n\n` +

@@ -101,8 +101,7 @@ function getVerifiedRationCardDocs(prof, docs = {}) {
         p.subServiceData?.docPath,
         p.tempMember?.docPath,
         d.memberAadhaar,
-        d.memberAadhaarFront,
-        aadhaarDoc
+        d.memberAadhaarFront
     ]);
     return {
         photoDoc,

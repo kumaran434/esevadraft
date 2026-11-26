@@ -7,12 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 const { normalizeCleanMobile } = require('./citizen_master_service');
+const { getActiveDataDir } = require('./firestore_client');
 
-const DATA_DIR = path.join(__dirname, '..', '..', '..', 'data');
-const APPS_DIR = path.join(DATA_DIR, 'applications');
-
-if (!fs.existsSync(APPS_DIR)) {
-    try { fs.mkdirSync(APPS_DIR, { recursive: true }); } catch (_) {}
+function getAppsDir() {
+    const dir = path.join(getActiveDataDir(), 'applications');
+    if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    return dir;
 }
 
 const SERVICE_TITLES_TAMIL = {
@@ -41,7 +43,7 @@ function generateAppId(mobileNumber, serviceCode) {
 
 function getAppFilePath(appId) {
     if (!appId) return null;
-    return path.join(APPS_DIR, `${appId}.json`);
+    return path.join(getAppsDir(), `${appId}.json`);
 }
 
 /**
@@ -111,14 +113,15 @@ function getApplication(appId) {
 
 function listCitizenApplications(mobileNumber) {
     const cleanMob = normalizeCleanMobile(mobileNumber);
-    if (!cleanMob || !fs.existsSync(APPS_DIR)) return [];
+    const appsDir = getAppsDir();
+    if (!cleanMob || !fs.existsSync(appsDir)) return [];
     const list = [];
     try {
-        const files = fs.readdirSync(APPS_DIR);
+        const files = fs.readdirSync(appsDir);
         for (const f of files) {
             if (f.startsWith(`APP_${cleanMob}_`) && f.endsWith('.json')) {
                 try {
-                    const data = JSON.parse(fs.readFileSync(path.join(APPS_DIR, f), 'utf8'));
+                    const data = JSON.parse(fs.readFileSync(path.join(appsDir, f), 'utf8'));
                     if (data && data.appId) list.push(data);
                 } catch (_) {}
             }

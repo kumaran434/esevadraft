@@ -30,6 +30,24 @@ const CORE_FILES = [
 
 const DIRS_TO_SYNC = ['src', 'data', 'public'];
 
+function syncMirrorDir(srcDir, destDir) {
+    fs.cpSync(srcDir, destDir, { recursive: true, force: true });
+    // Prune stale files/directories in destDir that were deleted from workspace srcDir
+    const prune = (sDir, dDir) => {
+        if (!fs.existsSync(dDir)) return;
+        for (const entry of fs.readdirSync(dDir, { withFileTypes: true })) {
+            const sPath = path.join(sDir, entry.name);
+            const dPath = path.join(dDir, entry.name);
+            if (!fs.existsSync(sPath)) {
+                try { fs.rmSync(dPath, { recursive: true, force: true }); } catch (_) {}
+            } else if (entry.isDirectory()) {
+                prune(sPath, dPath);
+            }
+        }
+    };
+    prune(srcDir, destDir);
+}
+
 async function syncAllToDesktop() {
     console.log('🔄 [eSeva Sync Bridge] Syncing workspace code to installed Desktop App...');
 
@@ -95,7 +113,7 @@ async function syncAllToDesktop() {
                         // Never overwrite operator uploads with test uploads
                         if (!fs.existsSync(destFolder)) fs.mkdirSync(destFolder, { recursive: true });
                     } else {
-                        fs.cpSync(srcFolder, destFolder, { recursive: true, force: true });
+                        syncMirrorDir(srcFolder, destFolder);
                     }
                 } catch (e) {
                     console.warn(`  ⚠️ Could not copy ${folder}/ to ${dest}: ${e.message}`);
@@ -151,14 +169,14 @@ async function syncAllToDesktop() {
             asar.extractAll(TARGET_ASAR, tempDir);
 
             const desktopDir = path.join(ROOT_DIR, 'desktop');
-            const desktopFiles = fs.readdirSync(desktopDir).filter(f => f.endsWith('.js') || f.endsWith('.jsc') || f === 'package.json');
+            const desktopFiles = fs.readdirSync(desktopDir).filter(f => (f.endsWith('.js') || f.endsWith('.jsc') || f === 'package.json') && f !== 'build-protected.js');
 
             for (const f of desktopFiles) {
                 const s = path.join(desktopDir, f);
                 if (fs.existsSync(s) && !fs.statSync(s).isDirectory()) fs.copyFileSync(s, path.join(tempDir, f));
             }
 
-            // Sync CORE_FILES and src directly into app.asar
+            // Sync CORE_FILES and src directly into app.asar (pruning stale files)
             for (const cf of CORE_FILES) {
                 const s = path.join(ROOT_DIR, cf);
                 if (fs.existsSync(s)) {
@@ -167,7 +185,7 @@ async function syncAllToDesktop() {
             }
             const srcDir = path.join(ROOT_DIR, 'src');
             if (fs.existsSync(srcDir)) {
-                try { fs.cpSync(srcDir, path.join(tempDir, 'src'), { recursive: true, force: true }); } catch (_) {}
+                try { syncMirrorDir(srcDir, path.join(tempDir, 'src')); } catch (_) {}
             }
 
             // Universal loaders that execute latest main.js / preload.js directly with bytecode fallback

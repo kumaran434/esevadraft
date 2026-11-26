@@ -55,6 +55,22 @@ async function handleIntake(ctx, req, res) {
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
         }
+        if (text === 'WD_MAR_PROOF_USE_SMARTCARD' && sess.intakeState === 'WIDOW_MARRIAGE_PROOF_WAIT') {
+            const p = sess.citizenProfile;
+            const scPath = p.smartCard || p.rationCard || p.smartCardDocPath || p.documents?.smartCard || p.documents?.rationCard || sess.tempUploads?.smartCard;
+            if (scPath) {
+                if (!p.documents) p.documents = {};
+                if (!sess.tempUploads) sess.tempUploads = {};
+                p.marriageProof = scPath;
+                p.documents.marriageProof = scPath;
+                sess.tempUploads.marriageProof = scPath;
+                persistSessions();
+                const flowStep = advanceFlow(sess, `✅ குடும்ப ஸ்மார்ட் கார்டு திருமண ஆதாரமாக இணைக்கப்பட்டது! 🛡️`);
+                sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+        }
         if (uploadedFile) {
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             if (!sess.tempUploads) sess.tempUploads = {};

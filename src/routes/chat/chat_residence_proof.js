@@ -222,7 +222,7 @@ async function handleResidenceProof(ctx, req, res) {
 
         let membersSummary = '';
         sess.citizenProfile.members.forEach((m, idx) => {
-            membersSummary += `  ${idx + 1}. **${m.nameTam || m.nameEng}** (${m.relationshipTam || 'தலைவர்'}) | ஆதார்: ${m.aadhaarNumber.replace(/(\d{4})/g, '$1 ').trim()} ✅\n`;
+            membersSummary += `  ${idx + 1}. **${m.nameTam || m.nameEng}** (${m.relationshipTam || 'தலைவர்'}) | ஆதார்: ${(m.aadhaarNumber || '').replace(/(\d{4})/g, '$1 ').trim()} ✅\n`;
         });
 
         const hasGas = !!(sess.citizenProfile.gasDetails?.hasGas && sess.citizenProfile.gasDetails?.consumerNumber);

@@ -1,46 +1,21 @@
 /**
  * eSevaDraft Storage & Session Service
- * 
- * Manages in-memory active sessions, local disk persistence (data/sessions.json),
- * Firestore drafts sync, walk-in session hygiene, and phone re-keying.
+ *
+ * Single Canonical Store Law:
+ * Manages in-memory active sessions hydrated directly from the ONE active drafts directory
+ * (getActiveDraftsDir()/<mobile>.json) + Firestore cloud backup.
+ * NEVER writes redundant sessions.json or sessions.json.bak copies on disk.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { 
     saveCitizenDraft, 
-    deleteCitizenDraft, 
-    saveCitizenProfile 
+    deleteCitizenDraft
 } = require('../../firestore_db');
+const { saveCitizenProfile } = require('../../database');
+const { getActiveDraftsDir, isSpecificDraftId, extractMobileFromDraftKey, getActiveDraftIdForMobile, normalizeOperatorUid } = require('./db/firestore_client');
 const { getInitialWelcomeMessage } = require('../core/chat_fsm');
-
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const SESSIONS_DATA_PATH = path.join(DATA_DIR, 'sessions.json');
-const SESSIONS_BACKUP_PATH = path.join(DATA_DIR, 'sessions.json.bak');
-
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function safeWriteJsonSync(targetPath, data) {
-    try {
-        const dir = path.dirname(targetPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const tmpPath = `${targetPath}.tmp_${Date.now()}`;
-        const content = JSON.stringify(data, null, 2);
-        fs.writeFileSync(tmpPath, content, 'utf8');
-        try {
-            fs.copyFileSync(tmpPath, targetPath);
-            fs.unlinkSync(tmpPath);
-        } catch (_) {
-            fs.writeFileSync(targetPath, content, 'utf8');
-        }
-        return true;
-    } catch (e) {
-        console.error(`Safe write error for ${targetPath}:`, e.message);
-        return false;
-    }
-}
 
 // In-memory sessions map (mobile/sessionId -> sessionState)
 const sessions = new Map();
@@ -90,117 +65,61 @@ function createFreshProfile(mobile = '') {
 }
 
 function hasActiveDraftOnDisk(mobile) {
-    if (!mobile || !/^[0-9]{10}$/.test(mobile)) return false;
-    const localDraft = path.join(DATA_DIR, 'drafts', `${mobile}.json`);
-    const appDataDraft = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts', `${mobile}.json`);
-    return fs.existsSync(localDraft) || fs.existsSync(appDataDraft);
+    if (!mobile || (!/^[0-9]{10}$/.test(mobile) && !isSpecificDraftId(mobile))) return false;
+    const activeDraft = path.join(getActiveDraftsDir(), `${mobile}.json`);
+    if (!fs.existsSync(activeDraft)) return false;
+    try {
+        const parsed = JSON.parse(fs.readFileSync(activeDraft, 'utf8'));
+        if (parsed && (parsed.isDeleted === true || parsed.status === 'TRASHED')) return false;
+    } catch (_) {}
+    return true;
 }
 
+/**
+ * Single Canonical Store Law:
+ * Sessions are pure in-memory working state hydrated on-demand from the single active draft file
+ * (getActiveDraftsDir()/<mobile>.json). Never reads or writes redundant sessions.json / sessions.json.bak.
+ */
 function loadPersistedSessions() {
-    const { isMeaningfulDraft } = require('./db/draft_manage');
-    try {
-        if (fs.existsSync(SESSIONS_DATA_PATH)) {
-            const content = fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8');
-            if (!content || !content.trim()) throw new Error('sessions.json empty');
-            const raw = JSON.parse(content);
-            Object.entries(raw).forEach(([mobile, state]) => {
-                if (!hasActiveDraftOnDisk(mobile)) return;
-                if (!isMeaningfulDraft({ mobileNumber: mobile, ...state })) return;
-                state.isAutomating = false;
-                state.isAutomationRunning = false;
-                state.automationStep = 0;
-                sessions.set(mobile, state);
-            });
-            console.log(`📦 Restored ${sessions.size} session(s) from disk.`);
-            return;
-        }
-    } catch (e) {
-        console.warn('Session restore failed, checking backup:', e.message);
-        if (fs.existsSync(SESSIONS_BACKUP_PATH)) {
-            try {
-                const bakContent = fs.readFileSync(SESSIONS_BACKUP_PATH, 'utf-8');
-                const rawBak = JSON.parse(bakContent);
-                Object.entries(rawBak).forEach(([mobile, state]) => {
-                    if (!hasActiveDraftOnDisk(mobile)) return;
-                    if (!isMeaningfulDraft({ mobileNumber: mobile, ...state })) return;
-                    state.isAutomating = false;
-                    state.isAutomationRunning = false;
-                    state.automationStep = 0;
-                    sessions.set(mobile, state);
-                });
-                console.log(`🛡️ [Sessions Rescue] Restored ${sessions.size} session(s) from sessions.json.bak!`);
-                safeWriteJsonSync(SESSIONS_DATA_PATH, rawBak);
-                return;
-            } catch (_) {}
-        }
-    }
+    // No-op: lazy on-demand hydration from the single canonical draft file prevents stale session resurrection.
 }
 
-function persistSessions(currentActiveMobile) {
+function persistSessions(currentActiveMobileOrSession) {
     try {
-        const targetActive = currentActiveMobile || activeMobile;
-        const snapshot = {};
-        
-        // Filter out dummy test sessions and unbounded walkin bloat
-        const walkinEntries = [];
-        sessions.forEach((state, mobile) => {
-            const isPhone = /^[0-9]{10}$/.test(mobile);
-            const isTarget = (mobile === targetActive);
-            
-            if (isPhone || isTarget) {
-                snapshot[mobile] = {
-                    operatorUid: state.operatorUid || null,
-                    operatorName: state.operatorName || null,
-                    operatorMobile: state.operatorMobile || null,
-                    intakeState: state.intakeState,
-                    targetMemberCount: state.targetMemberCount,
-                    currentMemberIdx: state.currentMemberIdx,
-                    step: state.step,
-                    citizenProfile: state.citizenProfile,
-                    chatHistory: state.chatHistory,
-                    tempUploads: state.tempUploads || null,
-                    tempMember: state.tempMember || null,
-                    applicationNumber: state.applicationNumber || null,
-                    applicationPdfUrl: state.applicationPdfUrl || null
-                };
-            } else if (mobile && mobile.startsWith('walkin_')) {
-                const hasData = state.citizenProfile && (state.citizenProfile.fullNameEng || state.citizenProfile.fullNameTam || state.citizenProfile.headAadhaar);
-                if (hasData) {
-                    walkinEntries.push({ mobile, state });
-                }
+        let curState = null;
+        let targetKey = null;
+        if (currentActiveMobileOrSession && typeof currentActiveMobileOrSession === 'object') {
+            curState = currentActiveMobileOrSession;
+            targetKey = curState.draftId || curState.mobileNumber || curState.citizenProfile?.mobileNumber || activeMobile;
+        } else {
+            const targetActive = currentActiveMobileOrSession || activeMobile;
+            if (targetActive && sessions.has(targetActive)) {
+                curState = sessions.get(targetActive);
+                targetKey = targetActive;
+            } else if (!currentActiveMobileOrSession && sessionState) {
+                curState = sessionState;
+                targetKey = curState.draftId || curState.mobileNumber || activeMobile;
             }
-        });
-
-        // Retain at most 5 latest meaningful walkins on disk
-        const recentWalkins = walkinEntries.slice(-5);
-        recentWalkins.forEach(({ mobile, state }) => {
-            snapshot[mobile] = {
-                operatorUid: state.operatorUid || null,
-                operatorName: state.operatorName || null,
-                operatorMobile: state.operatorMobile || null,
-                intakeState: state.intakeState,
-                targetMemberCount: state.targetMemberCount,
-                currentMemberIdx: state.currentMemberIdx,
-                step: state.step,
-                subService: state.subService || state.citizenProfile?.subService || null,
-                subServiceData: state.subServiceData || state.citizenProfile?.subServiceData || null,
-                citizenProfile: state.citizenProfile,
-                chatHistory: state.chatHistory,
-                tempUploads: state.tempUploads || null,
-                tempMember: state.tempMember || null,
-                applicationNumber: state.applicationNumber || null,
-                applicationPdfUrl: state.applicationPdfUrl || null
-            };
-        });
-
-        const success = safeWriteJsonSync(SESSIONS_DATA_PATH, snapshot);
-        if (success) {
-            try { fs.copyFileSync(SESSIONS_DATA_PATH, SESSIONS_BACKUP_PATH); } catch (_) {}
         }
-
-        if (targetActive && sessions.has(targetActive) && (currentActiveMobile || hasActiveDraftOnDisk(targetActive))) {
-            const curState = sessions.get(targetActive);
-            saveCitizenDraft(targetActive, {
+        if (curState && targetKey) {
+            const saveKey = curState.draftId || targetKey;
+            const cleanMob = extractMobileFromDraftKey(curState.citizenProfile?.mobileNumber || targetKey);
+            const shouldSave = Boolean(
+                currentActiveMobileOrSession ||
+                hasActiveDraftOnDisk(saveKey) ||
+                (curState.draftId && (
+                    curState.citizenProfile?.fullNameTam ||
+                    curState.citizenProfile?.fullNameEng ||
+                    curState.citizenProfile?.headAadhaar ||
+                    curState.subServiceData ||
+                    curState.applicationNumber ||
+                    Object.keys(curState.tempUploads || {}).length > 0
+                ))
+            );
+            if (!shouldSave) return;
+            saveCitizenDraft(saveKey, {
+                draftId: saveKey,
+                mobileNumber: cleanMob,
                 operatorUid: curState.operatorUid || null,
                 operatorName: curState.operatorName || null,
                 operatorMobile: curState.operatorMobile || null,
@@ -208,6 +127,7 @@ function persistSessions(currentActiveMobile) {
                 subService: curState.subService || curState.citizenProfile?.subService || null,
                 subServiceData: curState.subServiceData || curState.citizenProfile?.subServiceData || null,
                 documents: curState.tempUploads || {},
+                base64Docs: curState.base64Docs || curState.citizenProfile?.base64Docs || {},
                 chatHistory: curState.chatHistory,
                 intakeState: curState.intakeState,
                 targetMemberCount: curState.targetMemberCount !== undefined ? curState.targetMemberCount : null,
@@ -251,50 +171,32 @@ function getOrCreateSession(mobile) {
         let resurrected = null;
         try {
             if (hasActiveDraftOnDisk(mobile)) {
-                if (fs.existsSync(SESSIONS_DATA_PATH)) {
-                    const { isMeaningfulDraft } = require('./db/draft_manage');
-                    const disk = JSON.parse(fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8'));
-                    if (disk && disk[mobile] && isMeaningfulDraft({ mobileNumber: mobile, ...disk[mobile] })) {
-                        resurrected = disk[mobile];
-                        resurrected.isAutomating = false;
-                        resurrected.isAutomationRunning = false;
-                        resurrected.automationStep = 0;
-                    }
-                }
-
-                // If not found in sessions.json, resurrect directly from individual draft file on disk!
-                if (!resurrected) {
-                    const draftCandidates = [
-                        path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts', `${mobile}.json`),
-                        path.join(DATA_DIR, 'drafts', `${mobile}.json`)
-                    ];
-                    for (const dPath of draftCandidates) {
-                        if (fs.existsSync(dPath)) {
-                            const parsed = JSON.parse(fs.readFileSync(dPath, 'utf-8'));
-                            if (parsed && (parsed.citizenProfile || parsed.mobileNumber)) {
-                                resurrected = {
-                                    operatorUid: parsed.operatorUid || null,
-                                    operatorName: parsed.operatorName || null,
-                                    operatorMobile: parsed.operatorMobile || null,
-                                    intakeState: parsed.intakeState || 'SERVICE_SELECTION',
-                                    targetMemberCount: parsed.targetMemberCount !== undefined ? parsed.targetMemberCount : 1,
-                                    currentMemberIdx: parsed.currentMemberIdx !== undefined ? parsed.currentMemberIdx : 0,
-                                    tempUploads: parsed.tempUploads || parsed.documents || {},
-                                    tempMember: parsed.tempMember || null,
-                                    step: parsed.step || 'READY',
-                                    subService: parsed.subService || parsed.citizenProfile?.subService || null,
-                                    subServiceData: parsed.subServiceData || parsed.citizenProfile?.subServiceData || null,
-                                    citizenProfile: parsed.citizenProfile || createFreshProfile(mobile),
-                                    chatHistory: Array.isArray(parsed.chatHistory) && parsed.chatHistory.length > 0 ? parsed.chatHistory : [getInitialWelcomeMessage()],
-                                    applicationNumber: parsed.applicationNumber || null,
-                                    applicationPdfUrl: parsed.applicationPdfUrl || null,
-                                    isAutomating: false,
-                                    isAutomationRunning: false,
-                                    automationStep: 0
-                                };
-                                break;
-                            }
-                        }
+                // Hydrate strictly from the ONE canonical active draft file on disk
+                const dPath = path.join(getActiveDraftsDir(), `${mobile}.json`);
+                if (fs.existsSync(dPath)) {
+                    const parsed = JSON.parse(fs.readFileSync(dPath, 'utf-8'));
+                    if (parsed && !parsed.isDeleted && parsed.status !== 'TRASHED' && (parsed.citizenProfile || parsed.mobileNumber)) {
+                        resurrected = {
+                            draftId: parsed.draftId || mobile,
+                            operatorUid: parsed.operatorUid || null,
+                            operatorName: parsed.operatorName || null,
+                            operatorMobile: parsed.operatorMobile || null,
+                            intakeState: parsed.intakeState || 'SERVICE_SELECTION',
+                            targetMemberCount: parsed.targetMemberCount !== undefined ? parsed.targetMemberCount : 1,
+                            currentMemberIdx: parsed.currentMemberIdx !== undefined ? parsed.currentMemberIdx : 0,
+                            tempUploads: parsed.tempUploads || parsed.documents || {},
+                            tempMember: parsed.tempMember || null,
+                            step: parsed.step || 'READY',
+                            subService: parsed.subService || parsed.citizenProfile?.subService || null,
+                            subServiceData: parsed.subServiceData || parsed.citizenProfile?.subServiceData || null,
+                            citizenProfile: parsed.citizenProfile || createFreshProfile(mobile),
+                            chatHistory: Array.isArray(parsed.chatHistory) && parsed.chatHistory.length > 0 ? parsed.chatHistory : [getInitialWelcomeMessage()],
+                            applicationNumber: parsed.applicationNumber || null,
+                            applicationPdfUrl: parsed.applicationPdfUrl || null,
+                            isAutomating: false,
+                            isAutomationRunning: false,
+                            automationStep: 0
+                        };
                     }
                 }
             }
@@ -376,35 +278,45 @@ async function resetActiveSession(stopTnpdsFn) {
         sessions.set(mob, freshSession);
     }
     sessionState = freshSession;
-    persistSessions();
     return freshSession;
 }
 
 function purgeSession(mobile) {
     if (!mobile) return;
-    const cleanDigits = String(mobile).replace(/\D/g, '').slice(-10);
     const rawKey = String(mobile).trim();
+    if (isSpecificDraftId(rawKey)) {
+        const parentMob = extractMobileFromDraftKey(rawKey);
+        sessions.delete(rawKey);
+        sessionAccessTimestamps.delete(rawKey);
+        if (parentMob && sessions.has(parentMob) && sessions.get(parentMob)?.draftId === rawKey) {
+            sessions.delete(parentMob);
+            sessionAccessTimestamps.delete(parentMob);
+            if (activeMobile === parentMob || activeMobile === rawKey) {
+                activeMobile = null;
+                sessionState = null;
+            }
+        } else if (activeMobile === rawKey) {
+            activeMobile = null;
+            sessionState = null;
+        }
+        return;
+    }
+    const cleanDigits = String(mobile).replace(/\D/g, '').slice(-10);
     const keys = Array.from(new Set([cleanDigits, rawKey, `+91 ${cleanDigits}`, `+91${cleanDigits}`, `91${cleanDigits}`].filter(Boolean)));
     for (const k of keys) {
         sessions.delete(k);
         sessionAccessTimestamps.delete(k);
     }
-    if (activeMobile && keys.includes(String(activeMobile).trim())) {
+    for (const [sk, sv] of Array.from(sessions.entries())) {
+        if (isSpecificDraftId(sk) && extractMobileFromDraftKey(sk) === cleanDigits) {
+            sessions.delete(sk);
+            sessionAccessTimestamps.delete(sk);
+        }
+    }
+    if (activeMobile && (keys.includes(String(activeMobile).trim()) || extractMobileFromDraftKey(activeMobile) === cleanDigits)) {
         activeMobile = null;
         sessionState = null;
     }
-    try {
-        if (fs.existsSync(SESSIONS_DATA_PATH)) {
-            const disk = JSON.parse(fs.readFileSync(SESSIONS_DATA_PATH, 'utf-8'));
-            if (disk) {
-                let changed = false;
-                for (const k of keys) {
-                    if (disk[k]) { delete disk[k]; changed = true; }
-                }
-                if (changed) safeWriteJsonSync(SESSIONS_DATA_PATH, disk);
-            }
-        }
-    } catch (_) {}
 }
 
 async function rekeySession(oldKey, newMobile, reqOpUid) {
@@ -447,8 +359,128 @@ function resolveMobile(req) {
     return resolved || activeMobile;
 }
 
+function makeScopedSessionKey(mobile, operatorUid = null) {
+    const clean = String(mobile || '').trim();
+    if (!clean) return '';
+    if (isSpecificDraftId(clean) || clean.startsWith('walkin_')) return clean;
+    const normOp = normalizeOperatorUid(operatorUid);
+    return normOp ? `${normOp}::${clean}` : clean;
+}
+
+/**
+ * Resolves an isolated in-memory session for (draftId, mobile, operatorUid).
+ * Guarantees two operators using the SAME customer mobile number NEVER share or overwrite sessions.
+ */
+function resolveSessionForRequest({ draftId = '', mobile = '', operatorUid = null } = {}) {
+    const reqDraftId = String(draftId || '').trim();
+    const rawMob = String(mobile || '').trim();
+    const normOp = normalizeOperatorUid(operatorUid);
+
+    if (reqDraftId && isSpecificDraftId(reqDraftId)) {
+        if (sessions.has(reqDraftId)) {
+            const s = sessions.get(reqDraftId);
+            const sOp = normalizeOperatorUid(s?.operatorUid);
+            if (!normOp || !sOp || sOp === normOp) {
+                touchSession(reqDraftId);
+                return s;
+            }
+        }
+        const hydrated = getOrCreateSession(reqDraftId);
+        const hOp = normalizeOperatorUid(hydrated?.operatorUid);
+        if (normOp && hOp && hOp !== normOp) {
+            return null;
+        }
+        if (normOp && !hOp) hydrated.operatorUid = normOp;
+        return hydrated;
+    }
+
+    if (normOp && rawMob && !rawMob.startsWith('walkin_')) {
+        const routedId = getActiveDraftIdForMobile(rawMob, normOp);
+        if (routedId && sessions.has(routedId)) {
+            const rs = sessions.get(routedId);
+            touchSession(routedId);
+            return rs;
+        }
+        const scopedKey = makeScopedSessionKey(rawMob, normOp);
+        if (sessions.has(scopedKey)) {
+            touchSession(scopedKey);
+            return sessions.get(scopedKey);
+        }
+        if (sessions.has(rawMob)) {
+            const bare = sessions.get(rawMob);
+            const bareOp = normalizeOperatorUid(bare?.operatorUid);
+            if (!bareOp || bareOp === normOp) {
+                if (normOp && !bareOp) bare.operatorUid = normOp;
+                sessions.set(scopedKey, bare);
+                touchSession(scopedKey);
+                return bare;
+            }
+        }
+        if (routedId) {
+            const hyd = getOrCreateSession(routedId);
+            if (hyd && (!normalizeOperatorUid(hyd.operatorUid) || normalizeOperatorUid(hyd.operatorUid) === normOp)) {
+                hyd.operatorUid = hyd.operatorUid || normOp;
+                sessions.set(scopedKey, hyd);
+                return hyd;
+            }
+        }
+        // Check if this operator has a draft file on disk before creating an empty scoped shell
+        let opDraftFile = null;
+        try {
+            const draftsDir = getActiveDraftsDir();
+            if (fs.existsSync(draftsDir)) {
+                const mobDigits = extractMobileFromDraftKey(rawMob);
+                let newestTs = -1;
+                for (const f of fs.readdirSync(draftsDir).filter(x => (x === `${mobDigits}.json` || x.startsWith(`${mobDigits}_`)) && x.endsWith('.json'))) {
+                    try {
+                        const p = JSON.parse(fs.readFileSync(path.join(draftsDir, f), 'utf8'));
+                        if (!p || p.isDeleted || p.status === 'TRASHED') continue;
+                        if (normalizeOperatorUid(p.operatorUid) !== normOp) continue;
+                        const ts = new Date(p.lastUpdated || 0).getTime();
+                        if (ts >= newestTs) { newestTs = ts; opDraftFile = p; }
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+
+        if (opDraftFile) {
+            const dId = opDraftFile.draftId || rawMob;
+            const hyd = getOrCreateSession(dId);
+            sessions.set(scopedKey, hyd);
+            return hyd;
+        }
+
+        const freshProfile = createFreshProfile(rawMob);
+        const freshScoped = {
+            draftId: routedId || undefined,
+            mobileNumber: rawMob,
+            operatorUid: normOp,
+            intakeState: 'SERVICE_SELECTION',
+            targetMemberCount: 1,
+            currentMemberIdx: 1,
+            tempUploads: {},
+            tempMember: null,
+            step: 'READY',
+            citizenProfile: freshProfile,
+            chatHistory: [getInitialWelcomeMessage()],
+            applicationNumber: null
+        };
+        sessions.set(scopedKey, freshScoped);
+        touchSession(scopedKey);
+        return freshScoped;
+    }
+
+    const fallbackKey = reqDraftId || rawMob || activeMobile || 'walkin_session';
+    return getOrCreateSession(fallbackKey);
+}
+
 function resolveSession(req) {
     const mob = resolveMobile(req);
+    const reqDraftId = req && ((req.headers && req.headers['x-draft-id']) || (req.query && req.query.draftId) || (req.body && req.body.draftId) || '');
+    const opUid = req && ((req.headers && req.headers['x-operator-uid']) || (req.query && req.query.operatorUid) || (req.body && req.body.operatorUid) || null);
+    if (reqDraftId || opUid) {
+        return resolveSessionForRequest({ draftId: reqDraftId, mobile: mob, operatorUid: opUid }) || getOrCreateSession('walkin_session');
+    }
     return mob ? getOrCreateSession(mob) : (sessionState || getOrCreateSession('walkin_session'));
 }
 
@@ -470,5 +502,7 @@ module.exports = {
     purgeSession,
     rekeySession,
     resolveMobile,
-    resolveSession
+    resolveSession,
+    makeScopedSessionKey,
+    resolveSessionForRequest
 };

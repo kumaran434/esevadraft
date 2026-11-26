@@ -9,6 +9,7 @@ async function handleDraftResume(ctx, req, res) {
 
     const shouldHandle = sess.intakeState === 'DRAFT_RESUME_CHOICE' || 
                          sess.intakeState === 'READY_TO_APPLY' || 
+                         text === 'TRIGGER_EDIT_MODAL' ||
                          /^ADD_MEMBER_\d+$/.test(text) || 
                          (text === 'CONFIRM_SUBMIT' && (sess.subService || isProfileDataComplete(sess.citizenProfile, sess.tempUploads)));
 

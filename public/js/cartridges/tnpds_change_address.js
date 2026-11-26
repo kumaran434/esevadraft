@@ -20,7 +20,7 @@
             subtitle: 'புதிய முகவரி மற்றும் முகவரிச் சான்றை மட்டும் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-map-location-dot"></i> 🚀 முகவரி மாற்றம் செய்ய (Change Address in TNPDS)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'changeAddress'
         },
@@ -32,7 +32,7 @@
 
             const proofTypeEl = document.getElementById('editAddressProofType');
             if (proofTypeEl) {
-                const val = sData.proofType || data.residenceProof?.typeTam || '';
+                const val = sData.proofType || '';
                 if (val) {
                     proofTypeEl.value = val;
                     if (!proofTypeEl.value) {
@@ -47,29 +47,29 @@
             }
 
             const setIf = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-            setIf('editAddressDoorNo', sData.doorNo || sData.newDoorNo || data.doorNo || '');
-            setIf('editAddressStreetTam', sData.streetTam || sData.newStreet || data.streetTam || data.streetEng || '');
-            setIf('editAddressStreetEng', sData.streetEng || data.streetEng || '');
-            setIf('editAddressAreaTam', sData.areaTam || data.areaTam || data.village || '');
-            setIf('editAddressPin', sData.pincode || sData.newPincode || data.pincode || '');
-            setIf('editAddressDistrict', sData.district || sData.newDistrict || data.district || '');
-            setIf('editAddressTaluk', sData.taluk || sData.newTaluk || data.taluk || '');
-            setIf('editAddressVillage', sData.village || sData.newVillage || data.village || '');
+            setIf('editAddressDoorNo', sData.doorNo || sData.newDoorNo || '');
+            setIf('editAddressStreetTam', sData.streetTam || sData.newStreet || '');
+            setIf('editAddressStreetEng', sData.streetEng || '');
+            setIf('editAddressAreaTam', sData.areaTam || '');
+            setIf('editAddressPin', sData.pincode || sData.newPincode || '');
+            setIf('editAddressDistrict', sData.district || sData.newDistrict || '');
+            setIf('editAddressTaluk', sData.taluk || sData.newTaluk || '');
+            setIf('editAddressVillage', sData.village || sData.newVillage || '');
 
-            let addrDocPath = sData.docPath || data.residenceProof?.docPath || data.gasDetails?.gasBookPath || data.documents?.residenceProof || data.documents?.gasBook || '';
+            let addrDocPath = sData.addressProofDocPath || sData.docPath || data.documents?.newAddressProof || '';
             if (!addrDocPath && activeCustMob) {
                 try {
-                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list`);
+                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list?subService=CHANGE_ADDRESS`);
                     const docListJson = await docListRes.json();
                     if (docListJson && Array.isArray(docListJson.documents)) {
-                        const foundDoc = docListJson.documents.find(d => d.type === 'gasBook' || d.type === 'residenceProof' || d.type === 'headAadhaar');
+                        const foundDoc = docListJson.documents.find(d => d.type === 'newAddressProof' || d.type === 'residenceProof' || d.type === 'gasBook');
                         if (foundDoc) addrDocPath = foundDoc.previewUrl;
                     }
                 } catch (e) {
                     console.warn('Failed to fetch doc list for Change Address preview:', e);
                 }
             }
-            renderDocPreview(addrDocPath, 'editAddressProofPreview', 'editAddressProofPlaceholder', 'editAddressProofPdfBadge', 'editAddressProofStatus', 'editAddressProofViewBtn', 'முகவரிச் சான்று தேவை', 'editAddressProofDeleteBtn');
+            renderDocPreview(addrDocPath, 'editAddressProofPreview', 'editAddressProofPlaceholder', 'editAddressProofPdfBadge', 'editAddressProofStatus', 'editAddressProofViewBtn', 'புதிய முகவரிச் சான்று தேவை', 'editAddressProofDeleteBtn');
             return true;
         },
         collectEditFields: function (ctx) {
@@ -77,10 +77,10 @@
             if (forceMasterProfile) return null;
 
             const cardNo = document.getElementById('editAddressCardNo')?.value.trim() || '';
-            const proofType = document.getElementById('editAddressProofType')?.value || 'எரிவாயு நுகர்வோர் அட்டை';
+            const proofType = document.getElementById('editAddressProofType')?.value || 'மின்சார ரசீது';
             const doorNo = document.getElementById('editAddressDoorNo')?.value.trim() || '';
             const streetTam = document.getElementById('editAddressStreetTam')?.value.trim() || '';
-            const streetEng = document.getElementById('editAddressStreetEng')?.value.trim() || '';
+            const streetEng = document.getElementById('editAddressStreetEng')?.value.trim() || streetTam;
             const areaTam = document.getElementById('editAddressAreaTam')?.value.trim() || '';
             const pin = document.getElementById('editAddressPin')?.value.trim() || '';
             const district = document.getElementById('editAddressDistrict')?.value.trim() || '';
@@ -92,14 +92,6 @@
                     subService: 'CHANGE_ADDRESS',
                     smartCardNumber: cardNo,
                     rationCardNo: cardNo,
-                    doorNo,
-                    streetTam,
-                    streetEng,
-                    areaTam,
-                    pincode: pin,
-                    district,
-                    taluk,
-                    village,
                     subServiceData: {
                         ...sData,
                         subService: 'CHANGE_ADDRESS',
@@ -119,7 +111,8 @@
                         taluk,
                         newTaluk: taluk,
                         village,
-                        newVillage: village
+                        newVillage: village,
+                        isNewAddressEntered: Boolean(doorNo && (streetTam || streetEng))
                     }
                 }
             };
@@ -129,22 +122,44 @@
             boxId: 'sidebarChangeAddressBox'
         },
         populateSidebar: function (a, subData, { setVal }) {
-            if (!subData) return false;
-            const dNo = subData.doorNo || '—';
-            const street = subData.streetTam ? (subData.streetEng ? `${subData.streetTam} (${subData.streetEng})` : subData.streetTam) : (subData.streetEng || '');
+            if (!subData) {
+                setVal('infoChangeAddressStreet', 'புதிய முகவரி உள்ளிடவும் ⚠️');
+                setVal('infoChangeAddressArea', '—');
+                setVal('infoChangeAddressTalukDist', '—');
+                setVal('infoChangeAddressPin', '—');
+                setVal('infoChangeAddressProof', 'புதிய சான்று தேவை ⚠️');
+                return true;
+            }
+            const dNo = subData.doorNo || '';
+            const street = subData.streetTam ? (subData.streetEng && subData.streetEng !== subData.streetTam ? `${subData.streetTam} (${subData.streetEng})` : subData.streetTam) : (subData.streetEng || '');
             const area = subData.areaTam ? (subData.areaEng ? `${subData.areaTam} (${subData.areaEng})` : subData.areaTam) : (subData.areaEng || '—');
-            const taluk = subData.taluk || a.taluk || '—';
-            const dist = subData.district || a.district || '—';
-            const pin = subData.pincode || a.pincode || '—';
-            const proof = subData.proofType || 'மின் கட்டண ரசீது (EB Bill)';
-            setVal('infoChangeAddressStreet', `${dNo}, ${street}`.trim());
+            const taluk = subData.taluk || '';
+            const dist = subData.district || '';
+            const pin = subData.pincode || '—';
+            const proof = subData.proofType || '';
+            const hasDoc = Boolean(subData.addressProofDocPath || subData.docPath || a?.documents?.newAddressProof);
+            setVal('infoChangeAddressStreet', (dNo || street) ? `${dNo}${dNo && street ? ', ' : ''}${street}` : 'புதிய முகவரி உள்ளிடவும் ⚠️');
             setVal('infoChangeAddressArea', area);
-            setVal('infoChangeAddressTalukDist', `${taluk} / ${dist}`);
+            setVal('infoChangeAddressTalukDist', (taluk || dist) ? `${taluk}${taluk && dist ? ' / ' : ''}${dist}` : '—');
             setVal('infoChangeAddressPin', pin);
-            setVal('infoChangeAddressProof', `${proof} ✅`);
+            setVal('infoChangeAddressProof', proof ? `${proof}${hasDoc ? ' ✅' : ' ⚠️'}` : (hasDoc ? 'புதிய சான்று ✅' : 'புதிய சான்று தேவை ⚠️'));
             return true;
         },
-        validatePreSubmit: function () {
+        validatePreSubmit: function (dataObj = {}, docs = {}) {
+            const sData = dataObj.subServiceData || {};
+            if (!sData.doorNo || !(sData.streetTam || sData.streetEng)) {
+                return { valid: false, errorMessage: '⚠️ புதிய வீட்டின் கதவு எண் மற்றும் தெருப் பெயரை உள்ளிடவும்.' };
+            }
+            if (!/^\d{6}$/.test(String(sData.pincode || '').trim())) {
+                return { valid: false, errorMessage: '⚠️ சரியான 6-இலக்க பின்கோடு (Pincode) உள்ளிடவும்.' };
+            }
+            if (!sData.district || !sData.taluk) {
+                return { valid: false, errorMessage: '⚠️ புதிய மாவட்டம் மற்றும் வட்டம் (Taluk) விவரங்களை உள்ளிடவும்.' };
+            }
+            const hasProof = Boolean(sData.addressProofDocPath || sData.docPath || docs.newAddressProof);
+            if (!hasProof) {
+                return { valid: false, errorMessage: '⚠️ புதிய முகவரிக்கான சான்று ஆவணத்தைப் பதிவேற்றவும்.' };
+            }
             return { valid: true };
         }
     };

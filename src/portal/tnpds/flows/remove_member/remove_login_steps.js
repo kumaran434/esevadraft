@@ -104,7 +104,7 @@ async function executeRemoveMemberLoginSteps({ page, userMobile, onProgress, opt
         const curUrl = page.url();
         if (!curUrl.includes('/auth/login') && !curUrl.includes('/service-request') && !curUrl.includes('/cardmaintenance')) {
             try {
-                const navLink = page.locator('a:has-text("உறுப்பினர் நீக்க"), a:has-text("Remove Family Member"), [routerlink*="service-request"], a[href*="service-request"]').first();
+                const navLink = page.locator('a:has-text("உறுப்பினர் நீக்க"), a:has-text("Remove Family Member")').first();
                 if (await navLink.count() > 0 && await navLink.isVisible().catch(() => false)) {
                     onProgress('[படி 1/10] 🔗 முகப்பில் "உறுப்பினர் நீக்க" இணைப்பு கிளிக் செய்யப்படுகிறது...');
                     await navLink.click({ force: true }).catch(() => {});

@@ -20,7 +20,7 @@
             subtitle: 'முதல் பட்டதாரி விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> 🚀 முதல் பட்டதாரி விண்ணப்பிக்க (Start First Graduate Apply)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'newCard',
             docBoxes: {

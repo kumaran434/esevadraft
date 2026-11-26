@@ -54,6 +54,22 @@ async function handleIntake(ctx, req, res) {
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
         }
+        if (text === 'LH_ADDR_USE_SMARTCARD' && sess.intakeState === 'LEGAL_HEIR_DECEASED_ADDR_WAIT') {
+            const p = sess.citizenProfile;
+            const scPath = p.smartCard || p.rationCard || p.smartCardDocPath || p.documents?.smartCard || p.documents?.rationCard || sess.tempUploads?.smartCard;
+            if (scPath) {
+                if (!p.documents) p.documents = {};
+                if (!sess.tempUploads) sess.tempUploads = {};
+                p.deceasedAddressProof = scPath;
+                p.documents.deceasedAddressProof = scPath;
+                sess.tempUploads.deceasedAddressProof = scPath;
+                persistSessions();
+                const flowStep = advanceFlow(sess, `✅ குடும்ப ஸ்மார்ட் கார்டு இறந்தவரின் முகவரிச் சான்றாக இணைக்கப்பட்டது! 🛡️`);
+                sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+                res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+                return true;
+            }
+        }
         if (uploadedFile) {
             const compFile = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
@@ -83,10 +99,17 @@ async function handleIntake(ctx, req, res) {
         }
     }
 
-    if (sess.intakeState === 'LEGAL_HEIR_DECEASED_NAME_WAIT' && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
-        const pair = ensureBilingualPair(text.trim(), text.trim());
-        sess.citizenProfile.deceasedNameEng = pair.eng || text.trim();
-        sess.citizenProfile.deceasedNameTam = pair.tam || text.trim();
+    if ((sess.intakeState === 'LEGAL_HEIR_DECEASED_NAME_WAIT' || (text && text.startsWith('LH_DECEASED_NAME:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        if (text.startsWith('LH_DECEASED_NAME:')) {
+            const [engPart, tamPart] = text.replace('LH_DECEASED_NAME:', '').split('|');
+            const pair = ensureBilingualPair((engPart || '').trim(), (tamPart || engPart || '').trim());
+            sess.citizenProfile.deceasedNameEng = pair.eng || (engPart || '').trim();
+            sess.citizenProfile.deceasedNameTam = pair.tam || (tamPart || engPart || '').trim();
+        } else {
+            const pair = ensureBilingualPair(text.trim(), text.trim());
+            sess.citizenProfile.deceasedNameEng = pair.eng || text.trim();
+            sess.citizenProfile.deceasedNameTam = pair.tam || text.trim();
+        }
         persistSessions();
         const flowStep = advanceFlow(sess, `✅ இறந்தவர் பெயர் **${sess.citizenProfile.deceasedNameTam}** எனப் பதிவானது!`);
         sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
@@ -100,12 +123,18 @@ async function handleIntake(ctx, req, res) {
             const [d, pl] = raw.split('|');
             sess.citizenProfile.dateOfDeath = d.trim();
             sess.citizenProfile.placeOfDeath = pl.trim();
+        } else if (raw.includes(',')) {
+            const [d, ...plRest] = raw.split(',');
+            sess.citizenProfile.dateOfDeath = d.trim();
+            sess.citizenProfile.placeOfDeath = plRest.join(',').trim() || sess.citizenProfile.taluk || '';
         } else {
             sess.citizenProfile.dateOfDeath = raw;
-            if (!sess.citizenProfile.placeOfDeath) sess.citizenProfile.placeOfDeath = sess.citizenProfile.taluk || 'Arakkonam';
+            if (!sess.citizenProfile.placeOfDeath && sess.citizenProfile.taluk) {
+                sess.citizenProfile.placeOfDeath = sess.citizenProfile.taluk;
+            }
         }
         persistSessions();
-        const flowStep = advanceFlow(sess, `✅ இறந்த தேதி **${sess.citizenProfile.dateOfDeath}** (${sess.citizenProfile.placeOfDeath}) எனப் பதிவானது!`);
+        const flowStep = advanceFlow(sess, `✅ இறந்த தேதி **${sess.citizenProfile.dateOfDeath}**${sess.citizenProfile.placeOfDeath ? ` (${sess.citizenProfile.placeOfDeath})` : ''} எனப் பதிவானது!`);
         sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
         return true;
@@ -123,19 +152,69 @@ async function handleIntake(ctx, req, res) {
     if ((sess.intakeState === 'LEGAL_HEIR_DECEASED_PARENTS_WAIT' || (text && text.startsWith('LH_PARENTS:'))) && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
         const raw = text.startsWith('LH_PARENTS:') ? text.replace('LH_PARENTS:', '').trim() : text.trim();
         if (raw.includes('|')) {
-            const parts = raw.split('|');
-            sess.citizenProfile.deceasedFatherNameEng = parts[0] || 'Ramasamy';
-            sess.citizenProfile.deceasedFatherNameTam = parts[1] || parts[0] || 'ராமசாமி';
-            sess.citizenProfile.deceasedMotherNameEng = parts[2] || 'Lakshmi';
-            sess.citizenProfile.deceasedMotherNameTam = parts[3] || parts[2] || 'லட்சுமி';
+            const parts = raw.split('|').map(s => s.trim());
+            const fPair = ensureBilingualPair(parts[0] || '', parts[1] || parts[0] || '');
+            const mPair = ensureBilingualPair(parts[2] || '', parts[3] || parts[2] || '');
+            sess.citizenProfile.deceasedFatherNameEng = fPair.eng || parts[0] || '';
+            sess.citizenProfile.deceasedFatherNameTam = fPair.tam || parts[1] || parts[0] || '';
+            sess.citizenProfile.deceasedMotherNameEng = mPair.eng || parts[2] || '';
+            sess.citizenProfile.deceasedMotherNameTam = mPair.tam || parts[3] || parts[2] || '';
+        } else if (raw.includes(',') || raw.includes('/') || raw.includes('&')) {
+            const parts = raw.split(/[,/&]+/).map(s => s.trim()).filter(Boolean);
+            const fPair = ensureBilingualPair(parts[0] || '', parts[0] || '');
+            const mPair = parts[1] ? ensureBilingualPair(parts[1], parts[1]) : { eng: '', tam: '' };
+            sess.citizenProfile.deceasedFatherNameEng = fPair.eng || parts[0] || '';
+            sess.citizenProfile.deceasedFatherNameTam = fPair.tam || parts[0] || '';
+            sess.citizenProfile.deceasedMotherNameEng = mPair.eng || parts[1] || '';
+            sess.citizenProfile.deceasedMotherNameTam = mPair.tam || parts[1] || '';
         } else {
-            sess.citizenProfile.deceasedFatherNameEng = raw;
-            sess.citizenProfile.deceasedFatherNameTam = raw;
-            sess.citizenProfile.deceasedMotherNameEng = 'Lakshmi';
-            sess.citizenProfile.deceasedMotherNameTam = 'லட்சுமி';
+            const fPair = ensureBilingualPair(raw, raw);
+            sess.citizenProfile.deceasedFatherNameEng = fPair.eng || raw;
+            sess.citizenProfile.deceasedFatherNameTam = fPair.tam || raw;
         }
         persistSessions();
         const flowStep = advanceFlow(sess, `✅ இறந்தவரின் பெற்றோர் பெயர்கள் பதிவானது!`);
+        sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
+        return true;
+    }
+
+    if ((sess.intakeState === 'LEGAL_HEIR_HEIRS_WAIT' || text === 'LH_HEIRS_FROM_SMARTCARD') && text && !text.startsWith('TRIGGER_') && !text.startsWith('START_') && !text.startsWith('CAN_')) {
+        const p = sess.citizenProfile;
+        if (text === 'LH_HEIRS_FROM_SMARTCARD' && Array.isArray(p.smartCardMembers) && p.smartCardMembers.length > 0) {
+            p.legalHeirs = p.smartCardMembers.map(m => ({
+                nameTam: m.nameTam || m.nameEng || m.name || '',
+                nameEng: m.nameEng || m.nameTam || m.name || '',
+                relationship: m.relationship || 'Member',
+                age: m.age || '',
+                status: 'Living'
+            }));
+            p.heirsList = p.legalHeirs;
+            p.legalHeirsConfirmed = true;
+        } else {
+            const entries = text.split(/[,\n;]+/).map(s => s.trim()).filter(Boolean);
+            const parsedHeirs = entries.map(entry => {
+                const segs = entry.split(/[-–|]+/).map(s => s.trim()).filter(Boolean);
+                const rawName = segs[0] || entry;
+                const pair = ensureBilingualPair(rawName, rawName);
+                const rel = segs[1] || 'வாரிசு';
+                const ageMatch = (segs[2] || entry).match(/\b(\d{1,3})\b/);
+                return {
+                    nameTam: pair.tam || rawName,
+                    nameEng: pair.eng || rawName,
+                    relationship: rel,
+                    age: ageMatch ? ageMatch[1] : '',
+                    status: 'Living'
+                };
+            }).filter(h => h.nameTam || h.nameEng);
+            if (parsedHeirs.length > 0) {
+                p.legalHeirs = parsedHeirs;
+                p.heirsList = parsedHeirs;
+                p.legalHeirsConfirmed = true;
+            }
+        }
+        persistSessions();
+        const flowStep = advanceFlow(sess, `✅ வாரிசுதாரர்கள் பட்டியல் (${(p.legalHeirs || []).length} நபர்கள்) பதிவானது!`);
         sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
         res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
         return true;

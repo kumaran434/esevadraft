@@ -232,7 +232,11 @@ async function handleIntake(ctx, req, res) {
     }
 
     if (sess.intakeState === 'FIRST_GRADUATE_FAMILY_CHECK_GATE' || text === 'FIRST_GRADUATE_CONFIRMED' || text === 'FIRST_GRADUATE_INELIGIBLE') {
-        if (text === 'FIRST_GRADUATE_INELIGIBLE') {
+        const lowFg = String(text || '').toLowerCase().trim();
+        const isIneligible = text === 'FIRST_GRADUATE_INELIGIBLE' ||
+            /^(no|ineligible)$/i.test(lowFg) ||
+            (text !== 'FIRST_GRADUATE_CONFIRMED' && (text.includes('ஏற்கனவே') || text.includes('பட்டதாரி உள்ளார்') || text.includes('படித்துள்ளார்') || text.includes('இருக்கிறார்') || lowFg === 'உள்ளது'));
+        if (isIneligible) {
             sess.chatHistory.push({
                 sender: 'bot',
                 text: `⚠️ **அரசு விதிப்படி (TNeGA REV-104 Rule):**\n\nகுடும்பத்தில் ஏற்கனவே ஒருவர் பட்டப்படிப்பு முடித்திருந்தால் முதல் பட்டதாரி கல்விக் கட்டணச் சலுகை பெற இயலாது.\n\nவேறு ஏதேனும் சான்றிதழ் சேவை தேவைப்படுகிறதா?`,

@@ -3,9 +3,15 @@
  */
 const { waitForNewCardMobileOtp } = require('./new_card_otp_config');
 const { waitForOtpModalOpened } = require('../../../common/strict_step_gate');
+const {
+    installOtpModalCopilot,
+    readOtpModalCopilotState,
+    performVisibleModalResend,
+    shouldBotTriggerResend
+} = require('../../../common/otp_copilot_watcher');
 let resolveTnDistrict;
 try {
-    const dm = require('../../../../tn_district_mapper');
+    const dm = require('../../../../../tn_district_mapper');
     resolveTnDistrict = dm.resolveTnDistrict;
 } catch (e) {
     resolveTnDistrict = (d, t, v) => ({ district: d, taluk: t, village: v, wasAutoCorrected: false });
@@ -340,28 +346,15 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
     }).catch(() => false);
 
     if (isModalAlreadyOpen) {
-        // If countdown timer expired (0 நொடிகள்), auto-click Resend button inside modal
-        const isTimerExpired = await page.evaluate(() => {
-            const m = document.querySelector('.modal.show, div[role="dialog"]');
-            if (!m) return false;
-            const txt = (m.innerText || '').trim();
-            return txt.includes('0 நொடிகள்') || txt.includes('0 seconds') || txt.includes('காலாவதி');
-        }).catch(() => false);
-
-        if (isTimerExpired) {
-            onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், "மீண்டும் அனுப்புங்கள்" தானாக அழுத்தப்படுகிறது...');
-            await page.evaluate(() => {
-                const m = document.querySelector('.modal.show, div[role="dialog"]');
-                if (!m) return;
-                const btns = Array.from(m.querySelectorAll('button, a'));
-                const resendBtn = btns.find(b => {
-                    const t = (b.innerText || '').toLowerCase();
-                    return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend') || t.includes('generate');
-                });
-                if (resendBtn) resendBtn.click();
-            }).catch(() => {});
-            await page.waitForTimeout(2500);
-            await scanAndBroadcastToasts();
+        await installOtpModalCopilot(page, { forceReset: false, allowInlinePage: false }).catch(() => {});
+        const cpState = await readOtpModalCopilotState(page, { allowInlinePage: false });
+        if (shouldBotTriggerResend(cpState, 0, Date.now(), 4000, 2)) {
+            const didResend = await performVisibleModalResend(page, { allowInlinePage: false });
+            if (didResend) {
+                onProgress('🔄 [OTP மீட்சி] முந்தைய OTP காலம் முடிந்துவிட்டதால், "மீண்டும் அனுப்பு" 1 முறை அழுத்தப்பட்டது!');
+                await page.waitForTimeout(2500);
+                await scanAndBroadcastToasts();
+            }
         }
     } else {
         // படி 19: OTP உருவாக்கு ➔ Modal திறந்தது உறுதியான பிறகே படி 20-க்குச் செல்ல வேண்டும் (Strict Step Gate)
@@ -402,6 +395,14 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         err.isRadwarePageRefresh = true;
         err.stepLabel = 'படி 20 மொபைல் OTP';
         throw err;
+    }
+    if (!receivedOtp || receivedOtp === 'MODAL_CLOSED_UNVERIFIED' || receivedOtp === 'CLOSED') {
+        const haltOtpMsg = 'படி 20: அரசு மொபைல் OTP சரிபார்க்கப்படவில்லை (சாளரம் மூடப்பட்டது). OTP-ஐ உறுதி செய்யாமல் படி 22 உறுப்பினர் படிவத்திற்குச் செல்ல முடியாது!';
+        if (typeof sharedContext.showBrowserHud === 'function') {
+            await sharedContext.showBrowserHud('🔴 படி 20 நிறுத்தம் (Zero-Step-Skip)', haltOtpMsg, 'error', page).catch(() => {});
+        }
+        onProgress(`🛑 **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltOtpMsg}`);
+        return { success: false, message: haltOtpMsg };
     }
 
     return { success: true, receivedOtp };

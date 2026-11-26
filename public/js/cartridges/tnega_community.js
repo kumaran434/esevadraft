@@ -20,7 +20,7 @@
             subtitle: 'சாதிச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> 🚀 சாதிச் சான்றிதழ் விண்ணப்பிக்க (Start Community Apply)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'newCard',
             docBoxes: {

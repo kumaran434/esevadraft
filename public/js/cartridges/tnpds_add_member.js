@@ -14,14 +14,14 @@
 
     return {
         id: 'TNPDS_ADD_MEMBER',
-        ownedDocTypes: ['smartCard', 'rationCard', 'memberAadhaar', 'birthCertificate', 'surrenderProof', 'applicationPdf'],
+        ownedDocTypes: ['smartCard', 'rationCard', 'memberAadhaar', 'applicationPdf'],
         editModal: {
             layoutMode: 'ADD_MEMBER',
             title: '✏️ சேர்க்கப்படும் குடும்ப உறுப்பினர் விவரங்கள் (Add Member Details)',
             subtitle: 'ஸ்மார்ட் கார்டு எண் & புதிய உறுப்பினர் விவரங்களை மட்டும் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-user-plus"></i> 🚀 குடும்ப உறுப்பினர் சேர்க்க (Add Member in TNPDS)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'addMember'
         },
@@ -29,21 +29,18 @@
             const { data, sData, activeCustMob, renderDocPreview, updateDualSideButtonStates } = ctx;
 
             let memAadhaarPath = sData.aadhaarDocPath || sData.docPath || data.tempMember?.docPath || data.documents?.memberAadhaar || '';
-            const headAadhDoc = data.citizenProfile?.headAadhaarDocPath || data.headAadhaarDocPath || data.documents?.headAadhaar || '';
-            if (!sData.docPath && !data.documents?.memberAadhaar && memAadhaarPath && headAadhDoc && memAadhaarPath === headAadhDoc) {
+            const headAadhDoc = data.citizenProfile?.headAadhaarDocPath || data.headAadhaarDocPath || data.documents?.headAadhaar || data.members?.[0]?.docPath || '';
+            if (memAadhaarPath && headAadhDoc && memAadhaarPath === headAadhDoc) {
                 memAadhaarPath = '';
             }
-            let proofPath = sData.proofDocPath || sData.birthDocPath || sData.surrenderDocPath || data.documents?.birthCertificate || data.documents?.surrenderProof || '';
 
-            if ((!memAadhaarPath || !proofPath) && activeCustMob) {
+            if (!memAadhaarPath && activeCustMob) {
                 try {
-                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list`);
+                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list?subService=ADD_MEMBER`);
                     const docListJson = await docListRes.json();
                     if (docListJson && Array.isArray(docListJson.documents)) {
                         const foundAadh = docListJson.documents.find(d => d.type === 'memberAadhaar');
                         if (foundAadh && !memAadhaarPath) memAadhaarPath = foundAadh.previewUrl;
-                        const foundProof = docListJson.documents.find(d => d.type === 'birthCertificate' || d.type === 'surrenderProof');
-                        if (foundProof && !proofPath) proofPath = foundProof.previewUrl;
                     }
                 } catch (e) {
                     console.warn('Failed to fetch doc list for Add Member preview:', e);
@@ -57,11 +54,7 @@
 
             const proofBox = document.getElementById('editAddMemberProofBox');
             if (proofBox) {
-                const proofTitle = document.getElementById('editAddMemberProofTitle');
-                if (proofTitle) {
-                    proofTitle.innerText = sData.isChild ? '📄 குழந்தையின் பிறப்புச் சான்றிதழ்' : '📄 உறவுமுறை / நீக்கல் சான்று';
-                }
-                renderDocPreview(proofPath, 'editAddMemberProofPreview', 'editAddMemberProofPlaceholder', 'editAddMemberProofPdfBadge', 'editAddMemberProofStatus', 'editAddMemberProofViewBtn', sData.isChild ? 'பிறப்புச் சான்றிதழ் தேவை' : 'உறவுமுறை சான்று தேவை', 'editAddMemberProofDeleteBtn');
+                proofBox.style.display = 'none';
             }
 
             const cardEl = document.getElementById('editAddMemberCardNo');
@@ -123,70 +116,109 @@
                 relationship: memRel,
                 memberNameTam: memNameTam,
                 memberNameEng: memNameEng,
+                memberName: memNameTam || memNameEng || '',
                 fatherNameTam: memFatherTam,
                 fatherNameEng: memFatherEng,
                 dob: memDob,
                 gender: memGender,
+                genderTam: memGender === 'Female' ? 'பெண்' : 'ஆண்',
                 aadhaarNo: memAadhaar
             };
-            const updatedMember = {
-                nameTam: memNameTam,
-                nameEng: memNameEng,
-                name: memNameEng || memNameTam,
-                fatherNameTam: memFatherTam,
-                fatherNameEng: memFatherEng,
-                dob: memDob,
-                gender: memGender,
-                relationshipTam: memRel,
-                relationship: memRel,
-                aadhaarNumber: memAadhaar,
-                docPath: sData.aadhaarDocPath || sData.docPath || ''
-            };
-            let existingMembers = (data && Array.isArray(data.members)) ? [...data.members] : [];
-            if (existingMembers.length > 0) {
-                const foundIdx = existingMembers.findIndex((m, idx) => idx > 0 && ((m.aadhaarNumber && m.aadhaarNumber === memAadhaar) || (m.nameEng && m.nameEng === memNameEng)));
-                if (foundIdx !== -1) existingMembers[foundIdx] = { ...existingMembers[foundIdx], ...updatedMember };
-                else existingMembers.push(updatedMember);
-            } else {
-                existingMembers = [updatedMember];
-            }
-
             return {
                 overrideUpdated: {
                     subService: 'ADD_MEMBER',
                     smartCardNumber: memCard,
                     rationCardNo: memCard,
-                    fullNameTam: memNameTam,
-                    fullNameEng: memNameEng,
-                    subServiceData: updatedSubServiceData,
-                    members: existingMembers
+                    subServiceData: updatedSubServiceData
                 }
             };
         },
         sidebar: {
             headTitle: '👤 குடும்பத் தலைவர் விவரங்கள்',
             boxId: 'sidebarAddMemberBox',
-            showMembersContainer: true
+            showMembersContainer: false
         },
         populateSidebar: function (a, subData, { setVal, activeCustMob }) {
             if (!subData) return false;
-            const addName = subData.memberNameTam ? (subData.memberNameEng ? `${subData.memberNameTam} (${subData.memberNameEng})` : subData.memberNameTam) : (subData.memberName || '—');
-            const addRel = subData.relationshipTam || subData.relationship || (subData.isChild ? 'மகன்/மகள்' : 'உறுப்பினர்');
-            const addDob = subData.dob || '—';
-            const addGender = subData.genderTam || subData.gender || '—';
-            const addAadhaar = subData.aadhaarNo ? subData.aadhaarNo.replace(/(\d{4})/g, '$1 ').trim() : '—';
-            const cleanAddMob = (a.mobileNumber && !/^walkin_/i.test(String(a.mobileNumber))) ? a.mobileNumber : ((activeCustMob && !/^walkin_/i.test(String(activeCustMob))) ? activeCustMob : '');
-            const addMob = cleanAddMob ? `+91 ${cleanAddMob}` : '—';
-            const addDoc = subData.isChild ? 'பிறப்புச் சான்றிதழ் (Birth Certificate)' : 'ஆதார் அட்டை (Aadhaar Card)';
-            setVal('infoAddMemberName', addName);
+            const list = Array.isArray(subData.addMembersList) ? subData.addMembersList : [];
+            const cleanHeadAadh = String(a?.headAadhaar || '').replace(/\D/g, '');
+            const cleanMemAadh = String(subData.aadhaarNo || '').replace(/\D/g, '');
+            const hasValidNewMember = Boolean(
+                list.length > 0 ||
+                ((subData.memberNameTam || subData.memberNameEng || subData.memberName) &&
+                 (!cleanHeadAadh || !cleanMemAadh || cleanMemAadh !== cleanHeadAadh))
+            );
+            const cleanMob = (a.mobileNumber && !/^walkin_/i.test(String(a.mobileNumber))) ? a.mobileNumber : ((activeCustMob && !/^walkin_/i.test(String(activeCustMob))) ? activeCustMob : '');
+            const mobDisp = cleanMob ? `+91 ${cleanMob}` : '—';
+
+            // Remove any extra multi-member cards rendered previously inside sidebarAddMemberBox
+            const boxEl = document.getElementById('sidebarAddMemberBox');
+            if (boxEl) {
+                boxEl.querySelectorAll('.extra-add-member-item').forEach(el => el.remove());
+            }
+
+            if (!hasValidNewMember) {
+                const countNote = subData.targetAddCount ? ` (${subData.targetAddCount} நபர்${subData.targetAddCount > 1 ? 'கள்' : ''})` : '';
+                setVal('infoAddMemberName', `புதிய உறுப்பினர் தேவை${countNote} ⚠️`);
+                setVal('infoAddMemberRel', subData.relationshipTam || '—');
+                setVal('infoAddMemberDobGender', '—');
+                setVal('infoAddMemberAadhaar', '—');
+                setVal('infoAddMemberMobile', mobDisp);
+                setVal('infoAddMemberDoc', 'ஆவணம் பதிவேற்றவும் ⚠️');
+                return true;
+            }
+
+            // Primary card shows Member 1 (or currently extracted member if list is empty)
+            const firstM = list.length > 0 ? list[0] : subData;
+            const addName = firstM.memberNameTam ? (firstM.memberNameEng ? `${firstM.memberNameTam} (${firstM.memberNameEng})` : firstM.memberNameTam) : (firstM.memberName || '—');
+            const addRel = firstM.relationshipTam || firstM.relationship || 'உறுப்பினர்';
+            const addDob = firstM.dob || '—';
+            const addGender = firstM.genderTam || firstM.gender || '—';
+            const addAadhaar = firstM.aadhaarNo ? String(firstM.aadhaarNo).replace(/(\d{4})/g, '$1 ').trim() : '—';
+            setVal('infoAddMemberName', list.length > 1 ? `1. ${addName}` : addName);
             setVal('infoAddMemberRel', addRel);
             setVal('infoAddMemberDobGender', `${addDob} | ${addGender}`);
             setVal('infoAddMemberAadhaar', addAadhaar);
-            setVal('infoAddMemberMobile', addMob);
-            setVal('infoAddMemberDoc', `${addDoc} ✅`);
+            setVal('infoAddMemberMobile', mobDisp);
+            setVal('infoAddMemberDoc', 'ஆதார் அட்டை (Aadhaar Card) ✅');
+
+            // Render clean 1-to-1 entries for additional added members (Member 2, 3...) without duplicating Member 1
+            if (boxEl && list.length > 1) {
+                list.slice(1).forEach((m, i) => {
+                    const mName = m.memberNameTam ? (m.memberNameEng ? `${m.memberNameTam} (${m.memberNameEng})` : m.memberNameTam) : (m.memberName || '—');
+                    const mAadh = m.aadhaarNo ? String(m.aadhaarNo).replace(/(\d{4})/g, '$1 ').trim() : '—';
+                    const div = document.createElement('div');
+                    div.className = 'extra-add-member-item';
+                    div.style.cssText = 'margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1; font-size:12px;';
+                    div.innerHTML = `<div class="card-row"><strong>${i + 2}. ${mName}</strong> (${m.relationshipTam || 'உறுப்பினர்'})</div>` +
+                                    `<div class="card-row">பிறந்த தேதி: <strong>${m.dob || '—'} | ${m.genderTam || m.gender || '—'}</strong></div>` +
+                                    `<div class="card-row">ஆதார் எண்: <strong>${mAadh}</strong> ✅</div>`;
+                    boxEl.appendChild(div);
+                });
+            }
             return true;
         },
-        validatePreSubmit: function () {
+        validatePreSubmit: function (dataObj = {}, docs = {}) {
+            const sData = dataObj.subServiceData || {};
+            const memName = (sData.memberNameTam || sData.memberNameEng || sData.memberName || '').trim();
+            if (!memName) {
+                return { valid: false, errorMessage: '⚠️ சேர்க்கப்பட வேண்டிய புதிய உறுப்பினரின் பெயரை உள்ளிடவும்.' };
+            }
+            const cleanHeadAadh = String(dataObj.headAadhaar || '').replace(/\D/g, '');
+            const cleanMemAadh = String(sData.aadhaarNo || sData.aadhaarNumber || '').replace(/\D/g, '');
+            if (cleanHeadAadh && cleanMemAadh && cleanMemAadh === cleanHeadAadh) {
+                return { valid: false, errorMessage: '⚠️ குடும்பத் தலைவரின் ஆதார் எண்ணையே புதிய உறுப்பினராகச் சேர்க்க முடியாது! புதிய உறுப்பினரின் ஆதார் எண்ணை உள்ளிடவும்.' };
+            }
+            if (cleanMemAadh.length !== 12) {
+                return { valid: false, errorMessage: '⚠️ புதிய உறுப்பினரின் சரியான 12-இலக்க ஆதார் எண்ணை உள்ளிடவும் (குழந்தைக்கும் ஆதார் கட்டாயம்).' };
+            }
+            if (!sData.dob) {
+                return { valid: false, errorMessage: '⚠️ புதிய உறுப்பினரின் பிறந்த தேதியை (DD/MM/YYYY) உள்ளிடவும்.' };
+            }
+            const hasMemDoc = Boolean(sData.aadhaarDocPath || sData.docPath || docs.memberAadhaar);
+            if (!hasMemDoc) {
+                return { valid: false, errorMessage: '⚠️ புதிய உறுப்பினரின் ஆதார் அட்டையைப் பதிவேற்றவும் (குழந்தையாக இருந்தாலும் ஆதார் அட்டை கட்டாயம்).' };
+            }
             return { valid: true };
         }
     };

@@ -20,7 +20,7 @@
             subtitle: 'வருமானச் சான்றிதழ் விண்ணப்ப விவரங்கள் மற்றும் பதிவேற்றப்பட்ட ஆவணங்களைச் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-play"></i> 🚀 வருமானச் சான்றிதழ் விண்ணப்பிக்க (Start Income Apply)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'newCard',
             docBoxes: {

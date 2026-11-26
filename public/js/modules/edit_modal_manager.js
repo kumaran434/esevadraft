@@ -363,10 +363,12 @@
                 const opUid = localStorage.getItem('eseva_operator_uid') || '';
                 const isMobileChanged = Boolean(originalEditingMobile && enteredMob && enteredMob.length === 10 && originalEditingMobile !== enteredMob);
 
+                const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
                 const fd = new FormData();
                 fd.append('file', file);
                 fd.append('docType', docType);
                 fd.append('mobileNumber', targetMob);
+                if (activeDraftId) fd.append('draftId', activeDraftId);
                 if (isMobileChanged) {
                     fd.append('oldMobileNumber', originalEditingMobile);
                 }
@@ -382,6 +384,7 @@
                     method: 'POST',
                     headers: {
                         'x-session-mobile': targetMob,
+                        'x-draft-id': activeDraftId,
                         ...(isMobileChanged ? { 'x-old-session-mobile': originalEditingMobile } : {}),
                         'x-operator-uid': opUid
                     },
@@ -597,7 +600,10 @@
         window.syncEditModalInputsFromProfile = syncEditModalInputsFromProfile;
 
         async function handleEditDocDelete(docType, memberIndex = 0) {
-            if (!confirm('இந்த ஆவணத்தை நிச்சயமாக நீக்க வேண்டுமா? (Are you sure you want to delete this document?)')) {
+            const confirmed = typeof showInAppConfirmModal === 'function'
+                ? await showInAppConfirmModal('🗑️ ஆவணம் நீக்கவா?', 'இந்த ஆவணத்தை நிச்சயமாக நீக்க வேண்டுமா?', '🗑️ நீக்கு')
+                : confirm('இந்த ஆவணத்தை நிச்சயமாக நீக்க வேண்டுமா? (Are you sure you want to delete this document?)');
+            if (!confirmed) {
                 return;
             }
 
@@ -774,28 +780,33 @@
             }
 
             // 2. Call backend to delete document from draft & disk
-            if (activeCustMob) {
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+            if (activeCustMob || activeDraftId) {
                 try {
                     const res = await fetch('/api/drafts/delete-document', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mobileNumber: activeCustMob, docType, memberIndex })
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-session-mobile': activeCustMob,
+                            'x-draft-id': activeDraftId
+                        },
+                        body: JSON.stringify({ mobileNumber: activeCustMob, draftId: activeDraftId || undefined, docType, memberIndex })
                     });
                     const d = await res.json();
                     if (d.success) {
                         if (typeof showEsevaToast === 'function') {
                             showEsevaToast('🗑️ ஆவணம் வெற்றிகரமாக நீக்கப்பட்டது!', 'success');
                         }
-                        if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(activeCustMob);
+                        if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(activeDraftId || activeCustMob);
                         if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
-                        if (typeof fetchSidebarDocuments === 'function') await fetchSidebarDocuments(activeCustMob);
+                        if (typeof fetchSidebarDocuments === 'function') await fetchSidebarDocuments(activeDraftId || activeCustMob);
                         if (typeof updateSidebar === 'function') updateSidebar({ citizenProfile: d.citizenProfile || currentCitizenData });
                         if (typeof fetchOperatorDrafts === 'function') fetchOperatorDrafts();
                         if (d.chatHistory && typeof renderMessages === 'function') {
                             renderMessages(d.chatHistory, true);
                         } else {
                             try {
-                                const chatRes = await fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}`);
+                                const chatRes = await fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}${activeDraftId ? `&draftId=${encodeURIComponent(activeDraftId)}` : ''}`);
                                 const chatData = await chatRes.json();
                                 if (chatData && chatData.chatHistory && typeof renderMessages === 'function') {
                                     renderMessages(chatData.chatHistory, true);
@@ -817,18 +828,23 @@
             try {
                 currentEditModalIsMasterProfile = Boolean(forceMasterProfile);
                 window.forceMasterProfile = currentEditModalIsMasterProfile;
-                if (targetMobile) {
-                    const cleanMob = String(targetMobile).replace(/\D/g, '');
-                    localStorage.setItem('eseva_active_customer_mobile', cleanMob);
+                const rawTargetKey = targetMobile ? String(targetMobile).trim() : '';
+                const targetIsDraftId = /^[0-9]{10}_[a-z0-9_-]+$/i.test(rawTargetKey);
+                if (rawTargetKey) {
+                    const cleanMob = targetIsDraftId ? rawTargetKey.split('_')[0] : rawTargetKey.replace(/\D/g, '').slice(-10);
+                    if (cleanMob) localStorage.setItem('eseva_active_customer_mobile', cleanMob);
+                    if (targetIsDraftId) localStorage.setItem('eseva_active_draft_id', rawTargetKey);
                 }
                 let data = currentCitizenData || {};
-                const activeCustMob = (targetMobile ? String(targetMobile).replace(/\D/g, '') : '') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '';
+                const activeDraftKey = targetIsDraftId ? rawTargetKey : ((rawTargetKey ? rawTargetKey.replace(/\D/g, '').slice(-10) : '') || localStorage.getItem('eseva_active_draft_id') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '');
+                const activeCustMob = targetIsDraftId ? rawTargetKey.split('_')[0] : ((rawTargetKey ? rawTargetKey.replace(/\D/g, '').slice(-10) : '') || localStorage.getItem('eseva_active_customer_mobile') || data.mobileNumber || '');
                 originalEditingMobile = activeCustMob;
 
-            // ALWAYS pull fresh draft state directly from server API whenever opening edit modal
-            if (activeCustMob) {
+            // Only pull disk draft when explicitly opening a saved draft from Drafts Desk (targetMobile passed)
+            // NEVER overwrite an active Pure Fresh chat session with an old saved customer draft!
+            if (activeDraftKey && targetMobile) {
                 try {
-                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}`);
+                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(activeDraftKey)}`);
                     const dJson = await dRes.json();
                     if (dJson && dJson.draft && dJson.draft.citizenProfile) {
                         data = Object.assign({}, dJson.draft, dJson.draft.citizenProfile, {
@@ -881,7 +897,7 @@
             const submitBtn = document.getElementById('btnSubmitFromEditModal');
 
             if (forceMasterProfile) {
-                if (titleEl) titleEl.innerHTML = '👤 வாடிக்கையாளர் மாஸ்டர் சுயவிவரம் (Citizen Master Profile Vault)';
+                if (titleEl) titleEl.innerHTML = '👤 விண்ணப்ப விவரங்கள் (Application Details)';
                 if (subTitleEl) subTitleEl.innerText = 'வாடிக்கையாளரின் நிரந்தர சுயவிவரம் மற்றும் அனைத்து அசல் ஆவணங்கள்';
                 if (btnMaster) btnMaster.style.display = 'none';
                 if (btnSubSvc) btnSubSvc.style.display = hasActiveSub ? 'inline-flex' : 'none';
@@ -911,6 +927,9 @@
             setWrap('editAddMemberFieldsWrap', wrapMode === 'addMember' ? 'grid' : 'none');
             setWrap('editRemoveMemberFieldsWrap', wrapMode === 'removeMember' ? 'grid' : 'none');
             setWrap('editChangeAddressFieldsWrap', wrapMode === 'changeAddress' ? 'grid' : 'none');
+            setWrap('editUpdateMobileFieldsWrap', wrapMode === 'updateMobile' ? 'grid' : 'none');
+            const isRationFieldsVisible = (wrapMode === 'newCard') && (forceMasterProfile || Boolean(modalCfg.showGasToggle));
+            setWrap('editRationFieldsWrap', isRationFieldsVisible ? 'contents' : 'none');
 
             if (!forceMasterProfile && activePlugin?.uiCartridge && typeof activePlugin.uiCartridge.renderCustomView === 'function') {
                 const handled = await activePlugin.uiCartridge.renderCustomView({
@@ -930,9 +949,10 @@
 
             // Physical disk document verification: single source of truth from backend documents-list
             let verifiedPhysicalDocs = [];
-            if (activeCustMob) {
+            const docsTargetKey = activeDraftKey || activeCustMob;
+            if (docsTargetKey) {
                 try {
-                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(activeCustMob)}/documents-list`);
+                    const docListRes = await fetch(`/api/drafts/${encodeURIComponent(docsTargetKey)}/documents-list`);
                     const docListJson = await docListRes.json();
                     if (docListJson && docListJson.success && Array.isArray(docListJson.documents)) {
                         verifiedPhysicalDocs = docListJson.documents;
@@ -1021,13 +1041,14 @@
             // 2. Aadhaar (Strict Physical Disk Verification)
             const dMap = Object.assign({}, currentCitizenData?.documents || {}, data?.documents || {});
             const foundHeadAadh = getVerifiedDoc('headAadhaar');
-            const fallbackAadhUrl = (dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath) ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/headAadhaar` : '';
+            const headAadhFallbackPath = dMap.headAadhaar || data?.headAadhaarDocPath || currentCitizenData?.headAadhaarDocPath || data?.members?.[0]?.docPath || dMap.headAadhaarFront;
+            const fallbackAadhUrl = headAadhFallbackPath ? `/api/drafts/${encodeURIComponent(activeCustMob)}/doc/headAadhaar` : '';
             const headAadhUrl = foundHeadAadh ? foundHeadAadh.previewUrl : fallbackAadhUrl;
-            const headAadhIsPdf = foundHeadAadh ? foundHeadAadh.isPdf : Boolean(String(dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath || '').toLowerCase().endsWith('.pdf'));
+            const headAadhIsPdf = foundHeadAadh ? foundHeadAadh.isPdf : Boolean(String(headAadhFallbackPath || '').toLowerCase().endsWith('.pdf'));
             renderDocPreview(headAadhUrl, 'editHeadAadhaarPreview', 'editHeadAadhaarPlaceholder', 'editHeadAadhaarPdfBadge', 'editHeadAadhaarStatus', 'editHeadAadhaarViewBtn', 'ஆதார் அட்டை தேவை', 'editHeadAadhaarDeleteBtn', headAadhIsPdf);
-            const aadhStr = String(foundHeadAadh ? (foundHeadAadh.previewUrl || foundHeadAadh.path || '') : (dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath || ''));
+            const aadhStr = String(foundHeadAadh ? (foundHeadAadh.previewUrl || foundHeadAadh.path || '') : (headAadhFallbackPath || ''));
             const hasAadhBack = Boolean(dMap.headAadhaarBack || aadhStr.includes('merged') || aadhStr.includes('dual') || aadhStr.includes('2in1') || aadhStr.endsWith('.pdf'));
-            const hasAadhFront = Boolean(foundHeadAadh || dMap.headAadhaarFront || dMap.headAadhaar || currentCitizenData?.headAadhaarDocPath);
+            const hasAadhFront = Boolean(foundHeadAadh || dMap.headAadhaarFront || dMap.headAadhaar || data?.headAadhaarDocPath || currentCitizenData?.headAadhaarDocPath || data?.members?.[0]?.docPath);
             updateDualSideButtonStates('headAadhaar', hasAadhFront, hasAadhBack);
 
             // 3. Residence Proof / Gas Book (Strict Physical Disk Verification)
@@ -1403,8 +1424,11 @@
             window.forceMasterProfile = false;
             if (opts && opts.skipHistoryRefresh) return;
             const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || '';
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             if (activeCustMob) {
-                fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}`)
+                fetch(`/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}${activeDraftId ? `&draftId=${encodeURIComponent(activeDraftId)}` : ''}`, {
+                    headers: { 'x-session-mobile': activeCustMob, 'x-draft-id': activeDraftId }
+                })
                     .then(r => r.json())
                     .then(cd => {
                         if (cd && cd.chatHistory && typeof renderMessages === 'function') {
@@ -1423,14 +1447,14 @@
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> சேமித்து சமர்ப்பிக்கப்படுகிறது...';
             }
             try {
+                const wasMasterOnly = Boolean(currentEditModalIsMasterProfile && !currentCitizenData?.subService);
                 // 1. Save all edited fields & pending uploads silently (without re-thrashing chat DOM before submit)
                 await saveEditedProfile(true);
                 closeEditModal({ skipHistoryRefresh: true });
 
-                // If purely Master Profile Vault (no active application flow), do not launch portal automation
-                if (currentEditModalIsMasterProfile && !currentCitizenData?.subService) {
+                if (wasMasterOnly) {
                     if (typeof showEsevaToast === 'function') {
-                        showEsevaToast('✅ மாஸ்டர் சுயவிவர விவரங்கள் வெற்றிகரமாகச் சேமிக்கப்பட்டன!', 'success');
+                        showEsevaToast('✅ விவரங்கள் வெற்றிகரமாகச் சேமிக்கப்பட்டன!', 'success');
                     }
                     return;
                 }
@@ -1458,6 +1482,7 @@
 
             const enteredMob = (document.getElementById('editMobile')?.value || '').replace(/\D/g, '');
             const activeCustMob = originalEditingMobile || localStorage.getItem('eseva_active_customer_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || '';
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             const targetMob = enteredMob || activeCustMob;
             const opUid = localStorage.getItem('eseva_operator_uid') || '';
             const isMobileChanged = Boolean(originalEditingMobile && enteredMob && enteredMob.length === 10 && originalEditingMobile !== enteredMob);
@@ -1472,6 +1497,7 @@
                         fd.append('file', item.file);
                         fd.append('docType', item.docType);
                         fd.append('mobileNumber', targetMob);
+                        if (activeDraftId) fd.append('draftId', activeDraftId);
                         if (isMobileChanged) {
                             fd.append('oldMobileNumber', originalEditingMobile);
                         }
@@ -1485,6 +1511,7 @@
                             method: 'POST',
                             headers: {
                                 'x-session-mobile': targetMob,
+                                'x-draft-id': activeDraftId,
                                 ...(isMobileChanged ? { 'x-old-session-mobile': originalEditingMobile } : {}),
                                 'x-operator-uid': opUid
                             },
@@ -1502,9 +1529,9 @@
             }
 
             // 2. Update profile details strictly via Active Service UI Cartridge
-            const sData = (currentCitizenData && currentCitizenData.subServiceData) || window.lastSubServiceData || {};
+            const sData = (currentCitizenData && currentCitizenData.subServiceData) || {};
             const resolvedPlugin = (!forceMasterProfile && window.ESEVA_PLUGINS?.resolveServicePlugin)
-                ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData || {}, { localActiveSvc: window.lastSubService })
+                ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData || {})
                 : null;
             const defaultNewCardPlugin = window.ESEVA_PLUGINS?.getPluginById ? window.ESEVA_PLUGINS.getPluginById('TNPDS_NEW_CARD') : null;
             const activePlugin = forceMasterProfile ? null : (resolvedPlugin || defaultNewCardPlugin);
@@ -1567,8 +1594,8 @@
                     }
                 }
 
-                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : (cartridgeCollected?.subService || currentCitizenData?.subService || window.lastSubService || null);
-                const keepSubData = forceMasterProfile ? (currentCitizenData?.subServiceData || null) : (cartridgeCollected?.subServiceData || currentCitizenData?.subServiceData || window.lastSubServiceData || null);
+                const keepSub = forceMasterProfile ? (currentCitizenData?.subService || null) : (cartridgeCollected?.subService || currentCitizenData?.subService || null);
+                const keepSubData = (keepSub === 'NEW_CARD' || !keepSub) ? {} : (forceMasterProfile ? (currentCitizenData?.subServiceData || null) : (cartridgeCollected?.subServiceData || currentCitizenData?.subServiceData || null));
 
                 // Collect Master Vault extension fields cleanly ONLY when forceMasterProfile is true
                 const vaultMergedFields = {};
@@ -1648,11 +1675,13 @@
 
             const safeIncVal = updated?.annualIncome || currentCitizenData?.annualIncome || '';
             try {
+                const editDraftId = localStorage.getItem('eseva_active_draft_id') || '';
                 const res = await fetch('/api/profile/update', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
                         'x-session-mobile': targetMob,
+                        ...(editDraftId && !isMobileChanged ? { 'x-draft-id': editDraftId } : {}),
                         ...(isMobileChanged ? { 'x-old-session-mobile': originalEditingMobile } : {}),
                         'x-operator-uid': opUid
                     },
@@ -1798,36 +1827,5 @@
             syncDevMockUI();
         })();
 
-        // Robust Event Listener Binder for Sidebar Edit & Save Controls
-        (function initSidebarActionBindings() {
-            function bindActionButtons() {
-                const editBtn = document.getElementById('btnSidebarEdit');
-                if (editBtn && !editBtn._hasListener) {
-                    editBtn._hasListener = true;
-                    editBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof window.openEditModal === 'function') {
-                            window.openEditModal(null, false);
-                        }
-                    });
-                }
-                const saveBtn = document.getElementById('btnSidebarSave');
-                if (saveBtn && !saveBtn._hasListener) {
-                    saveBtn._hasListener = true;
-                    saveBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof window.saveCurrentDraftManually === 'function') {
-                            window.saveCurrentDraftManually();
-                        }
-                    });
-                }
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', bindActionButtons);
-            } else {
-                bindActionButtons();
-            }
-            setTimeout(bindActionButtons, 1000);
-        })();
+        // (Note: #btnSidebarEdit and #btnSidebarSave already wire onclick handlers directly in index.html;
+        // removed redundant addEventListener bindings here to prevent double-firing clicks.)

@@ -1,11 +1,56 @@
 // eSevaDraft Domain Module: automation_hud.js
 
+        function dismissLiveStepperCard() {
+            window.isAutomationManuallyStopped = true;
+            document.querySelectorAll('#liveAutomationStepperCard, .live-automation-stepper, #liveAutomationStatusCard').forEach(el => el.remove());
+            const pBar = document.getElementById('automationProgressBar');
+            if (pBar) {
+                pBar.classList.remove('active');
+                pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
+            }
+            const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+            if (headerStopBtn) headerStopBtn.style.display = 'none';
+        }
+
+        function markLiveStepperFinished(stepperCard, isSuccess = true) {
+            if (!stepperCard) return;
+            stepperCard.dataset.finished = 'true';
+            const pulseRing = stepperCard.querySelector('.live-stepper-pulse-ring');
+            if (pulseRing) {
+                pulseRing.innerHTML = isSuccess
+                    ? '<i class="fa-solid fa-circle-check" style="color:#16a34a;font-size:16px;"></i>'
+                    : '<i class="fa-solid fa-circle-stop" style="color:#dc2626;font-size:16px;"></i>';
+            }
+            const heading = stepperCard.querySelector('.live-stepper-heading');
+            if (heading) {
+                heading.innerText = isSuccess
+                    ? 'அரசு போர்ட்டல் செயல்முறை நிறைவுற்றது ✓'
+                    : 'அரசு போர்ட்டல் இயக்கம் நிறுத்தப்பட்டது';
+            }
+            const sub = stepperCard.querySelector('.live-stepper-sub');
+            if (sub) {
+                sub.innerText = isSuccess ? 'Pre-Submit நிலை — முடிந்தது' : 'நிறுத்தப்பட்டது';
+            }
+        }
+
         async function syncAutomationProgress() {
             const authScreen = document.getElementById('authScreen');
             if (authScreen && authScreen.style.display !== 'none') return;
+            const isOp = localStorage.getItem('eseva_user_role') === 'operator';
+            const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
+            if (window.isScreenResetting || window.isAutomationManuallyStopped || (isOp && !activeCustMob)) {
+                const pBar = document.getElementById('automationProgressBar');
+                if (pBar) pBar.classList.remove('active');
+                const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+                if (headerStopBtn) headerStopBtn.style.display = 'none';
+                if (isOp && !activeCustMob) {
+                    document.querySelectorAll('#liveAutomationStepperCard, .live-automation-stepper').forEach(el => el.remove());
+                }
+                return;
+            }
 
             try {
-                const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+                const activeMob = activeCustMob || localStorage.getItem('eseva_user_mobile') || '';
                 const url = activeMob ? `/api/automation/progress?mobile=${encodeURIComponent(activeMob)}` : '/api/automation/progress';
                 const res = await fetch(url, {
                     headers: { 'x-session-mobile': activeMob }
@@ -214,10 +259,28 @@
             const isSuccess = (stepNum === 51 || msg.includes('பதிவு எண் பெறப்பட்டது') || msg.includes('விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது'));
             const isDoneMessage = msg.startsWith('✓') || msg.includes('சரிபார்க்கப்பட்டது!') || msg.includes('பூர்த்தி செய்யப்பட்டது!') || msg.includes('வெற்றிகரமாக');
 
-            // Find matching canonical entry
+            // Find matching canonical entry (ONLY use 51-step New Card registry when totalSteps === 51!)
+            const is51StepNewCard = (totalSteps === 51);
             let matchedCanonical = null;
             if (stepNum > 0) {
-                matchedCanonical = CANONICAL_STEP_REGISTRY.find(c => stepNum >= c.step && stepNum <= c.maxStep);
+                if (is51StepNewCard) {
+                    matchedCanonical = CANONICAL_STEP_REGISTRY.find(c => stepNum >= c.step && stepNum <= c.maxStep);
+                } else {
+                    const cleanStepLabel = msg
+                        .replace(/^\[\s*(?:படி|படிகள்|Step)\s*\d+(?:\s*-\s*\d+)?\s*\/\s*\d+\]\s*/i, '')
+                        .replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\s]+/u, '')
+                        .replace(/\*\*/g, '')
+                        .trim()
+                        .slice(0, 72) || `படி ${stepNum}/${totalSteps}`;
+                    matchedCanonical = {
+                        id: `sub_step_${stepNum}`,
+                        step: stepNum,
+                        maxStep: stepNum,
+                        num: stepNum,
+                        icon: 'fa-bolt',
+                        label: cleanStepLabel
+                    };
+                }
             }
             if (!matchedCanonical && !isCaptcha && !isError && stepNum === 0) {
                 return; // non-step raw log
@@ -225,7 +288,7 @@
 
             // Extract detail from parentheses if present (e.g. Ranipet, Kumaran K, 9790170026)
             let detail = '';
-            const parenMatch = msg.match(/\(([^)]+)\)/);
+            const parenMatch = is51StepNewCard ? msg.match(/\(([^)]+)\)/) : null;
             if (parenMatch && parenMatch[1] && !parenMatch[1].includes('/') && parenMatch[1].length < 35) {
                 const val = parenMatch[1].trim();
                 // Never show raw 6-digit OTP codes or OTP-related numbers in stepper titles
@@ -253,7 +316,12 @@
                                 <span class="live-stepper-sub">Live Stepper Pipeline</span>
                             </div>
                         </div>
-                        <span id="stepperStepBadge" class="live-stepper-badge">படி ${stepNum > 0 ? stepNum : 1}/51</span>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span id="stepperStepBadge" class="live-stepper-badge">படி ${stepNum > 0 ? stepNum : 1}/${totalSteps || 51}</span>
+                            <button type="button" onclick="dismissLiveStepperCard()" title="மூடு (Close)" style="border:1px solid #cbd5e1;background:#ffffff;color:#475569;border-radius:6px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
                     </div>
                     <div id="stepperItemsList" class="live-stepper-list"></div>
                     <div id="stepperActionContainer" class="live-stepper-actions"></div>
@@ -262,6 +330,7 @@
             }
 
             stepperCard.dataset.currentStep = String(stepNum);
+            stepperCard.dataset.totalSteps = String(totalSteps || 51);
 
             // Update Progress Badge
             const badge = stepperCard.querySelector('#stepperStepBadge');
@@ -279,50 +348,63 @@
             }
 
             if (itemsList && matchedCanonical) {
-                const targetIdx = CANONICAL_STEP_REGISTRY.indexOf(matchedCanonical);
+                if (is51StepNewCard) {
+                    const targetIdx = CANONICAL_STEP_REGISTRY.indexOf(matchedCanonical);
 
-                // 1. Backfill all prior steps if missing
-                for (let i = 0; i < targetIdx; i++) {
-                    const prior = CANONICAL_STEP_REGISTRY[i];
-                    let priorRow = itemsList.querySelector(`.stepper-row[data-step-id="${prior.id}"]`);
-                    if (!priorRow) {
-                        priorRow = document.createElement('div');
-                        priorRow.className = 'stepper-row is-done';
-                        priorRow.dataset.stepId = prior.id;
-                        priorRow.innerHTML = `
-                            <div class="stepper-row-left">
-                                <span class="stepper-badge"><i class="fa-solid fa-check"></i></span>
-                                <span class="stepper-label">${prior.label}</span>
-                            </div>
-                            <span class="stepper-status">முடிந்தது ✓</span>
-                        `;
-                        itemsList.appendChild(priorRow);
-                    } else {
-                        // Ensure prior row is marked completed
-                        priorRow.className = 'stepper-row is-done';
-                        const pBadge = priorRow.querySelector('.stepper-badge');
-                        const pStatus = priorRow.querySelector('.stepper-status');
-                        if (pBadge && !pBadge.innerHTML.includes('fa-check')) {
-                            pBadge.innerHTML = '<i class="fa-solid fa-check"></i>';
-                        }
-                        if (pStatus && pStatus.innerText !== 'முடிந்தது ✓') {
-                            pStatus.innerText = 'முடிந்தது ✓';
+                    // 1. Backfill all prior steps if missing
+                    for (let i = 0; i < targetIdx; i++) {
+                        const prior = CANONICAL_STEP_REGISTRY[i];
+                        let priorRow = itemsList.querySelector(`.stepper-row[data-step-id="${prior.id}"]`);
+                        if (!priorRow) {
+                            priorRow = document.createElement('div');
+                            priorRow.className = 'stepper-row is-done';
+                            priorRow.dataset.stepId = prior.id;
+                            priorRow.innerHTML = `
+                                <div class="stepper-row-left">
+                                    <span class="stepper-badge"><i class="fa-solid fa-check"></i></span>
+                                    <span class="stepper-label">${prior.label}</span>
+                                </div>
+                                <span class="stepper-status">முடிந்தது ✓</span>
+                            `;
+                            itemsList.appendChild(priorRow);
+                        } else {
+                            priorRow.className = 'stepper-row is-done';
+                            const pBadge = priorRow.querySelector('.stepper-badge');
+                            const pStatus = priorRow.querySelector('.stepper-status');
+                            if (pBadge && !pBadge.innerHTML.includes('fa-check')) {
+                                pBadge.innerHTML = '<i class="fa-solid fa-check"></i>';
+                            }
+                            if (pStatus && pStatus.innerText !== 'முடிந்தது ✓') {
+                                pStatus.innerText = 'முடிந்தது ✓';
+                            }
                         }
                     }
+                } else {
+                    // For non-51-step flows (e.g. 12-step TNPDS sub-services), mark all prior rendered rows as done
+                    itemsList.querySelectorAll('.stepper-row').forEach(prevRow => {
+                        if (prevRow.dataset.stepId !== matchedCanonical.id) {
+                            prevRow.className = 'stepper-row is-done';
+                            const pBadge = prevRow.querySelector('.stepper-badge');
+                            const pStatus = prevRow.querySelector('.stepper-status');
+                            if (pBadge) pBadge.innerHTML = '<i class="fa-solid fa-check"></i>';
+                            if (pStatus) pStatus.innerText = 'முடிந்தது ✓';
+                        }
+                    });
                 }
 
                 // 2. Render or Update Current Step Row
                 let curRow = itemsList.querySelector(`.stepper-row[data-step-id="${matchedCanonical.id}"]`);
                 const rowLabelText = `${matchedCanonical.label}${detail}`;
-                const rowStatusText = isOtp ? 'OTP தேவை' : (isApproval ? 'ஒப்புதல் தேவை' : (isError ? 'பிழை' : (isDoneMessage || isSuccess ? 'முடிந்தது ✓' : 'இயங்குகிறது...')));
-                const rowStateClass = isOtp ? 'is-otp' : (isApproval ? 'is-approval' : (isError ? 'is-error' : (isDoneMessage || isSuccess ? 'is-done' : 'is-running')));
+                const isFinalStepReached = stepNum >= (totalSteps || 51);
+                const rowStatusText = isOtp ? 'OTP தேவை' : (isApproval ? 'ஒப்புதல் தேவை' : (isError ? 'பிழை' : (isDoneMessage || isSuccess || isFinalStepReached ? 'முடிந்தது ✓' : 'இயங்குகிறது...')));
+                const rowStateClass = isOtp ? 'is-otp' : (isApproval ? 'is-approval' : (isError ? 'is-error' : (isDoneMessage || isSuccess || isFinalStepReached ? 'is-done' : 'is-running')));
 
                 let badgeHtml = `${matchedCanonical.num}`;
                 if (isOtp) {
                     badgeHtml = '<i class="fa-solid fa-key"></i>';
                 } else if (isApproval) {
                     badgeHtml = '<i class="fa-solid fa-clipboard-check"></i>';
-                } else if (isDoneMessage || isSuccess) {
+                } else if (isDoneMessage || isSuccess || isFinalStepReached) {
                     badgeHtml = '<i class="fa-solid fa-check"></i>';
                 } else if (isError) {
                     badgeHtml = '<i class="fa-solid fa-xmark"></i>';
@@ -346,8 +428,12 @@
                     const l = curRow.querySelector('.stepper-label');
                     const s = curRow.querySelector('.stepper-status');
                     if (b) b.innerHTML = badgeHtml;
-                    if (l && detail) l.innerText = rowLabelText;
+                    if (l && (detail || !is51StepNewCard)) l.innerText = rowLabelText;
                     if (s) s.innerText = rowStatusText;
+                }
+
+                if (isFinalStepReached || isSuccess) {
+                    markLiveStepperFinished(stepperCard, true);
                 }
 
                 // Smooth scroll to keep latest step visible
@@ -537,6 +623,8 @@
                 }
             } else if (res && res.success) {
                 appendLiveAutomationStep(res.message || '🎉 **குடும்ப உறுப்பினர் சேர்க்கை மாதிரி ஒத்திகை 100% வெற்றிகரமாக முடிந்தது!**\n\n• உறுப்பினர் விவரங்கள் போர்ட்டலில் சரிபார்க்கப்பட்டன.\n• சுய அறிவிப்பு Checkbox [✓] திக் செய்யப்பட்டுவிட்டது.\n• அசல் கார்டில் மாற்றமின்றி இறுதி சமர்ப்பிப்புக்கு முன் பாதுகாப்பாக நிறுத்தப்பட்டது.');
+                const stepperDone = document.getElementById('liveAutomationStepperCard');
+                if (stepperDone) markLiveStepperFinished(stepperDone, true);
                 updateAutomationProgressBar(51, 51, 'முழு வெற்றி (Success)');
             } else if (res && !res.success) {
                 if (window.isScreenResetting || res?.silent || (res?.stopped && !res?.wasRunning)) {
@@ -720,7 +808,7 @@
                         <button type="button" onclick="clearAutomationScreenSession()" class="stopped-btn stopped-btn-clear">
                             <i class="fa-solid fa-broom"></i> <span>துடை (Clear)</span>
                         </button>
-                        <button type="button" onclick="startTnpdsAutomationFlow(true)" class="stopped-btn stopped-btn-restart">
+                        <button type="button" onclick="proceedConfirmedSubmit(true)" class="stopped-btn stopped-btn-restart">
                             <i class="fa-solid fa-rotate-right"></i> <span>மீண்டும் தொடங்கு</span>
                         </button>
                     </div>
@@ -776,19 +864,23 @@
         async function clearAutomationScreenSession() {
             // 1. Instantly set reset lock and wipe active session from client (0ms UI latency)
             window.isScreenResetting = true;
+            window.isAutomationManuallyStopped = true;
             setTimeout(() => { window.isScreenResetting = false; }, 3000);
 
             const activeMob = localStorage.getItem('eseva_active_customer_mobile') || '';
             localStorage.removeItem('eseva_active_customer_mobile');
+            localStorage.removeItem('eseva_active_draft_id');
             localStorage.removeItem('eseva_active_customer_name');
             currentCitizenData = null;
             window.currentCitizenData = null;
+            window.lastSubService = null;
+            window.lastSubServiceData = null;
             if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
             if (typeof clearCustomerDocCache === 'function' && activeMob) clearCustomerDocCache(activeMob);
             lastRenderedChatHistoryJson = '';
             lastRenderedChatHistoryLength = 0;
 
-            // 2. Hide progress bar and action buttons immediately
+            // 2. Hide progress bar, action buttons, and any live stepper cards immediately
             const pBar = document.getElementById('automationProgressBar');
             if (pBar) {
                 pBar.classList.remove('active');
@@ -800,6 +892,15 @@
             if (clearHeaderBtn) clearHeaderBtn.style.display = 'none';
             const clearSidebarBtn = document.getElementById('btnClearScreenSidebar') || document.getElementById('btnDeleteDraftSidebar');
             if (clearSidebarBtn) clearSidebarBtn.style.display = 'none';
+            const rBanner = document.getElementById('resumeBanner');
+            if (rBanner) { rBanner.classList.remove('show'); rBanner.style.display = 'none'; }
+            const aBanner = document.getElementById('appNumberBanner');
+            if (aBanner) { aBanner.classList.remove('show'); aBanner.style.display = 'none'; }
+            const saveTopBtn = document.getElementById('btnSaveDraftTop');
+            if (saveTopBtn) saveTopBtn.style.display = 'none';
+            const titleEl = document.getElementById('activeCustomerTitle');
+            if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
+            document.querySelectorAll('#liveAutomationStepperCard, .live-automation-stepper, #liveAutomationStatusCard, .automation-stopped-pill, .compact-otp-card, #globalOtpCardContainer').forEach(el => el.remove());
 
             // Clean chat messages immediately
             const chatBox = document.getElementById('chatMessages') || chatMessages;
@@ -833,16 +934,16 @@
             }
         }
 
-        // Register global automation listeners immediately on desktop bridge
+        // Register global automation listeners immediately on desktop bridge (unified guard flag)
         if (typeof window !== 'undefined' && window.esevaDesktopBridge) {
-            if (window.esevaDesktopBridge.onAutomationUpdate && !window.__globalDesktopUpdateListenerRegistered) {
-                window.__globalDesktopUpdateListenerRegistered = true;
+            if (window.esevaDesktopBridge.onAutomationUpdate && !window.__desktopUpdateListenerRegistered) {
+                window.__desktopUpdateListenerRegistered = true;
                 window.esevaDesktopBridge.onAutomationUpdate((msg) => {
                     appendLiveAutomationStep(msg);
                 });
             }
-            if (window.esevaDesktopBridge.onAutomationFinished && !window.__globalDesktopFinishedListenerRegistered) {
-                window.__globalDesktopFinishedListenerRegistered = true;
+            if (window.esevaDesktopBridge.onAutomationFinished && !window.__desktopFinishedListenerRegistered) {
+                window.__desktopFinishedListenerRegistered = true;
                 window.esevaDesktopBridge.onAutomationFinished((res) => {
                     handleAutomationFinished(res);
                 });

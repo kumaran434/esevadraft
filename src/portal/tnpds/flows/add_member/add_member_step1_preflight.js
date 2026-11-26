@@ -129,12 +129,16 @@ async function executeStep1Preflight(page, onProgress, sharedContext, captureTel
         if (curUrl.includes('/pages/home') || curUrl === 'https://www.tnpds.gov.in/' || curUrl === 'https://www.tnpds.gov.in') {
             await showBrowserHud('[படி 1/12] TNPDS முகப்புப் பக்கம்', 'உறுப்பினரை சேர்க்க தேர்வு செய்யப்படுகிறது...');
             try {
-                const addMemberLink = page.locator('a:has-text("உறுப்பினரை சேர்க்க"), li:has-text("உறுப்பினரை சேர்க்க") a, span:has-text("உறுப்பினரை சேர்க்க"), [routerlink*="service-request"], a[href*="service-request"]').first();
+                const addMemberLink = page.locator('a:has-text("உறுப்பினரை சேர்க்க"), a:has-text("உறுப்பினரைச் சேர்க்க"), a:has-text("Add Member")').first();
                 if (await addMemberLink.count() > 0 && await addMemberLink.isVisible().catch(() => false)) {
-                    onProgress('[படி 1/12] 🔗 முகப்பில் "உறுப்பினரை சேர்க்க" கிளிக் செய்யப்படுகிறது...');
-                    const hClicked = await humanClick(page, addMemberLink);
-                    if (!hClicked) await addMemberLink.click({ force: true }).catch(() => {});
-                    await page.waitForTimeout(2500);
+                    const linkHref = (await addMemberLink.getAttribute('href').catch(() => '')) || '';
+                    const linkTxt = (await addMemberLink.innerText().catch(() => '')) || '';
+                    if (!/newsmartcard|புதிய மின்னணு/i.test(linkHref + ' ' + linkTxt)) {
+                        onProgress('[படி 1/12] 🔗 முகப்பில் "உறுப்பினரை சேர்க்க" கிளிக் செய்யப்படுகிறது...');
+                        const hClicked = await humanClick(page, addMemberLink);
+                        if (!hClicked) await addMemberLink.click({ force: true }).catch(() => {});
+                        await page.waitForTimeout(2500);
+                    }
                 }
                 if (page.url().includes('/pages/home') && attempt >= 1) {
                     await page.goto('https://www.tnpds.gov.in/pages/service-request', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});

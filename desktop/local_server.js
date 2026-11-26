@@ -7,10 +7,8 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { app, BrowserWindow } = require('electron');
-process.env.DESKTOP_RUNTIME = '1';
-const OFFICIAL_PRODUCTION_GEMINI_KEY = Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8');
-if (!process.env.GEMINI_API_KEY) {
-    process.env.GEMINI_API_KEY = OFFICIAL_PRODUCTION_GEMINI_KEY;
+if (process.versions && process.versions.electron) {
+    process.env.DESKTOP_RUNTIME = '1';
 }
 
 // Local Engine Crash Immunizers
@@ -315,22 +313,13 @@ function handleNewCustomer(req, res) {
                 cleanMobile = cleanMobile.slice(-10);
             }
 
-            const { getCitizenDraft, saveCitizenDraft } = require('../firestore_db');
-            let draft = null;
-            if (!isTempWalkin && cleanMobile) {
-                try { draft = await getCitizenDraft(cleanMobile); } catch (_) {}
-            }
-
-            let citizenProfile = (draft && draft.citizenProfile) || {
-                mobileNumber: isTempWalkin ? '' : cleanMobile,
-                fullNameTam: customerName || '',
-                fullNameEng: customerName || ''
-            };
-
+            // Golden Rule 24 (100% Pure Fresh Mode): NEVER pre-fill old draft fields or docs into a fresh session!
             const initialName = (customerName || '').trim();
-            if (initialName && !citizenProfile.fullNameTam) {
-                citizenProfile.fullNameTam = initialName;
-            }
+            const citizenProfile = {
+                mobileNumber: isTempWalkin ? '' : cleanMobile,
+                fullNameTam: initialName,
+                fullNameEng: initialName
+            };
 
             const phoneDisplay = isTempWalkin ? '' : ` (+91 ${cleanMobile})`;
             const resolvedName = (citizenProfile && (citizenProfile.fullNameTam || citizenProfile.fullNameEng)) || initialName || '';
@@ -353,16 +342,21 @@ function handleNewCustomer(req, res) {
                 ]
             }];
 
+            // Do NOT overwrite an existing customer's saved disk draft or collide across operators!
+            const uniqueDraftId = isTempWalkin ? cleanMobile : `${cleanMobile}_${Date.now()}`;
             if (!isTempWalkin && cleanMobile) {
                 try {
-                    await saveCitizenDraft(cleanMobile, {
+                    const { saveCitizenDraft } = require('../firestore_db');
+                    await saveCitizenDraft(uniqueDraftId, {
+                        draftId: uniqueDraftId,
+                        mobileNumber: cleanMobile,
                         operatorUid,
                         operatorName,
                         operatorMobile,
                         citizenProfile,
                         subService: null,
                         subServiceData: null,
-                        documents: (draft && draft.documents) || {},
+                        documents: {},
                         chatHistory,
                         intakeState: 'SERVICE_SELECTION',
                         step: 'SERVICE_SELECTION',
@@ -379,6 +373,7 @@ function handleNewCustomer(req, res) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
                 success: true,
+                draftId: uniqueDraftId,
                 customerMobile: cleanMobile,
                 isWalkin: isTempWalkin,
                 customerName: (citizenProfile.fullNameTam || citizenProfile.fullNameEng) || initialName || '',
@@ -611,6 +606,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                         else if (action === 'close') win.close();
                         else if (action === 'focus') {
                             if (win.isMinimized()) win.restore();
+                            win.blur();
                             win.focus();
                             if (win.webContents) win.webContents.focus();
                         }
@@ -623,8 +619,14 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 }
             }
 
-            // 2.05 Desktop Live Vision & State Inspector
+            // 2.05 Desktop Live Vision & State Inspector (Loopback ONLY for security)
             if (urlPath === '/api/desktop/inspect-live' || urlPath === '/api/desktop/live-state') {
+                const remoteAddr = String(req.socket?.remoteAddress || '').trim();
+                const isLoopback = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
+                if (!isLoopback) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Loopback access only' }));
+                }
                 try {
                     let win = null;
                     try {
@@ -737,24 +739,6 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                                     })()
                                 `);
                                 await new Promise(r => setTimeout(r, 1200));
-                            } else if (action === 'select_home_service') {
-                                const svc = searchParams.get('service') || 'ரேஷன் கார்டு';
-                                await win.webContents.executeJavaScript(`
-                                    (async () => {
-                                        if (typeof citizenStartService === 'function') {
-                                            citizenStartService('${svc}');
-                                        }
-                                        await new Promise(r => setTimeout(r, 400));
-                                        const input = document.getElementById('newCustomerMobileInput');
-                                        if (input) {
-                                            input.value = '${mob}';
-                                            if (typeof startCustomerSessionFromModal === 'function') {
-                                                startCustomerSessionFromModal();
-                                            }
-                                        }
-                                    })()
-                                `);
-                                await new Promise(r => setTimeout(r, 1500));
                             }
                         } catch (_) {}
                     }
@@ -900,15 +884,6 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                         const { getMainWindow } = require('./window_manager');
                         win = getMainWindow();
                     } catch (_) {}
-                    let allWindowsInfo = [];
-                    if (BrowserWindow && BrowserWindow.getAllWindows) {
-                        allWindowsInfo = BrowserWindow.getAllWindows().map(w => ({
-                            id: w.id,
-                            title: w.getTitle ? w.getTitle() : '',
-                            url: w.webContents ? w.webContents.getURL() : '',
-                            isDestroyed: w.isDestroyed()
-                        }));
-                    }
                     if (win && !win.isDestroyed() && win.webContents) {
                         const image = await win.webContents.capturePage();
                         const pngBuf = image.toPNG();
@@ -930,13 +905,15 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 req.on('end', async () => {
                     try {
                         const body = JSON.parse(bodyStr || '{}');
-                        const mob = String(body.mobileNumber || '').replace(/\D/g, '').slice(-10);
+                        const rawDraftKey = String(body.draftId || '').trim();
+                        const mob = String(body.mobileNumber || rawDraftKey || '').split('_')[0].replace(/\D/g, '').slice(-10);
+                        const lookupKey = rawDraftKey || mob;
                         const autoStart = body.autoStart !== false;
                         const { getMainWindow } = require('./window_manager');
                         const { getCitizenDraft } = require('../firestore_db');
                         const { executeLiveDesktopAutomation } = require('./automation_runner');
                         const win = getMainWindow();
-                        const draft = await getCitizenDraft(mob);
+                        const draft = await getCitizenDraft(lookupKey);
 
                         if (win && !win.isDestroyed()) {
                             if (win.isMinimized()) win.restore();
@@ -1035,7 +1012,7 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
             if (urlPath === '/api/automation/progress' && req.method === 'GET') {
                 try {
                     const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
-                    const mob = (parsedUrl.searchParams.get('mobile') || req.headers['x-session-mobile'] || '').replace(/\D/g, '').slice(-10);
+                    const mob = String(parsedUrl.searchParams.get('mobile') || req.headers['x-session-mobile'] || '').split('_')[0].replace(/\D/g, '').slice(-10);
                     let step = 0;
                     let total = 51;
                     let stepMessage = '';
@@ -1372,356 +1349,10 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
                 }
             }
 
-            // 2.8 Local Desktop Drafts & Customer Desk Engine (Direct Local Disk + Firestore Dual-Store)
-            if (urlPath === '/api/drafts' && req.method === 'GET') {
-                try {
-                    const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
-                    const opUid = parsedUrl.searchParams.get('operatorUid') || req.headers['x-operator-uid'] || null;
-                    const { listAllDrafts } = require('../firestore_db');
-                    const drafts = await listAllDrafts(opUid);
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: true, drafts }));
-                } catch (err) {
-                    console.warn('⚠️ [Local Server] listAllDrafts fallback to cloud:', err.message);
-                    return proxyToCloud(req, res);
-                }
-            }
-
-            // Local Verified Documents Endpoint
-            if (urlPath === '/api/drafts/verified-documents' && req.method === 'GET') {
-                try {
-                    const parsedUrl = new URL(req.url, `http://127.0.0.1:${activePort}`);
-                    const mob = parsedUrl.searchParams.get('mobile') || parsedUrl.searchParams.get('mobileNumber') || '';
-                    const { getCitizenDraft } = require('../firestore_db');
-                    let draft = await getCitizenDraft(mob);
-                    let docs = [];
-                    try {
-                        const { extractDraftDocumentsList } = require('../src/services/draft_document_list');
-                        docs = extractDraftDocumentsList(mob, draft);
-                    } catch (_) {}
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: true, mobileNumber: mob, count: docs.length, documents: docs }));
-                } catch (e) {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: true, count: 0, documents: [] }));
-                }
-            }
-
-            // Local Drafts Listing (0ms Instant Latency - Prevents 30s cloud timeout freezes)
-            if ((urlPath === '/api/drafts' || urlPath.startsWith('/api/drafts?')) && req.method === 'GET') {
-                try {
-                    const { listAllDrafts } = require('../firestore_db');
-                    const opUid = req.headers['x-operator-uid'] || null;
-                    const drafts = await listAllDrafts(opUid);
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: true, drafts: drafts || [] }));
-                } catch (err) {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: true, drafts: [] }));
-                }
-            }
-
-            if (urlPath === '/api/drafts/save' && req.method === 'POST') {
-                let bodyStr = '';
-                req.on('data', chunk => { bodyStr += chunk; });
-                req.on('end', async () => {
-                    try {
-                        const body = JSON.parse(bodyStr || '{}');
-                        const targetMobile = body.mobileNumber || body.customerMobile || req.headers['x-session-mobile'];
-                        if (targetMobile) {
-                            const { saveCitizenDraft } = require('../firestore_db');
-                            await saveCitizenDraft(targetMobile, body);
-                            // Dual-Store Invariant: Silently back up to Cloud Firestore in background
-                            syncDraftToCloudInBackground('/api/drafts/save', 'POST', body, {
-                                'x-operator-uid': body.operatorUid || req.headers['x-operator-uid'] || '',
-                                'x-operator-name': encodeURIComponent(body.operatorName || req.headers['x-operator-name'] || '')
-                            });
-                        }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, saved: true }));
-                    } catch (err) {
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: false, error: err.message }));
-                    }
-                });
-                return;
-            }
-
-            if (urlPath === '/api/drafts/delete' && req.method === 'POST') {
-                let bodyStr = '';
-                req.on('data', chunk => { bodyStr += chunk; });
-                req.on('end', async () => {
-                    try {
-                        const body = JSON.parse(bodyStr || '{}');
-                        const mob = String(body.mobileNumber || '').trim();
-                        if (mob) {
-                            const { deleteCitizenDraft } = require('../firestore_db');
-                            await deleteCitizenDraft(mob);
-                            syncDraftToCloudInBackground(`/api/drafts/${mob}`, 'DELETE', null, {
-                                'x-operator-uid': req.headers['x-operator-uid'] || ''
-                            });
-                        }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, deleted: true }));
-                    } catch (err) {
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: false, error: err.message }));
-                    }
-                });
-                return;
-            }
-
-            if (urlPath === '/api/drafts/delete-document' && req.method === 'POST') {
+            // 2.8 Single-Source Drafts Routing: ALL /api/drafts/* handled strictly by Express (draft_routes.js -> app_store.js)
+            if (urlPath === '/api/drafts' || urlPath.startsWith('/api/drafts/')) {
                 const expApp = getLocalExpressApp();
                 if (expApp) return expApp(req, res);
-                let bodyStr = '';
-                req.on('data', chunk => { bodyStr += chunk; });
-                req.on('end', async () => {
-                    try {
-                        const body = JSON.parse(bodyStr || '{}');
-                        const mob = String(body.mobileNumber || body.mobile || req.headers['x-session-mobile'] || '').trim();
-                        const docType = String(body.docType || '').trim();
-                        const memberIndex = parseInt(body.memberIndex || '0', 10);
-                        if (mob && docType) {
-                            const { removeDraftDocument } = require('../src/services/draft_document_resolver');
-                            await removeDraftDocument(mob, docType, memberIndex);
-                        }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, message: 'Document deleted successfully', docType }));
-                    } catch (err) {
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: false, error: err.message }));
-                    }
-                });
-                return;
-            }
-
-            const draftSingleMatch = urlPath.match(/^\/api\/drafts\/([a-zA-Z0-9_+]+)(\/.*)?$/);
-            if (draftSingleMatch) {
-                const mob = draftSingleMatch[1];
-                const subAction = draftSingleMatch[2];
-
-                if (!subAction && req.method === 'GET') {
-                    try {
-                        const { getCitizenDraft } = require('../firestore_db');
-                        const draft = await getCitizenDraft(mob);
-                        if (draft && !draft.isDeleted && draft.status !== 'TRASHED') {
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            return res.end(JSON.stringify({ success: true, draft }));
-                        }
-                    } catch (_) {}
-                    return proxyToCloud(req, res);
-                }
-
-                if (subAction === '/documents-list' && req.method === 'GET') {
-                    try {
-                        const { getCitizenDraft } = require('../firestore_db');
-                        let draft = await getCitizenDraft(mob);
-                        if (!draft || draft.isDeleted || draft.status === 'TRASHED') {
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            return res.end(JSON.stringify({ success: true, mobileNumber: mob, count: 0, documents: [] }));
-                        }
-                        let docs = [];
-                        try {
-                            const { extractDraftDocumentsList } = require('../src/services/draft_document_list');
-                            docs = extractDraftDocumentsList(mob, draft);
-                        } catch (_) {
-                            // Direct fallback document extraction if draft_document_list module path differs in asar
-                            const prof = draft?.citizenProfile || draft || {};
-                            const dMap = draft?.documents || prof.documents || {};
-                            const b64Map = draft?.base64Docs || prof.base64Docs || {};
-                            const checkExists = (p, b) => (b && b.length > 500) || (p && typeof p === 'string' && p.length > 3 && fs.existsSync(p) && fs.statSync(p).size > 100);
-                            if (checkExists(dMap.profilePhoto || prof.headPhotoPath, b64Map.profilePhotoBase64)) {
-                                docs.push({ type: 'profilePhoto', title: 'குடும்பத் தலைவர் புகைப்படம்', titleEng: 'Head Passport Photo', downloadUrl: `/api/drafts/${mob}/doc/profilePhoto?download=1`, previewUrl: `/api/drafts/${mob}/doc/profilePhoto`, icon: 'fa-user' });
-                            }
-                            if (checkExists(dMap.headAadhaar || prof.headAadhaarDocPath, b64Map.headAadhaarBase64)) {
-                                const hName = prof.fullNameTam || prof.fullNameEng || 'தலைவர்';
-                                docs.push({ type: 'headAadhaar', title: `குடும்பத் தலைவர் ஆதார் (${hName})`, titleEng: 'Head of Family Aadhaar', downloadUrl: `/api/drafts/${mob}/doc/headAadhaar?download=1`, previewUrl: `/api/drafts/${mob}/doc/headAadhaar`, icon: 'fa-id-card' });
-                            }
-                            const hasGas = checkExists(dMap.gasBook || prof.gasDetails?.gasBookPath, b64Map.gasBookBase64);
-                            if (hasGas) {
-                                docs.push({ type: 'gasBook', title: 'எரிவாயு இணைப்பு அட்டை / ரசீது', titleEng: 'Gas Consumer Book / Receipt', downloadUrl: `/api/drafts/${mob}/doc/gasBook?download=1`, previewUrl: `/api/drafts/${mob}/doc/gasBook`, icon: 'fa-fire' });
-                            }
-                            if (checkExists(dMap.residenceProof || prof.residenceProof?.docPath, b64Map.residenceProofBase64)) {
-                                docs.push({ type: 'residenceProof', title: prof.residenceProof?.typeTam || 'குடியிருப்புச் சான்று', titleEng: 'Residence Proof', downloadUrl: `/api/drafts/${mob}/doc/residenceProof?download=1`, previewUrl: `/api/drafts/${mob}/doc/residenceProof`, icon: 'fa-house' });
-                            }
-                        }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, mobileNumber: mob, count: docs.length, documents: docs }));
-                    } catch (e) {
-                        console.warn('⚠️ [Local Server] documents-list extraction error:', e.message);
-                    }
-                }
-
-                if (subAction === '/application-pdf' && req.method === 'GET') {
-                    try {
-                        const { getCitizenDraft } = require('../firestore_db');
-                        const draft = await getCitizenDraft(mob);
-                        const { getCitizenProfile } = require('../database');
-                        const prof = (draft && draft.citizenProfile) || (getCitizenProfile ? getCitizenProfile(mob) : {}) || {};
-                        const { generateDraftApplicationPdf } = require('../src/services/tnega_receipt_generator');
-                        const os = require('os');
-                        const tmpPath = path.join(os.tmpdir(), `Application_Draft_${mob}_${Date.now()}.pdf`);
-                        await generateDraftApplicationPdf(tmpPath, {
-                            ...prof,
-                            mobileNumber: mob,
-                            applicationNumber: draft?.applicationNumber || null,
-                            service: draft?.service || prof?.service || 'புதிய ரேஷன் கார்டு',
-                            members: prof?.members || []
-                        });
-                        if (fs.existsSync(tmpPath)) {
-                            res.writeHead(200, {
-                                'Content-Type': 'application/pdf',
-                                'Content-Disposition': `attachment; filename="Application_Draft_${mob}.pdf"`,
-                                'Cache-Control': 'no-cache'
-                            });
-                            const stream = fs.createReadStream(tmpPath);
-                            stream.pipe(res);
-                            stream.on('finish', () => {
-                                setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch (_) {} }, 5000);
-                            });
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn('⚠️ [Local Server] application-pdf generation error:', err.message);
-                    }
-                }
-
-                if (subAction && subAction.startsWith('/doc/')) {
-                    const docType = subAction.replace('/doc/', '').split('?')[0];
-                    try {
-                        const { getCitizenDraft } = require('../firestore_db');
-                        const draft = await getCitizenDraft(mob);
-                        const prof = draft?.citizenProfile || draft || {};
-                        const dMap = draft?.documents || prof.documents || {};
-                        const b64Map = draft?.base64Docs || prof.base64Docs || {};
-                        let docPath = dMap[docType] || prof[docType];
-                        if (docType === 'profilePhoto' && !docPath) docPath = prof.headPhotoPath;
-                        if (docType === 'headAadhaar' && !docPath) docPath = prof.headAadhaarDocPath || prof.members?.[0]?.docPath;
-                        if (docType === 'gasBook' && !docPath) docPath = prof.gasDetails?.gasBookPath || dMap.residenceProof || prof.residenceProof?.docPath;
-                        if (docType === 'residenceProof' && !docPath) docPath = prof.residenceProof?.docPath || dMap.gasBook || prof.gasDetails?.gasBookPath;
-                        if (docType === 'memberAadhaar' && !docPath) docPath = prof.subServiceData?.docPath || prof.members?.[0]?.docPath;
-
-                        if ((docType === 'gasBook' || docType === 'residenceProof') && (!docPath || !fs.existsSync(docPath))) {
-                            const candidateGasDirs = [
-                                path.join(__dirname, '..', 'data', 'uploads', mob),
-                                path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'uploads', mob)
-                            ];
-                            for (const d of candidateGasDirs) {
-                                if (fs.existsSync(d)) {
-                                    for (const gn of ['gas.jpg', 'gas.jpeg', 'gas.png', 'gasBook.jpg', 'residenceProof.jpg']) {
-                                        const gp = path.join(d, gn);
-                                        if (fs.existsSync(gp) && fs.statSync(gp).size > 100) {
-                                            docPath = gp;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (docPath && fs.existsSync(docPath)) break;
-                            }
-                        }
-
-                        if (docPath && typeof docPath === 'string' && !fs.existsSync(docPath)) {
-                            const relClean = docPath.replace(/^[/\\]+/, '');
-                            const candidates = [
-                                path.join('d:', 'downloads', 'ai assitant 2', relClean),
-                                path.join(__dirname, '..', relClean),
-                                path.join('d:', 'downloads', 'ai assitant 2', 'uploads', path.basename(docPath)),
-                                path.join('d:', 'downloads', 'ai assitant 2', 'compressed', path.basename(docPath))
-                            ];
-                            for (const c of candidates) {
-                                if (fs.existsSync(c)) {
-                                    docPath = c;
-                                    break;
-                                }
-                            }
-                        }
-
-                        const isDownload = req.url.includes('download=1');
-
-                        if (docPath && typeof docPath === 'string' && fs.existsSync(docPath)) {
-                            const ext = path.extname(docPath).toLowerCase();
-                            let mime = MIME_TYPES[ext] || 'image/jpeg';
-                            try {
-                                const fd = fs.openSync(docPath, 'r');
-                                const magic = Buffer.alloc(4);
-                                fs.readSync(fd, magic, 0, 4, 0);
-                                fs.closeSync(fd);
-                                if (magic.toString('utf8').startsWith('%PDF')) {
-                                    mime = 'application/pdf';
-                                }
-                            } catch (_) {}
-                            const safeExt = mime === 'application/pdf' ? '.pdf' : (ext || '.jpg');
-                            const dlFilename = `${mob}_${docType}${safeExt}`;
-                            res.writeHead(200, {
-                                'Content-Type': mime,
-                                'Content-Disposition': isDownload ? `attachment; filename="${dlFilename}"` : 'inline',
-                                'Cache-Control': 'no-cache'
-                            });
-                            return fs.createReadStream(docPath).pipe(res);
-                        }
-
-                        // Base64 document fallback if not on disk
-                        const b64Val = b64Map[`${docType}Base64`] || b64Map[docType];
-                        if (b64Val && typeof b64Val === 'string' && b64Val.length > 50) {
-                            const cleanB64 = b64Val.replace(/^data:[^;]+;base64,/, '');
-                            const buf = Buffer.from(cleanB64, 'base64');
-                            const isPdf = buf.length > 4 && buf.slice(0, 4).toString('utf8').startsWith('%PDF');
-                            const ext = isPdf ? '.pdf' : '.jpg';
-                            const mime = isPdf ? 'application/pdf' : 'image/jpeg';
-                            const dlFilename = `${mob}_${docType}${ext}`;
-                            res.writeHead(200, {
-                                'Content-Type': mime,
-                                'Content-Disposition': isDownload ? `attachment; filename="${dlFilename}"` : 'inline',
-                                'Cache-Control': 'no-cache'
-                            });
-                            return res.end(buf);
-                        }
-                    } catch (_) {}
-                }
-
-                if (subAction === '/trash' && req.method === 'POST') {
-                    try {
-                        const { trashCitizenDraft } = require('../firestore_db');
-                        await trashCitizenDraft(mob);
-                        syncDraftToCloudInBackground(`/api/drafts/${mob}/trash`, 'POST', null, {
-                            'x-operator-uid': req.headers['x-operator-uid'] || ''
-                        });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, trashed: true }));
-                    } catch (err) {
-                        return proxyToCloud(req, res);
-                    }
-                }
-
-                if (subAction === '/restore' && req.method === 'POST') {
-                    try {
-                        const { restoreCitizenDraft } = require('../firestore_db');
-                        await restoreCitizenDraft(mob);
-                        syncDraftToCloudInBackground(`/api/drafts/${mob}/restore`, 'POST', null, {
-                            'x-operator-uid': req.headers['x-operator-uid'] || ''
-                        });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, restored: true }));
-                    } catch (err) {
-                        return proxyToCloud(req, res);
-                    }
-                }
-
-                if ((subAction === '/permanent-delete' && req.method === 'POST') || (!subAction && req.method === 'DELETE')) {
-                    try {
-                        const { deleteCitizenDraft } = require('../firestore_db');
-                        await deleteCitizenDraft(mob);
-                        syncDraftToCloudInBackground(`/api/drafts/${mob}`, 'DELETE', null, {
-                            'x-operator-uid': req.headers['x-operator-uid'] || ''
-                        });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ success: true, deleted: true }));
-                    } catch (err) {
-                        return proxyToCloud(req, res);
-                    }
-                }
             }
 
             // 3. Process API and Dynamic Routes Locally via Express Engine (NEVER block static assets!)

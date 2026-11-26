@@ -28,29 +28,42 @@ for (const trackerCand of [
     } catch (_) {}
 }
 
-function readDiskDraftOnly(customerMobile) {
-    const mobClean = String(customerMobile || '').replace(/\D/g, '');
-    if (!mobClean) return { diskDraft: null, mobClean };
-    const candidates = [
-        app ? path.join(app.getPath('userData'), 'data', 'drafts', `${mobClean}.json`) : '',
-        path.join(__dirname, '..', 'data', 'drafts', `${mobClean}.json`),
-        path.join(process.cwd(), 'data', 'drafts', `${mobClean}.json`)
-    ].filter(Boolean);
-    for (const p of candidates) {
-        if (fs.existsSync(p)) {
-            try {
-                const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-                if (parsed && (parsed.citizenProfile || parsed.gasDetails)) {
-                    return { diskDraft: parsed, mobClean };
-                }
-            } catch (_) {}
+function extractClean10DigitMobile(val) {
+    if (!val) return '';
+    const base = String(val).trim().split('_')[0];
+    let digits = base.replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+    return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function readDiskDraftOnly(customerMobile, draftId = '') {
+    const mobClean = extractClean10DigitMobile(customerMobile);
+    const idKey = String(draftId || '').trim();
+    const keysToTry = Array.from(new Set([idKey, mobClean].filter(Boolean)));
+    if (keysToTry.length === 0) return { diskDraft: null, mobClean };
+    for (const key of keysToTry) {
+        const candidates = [
+            app ? path.join(app.getPath('userData'), 'data', 'drafts', `${key}.json`) : '',
+            path.join(__dirname, '..', 'data', 'drafts', `${key}.json`),
+            path.join(process.cwd(), 'data', 'drafts', `${key}.json`)
+        ].filter(Boolean);
+        for (const p of candidates) {
+            if (fs.existsSync(p)) {
+                try {
+                    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+                    if (parsed && (parsed.citizenProfile || parsed.gasDetails)) {
+                        return { diskDraft: parsed, mobClean };
+                    }
+                } catch (_) {}
+            }
         }
     }
     return { diskDraft: null, mobClean };
 }
 
 function resolveDiskDraftAndGas(customerMobile, draftData) {
-    const mobClean = customerMobile.replace(/\D/g, '');
+    const mobClean = extractClean10DigitMobile(customerMobile);
+    const draftIdKey = String(draftData?.draftId || draftData?.citizenProfile?.draftId || '').trim();
     const localMobUploads = path.join(app.getPath('userData'), 'data', 'uploads', mobClean);
     let localGasFound = null;
 
@@ -66,11 +79,12 @@ function resolveDiskDraftAndGas(customerMobile, draftData) {
     }
 
     let diskDraft = null;
-    if (mobClean) {
+    const keysToTry = Array.from(new Set([draftIdKey, mobClean].filter(Boolean)));
+    for (const key of keysToTry) {
         const potentialDraftPaths = [
-            path.join(app.getPath('userData'), 'data', 'drafts', `${mobClean}.json`),
-            path.join(__dirname, '..', 'data', 'drafts', `${mobClean}.json`),
-            path.join(process.cwd(), 'data', 'drafts', `${mobClean}.json`)
+            path.join(app.getPath('userData'), 'data', 'drafts', `${key}.json`),
+            path.join(__dirname, '..', 'data', 'drafts', `${key}.json`),
+            path.join(process.cwd(), 'data', 'drafts', `${key}.json`)
         ];
         for (const p of potentialDraftPaths) {
             if (fs.existsSync(p)) {
@@ -83,6 +97,7 @@ function resolveDiskDraftAndGas(customerMobile, draftData) {
                 } catch (_) {}
             }
         }
+        if (diskDraft) break;
     }
 
     const diskProfile = diskDraft?.citizenProfile || diskDraft || {};
@@ -353,7 +368,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     activeAutomationAborted = false;
     lastMainWindowRef = mainWindow;
     const runTimestamp = Date.now();
-    const customerMobile = (draftData?.mobileNumber || draftData?.citizenProfile?.mobileNumber || 'run').toString().replace(/\D/g, '') || 'run';
+    const customerMobile = extractClean10DigitMobile(draftData?.mobileNumber || draftData?.citizenProfile?.mobileNumber) || 'run';
     const logFileName = `live_desktop_${customerMobile}_${runTimestamp}.log`;
     const appDataLogsDir = path.join(app.getPath('userData'), 'logs');
     const wsLogsDir = path.join('d:', 'downloads', 'ai assitant 2', 'public', 'logs');
@@ -852,6 +867,63 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         });
     }
 
+    // Immediate Browser-Close UI Cleanup Hook:
+    // Whenever the user closes Chrome (either mid-run OR after Dry-Run / Pre-Submit finishes),
+    // immediately notify Electron UI so the live stepper card disappears right away!
+    let runAlreadyCompleted = false;
+    let browserCloseNotified = false;
+    const notifyBrowserClosedToUi = () => {
+        if (browserCloseNotified) return;
+        browserCloseNotified = true;
+        clearRunningSessionState();
+        try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('automation-finished', {
+                    success: false,
+                    stopped: true,
+                    browserClosed: true,
+                    silent: Boolean(runAlreadyCompleted || activeAutomationAborted),
+                    message: 'பிரவுசர் மூடப்பட்டதால் ஆட்டோமேஷன் நிறுத்தப்பட்டது.'
+                });
+            }
+        } catch (_) {}
+    };
+    if (playwrightChromium) {
+        const baseChromium = playwrightChromium;
+        playwrightChromium = new Proxy(baseChromium, {
+            get(target, prop, receiver) {
+                const orig = Reflect.get(target, prop, receiver);
+                if (prop === 'launchPersistentContext' && typeof orig === 'function') {
+                    return async function (...args) {
+                        const ctx = await orig.apply(target, args);
+                        try {
+                            if (ctx && typeof ctx.on === 'function') {
+                                ctx.on('close', notifyBrowserClosedToUi);
+                            }
+                            const b = ctx && typeof ctx.browser === 'function' ? ctx.browser() : null;
+                            if (b && typeof b.on === 'function') {
+                                b.on('disconnected', notifyBrowserClosedToUi);
+                            }
+                        } catch (_) {}
+                        return ctx;
+                    };
+                }
+                if (prop === 'launch' && typeof orig === 'function') {
+                    return async function (...args) {
+                        const br = await orig.apply(target, args);
+                        try {
+                            if (br && typeof br.on === 'function') {
+                                br.on('disconnected', notifyBrowserClosedToUi);
+                            }
+                        } catch (_) {}
+                        return br;
+                    };
+                }
+                return typeof orig === 'function' ? orig.bind(target) : orig;
+            }
+        });
+    }
+
     let automationModule = loadAutomationModule();
     lastActiveTnpdsModule = automationModule;
     setActiveModule(automationModule);
@@ -1001,7 +1073,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
     const targetProfile = {
         ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
-        mobileNumber: draftData?.mobileNumber || resolved.mobClean,
+        mobileNumber: extractClean10DigitMobile(draftData?.mobileNumber || draftData?.citizenProfile?.mobileNumber || resolved.mobClean),
+        draftId: draftData?.draftId || draftData?.citizenProfile?.draftId || resolved.diskDraft?.draftId || '',
         canNumber: String(draftData?.canNumber || draftData?.citizenProfile?.canNumber || resolved.diskDraft?.canNumber || resolved.diskDraft?.citizenProfile?.canNumber || '').replace(/\D+/g, ''),
         subService: isWidow ? 'WIDOW' :
                     (isLegalHeir ? 'LEGAL_HEIR' :
@@ -1052,7 +1125,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         isDryRun: draftData?.isDryRun !== false,
         enableFinalSubmit: draftData?.enableSubmit === true,
         base64Docs,
-        geminiApiKey: process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42S29EYklVZUlJbnMwNGFZLXdxQ2VTTkZidFhXTWxHdzRnY3lqeUVjRnBqdHc=', 'base64').toString('utf8'),
+        geminiApiKey: process.env.GEMINI_API_KEY || '',
         serverUrl: process.env.ESEVA_DEV_URL || 'https://esevadraft.in'
     };
 
@@ -1071,6 +1144,7 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
         clearRunningSessionState();
         writeLogEntry(`[முடிவு நிலை] ஆட்டோமேஷன் நிறைவுற்றது: Success=${res?.success}`);
         const didSucceed = Boolean(res && (res.success === true || isPreSubmitReached(res)));
+        if (didSucceed) runAlreadyCompleted = true;
         if (didSucceed) {
             runCtx.reachedPreSubmit = true;
             runCtx.midRunTelemetrySent = true;

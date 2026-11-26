@@ -20,7 +20,7 @@
             subtitle: 'குடும்ப அட்டை எண் & நீக்கப்படும் உறுப்பினர் விவரங்களை மட்டும் சரிபார்க்கவும்',
             submitButtonHtml: '<i class="fa-solid fa-user-minus"></i> 🚀 குடும்ப உறுப்பினர் நீக்க (Remove Member in TNPDS)',
             isRationHead: false,
-            showMasterButton: true,
+            showMasterButton: false,
             showGasToggle: false,
             customWrapMode: 'removeMember'
         },
@@ -89,8 +89,6 @@
                     subService: 'REMOVE_MEMBER',
                     smartCardNumber: cardNo,
                     rationCardNo: cardNo,
-                    fullNameTam: nameTam,
-                    fullNameEng: nameEng,
                     subServiceData: {
                         ...sData,
                         subService: 'REMOVE_MEMBER',

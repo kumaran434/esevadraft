@@ -60,7 +60,7 @@ function handleAddMemberAdult(text, sess, currentState, uploadedDoc, extractedDo
         sess.subServiceData = sess.subServiceData || {};
         sess.subServiceData.isChild = false;
         sess.subServiceData.docType = 'Aadhaar Card';
-        sess.subServiceData.docPath = uploadedDoc?.path || sess.subServiceData.docPath || 'uploads/kumaran_aadhaar_card.jpeg';
+        sess.subServiceData.docPath = uploadedDoc?.path || sess.subServiceData.docPath || '';
         const isBypass = text === 'TRIGGER_FILE_UPLOAD' || text === 'DEMO_ADULT_AADHAAR' || text === 'ADULT_AADHAAR_CONFIRMED';
 
         let isRealExtracted = false;
@@ -76,8 +76,8 @@ function handleAddMemberAdult(text, sess, currentState, uploadedDoc, extractedDo
                 sess.subServiceData.genderTam = extractedDoc.genderTam || (extractedDoc.gender === 'Female' ? 'பெண்' : 'ஆண்');
             }
         } else {
-            const memName = sess.tempMember?.nameTam || sess.tempMember?.nameEng || (!isBypass ? text : '') || sess.subServiceData.memberName || 'பிரியா';
-            sess.subServiceData.memberName = memName;
+            const memName = sess.tempMember?.nameTam || sess.tempMember?.nameEng || (!isBypass ? text : '') || sess.subServiceData.memberName || '';
+            if (memName) sess.subServiceData.memberName = memName;
             if (text === 'DEMO_ADULT_AADHAAR') {
                 sess.subServiceData.memberName = 'பிரியா';
                 sess.subServiceData.memberNameEng = 'Priya';

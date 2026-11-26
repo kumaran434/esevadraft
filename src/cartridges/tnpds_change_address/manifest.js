@@ -10,6 +10,7 @@ module.exports = {
     code: 'TNPDS-ADDR',
     ownedStates: [
         'RATION_CHANGE_ADDRESS',
+        'RATION_CHANGE_ADDRESS_RESUME_GATE',
         'RATION_CHANGE_ADDRESS_DOC',
         'RATION_CHANGE_ADDRESS_UPLOAD',
         'RATION_CHANGE_ADDRESS_CONFIRM',

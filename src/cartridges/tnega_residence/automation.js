@@ -53,7 +53,7 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
         isMockTest,
         req,
         bannerText: `${modeText}யில் தமிழ்நாடு அரசு TNeGA இருப்பிடச் சான்றிதழ் (REV-102) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
-            `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
+            `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
             `• 📅 **வசிக்கும் காலம்:** ${p.yearsOfResidence || 'பிறப்பிலிருந்து'} ✅\n` +
             `• 🎯 **நோக்கம்:** ${p.purposeOfCertificate || 'கல்வி / வேலைவாய்ப்பு'}\n` +

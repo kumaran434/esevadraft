@@ -218,31 +218,24 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
         } catch (_) {}
     }
 
-    // Priority 4: Search known pre-existing sample Aadhaar files in project
-    const sampleFiles = [
-        'kumaran_aadhaar_card.jpeg',
-        'test_sample_doc.jpg',
-        '1790661792689-kumran_adhar.jpg',
-        '1788678638781-kumaran_aadhaar_card.jpeg',
-        'priya_adhar_.jpg',
-        'priya_sister_aadhaar.pdf'
-    ];
-    for (const sf of sampleFiles) {
-        const cands = [
-            path.join(process.resourcesPath || '', 'uploads', sf),
-            path.join(process.cwd(), 'uploads', sf),
-            path.join('d:/downloads/ai assitant 2/uploads', sf)
-        ];
-        for (const c of cands) {
-            if (fs.existsSync(c)) {
-                return c;
-            }
-        }
-    }
-
-    // Priority 5: Fallback sample JPEG for Dry-Run / Mock
+    // Priority 4 & 5: Sample Aadhaar fallbacks STRICTLY ONLY for Mock Sandbox / Dry-Run (NEVER on live govt portals!)
     const isDryRunActive = Boolean(options.isDryRun || options.draftData?.isDryRun || options.isMockSandbox);
     if (isDryRunActive) {
+        const sampleFiles = [
+            'test_sample_doc.jpg'
+        ];
+        for (const sf of sampleFiles) {
+            const cands = [
+                path.join(process.resourcesPath || '', 'uploads', sf),
+                path.join(process.cwd(), 'uploads', sf),
+                path.join('d:/downloads/ai assitant 2/uploads', sf)
+            ];
+            for (const c of cands) {
+                if (fs.existsSync(c)) {
+                    return c;
+                }
+            }
+        }
         const dummyPath = path.join(cacheDir, 'demo_sample_aadhaar.jpg');
         try {
             const minimalJpgBase64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';

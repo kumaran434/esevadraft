@@ -140,48 +140,65 @@ function resolveCartridgeForSelection(rawText, sess = {}) {
     const exact = getCartridgeByAlias(text);
     if (exact) return exact;
 
-    const inRationMenu = sess?.intakeState === 'RATION_CARD_SERVICES';
-    if (text.includes('உறுப்பினர் சேர்க்க') || (inRationMenu && text === '2') || text.startsWith('2.') && text.includes('சேர்க்க')) {
+    const MENU_OR_IDLE_STATES = new Set([
+        '', 'SERVICE_SELECTION', 'RATION_CARD_SERVICES', 'REVENUE_DEPARTMENT_SERVICES',
+        'READY_TO_APPLY', 'SUBMITTED', 'COMPLETED'
+    ]);
+    const st = String(sess?.intakeState || '');
+    const inMenuOrIdle = MENU_OR_IDLE_STATES.has(st);
+    const inRationMenu = st === 'RATION_CARD_SERVICES';
+
+    // Always allow explicit service codes/commands and unambiguous full service titles regardless of current state
+    if (text.includes('உறுப்பினர் சேர்க்க')) return getCartridgeById('TNPDS_ADD_MEMBER');
+    if (text.includes('உறுப்பினர் நீக்க')) return getCartridgeById('TNPDS_REMOVE_MEMBER');
+    if (text.includes('தலைவர் மாற்றம்') || text === 'RATION_CHANGE_HEAD') return getCartridgeById('TNPDS_CHANGE_HEAD');
+    if (text.includes('முகவரி மாற்றம்') || lower.includes('change address')) return getCartridgeById('TNPDS_CHANGE_ADDRESS');
+    if (text === 'RATION_CHANGE_MOBILE' || text.includes('கைபேசி எண் மாற்றம்')) return getCartridgeById('TNPDS_UPDATE_MOBILE');
+    if (text.includes('புதிய ரேஷன்') || text.includes('புதிய குடும்ப') || lower.includes('new ration')) return getCartridgeById('TNPDS_NEW_CARD');
+    if (text === 'CAN_REGISTER_PROMPT' || text === 'START_CAN_REGISTER') return getCartridgeById('TNEGA_CAN_REGISTER');
+    if (text.includes('REV-109') || text.includes('விதவைச் சான்றிதழ்') || text.includes('விதவை சான்றிதழ்')) return getCartridgeById('TNEGA_WIDOW');
+    if (text.includes('REV-114') || text.includes('வாரிசு சான்றிதழ்') || text.includes('சட்ட வாரிசு')) return getCartridgeById('TNEGA_LEGAL_HEIR');
+    if (text.includes('REV-115') || text.includes('OBC சான்றிதழ்') || text.includes('இதர பிற்படுத்தப்பட்டோர்')) return getCartridgeById('TNEGA_OBC');
+    if (text.includes('REV-104') || text.includes('முதல் பட்டதாரி')) return getCartridgeById('TNEGA_FIRST_GRADUATE');
+    if (text.includes('REV-103') || text.includes('வருமானச் சான்றிதழ்') || text.includes('வருமான சான்றிதழ்')) return getCartridgeById('TNEGA_INCOME');
+    if (text.includes('REV-102') || text.includes('இருப்பிடச் சான்றிதழ்') || text.includes('இருப்பிட சான்றிதழ்')) return getCartridgeById('TNEGA_RESIDENCE');
+    if (text.includes('REV-101') || text.includes('சாதிச் சான்றிதழ்') || text.includes('சாதி சான்றிதழ்')) return getCartridgeById('TNEGA_COMMUNITY');
+
+    // Broad Tamil/English short-substring service switches ONLY when on a menu/idle screen (never mid-intake!)
+    if (!inMenuOrIdle) return null;
+
+    if ((inRationMenu && text === '2') || (text.startsWith('2.') && text.includes('சேர்க்க'))) {
         return getCartridgeById('TNPDS_ADD_MEMBER');
     }
-    if (text.includes('உறுப்பினர் நீக்க')) {
-        return getCartridgeById('TNPDS_REMOVE_MEMBER');
-    }
-    if (text.includes('தலைவர் மாற்றம்') || text === 'RATION_CHANGE_HEAD') {
-        return getCartridgeById('TNPDS_CHANGE_HEAD');
-    }
-    if (text.includes('முகவரி மாற்றம்') || lower.includes('change address') || (inRationMenu && (text === '3' || text === '5'))) {
+    if (inRationMenu && (text === '3' || text === '5')) {
         return getCartridgeById('TNPDS_CHANGE_ADDRESS');
     }
-    if (text.includes('கைபேசி') || text === 'RATION_CHANGE_MOBILE' || (inRationMenu && (text === '4' || text === '7'))) {
+    if (text.includes('கைபேசி') || (inRationMenu && (text === '4' || text === '7'))) {
         return getCartridgeById('TNPDS_UPDATE_MOBILE');
     }
-    if (text.includes('புதிய ரேஷன்') || text.includes('புதிய குடும்ப') || lower.includes('new ration') || (inRationMenu && (text === '1' || text.startsWith('1.')))) {
+    if (inRationMenu && (text === '1' || text.startsWith('1.'))) {
         return getCartridgeById('TNPDS_NEW_CARD');
     }
-    if (text.includes('விதவை') || lower.includes('widow') || text.includes('REV-109')) {
+    if (text.includes('விதவை') || lower.includes('widow')) {
         return getCartridgeById('TNEGA_WIDOW');
     }
-    if (text.includes('வாரிசு') || lower.includes('legal heir') || text.includes('REV-114')) {
+    if (text.includes('வாரிசு') || lower.includes('legal heir')) {
         return getCartridgeById('TNEGA_LEGAL_HEIR');
     }
-    if (lower.includes('obc') || text.includes('இதர பிற்படுத்தப்பட்டோர்') || text.includes('REV-115')) {
+    if (lower.includes('obc')) {
         return getCartridgeById('TNEGA_OBC');
     }
-    if (text.includes('முதல் பட்டதாரி') || lower.includes('first graduate') || lower.includes('first_graduate') || text.includes('REV-104')) {
+    if (lower.includes('first graduate') || lower.includes('first_graduate')) {
         return getCartridgeById('TNEGA_FIRST_GRADUATE');
     }
-    if (text.includes('வருமான') || lower.includes('income') || text.includes('REV-103')) {
+    if (text.includes('வருமான') || lower.includes('income')) {
         return getCartridgeById('TNEGA_INCOME');
     }
-    if (text.includes('இருப்பிட') || lower.includes('residence') || text.includes('பிறப்பிட') || lower.includes('nativity') || text.includes('REV-102')) {
+    if (text.includes('இருப்பிட') || lower.includes('residence') || text.includes('பிறப்பிட') || lower.includes('nativity')) {
         return getCartridgeById('TNEGA_RESIDENCE');
     }
-    if (!text.startsWith('COMMUNITY_') && !text.startsWith('RELIGION_') && (text.includes('சாதி') || lower.includes('community') || text.includes('REV-101'))) {
+    if (!text.startsWith('COMMUNITY_') && !text.startsWith('RELIGION_') && (text.includes('சாதி') || lower.includes('community'))) {
         return getCartridgeById('TNEGA_COMMUNITY');
-    }
-    if (text === 'CAN_REGISTER_PROMPT' || text === 'START_CAN_REGISTER') {
-        return getCartridgeById('TNEGA_CAN_REGISTER');
     }
     return null;
 }

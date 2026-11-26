@@ -34,8 +34,7 @@ async function executeChangeHeadFormSteps({
         const navMenuSelectors = [
             'a:has-text("குடும்பத் தலைவர் மாற்றம்")',
             'button:has-text("குடும்பத் தலைவர் மாற்றம்")',
-            'li:has-text("குடும்பத் தலைவர் மாற்றம்") a',
-            '[routerlink*="service-request"]',
+            'a[href*="service-request"]',
             'a[href*="service-request"]'
         ];
         for (const mSel of navMenuSelectors) {

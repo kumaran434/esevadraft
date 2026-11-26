@@ -12,6 +12,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+    installOtpModalCopilot,
+    tryCopilotAutoResendIfExpired
+} = require('../../../common/otp_copilot_watcher');
 
 const NEW_CARD_OTP_CONFIG = {
     serviceId: 'TNPDS_NEW_CARD',
@@ -43,6 +47,43 @@ function isValidNewCardAadhaarOtp(val) {
     return clean.length >= minDigits && clean.length <= maxDigits;
 }
 
+function isNewCardMobileVerifiedInDomCode() {
+    // Runs inside page.evaluate() — strict check against TNPDS Angular template (isMobileVerified + showMobileNoEditButton)
+    return (() => {
+        const isShown = (el) => {
+            if (!el) return false;
+            const s = window.getComputedStyle(el);
+            return (el.offsetParent !== null || s.display !== 'none' || el.classList.contains('show')) &&
+                   s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0);
+        };
+        const visOtpModals = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).filter(m => {
+            if (!isShown(m)) return false;
+            const t = (m.innerText || '');
+            return t.includes('OTP') || t.includes('கடவுச்சொல்');
+        });
+        if (visOtpModals.length > 0) return false;
+
+        const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+            if (!isShown(b)) return false;
+            const t = (b.innerText || '').trim().toLowerCase();
+            return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+        });
+        if (hasGenOtpBtn) return false;
+
+        const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+        const mobDisabled = Boolean(mobInp && mobInp.disabled);
+        const mobSection = mobInp ? (mobInp.closest('.row, .form-group, div') || mobInp.parentElement) : null;
+        const scope = (mobSection && mobSection.parentElement) || document;
+        const hasEditBtn = Array.from(scope.querySelectorAll('button')).some(b => {
+            if (!isShown(b)) return false;
+            const t = (b.innerText || '').trim();
+            return t === 'திருத்தம்' || /^edit$/i.test(t);
+        });
+        const hasTickImg = Boolean(mobSection && mobSection.querySelector('img'));
+        return Boolean(mobInp && (mobDisabled || hasEditBtn || hasTickImg));
+    })();
+}
+
 /**
  * Dedicated 6-Digit Mobile OTP Watcher for TNPDS New Ration Card (/pages/newsmartcard).
  * Runs independently inside the New Card flow without relying on the shared login watchman.
@@ -56,6 +97,7 @@ async function waitForNewCardMobileOtp(page, userMobile, onProgress = () => {}, 
     }
 
     onProgress(promptMsg);
+    await installOtpModalCopilot(page, { forceReset: false, allowInlinePage: false }).catch(() => {});
 
     const pendingOtpPaths = [
         path.join(process.cwd(), 'data', 'pending_otp.txt'),
@@ -66,6 +108,9 @@ async function waitForNewCardMobileOtp(page, userMobile, onProgress = () => {}, 
     return new Promise((resolve) => {
         let settled = false;
         let pollTimer = null;
+        let isTickRunning = false;
+        let closedUnverifiedTicks = 0;
+        const seenToasts = new Set();
 
         const finish = (otpVal) => {
             if (settled) return;
@@ -90,12 +135,13 @@ async function waitForNewCardMobileOtp(page, userMobile, onProgress = () => {}, 
             }).catch(() => {});
         }
 
-        // Dedicated New Ration Card 6-digit Chrome Modal & Disk IPC poller
+        // Dedicated New Ration Card 6-digit Chrome Modal, Resend Co-Pilot & Disk IPC poller
         pollTimer = setInterval(async () => {
-            if (settled) return;
+            if (settled || isTickRunning) return;
             if (!page || page.isClosed()) {
                 return finish('CLOSED');
             }
+            isTickRunning = true;
 
             try {
                 // 1. Check Disk IPC (data/pending_otp.txt) for 6-digit mobile OTP
@@ -137,12 +183,33 @@ async function waitForNewCardMobileOtp(page, userMobile, onProgress = () => {}, 
                                s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0);
                     };
 
-                    const visibleModals = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).filter(isShown);
+                    const visibleModals = Array.from(document.querySelectorAll('.modal, div[role="dialog"]')).filter(m => {
+                        if (!isShown(m)) return false;
+                        const t = (m.innerText || '');
+                        return !t.includes('வெளியேற விரும்புகிறீர்களா') && !t.includes('நீங்கள் வெளியேற');
+                    });
                     if (visibleModals.length === 0) {
-                        const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
-                        const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));
-                        if (isShown(dobInp) || isShown(addMemBtn)) {
+                        const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                            if (!isShown(b)) return false;
+                            const t = (b.innerText || '').trim().toLowerCase();
+                            return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+                        });
+                        const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+                        const mobDisabled = Boolean(mobInp && mobInp.disabled);
+                        const mobWrap = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+                        const hasMobEditBtn = Array.from(mobWrap.querySelectorAll('button')).some(b => {
+                            if (!isShown(b)) return false;
+                            const t = (b.innerText || '').trim();
+                            return t === 'திருத்தம்' || /^edit$/i.test(t);
+                        });
+                        const hasTickImg = Boolean(mobInp && mobInp.parentElement && mobInp.parentElement.parentElement && mobInp.parentElement.parentElement.querySelector('img'));
+                        // STRICT GATE: ONLY verified if "OTP ஐ உருவாக்கு" disappeared AND mobile is disabled / "திருத்தம்" / tick icon is present!
+                        // NEVER treat "உறுப்பினரை சேர்க்க" button as verified (it is always visible on page!).
+                        if (mobInp && !hasGenOtpBtn && (mobDisabled || hasMobEditBtn || hasTickImg)) {
                             return 'ALREADY_VERIFIED_ON_PORTAL';
+                        }
+                        if (mobInp && hasGenOtpBtn) {
+                            return '__MODAL_CLOSED_UNVERIFIED__';
                         }
                     }
 
@@ -168,14 +235,53 @@ async function waitForNewCardMobileOtp(page, userMobile, onProgress = () => {}, 
                     return null;
                 }, expectedLen).catch(() => null);
 
-                if (domDetected) {
-                    if (typeof sharedContext.provideOtp === 'function' && domDetected !== 'ALREADY_VERIFIED_ON_PORTAL') {
-                        try { sharedContext.provideOtp(domDetected); } catch (_) {}
+                if (domDetected === '__MODAL_CLOSED_UNVERIFIED__') {
+                    closedUnverifiedTicks++;
+                    if (closedUnverifiedTicks >= 4) {
+                        onProgress('⚠️ [படி 20/51] மொபைல் OTP சாளரம் சரிபார்க்கப்படாமல் மூடப்பட்டுவிட்டது (OTP Verify ஆகவில்லை).');
+                        return finish('MODAL_CLOSED_UNVERIFIED');
                     }
-                    return finish(domDetected);
+                } else {
+                    closedUnverifiedTicks = 0;
+                    if (domDetected) {
+                        if (typeof sharedContext.provideOtp === 'function' && domDetected !== 'ALREADY_VERIFIED_ON_PORTAL') {
+                            try { sharedContext.provideOtp(domDetected); } catch (_) {}
+                        }
+                        return finish(domDetected);
+                    }
                 }
-            } catch (_) {}
-        }, 400);
+
+                // 3. Capture transient ngx-toastr / PrimeNG portal alerts during OTP wait so errors never go silent
+                const liveToasts = await page.evaluate(() => {
+                    return Array.from(document.querySelectorAll('#toast-container .toast, .toast-message, .p-toast-message, .alert-danger'))
+                        .map(el => ({
+                            cls: (el.className || '').toString(),
+                            text: (el.innerText || '').trim().replace(/\s+/g, ' ')
+                        }))
+                        .filter(t => t.text.length > 3);
+                }).catch(() => []);
+                for (const t of liveToasts) {
+                    if (!seenToasts.has(t.text)) {
+                        seenToasts.add(t.text);
+                        const isErr = /error|danger|முடிந்து|பிழை|தவற|வரம்பு|failed|invalid/i.test(t.cls + ' ' + t.text);
+                        onProgress(isErr ? `🚨 [அரசு TNPDS அறிவிப்பு]: ${t.text}` : `ℹ️ [அரசு TNPDS அறிவிப்பு]: ${t.text}`);
+                    }
+                }
+
+                // 4. Co-Pilot Single-Click Resend when initial Mobile OTP countdown expires (and human did not click Resend)
+                await tryCopilotAutoResendIfExpired(page, {
+                    allowInlinePage: false,
+                    graceAfterZeroMs: 4000,
+                    maxAutoResends: 2,
+                    onProgress,
+                    showBrowserHud: sharedContext.showBrowserHud,
+                    clearStaleOtpState: sharedContext.clearStaleOtpState,
+                    stageLabel: 'படி 20/51 மொபைல் OTP'
+                });
+            } catch (_) {} finally {
+                isTickRunning = false;
+            }
+        }, 450);
     });
 }
 
@@ -183,5 +289,6 @@ module.exports = {
     NEW_CARD_OTP_CONFIG,
     isValidNewCardMobileOtp,
     isValidNewCardAadhaarOtp,
+    isNewCardMobileVerifiedInDomCode,
     waitForNewCardMobileOtp
 };

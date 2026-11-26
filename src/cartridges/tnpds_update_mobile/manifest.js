@@ -9,6 +9,7 @@ module.exports = {
     aliases: ['TNPDS_UPDATE_MOBILE', 'UPDATE_MOBILE', 'CHANGE_MOBILE', 'கைபேசி எண் மாற்றம்', 'மொபைல் எண் மாற்றம்'],
     ownedStates: [
         'RATION_CHANGE_MOBILE',
+        'RATION_CHANGE_MOBILE_RESUME_GATE',
         'RATION_CHANGE_MOBILE_INPUT'
     ],
     bucketA: [{ key: 'smartCardNumber', label: 'ஸ்மார்ட் கார்டு எண்' }],

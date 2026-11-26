@@ -56,7 +56,12 @@ function mergeDraftIntoSession(sess, draft, cleanMobile) {
     }
 
     const lastMsgInDraft = Array.isArray(sess.chatHistory) && sess.chatHistory.length > 0 ? sess.chatHistory[sess.chatHistory.length - 1] : null;
-    const isSubServiceReady = sess.intakeState === 'RATION_ADD_MEMBER_READY' || sess.intakeState === 'RATION_CHANGE_ADDRESS_READY' || sess.subService === 'ADD_MEMBER' || sess.subService === 'CHANGE_ADDRESS';
+    const isSubServiceReady = sess.intakeState === 'RATION_ADD_MEMBER_READY' ||
+        sess.intakeState === 'RATION_CHANGE_ADDRESS_READY' ||
+        sess.intakeState === 'RATION_UPDATE_MOBILE_READY' ||
+        sess.subService === 'ADD_MEMBER' ||
+        sess.subService === 'CHANGE_ADDRESS' ||
+        sess.subService === 'UPDATE_MOBILE';
     const isBrowsingServices = sess.intakeState === 'SERVICE_SELECTION' || 
                                sess.intakeState === 'RATION_CARD_SERVICES' ||
                                (sess.intakeState && sess.intakeState.startsWith('RATION_')) ||
@@ -68,6 +73,7 @@ function mergeDraftIntoSession(sess, draft, cleanMobile) {
                                sess.intakeState === 'READY_TO_APPLY_RESIDENCE' ||
                                sess.subService === 'INCOME' ||
                                sess.subService === 'CAN_REGISTER' ||
+                               isSubServiceReady ||
                                (lastMsgInDraft && lastMsgInDraft.text && (
                                    lastMsgInDraft.text.includes('குடும்ப அட்டை (Ration Card) சேவைகள்') ||
                                    lastMsgInDraft.text.includes('எந்த அரசு சேவைக்கு விண்ணப்பிக்க விரும்புகிறீர்கள்')

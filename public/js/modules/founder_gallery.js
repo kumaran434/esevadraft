@@ -211,13 +211,15 @@
         btnEl.innerHTML = '⏳...';
         try {
             const fileObj = await fetchSampleFileObject(item);
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             const fd = new FormData();
-            fd.append('document', fileObj);
+            fd.append('file', fileObj);
             fd.append('docType', slotKey);
             fd.append('mobileNumber', activeMob);
-            const res = await fetch(`/api/drafts/${encodeURIComponent(activeMob)}/upload-doc`, {
+            if (activeDraftId) fd.append('draftId', activeDraftId);
+            const res = await fetch('/api/drafts/upload-document', {
                 method: 'POST',
-                headers: { 'x-session-mobile': activeMob, 'x-operator-uid': uid },
+                headers: { 'x-session-mobile': activeMob, 'x-draft-id': activeDraftId, 'x-operator-uid': uid },
                 body: fd
             });
             const json = await res.json();
@@ -277,18 +279,27 @@
     };
     window.checkFounderGalleryAccess = checkFounderGalleryAccess;
 
-    // Initial check & safe periodic sync when auth changes
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => setTimeout(checkFounderGalleryAccess, 800));
-    } else {
-        setTimeout(checkFounderGalleryAccess, 800);
-    }
-    setInterval(() => {
+    // Initial check & safe periodic sync ONLY when UID changes (prevents 3.5s 403 polling loop for non-founders)
+    let _lastCheckedGalleryUid = null;
+    const runGalleryCheckIfChanged = () => {
         const uid = getFounderUid();
-        if (uid && !galleryEnabled) checkFounderGalleryAccess();
-        if (!uid && galleryEnabled) {
-            galleryEnabled = false;
-            setGalleryButtonsVisible(false);
+        if (!uid) {
+            _lastCheckedGalleryUid = null;
+            if (galleryEnabled) {
+                galleryEnabled = false;
+                setGalleryButtonsVisible(false);
+            }
+            return;
         }
-    }, 3500);
+        if (uid !== _lastCheckedGalleryUid) {
+            _lastCheckedGalleryUid = uid;
+            checkFounderGalleryAccess();
+        }
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(runGalleryCheckIfChanged, 800));
+    } else {
+        setTimeout(runGalleryCheckIfChanged, 800);
+    }
+    setInterval(runGalleryCheckIfChanged, 4000);
 })();

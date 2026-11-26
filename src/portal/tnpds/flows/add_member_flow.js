@@ -32,7 +32,14 @@ async function startTnpdsAddMemberFlow(citizenProfile, onProgress = () => {}, op
     isDryRunMode = isDryRunActive;
 
     const sData = citizenProfile.subServiceData || {};
-    const mem0 = (citizenProfile.members && citizenProfile.members[0]) || {};
+    const rawMem0 = (citizenProfile.members && citizenProfile.members[0]) || {};
+    const isMem0FamilyHead = Boolean(
+        !rawMem0 ||
+        rawMem0.relationship === 'Family Head' ||
+        rawMem0.relationshipTam === 'குடும்ப தலைவர்' ||
+        (citizenProfile.headAadhaar && rawMem0.aadhaarNumber && String(rawMem0.aadhaarNumber).replace(/\D/g, '') === String(citizenProfile.headAadhaar).replace(/\D/g, ''))
+    );
+    const mem0 = isMem0FamilyHead ? {} : rawMem0;
 
     const userMobile = (citizenProfile.mobileNumber || citizenProfile.mobile || '').replace(/\D/g, '');
     const rationCardNo = (citizenProfile.smartCardNumber || citizenProfile.rationCardNumber || citizenProfile.rationCardNo || sData.smartCardNumber || '').trim();
@@ -63,10 +70,13 @@ async function startTnpdsAddMemberFlow(citizenProfile, onProgress = () => {}, op
     const seenToasts = new Set();
     const scanAndBroadcastToasts = async () => {
         try {
-            const leafNodes = Array.from(document.querySelectorAll('span, label, p, b, strong, a, .badge'));
-            for (const n of leafNodes) {
-                const txt = (n.innerText || '').trim();
-                if (!txt || txt === '*' || txt.length < 2) continue;
+            const texts = await page.evaluate(() => {
+                const leafNodes = Array.from(document.querySelectorAll('span, label, p, b, strong, a, .badge'));
+                return leafNodes
+                    .map(n => (n.innerText || '').trim())
+                    .filter(t => t && t !== '*' && t.length >= 2);
+            });
+            for (const txt of texts) {
                 if (!seenToasts.has(txt)) {
                     seenToasts.add(txt);
                     const cleanDisplayBadge = txt.slice(0, 50);

@@ -149,6 +149,14 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
 
                 // நேரலை மீட்பு ஆய்வு: குடும்பத் தலைவர் ஏற்கனவே அட்டவணையில் உள்ளாரா அல்லது ஆதார் OTP சாளரம் திறக்கப்பட்டுள்ளதா?
                 const isHeadAlreadyInTable = await page.evaluate(({ eng, tam }) => {
+                    const isShown = (el) => Boolean(el && (el.offsetParent !== null || getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0));
+                    const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                        if (!isShown(b)) return false;
+                        const t = (b.innerText || '').trim().toLowerCase();
+                        return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+                    });
+                    // NEVER treat Head as added if mobile isn't verified yet!
+                    if (hasGenOtpBtn) return false;
                     const allTables = Array.from(document.querySelectorAll('table'));
                     const memberTable = allTables.find(t => {
                         const txt = (t.innerText || '').toLowerCase();
@@ -159,7 +167,10 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
                         const rt = (r.innerText || '').toLowerCase();
                         return !rt.includes('காணப்படவில்லை') && !rt.includes('no records') && rt.length > 5;
                     });
-                    return rows.length >= 1;
+                    if (rows.length === 0) return false;
+                    const tText = (memberTable.innerText || '');
+                    const tLow = tText.toLowerCase();
+                    return tLow.includes('தலைவர்') || tLow.includes('head') || (eng && tLow.includes(eng.toLowerCase())) || (tam && tText.includes(tam));
                 }, { eng: citizenProfile.fullNameEng, tam: citizenProfile.fullNameTam }).catch(() => false);
 
                 const isHeadModalOpen = await page.evaluate(() => {

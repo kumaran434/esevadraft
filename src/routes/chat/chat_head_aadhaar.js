@@ -3,10 +3,12 @@ const path = require('path');
 const storageService = require('../../services/storage_service');
 const { updateHeadMember, isProfileDataComplete, applyExtractedAadhaarRelationsAndDob } = require('../../services/profile_helpers');
 const { saveCitizenProfile } = require('../../../database');
-const { saveCitizenDraft } = require('../../../firestore_db');
+const { getCitizenDraft, saveCitizenDraft } = require('../../../firestore_db');
 const { inspectAndExtractDocument } = require('../../../ai_document_extractor');
 const { produceCompliantDocument, produceDualSidedDocument } = require('../../../photo_studio');
 const { resolveTnDistrict } = require('../../../tn_district_mapper');
+const { hydrateBase64DocCache } = require('../../services/doc_upload_primitives');
+const { resolveOrRestoreFile } = require('../../services/draft_file_restorer');
 
 const { persistSessions } = storageService;
 
@@ -46,14 +48,19 @@ async function handleHeadAadhaar(ctx, req, res) {
         const isFullAadhaar = !!(extracted.isFullAadhaar || extracted.documentType === 'AADHAAR_FULL' || (hasAddress && (extracted.fullNameEng || extracted.fullNameTam || extracted.aadhaarNumber)));
 
         if (isFullAadhaar) {
-            const fullPdf = await produceCompliantDocument(uploadedFile.path);
+            let fullPdf = await produceCompliantDocument(uploadedFile.path);
+            if (!fullPdf || !fs.existsSync(fullPdf)) fullPdf = uploadedFile.path;
+            sess.tempUploads = sess.tempUploads || {};
             sess.tempUploads.headAadhaar = fullPdf;
             sess.tempUploads.headAadhaarFront = uploadedFile.path;
             sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
-            sess.tempUploads.headAadhaarBack = null;
+            delete sess.tempUploads.headAadhaarBack;
             sess.citizenProfile.headAadhaarDocPath = fullPdf;
             sess.citizenProfile.documents = sess.citizenProfile.documents || {};
             sess.citizenProfile.documents.headAadhaar = fullPdf;
+            sess.citizenProfile.documents.headAadhaarFront = uploadedFile.path;
+            delete sess.citizenProfile.documents.headAadhaarBack;
+            hydrateBase64DocCache(sess, 'headAadhaar', fullPdf);
 
             sess.citizenProfile.fullNameEng = extracted.fullNameEng || sess.citizenProfile.fullNameEng || '';
             sess.citizenProfile.fullNameTam = extracted.fullNameTam || sess.citizenProfile.fullNameTam || '';
@@ -119,12 +126,34 @@ async function handleHeadAadhaar(ctx, req, res) {
                     { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
                 ]
             });
-            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+            persistSessions(activeMobile);
+            if (activeMobile) {
+                await saveCitizenDraft(activeMobile, {
+                    operatorUid: sess.operatorUid || null,
+                    operatorName: sess.operatorName || null,
+                    operatorMobile: sess.operatorMobile || null,
+                    service: sess.service || 'ரேஷன் கார்டு',
+                    subService: sess.subService || 'NEW_CARD',
+                    citizenProfile: sess.citizenProfile,
+                    documents: sess.tempUploads || {},
+                    base64Docs: sess.base64Docs || {},
+                    tempUploads: sess.tempUploads || {},
+                    chatHistory: sess.chatHistory || [],
+                    intakeState: sess.intakeState,
+                    targetMemberCount: sess.targetMemberCount,
+                    step: sess.step || 'draft'
+                }).catch(() => {});
+            }
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, documents: sess.tempUploads || {} });
             return true;
         }
 
+        sess.tempUploads = sess.tempUploads || {};
         sess.tempUploads.headAadhaarFront = uploadedFile.path;
         sess.tempUploads.headAadhaarFrontBoundingBox = extracted.documentBoundingBox || null;
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+        sess.citizenProfile.documents.headAadhaarFront = uploadedFile.path;
+        hydrateBase64DocCache(sess, 'headAadhaarFront', uploadedFile.path);
         if (extracted.fullNameEng) sess.citizenProfile.fullNameEng = extracted.fullNameEng;
         if (extracted.fullNameTam) sess.citizenProfile.fullNameTam = extracted.fullNameTam;
         if (extracted.aadhaarNumber) sess.citizenProfile.headAadhaar = extracted.aadhaarNumber;
@@ -142,7 +171,6 @@ async function handleHeadAadhaar(ctx, req, res) {
             sess.citizenProfile.members[0].genderTam = sess.citizenProfile.headGenderTam;
         }
         if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
-        persistSessions();
 
         sess.intakeState = 'HEAD_AADHAAR_BACK';
         const detectedFrontName = sess.citizenProfile.fullNameTam ? `${sess.citizenProfile.fullNameTam} (${sess.citizenProfile.fullNameEng})` : (sess.citizenProfile.fullNameEng || '');
@@ -154,7 +182,25 @@ async function handleHeadAadhaar(ctx, req, res) {
             actionRequired: 'upload',
             uploadPrompt: 'ஆதார் பின்பக்கம் பதிவேற்றவும்'
         });
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            await saveCitizenDraft(activeMobile, {
+                operatorUid: sess.operatorUid || null,
+                operatorName: sess.operatorName || null,
+                operatorMobile: sess.operatorMobile || null,
+                service: sess.service || 'ரேஷன் கார்டு',
+                subService: sess.subService || 'NEW_CARD',
+                citizenProfile: sess.citizenProfile,
+                documents: sess.tempUploads || {},
+                base64Docs: sess.base64Docs || {},
+                tempUploads: sess.tempUploads || {},
+                chatHistory: sess.chatHistory || [],
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, documents: sess.tempUploads || {} });
         return true;
     }
 
@@ -171,7 +217,10 @@ async function handleHeadAadhaar(ctx, req, res) {
             return true;
         }
 
+        sess.tempUploads = sess.tempUploads || {};
+        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
         sess.tempUploads.headAadhaarBack = uploadedFile.path;
+        sess.citizenProfile.documents.headAadhaarBack = uploadedFile.path;
         let extractedBack = null;
         try {
             extractedBack = await inspectAndExtractDocument(uploadedFile.path, { skipFaceExtraction: true });
@@ -179,22 +228,53 @@ async function handleHeadAadhaar(ctx, req, res) {
 
         sess.tempUploads.headAadhaarBackBoundingBox = extractedBack?.documentBoundingBox || null;
 
-        const mergedPdf = await produceDualSidedDocument(
-            sess.tempUploads.headAadhaarFront,
-            sess.tempUploads.headAadhaarBack,
-            null,
-            {
-                frontBoundingBox: sess.tempUploads.headAadhaarFrontBoundingBox,
-                backBoundingBox: sess.tempUploads.headAadhaarBackBoundingBox
-            }
-        );
+        let frontPath = sess.tempUploads.headAadhaarFront ||
+            sess.citizenProfile.documents?.headAadhaarFront ||
+            sess.draftData?.documents?.headAadhaarFront ||
+            sess.draftData?.citizenProfile?.documents?.headAadhaarFront ||
+            null;
+        if ((!frontPath || !fs.existsSync(frontPath)) && activeMobile && !sess._isPureFreshSession) {
+            try {
+                const diskDraft = await getCitizenDraft(activeMobile);
+                const cand = diskDraft?.documents?.headAadhaarFront || diskDraft?.citizenProfile?.documents?.headAadhaarFront || diskDraft?.tempUploads?.headAadhaarFront || null;
+                const b64Front = diskDraft?.base64Docs?.headAadhaarFrontBase64 || sess.base64Docs?.headAadhaarFrontBase64 || null;
+                const urlFront = diskDraft?.storageUrls?.headAadhaarFront || null;
+                frontPath = await resolveOrRestoreFile(cand, b64Front, `${activeMobile}_headAadhaarFront`, urlFront);
+            } catch (_) {}
+        }
 
-        const extracted = extractedBack || await inspectAndExtractDocument(mergedPdf);
+        let mergedPdf = null;
+        if (frontPath && fs.existsSync(frontPath)) {
+            try {
+                mergedPdf = await produceDualSidedDocument(
+                    frontPath,
+                    sess.tempUploads.headAadhaarBack,
+                    null,
+                    {
+                        frontBoundingBox: sess.tempUploads.headAadhaarFrontBoundingBox,
+                        backBoundingBox: sess.tempUploads.headAadhaarBackBoundingBox
+                    }
+                );
+            } catch (mergeErr) {
+                console.warn('[HEAD_AADHAAR_BACK] produceDualSidedDocument error:', mergeErr.message);
+            }
+            if (!mergedPdf || !fs.existsSync(mergedPdf) || fs.statSync(mergedPdf).size < 100) {
+                try {
+                    mergedPdf = await produceCompliantDocument(frontPath, {
+                        boundingBox: sess.tempUploads.headAadhaarFrontBoundingBox
+                    });
+                } catch (_) {
+                    mergedPdf = frontPath;
+                }
+            }
+        }
+
+        const extracted = extractedBack || (mergedPdf ? await inspectAndExtractDocument(mergedPdf).catch(() => ({})) : {}) || {};
         sess.citizenProfile.fullNameEng = extracted.fullNameEng || sess.citizenProfile.fullNameEng || '';
         sess.citizenProfile.fullNameTam = extracted.fullNameTam || sess.citizenProfile.fullNameTam || '';
         applyExtractedAadhaarRelationsAndDob(sess.citizenProfile, extracted);
-        sess.citizenProfile.headGender = extracted.gender || 'Male';
-        sess.citizenProfile.headGenderTam = extracted.gender === 'Female' ? 'பெண்' : 'ஆண்';
+        sess.citizenProfile.headGender = extracted.gender || sess.citizenProfile.headGender || 'Male';
+        sess.citizenProfile.headGenderTam = (sess.citizenProfile.headGender === 'Female') ? 'பெண்' : 'ஆண்';
         sess.citizenProfile.headAadhaar = (extracted.aadhaarNumber && extracted.aadhaarNumber.length === 12) ? extracted.aadhaarNumber : (sess.citizenProfile.headAadhaar || '');
         sess.citizenProfile.doorNo = extracted.doorNo || sess.citizenProfile.doorNo || '';
         sess.citizenProfile.streetEng = extracted.streetEng || sess.citizenProfile.streetEng || '';
@@ -229,10 +309,47 @@ async function handleHeadAadhaar(ctx, req, res) {
         if (resolvedBackLoc.areaEng && !sess.citizenProfile.areaEng) sess.citizenProfile.areaEng = resolvedBackLoc.areaEng;
         if (resolvedBackLoc.areaTam && !sess.citizenProfile.areaTam) sess.citizenProfile.areaTam = resolvedBackLoc.areaTam;
 
+        if (!mergedPdf || !fs.existsSync(mergedPdf) || fs.statSync(mergedPdf).size < 100) {
+            hydrateBase64DocCache(sess, 'headAadhaarBack', uploadedFile.path);
+            if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
+            sess.intakeState = 'HEAD_AADHAAR_FRONT';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `⚠️ **ஆதார் பின்பக்கம் பெறப்பட்டு விவரங்கள் எடுக்கப்பட்டன, ஆனால் முன்பக்க ஆதார் கோப்பு கிடைக்கவில்லை.**\n\n` +
+                      `🛑 2-in-1 PDF உருவாக்க, தயவுசெய்து **குடும்பத் தலைவர் ஆதார் அட்டையின் முன்பக்கத்தை (Front Side)** மீண்டும் ஒருமுறை பதிவேற்றவும்:`,
+                actionRequired: 'upload',
+                uploadPrompt: 'ஆதார் முன்பக்கம் பதிவேற்றவும்'
+            });
+            persistSessions(activeMobile);
+            if (activeMobile) {
+                await saveCitizenDraft(activeMobile, {
+                    operatorUid: sess.operatorUid || null,
+                    operatorName: sess.operatorName || null,
+                    operatorMobile: sess.operatorMobile || null,
+                    service: sess.service || 'ரேஷன் கார்டு',
+                    subService: sess.subService || 'NEW_CARD',
+                    citizenProfile: sess.citizenProfile,
+                    documents: sess.tempUploads || {},
+                    base64Docs: sess.base64Docs || {},
+                    tempUploads: sess.tempUploads || {},
+                    chatHistory: sess.chatHistory || [],
+                    intakeState: sess.intakeState,
+                    targetMemberCount: sess.targetMemberCount,
+                    step: sess.step || 'draft'
+                }).catch(() => {});
+            }
+            res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, documents: sess.tempUploads || {} });
+            return true;
+        }
+
         sess.tempUploads.headAadhaar = mergedPdf;
+        sess.tempUploads.headAadhaarFront = frontPath;
+        sess.tempUploads.headAadhaarBack = uploadedFile.path;
         sess.citizenProfile.headAadhaarDocPath = mergedPdf;
-        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
         sess.citizenProfile.documents.headAadhaar = mergedPdf;
+        sess.citizenProfile.documents.headAadhaarFront = frontPath;
+        sess.citizenProfile.documents.headAadhaarBack = uploadedFile.path;
+        hydrateBase64DocCache(sess, 'headAadhaar', mergedPdf);
 
         updateHeadMember(sess.citizenProfile, mergedPdf);
         if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
@@ -257,7 +374,25 @@ async function handleHeadAadhaar(ctx, req, res) {
                 { label: "✏️ விவரங்களைச் சரிபார் / திருத்து (Review / Edit Details)", value: "TRIGGER_EDIT_MODAL" }
             ]
         });
-        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
+        persistSessions(activeMobile);
+        if (activeMobile) {
+            await saveCitizenDraft(activeMobile, {
+                operatorUid: sess.operatorUid || null,
+                operatorName: sess.operatorName || null,
+                operatorMobile: sess.operatorMobile || null,
+                service: sess.service || 'ரேஷன் கார்டு',
+                subService: sess.subService || 'NEW_CARD',
+                citizenProfile: sess.citizenProfile,
+                documents: sess.tempUploads || {},
+                base64Docs: sess.base64Docs || {},
+                tempUploads: sess.tempUploads || {},
+                chatHistory: sess.chatHistory || [],
+                intakeState: sess.intakeState,
+                targetMemberCount: sess.targetMemberCount,
+                step: sess.step || 'draft'
+            }).catch(() => {});
+        }
+        res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, documents: sess.tempUploads || {} });
         return true;
     }
 
@@ -346,6 +481,20 @@ async function handleHeadAadhaar(ctx, req, res) {
                           (hasValidCurrentMob ? `*(உள்நுழைந்த எண்: +91 ${activeMobile})*` : `*(10 இலக்க மொபைல் எண்ணைத் தட்டச்சு செய்யவும்)*`),
                     options: hasValidCurrentMob ? [{ label: `+91 ${activeMobile} (இந்த எண்ணையே பயன்படுத்து)`, value: activeMobile }] : []
                 });
+                persistSessions(activeMobile);
+                if (activeMobile) {
+                    saveCitizenDraft(activeMobile, {
+                        citizenProfile: sess.citizenProfile,
+                        documents: sess.tempUploads || {},
+                        base64Docs: sess.base64Docs || {},
+                        chatHistory: sess.chatHistory,
+                        intakeState: sess.intakeState,
+                        targetMemberCount: sess.targetMemberCount,
+                        currentMemberIdx: sess.currentMemberIdx,
+                        tempUploads: sess.tempUploads,
+                        step: sess.step || 'draft'
+                    }).catch(() => {});
+                }
             }
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState });
             return true;

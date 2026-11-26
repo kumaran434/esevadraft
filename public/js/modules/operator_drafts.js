@@ -34,7 +34,13 @@
             renderOperatorDrafts();
         }
 
-        function filterOperatorDrafts() {
+        function filterOperatorDrafts(overrideVal) {
+            if (typeof overrideVal === 'string') {
+                const mainInp = document.getElementById('operatorSearchInput');
+                const modalInp = document.getElementById('operatorModalSearchInput');
+                if (mainInp && mainInp.value !== overrideVal) mainInp.value = overrideVal;
+                if (modalInp && modalInp.value !== overrideVal) modalInp.value = overrideVal;
+            }
             renderOperatorDrafts();
         }
 
@@ -152,6 +158,9 @@
             }
 
             const cardsHtml = filtered.map(d => {
+                const cardKey = d.draftId || d.mobileNumber;
+                const safeCardKey = String(cardKey || '').replace(/'/g, "\\'");
+                const safeDisplayMob = String(d.mobileNumber || '').replace(/'/g, "\\'");
                 const isItemTrashed = !!(d.isDeleted || d.status === 'TRASHED');
                 let statusBadge = '';
                 let actionBtn = '';
@@ -159,7 +168,7 @@
                 if (isItemTrashed) {
                     statusBadge = `<span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">🗑️ குப்பைத்தொட்டி</span>`;
                     actionBtn = `
-                        <button onclick="restoreCustomerDraft('${d.mobileNumber}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}')" 
+                        <button onclick="restoreCustomerDraft('${safeCardKey}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}')" 
                                 title="♻️ வரைவை மீட்டெடு (Restore to Active Drafts)" 
                                 aria-label="வரைவை மீட்டெடு"
                                 style="height: 34px; width: 34px; padding: 0; background: #ecfdf5; color: #059669; border: 1.5px solid #a7f3d0; border-radius: 8px; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 1px 2px rgba(16,185,129,0.12);" 
@@ -167,7 +176,7 @@
                                 onmouseout="this.style.background='#ecfdf5'; this.style.borderColor='#a7f3d0'; this.style.transform='none';">
                             <i class="fa-solid fa-rotate-left"></i>
                         </button>
-                        <button onclick="permanentDeleteCustomerDraft('${d.mobileNumber}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}')" 
+                        <button onclick="permanentDeleteCustomerDraft('${safeCardKey}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}', '${safeDisplayMob}')" 
                                 title="❌ நிரந்தரமாக நீக்கு (Permanent Delete from Firebase)" 
                                 aria-label="நிரந்தர நீக்கம்"
                                 style="height: 34px; width: 34px; padding: 0; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 1px 2px rgba(220,38,38,0.12);" 
@@ -178,29 +187,52 @@
                     `;
                 } else {
                     const isCompleted = d.status === 'COMPLETED' || d.certificateReady === true || ((d.status === 'SUBMITTED' || !!d.applicationNumber) && !!d.certificateUrl);
+                    const compactEditBtn = `
+                        <button onclick="editCustomerFromDraftDesk('${safeCardKey}')"
+                                title="விவரங்களைப் பார் / திருத்து (Edit / View Details)"
+                                aria-label="திருத்து"
+                                style="height: 34px; width: 34px; padding: 0; background: #eff6ff; color: #0284c7; border: 1.5px solid #bae6fd; border-radius: 8px; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 1px 2px rgba(2,132,199,0.12);"
+                                onmouseover="this.style.background='#dbeafe'; this.style.borderColor='#38bdf8'; this.style.transform='scale(1.05)';"
+                                onmouseout="this.style.background='#eff6ff'; this.style.borderColor='#bae6fd'; this.style.transform='none';">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                    `;
 
                     if (isCompleted) {
                         statusBadge = `<span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">🎉 சான்றிதழ் தயார்</span>`;
                         actionBtn = `
-                            <button onclick="editCustomerFromDraftDesk('${d.mobileNumber}')" title="வாடிக்கையாளர் விவரங்களைத் திருத்த / பார்க்க (Edit / View)" style="height: 34px; padding: 0 12px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><i class="fa-solid fa-pen-to-square"></i> திருத்து</button>
-                            <button onclick="downloadCustomerApplicationForm('${d.mobileNumber}', '${d.applicationNumber || ''}')" title="சான்றிதழைப் பதிவிறக்கு (Download Certificate)" style="height: 34px; padding: 0 14px; background: #9333ea; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(147,51,234,0.25);"><i class="fa-solid fa-certificate"></i> 📜 சான்றிதழ்</button>
+                            ${compactEditBtn}
+                            <button onclick="downloadCustomerApplicationForm('${safeCardKey}', '${d.applicationNumber || ''}')" title="சான்றிதழைப் பதிவிறக்கு (Download Certificate)" style="height: 34px; padding: 0 12px; background: #9333ea; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(147,51,234,0.25);"><i class="fa-solid fa-certificate"></i> சான்றிதழ்</button>
                         `;
                     } else if (d.status === 'SUBMITTED' || d.applicationNumber) {
                         statusBadge = `<span style="background: #dcfce7; color: #15803d; border: 1px solid #86efac; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">✅ சமர்ப்பிக்கப்பட்டது</span>`;
                         actionBtn = `
-                            <button onclick="editCustomerFromDraftDesk('${d.mobileNumber}')" title="வாடிக்கையாளர் விவரங்களைத் திருத்த / பார்க்க (Edit / View)" style="height: 34px; padding: 0 12px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><i class="fa-solid fa-pen-to-square"></i> திருத்து</button>
-                            <button onclick="downloadTnpdsPdfFromInput('${d.applicationNumber || ''}')" title="விண்ணப்ப PDF பதிவிறக்கு (Download PDF)" style="height: 34px; padding: 0 14px; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(22,163,74,0.25);"><i class="fa-solid fa-file-pdf"></i> 📥 PDF</button>
+                            ${compactEditBtn}
+                            <button onclick="downloadTnpdsPdfFromInput('${d.applicationNumber || ''}')" title="விண்ணப்ப PDF பதிவிறக்கு (Download PDF)" style="height: 34px; padding: 0 12px; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(22,163,74,0.25);"><i class="fa-solid fa-file-pdf"></i> PDF</button>
                         `;
                     } else if (d.status === 'WAITING_FOR_OTP_CALL') {
                         statusBadge = `<span style="background: #fef9c3; color: #854d0e; border: 1px solid #fde047; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">📞 OTP அழைப்பு</span>`;
                         actionBtn = `
-                            <button onclick="editCustomerFromDraftDesk('${d.mobileNumber}')" title="வாடிக்கையாளர் விவரங்களைத் திருத்த (Edit Details)" style="height: 34px; padding: 0 12px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><i class="fa-solid fa-pen-to-square"></i> திருத்து</button>
-                            <button onclick="resumeCustomerSession('${d.mobileNumber}', true)" title="வாடிக்கையாளர் OTP சமர்ப்பிக்க (Submit OTP)" style="height: 34px; padding: 0 14px; background: #eab308; color: #422006; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(234,179,8,0.25);">🚀 OTP சமர்ப்பி</button>
+                            ${compactEditBtn}
+                            <button onclick="resumeCustomerSession('${safeCardKey}', true)" title="வாடிக்கையாளர் OTP சமர்ப்பிக்க (Submit OTP)" style="height: 34px; padding: 0 12px; background: #eab308; color: #422006; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(234,179,8,0.25);">🚀 OTP சமர்ப்பி</button>
+                        `;
+                    } else if (d.hasIncompleteWork) {
+                        statusBadge = `<span style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">⏳ பாதியில் உள்ளது</span>`;
+                        actionBtn = `
+                            <button onclick="resumeCustomerSession('${safeCardKey}', false)"
+                                    title="பாதியில் நின்ற விண்ணப்பத்தை விட்ட இடத்திலிருந்து தொடர் (Continue)"
+                                    aria-label="தொடர்"
+                                    style="height: 34px; padding: 0 11px; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(22,163,74,0.25); transition: all 0.2s;"
+                                    onmouseover="this.style.background='#15803d'; this.style.transform='scale(1.03)';"
+                                    onmouseout="this.style.background='#16a34a'; this.style.transform='none';">
+                                <i class="fa-solid fa-play" style="font-size: 10px;"></i> Continue
+                            </button>
+                            ${compactEditBtn}
                         `;
                     } else {
-                        statusBadge = `<span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">💾 வரைவு தயார்</span>`;
+                        statusBadge = `<span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;">💾 சேமித்த ஆவணங்கள்</span>`;
                         actionBtn = `
-                            <button onclick="editCustomerFromDraftDesk('${d.mobileNumber}')" title="வாடிக்கையாளர் விவரங்களைத் திருத்த (Edit Master Details)" style="height: 34px; padding: 0 12px; background: #0284c7; color: white; border: none; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 1px 3px rgba(2,132,199,0.25);"><i class="fa-solid fa-pen-to-square"></i> திருத்து</button>
+                            ${compactEditBtn}
                         `;
                     }
                 }
@@ -208,26 +240,38 @@
                 const timeStr = d.lastUpdated ? new Date(d.lastUpdated).toLocaleDateString('ta-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
                 
                 let serviceTitle = d.serviceName || '';
-                if (d.canNumber) {
-                    serviceTitle = '📜 TNeGA வருவாய் சேவை';
-                } else if (d.subService === 'ADD_MEMBER' || d.serviceName === 'குடும்ப உறுப்பினர் சேர்க்கை') {
+                const subCode = String(d.subService || '').toUpperCase();
+                if (subCode === 'ADD_MEMBER' || d.serviceName === 'குடும்ப உறுப்பினர் சேர்க்கை') {
                     serviceTitle = '👤+ குடும்ப உறுப்பினர் சேர்க்கை';
-                } else if (d.subService === 'CHANGE_ADDRESS' || d.subService === 'ADDRESS_CHANGE' || d.serviceName === 'முகவரி மாற்றம்') {
+                } else if (subCode === 'CHANGE_ADDRESS' || subCode === 'ADDRESS_CHANGE' || d.serviceName === 'முகவரி மாற்றம்') {
                     serviceTitle = '🏠 குடும்ப அட்டை முகவரி மாற்றம்';
-                } else if (d.subService === 'REMOVE_MEMBER' || d.serviceName === 'குடும்ப உறுப்பினர் நீக்கம்') {
+                } else if (subCode === 'REMOVE_MEMBER' || d.serviceName === 'குடும்ப உறுப்பினர் நீக்கம்') {
                     serviceTitle = '➖ குடும்ப உறுப்பினர் நீக்கம்';
-                } else if (!d.serviceName || d.serviceName === 'புதிய குடும்ப அட்டை' || d.serviceName === 'மாஸ்டர் சுயவிவரம்') {
-                    if (d.membersCount > 0 && d.headAadhaar) {
-                        serviceTitle = '👤 மாஸ்டர் சுயவிவரம் (Master Profile)';
-                    } else {
-                        serviceTitle = '🏛️ புதிய குடும்ப அட்டை';
-                    }
+                } else if (subCode === 'CHANGE_HEAD' || d.serviceName === 'குடும்பத் தலைவர் மாற்றம்') {
+                    serviceTitle = '👑 குடும்பத் தலைவர் மாற்றம்';
+                } else if (subCode === 'UPDATE_MOBILE' || subCode === 'CHANGE_MOBILE' || d.serviceName === 'கைபேசி எண் மாற்றம்') {
+                    serviceTitle = '📱 கைபேசி எண் மாற்றம்';
+                } else if (subCode === 'INCOME' || d.serviceName === 'வருமானச் சான்றிதழ்') {
+                    serviceTitle = '📜 வருமானச் சான்றிதழ்';
+                } else if (subCode === 'COMMUNITY' || d.serviceName === 'சாதிச் சான்றிதழ்') {
+                    serviceTitle = '📜 சாதிச் சான்றிதழ்';
+                } else if (subCode === 'RESIDENCE' || d.serviceName === 'இருப்பிடச் சான்றிதழ்') {
+                    serviceTitle = '🏠 இருப்பிடச் சான்றிதழ்';
+                } else if (subCode === 'FIRST_GRADUATE' || d.serviceName === 'முதல் தலைமுறை பட்டதாரி') {
+                    serviceTitle = '🎓 முதல் தலைமுறை பட்டதாரி';
+                } else if (subCode === 'OBC' || d.serviceName === 'OBC சான்றிதழ்') {
+                    serviceTitle = '📜 OBC சான்றிதழ்';
+                } else if (subCode === 'LEGAL_HEIR' || d.serviceName === 'வாரிசுச் சான்றிதழ்') {
+                    serviceTitle = '⚖️ வாரிசுச் சான்றிதழ்';
+                } else if (subCode === 'WIDOW' || d.serviceName === 'விதவைச் சான்றிதழ்') {
+                    serviceTitle = '📜 விதவைச் சான்றிதழ்';
+                } else if (d.canNumber || subCode === 'CAN_REGISTER') {
+                    serviceTitle = '📜 TNeGA வருவாய் சேவை';
+                } else if (!serviceTitle || serviceTitle === 'புதிய குடும்ப அட்டை' || serviceTitle === 'மாஸ்டர் சுயவிவரம்') {
+                    serviceTitle = '🏛️ புதிய குடும்ப அட்டை';
                 }
 
-                const isMasterProfileBadge = serviceTitle.includes('மாஸ்டர் சுயவிவரம்');
-                const badgeStyle = isMasterProfileBadge 
-                    ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;' 
-                    : 'background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;';
+                const badgeStyle = 'background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;';
 
                 return `
                     <div style="background: white; border-radius: 10px; padding: 14px; border: 1px solid ${isItemTrashed ? '#fca5a5' : '#e2e8f0'}; box-shadow: 0 1px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
@@ -253,14 +297,14 @@
                             <div style="display: flex; gap: 6px; flex: 1; justify-content: flex-end; align-items: center;">
                                 ${actionBtn}
                                 ${!isItemTrashed ? `
-                                <button onclick="downloadCustomerApplicationForm('${d.mobileNumber}', '${d.applicationNumber || ''}')" 
+                                <button onclick="downloadCustomerApplicationForm('${safeCardKey}', '${d.applicationNumber || ''}')" 
                                         title="📥 விண்ணப்பப் படிவம் / சான்றிதழ் / ஆவணங்களைப் பதிவிறக்கு (Download)" 
                                         style="height: 34px; width: 34px; padding: 0; background: #ecfdf5; color: #059669; border: 1.5px solid #a7f3d0; border-radius: 8px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 1px 2px rgba(16,185,129,0.12);" 
                                         onmouseover="this.style.background='#d1fae5'; this.style.borderColor='#10b981'; this.style.transform='scale(1.05)';" 
                                         onmouseout="this.style.background='#ecfdf5'; this.style.borderColor='#a7f3d0'; this.style.transform='none';">
                                     <i class="fa-solid fa-download"></i>
                                 </button>
-                                <button onclick="trashCustomerDraft('${d.mobileNumber}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}')" 
+                                <button onclick="trashCustomerDraft('${safeCardKey}', '${(d.name || 'வாடிக்கையாளர்').replace(/'/g, "\\'")}', '${safeDisplayMob}')" 
                                         title="🗑️ குப்பைத்தொட்டிக்கு நகர்த்து (Move to Trash)" 
                                         style="height: 34px; width: 34px; padding: 0; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 1px 2px rgba(220,38,38,0.12);" 
                                         onmouseover="this.style.background='#fee2e2'; this.style.borderColor='#ef4444'; this.style.transform='scale(1.05)';" 
@@ -330,36 +374,39 @@
         }
         window.showInAppConfirmModal = showInAppConfirmModal;
 
-        async function permanentDeleteCustomerDraft(mobile, name) {
-            const displayName = name && name !== '—' ? name : `+91 ${mobile}`;
+        async function permanentDeleteCustomerDraft(draftKey, name, displayMob) {
+            const targetKey = String(draftKey || '').trim();
+            const shownMob = displayMob || (targetKey.includes('_') ? targetKey.split('_')[0] : targetKey);
+            const displayName = name && name !== '—' ? name : `+91 ${shownMob}`;
             const confirmed = await showInAppConfirmModal(
-                `🗑️ வாடிக்கையாளர் வரைவை நீக்கவா?`,
-                `"${displayName}" (+91 ${mobile}) வாடிக்கையாளர் வரைவை முழுமையாக நீக்க விரும்புகிறீர்களா?\n\nFirebase மற்றும் கம்ப்யூட்டரிலிருந்து இந்த வாடிக்கையாளரின் தரவுகள் நிரந்தரமாக அழிக்கப்படும்.`,
+                `🗑️ விண்ணப்ப வரைவை நீக்கவா?`,
+                `"${displayName}" (+91 ${shownMob}) விண்ணப்பத்தை முழுமையாக நீக்க விரும்புகிறீர்களா?\n\nFirebase மற்றும் கம்ப்யூட்டரிலிருந்து இந்த விண்ணப்பம் நிரந்தரமாக அழிக்கப்படும்.`,
                 `🗑️ நிரந்தரமாக நீக்கு`
             );
             if (!confirmed) return;
 
             try {
                 const opUid = localStorage.getItem('eseva_operator_uid') || '';
-                const res = await fetch(`/api/drafts/${encodeURIComponent(mobile)}?permanent=true`, {
+                const res = await fetch(`/api/drafts/${encodeURIComponent(targetKey)}?permanent=true`, {
                     method: 'DELETE',
                     headers: opUid ? { 'x-operator-uid': opUid } : {}
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showInAppToast('🗑️ வாடிக்கையாளர் வரைவு முழுமையாக அழிக்கப்பட்டது.');
+                    showInAppToast('🗑️ விண்ணப்ப வரைவு முழுமையாக அழிக்கப்பட்டது.');
                     
+                    const activeDraftId = localStorage.getItem('eseva_active_draft_id') || '';
                     const activeMob = (localStorage.getItem('eseva_active_customer_mobile') || '').replace(/\D/g, '').slice(-10);
-                    const targetMob = (mobile || '').replace(/\D/g, '').slice(-10);
+                    const isDeletingActive = (activeDraftId && activeDraftId === targetKey) || (!activeDraftId && activeMob && activeMob === shownMob);
 
                     if (typeof clearCustomerDocCache === 'function') {
-                        clearCustomerDocCache(targetMob);
-                        clearCustomerDocCache(mobile);
+                        clearCustomerDocCache(targetKey);
+                        if (isDeletingActive) clearCustomerDocCache(shownMob);
                     }
-                    if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
+                    if (isDeletingActive && typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
 
-                    // If the deleted customer was currently loaded/active, or if screen has no active customer, fully reset screen!
-                    if (!activeMob || (activeMob && targetMob && activeMob === targetMob)) {
+                    if (isDeletingActive) {
+                        localStorage.removeItem('eseva_active_draft_id');
                         if (typeof clearAutomationScreenSession === 'function') {
                             clearAutomationScreenSession();
                         } else if (typeof resetIntakeChat === 'function') {
@@ -378,7 +425,7 @@
                         }
                     }
 
-                    allOperatorDrafts = allOperatorDrafts.filter(d => (d.mobileNumber || '').replace(/\D/g, '').slice(-10) !== targetMob);
+                    allOperatorDrafts = allOperatorDrafts.filter(d => (d.draftId || d.mobileNumber) !== targetKey);
                     window.allOperatorDrafts = allOperatorDrafts;
                     renderOperatorDrafts();
                     await fetchOperatorDrafts();
@@ -390,8 +437,8 @@
             }
         }
 
-        async function trashCustomerDraft(mobile, name) {
-            return permanentDeleteCustomerDraft(mobile, name);
+        async function trashCustomerDraft(draftKey, name, displayMob) {
+            return permanentDeleteCustomerDraft(draftKey, name, displayMob);
         }
 
         // Backward-compatible alias
@@ -413,7 +460,8 @@
             try {
                 const opUid = localStorage.getItem('eseva_operator_uid') || '';
                 for (const d of [...allOperatorDrafts]) {
-                    await fetch(`/api/drafts/${encodeURIComponent(d.mobileNumber)}?permanent=true`, {
+                    const delKey = d.draftId || d.mobileNumber;
+                    await fetch(`/api/drafts/${encodeURIComponent(delKey)}?permanent=true`, {
                         method: 'DELETE',
                         headers: opUid ? { 'x-operator-uid': opUid } : {}
                     }).catch(() => {});
@@ -423,6 +471,7 @@
                 } else if (typeof resetIntakeChat === 'function') {
                     resetIntakeChat();
                 }
+                localStorage.removeItem('eseva_active_draft_id');
                 localStorage.removeItem('eseva_active_customer_mobile');
                 localStorage.removeItem('eseva_active_customer_name');
                 currentCitizenData = null;
@@ -448,8 +497,10 @@
         async function restoreCustomerDraft(mobile, name) {
             const displayName = name && name !== '—' ? name : `+91 ${mobile}`;
             try {
+                const opUid = localStorage.getItem('eseva_operator_uid') || '';
                 const res = await fetch(`/api/drafts/${mobile}/restore`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: opUid ? { 'x-operator-uid': opUid } : {}
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -488,14 +539,22 @@
             }
         }
 
-        async function resumeCustomerSession(mobile, autoSubmit) {
+        async function resumeCustomerSession(draftKeyOrMob, autoSubmit) {
+            const rawKey = String(draftKeyOrMob || '').trim();
+            if (!rawKey) return;
+
+            const knownDraft = allOperatorDrafts.find(d => (d.draftId || d.mobileNumber) === rawKey || d.mobileNumber === rawKey);
+            const mobileClean = (knownDraft?.mobileNumber || (rawKey.includes('_') ? rawKey.split('_')[0] : rawKey)).replace(/\D/g, '').slice(-10);
+            const targetDraftId = knownDraft?.draftId || rawKey;
+            if (!mobileClean) return;
+
+            window.lastSubService = null;
+            window.lastSubServiceData = null;
+            localStorage.setItem('eseva_active_customer_mobile', mobileClean);
+            localStorage.setItem('eseva_active_draft_id', targetDraftId);
             closeOperatorDraftsModal();
             closeNewCustomerModal();
 
-            const mobileClean = (mobile || '').replace(/\D/g, '');
-            if (!mobileClean) return;
-
-            const knownDraft = allOperatorDrafts.find(d => d.mobileNumber === mobileClean);
             const knownName = knownDraft ? knownDraft.name : '';
             showCustomerLoading(
                 knownName ? `${knownName} விவரங்கள் மீட்டெடுக்கப்படுகின்றன...` : 'வாடிக்கையாளர் விவரங்கள் மீட்டெடுக்கப்படுகின்றன...',
@@ -503,6 +562,9 @@
             );
 
             localStorage.setItem('eseva_active_customer_mobile', mobileClean);
+            localStorage.setItem('eseva_active_draft_id', targetDraftId);
+            if (typeof clearCustomerDocCache === 'function') clearCustomerDocCache(mobileClean);
+            if (typeof resetSidebarDocsCache === 'function') resetSidebarDocsCache();
             const opUid = localStorage.getItem('eseva_operator_uid') || '';
             const opName = localStorage.getItem('eseva_operator_name') || '';
             const opMob = localStorage.getItem('eseva_operator_mobile') || '';
@@ -513,9 +575,11 @@
                     headers: { 
                         'Content-Type': 'application/json',
                         'x-operator-uid': opUid,
-                        'x-session-mobile': mobileClean
+                        'x-session-mobile': mobileClean,
+                        'x-draft-id': targetDraftId
                     },
                     body: JSON.stringify({ 
+                        draftId: targetDraftId,
                         mobileNumber: mobileClean,
                         customerMobile: mobileClean,
                         isCustomerSession: true,
@@ -567,15 +631,22 @@
         }
 
 
-        async function editCustomerFromDraftDesk(mobile) {
-            const mobileClean = (mobile || '').replace(/\D/g, '');
+        async function editCustomerFromDraftDesk(draftKeyOrMob) {
+            const rawKey = String(draftKeyOrMob || '').trim();
+            if (!rawKey) return;
+
+            const knownDraft = (allOperatorDrafts || []).find(d => (d.draftId || d.mobileNumber) === rawKey || d.mobileNumber === rawKey);
+            const mobileClean = (knownDraft?.mobileNumber || (rawKey.includes('_') ? rawKey.split('_')[0] : rawKey)).replace(/\D/g, '').slice(-10);
+            const targetDraftId = knownDraft?.draftId || rawKey;
             if (!mobileClean) return;
 
+            window.lastSubService = null;
+            window.lastSubServiceData = null;
+            localStorage.setItem('eseva_active_customer_mobile', mobileClean);
+            localStorage.setItem('eseva_active_draft_id', targetDraftId);
             closeOperatorDraftsModal();
             closeNewCustomerModal();
-            localStorage.setItem('eseva_active_customer_mobile', mobileClean);
 
-            const knownDraft = (allOperatorDrafts || []).find(d => d.mobileNumber === mobileClean);
             const knownName = knownDraft ? knownDraft.name : '';
             showCustomerLoading(
                 knownName ? `${knownName} விவரங்கள் திறக்கப்படுகின்றன...` : 'வாடிக்கையாளர் விவரங்கள் திறக்கப்படுகின்றன...',
@@ -583,11 +654,16 @@
             );
 
             try {
-                const res = await fetch(`/api/drafts/${mobileClean}`);
+                const opUid = localStorage.getItem('eseva_operator_uid') || '';
+                const res = await fetch(`/api/drafts/${encodeURIComponent(targetDraftId)}`, {
+                    headers: opUid ? { 'x-operator-uid': opUid } : {}
+                });
                 const data = await res.json();
                 if (data && data.draft) {
                     const profile = data.draft.citizenProfile || {};
                     currentCitizenData = Object.assign({}, profile, {
+                        draftId: targetDraftId,
+                        mobileNumber: mobileClean,
                         headPhotoPath: profile.headPhotoPath || data.draft.documents?.profilePhoto,
                         members: profile.members,
                         documents: data.draft.documents
@@ -604,12 +680,12 @@
                     }
                 }
                 if (typeof openEditModal === 'function') {
-                    await openEditModal(mobileClean, false);
+                    await openEditModal(targetDraftId, false);
                 }
             } catch (e) {
                 console.warn('Error opening edit modal for draft customer:', e);
                 if (typeof openEditModal === 'function') {
-                    await openEditModal(mobileClean, false);
+                    await openEditModal(targetDraftId, false);
                 }
             } finally {
                 hideCustomerLoading();
@@ -728,9 +804,11 @@
             if (box) { box.style.display = 'none'; box.innerHTML = ''; }
         }
 
-        async function downloadCustomerApplicationForm(mobile, appNo) {
-            if (!mobile && !appNo) return;
-            const cleanMob = String(mobile || '').replace(/\D/g, '').slice(-10);
+        async function downloadCustomerApplicationForm(draftKeyOrMob, appNo) {
+            if (!draftKeyOrMob && !appNo) return;
+            const rawKey = String(draftKeyOrMob || '').trim();
+            const isDraftKey = /^[0-9]{10}_[a-z0-9_-]+$/i.test(rawKey);
+            const cleanMob = isDraftKey ? rawKey : rawKey.replace(/\D/g, '').slice(-10);
 
             // 1. If TNPDS Application Number exists (10-18 digits), download official receipt
             if (appNo && /^\d{10,18}$/.test(String(appNo).trim())) {
@@ -740,7 +818,7 @@
             }
 
             // 2. Drafted Application Summary PDF
-            const url = `/api/drafts/${cleanMob}/application-pdf`;
+            const url = `/api/drafts/${encodeURIComponent(cleanMob)}/application-pdf`;
             const safeName = `Application_Draft_${cleanMob}${appNo ? '_' + appNo : ''}.pdf`;
             if (typeof window.triggerDownloadUrl === 'function') {
                 return window.triggerDownloadUrl(url, safeName);

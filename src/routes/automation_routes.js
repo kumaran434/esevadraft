@@ -24,6 +24,7 @@ const {
     getLiveTnegaStatus,
     provideCanOtp
 } = require('../../tnega_can_automation');
+const { startTnegaIncomeCertificateFlow } = require('../portal/tnega/tnega_income_certificate');
 const { saveStepCheckpoint, getStepCheckpoint, clearStepCheckpoint } = require('../services/automation_checkpoint_service');
 const { saveCitizenDraft, logOperatorCorrection } = require('../../firestore_db');
 const { saveCitizenProfile } = require('../../database');
@@ -31,15 +32,27 @@ const storageService = require('../services/storage_service');
 const { 
     sessions,
     getOrCreateSession, 
+    resolveSessionForRequest,
     getActiveMobile, 
     persistSessions, 
     getSessionState 
 } = storageService;
 
+function getAutoReqSession(req, explicitMob = null) {
+    const targetMobile = explicitMob || req.query?.mobile || req.body?.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile();
+    const reqDraftId = String(req.body?.draftId || req.query?.draftId || req.headers['x-draft-id'] || '').trim();
+    const opUid = req.headers['x-operator-uid'] || req.body?.operatorUid || req.query?.operatorUid || null;
+    if (!targetMobile && !reqDraftId) return { targetMobile, sess: storageService.getSessionState() };
+    const sess = (typeof resolveSessionForRequest === 'function' && (reqDraftId || opUid))
+        ? resolveSessionForRequest({ draftId: reqDraftId, mobile: targetMobile, operatorUid: opUid })
+        : getOrCreateSession(reqDraftId || targetMobile);
+    if (sess && opUid && !sess.operatorUid) sess.operatorUid = opUid;
+    return { targetMobile, sess };
+}
+
 // 1. GET /api/automation/progress
 router.get('/api/automation/progress', (req, res) => {
-    const targetMobile = req.query.mobile || getActiveMobile();
-    const sess = targetMobile ? getOrCreateSession(targetMobile) : storageService.getSessionState();
+    const { sess } = getAutoReqSession(req, req.query.mobile || getActiveMobile());
     if (!sess) {
         return res.json({ step: 0, total: 0, percentage: 0, stepMessage: '', isRunning: false, isWaitingForApproval: false });
     }
@@ -64,8 +77,7 @@ router.get('/api/automation/progress', (req, res) => {
 
 // 2. GET /api/automation/live-status
 router.get('/api/automation/live-status', async (req, res) => {
-    const targetMobile = req.query.mobile || req.headers['x-session-mobile'] || getActiveMobile();
-    const sess = targetMobile ? getOrCreateSession(targetMobile) : storageService.getSessionState();
+    const { sess } = getAutoReqSession(req, req.query.mobile || req.headers['x-session-mobile'] || getActiveMobile());
 
     if (!sess) {
         return res.json({
@@ -139,7 +151,7 @@ router.get('/api/automation/live-status', async (req, res) => {
 router.post('/api/automation/start', async (req, res) => {
     const targetMobile = req.body.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile();
     if (!targetMobile) return res.status(400).json({ error: 'செயலில் உள்ள வாடிக்கையாளர் எண் இல்லை.' });
-    const sess = getOrCreateSession(targetMobile);
+    const { sess } = getAutoReqSession(req, targetMobile);
     const isRealGovtOtp = req.body.forceRealGovtOtp === true || sess.enableRealGovtOtp === true || req.body.isMockSandbox === false;
     const isMock = !isRealGovtOtp;
     const isPublishMode = req.body.enableFinalSubmit === true || req.body.isPublish === true;
@@ -362,7 +374,7 @@ router.post('/api/automation/start', async (req, res) => {
     } else if (isCanSearchFlow) {
         runner = (prof, onProg, opts) => startTnegaCanSearchFlow(prof, onProg, { isMockSandbox: isMock, ...opts });
     } else if (isIncomeFlow) {
-        runner = (prof, onProg, opts) => startTnegaCanRegisterFlow(prof, onProg, { isMockSandbox: isMock, ...opts });
+        runner = (prof, onProg, opts) => startTnegaIncomeCertificateFlow(prof, onProg, { isMockSandbox: isMock, ...opts });
     }
     const flowProfile = {
         ...(sess.citizenProfile || {}),
@@ -406,6 +418,9 @@ router.post('/api/automation/start', async (req, res) => {
             automationName: isRemoveMemberFlow ? 'remove_member' : (isAddMemberFlow ? 'add_member' : (isChangeAddressFlow ? 'change_address' : (isMobileChangeFlow ? 'mobile_change' : (isChangeHeadFlow ? 'change_head' : 'new_ration_card'))))
         }
     ).then((result) => {
+        sess.isAutomating = false;
+        sess.isAutomationRunning = false;
+        sess.automationStep = 0;
         if (result && result.success) {
             clearStepCheckpoint(targetMobile, flowProfile.subService || 'new_ration_card');
             sess.applicationNumber = result.applicationNumber || result.canNumber || null;
@@ -415,7 +430,7 @@ router.post('/api/automation/start', async (req, res) => {
                 sess.citizenProfile.applicationPdfUrl = sess.applicationPdfUrl;
                 if (result.canNumber) sess.citizenProfile.canNumber = result.canNumber;
                 sess.citizenProfile.submittedAt = new Date().toISOString();
-                saveCitizenProfile(targetMobile, sess.citizenProfile);
+                saveCitizenProfile(sess.draftId || targetMobile, sess.citizenProfile);
             }
             sess.step = 'submitted';
             sess.intakeState = 'submitted';
@@ -425,7 +440,9 @@ router.post('/api/automation/start', async (req, res) => {
                 applicationNumber: sess.applicationNumber,
                 applicationPdfUrl: sess.applicationPdfUrl
             });
-            saveCitizenDraft(targetMobile, {
+            saveCitizenDraft(sess.draftId || targetMobile, {
+                draftId: sess.draftId || targetMobile,
+                mobileNumber: targetMobile,
                 operatorUid: sess.operatorUid || null,
                 citizenProfile: sess.citizenProfile,
                 intakeState: 'submitted',
@@ -435,20 +452,23 @@ router.post('/api/automation/start', async (req, res) => {
                 chatHistory: sess.chatHistory,
                 documents: sess.tempUploads || {}
             }).catch(() => {});
-            persistSessions();
+            persistSessions(sess);
         } else if (result && !result.success) {
             sess.chatHistory.push({
                 sender: 'bot',
                 text: `⚠️ ஆட்டோமேஷன் நிறுத்தம்: ${result.message || 'செயல்முறை இடைநிறுத்தப்பட்டது.'}`
             });
-            persistSessions();
+            persistSessions(sess);
         }
     }).catch((err) => {
+        sess.isAutomating = false;
+        sess.isAutomationRunning = false;
+        sess.automationStep = 0;
         sess.chatHistory.push({
             sender: 'bot',
             text: `❌ ஆட்டோமேஷன் பிழை: ${err.message}`
         });
-        persistSessions();
+        persistSessions(sess);
     });
 
     res.json({
@@ -489,8 +509,7 @@ router.post('/api/automation/stop', async (req, res) => {
         if (typeof stopTnegaAutomation === 'function') {
             await stopTnegaAutomation().catch(e => console.warn('TNeGA stop warn:', e.message));
         }
-        const targetMobile = req.body?.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile();
-        const sess = targetMobile ? getOrCreateSession(targetMobile) : storageService.getSessionState();
+        const { targetMobile, sess } = getAutoReqSession(req, req.body?.mobileNumber || req.headers['x-session-mobile'] || getActiveMobile());
         if (sess) {
             sess.chatHistory.push({
                 sender: 'bot',
@@ -524,8 +543,7 @@ router.post('/api/automation/stop', async (req, res) => {
 // 7. GET /api/automation/approval-status
 router.get('/api/automation/approval-status', async (req, res) => {
     const status = getLiveApprovalStatus();
-    const targetMobile = req.query.mobile || getActiveMobile();
-    const sess = targetMobile ? getOrCreateSession(targetMobile) : storageService.getSessionState();
+    const { targetMobile, sess } = getAutoReqSession(req, req.query.mobile || getActiveMobile());
     res.json({
         ...status,
         citizenProfile: sess ? sess.citizenProfile : null,

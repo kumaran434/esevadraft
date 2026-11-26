@@ -266,9 +266,34 @@
     1. **Generate OTP (படி 19 / Login OTP) ➡️ Wait OTP**: OTP உருவாக்கு பொத்தானை அழுத்திய பிறகு, உண்மையில் Chrome-ல் OTP Modal திறந்ததா என்பதை உறுதிப்படுத்திய பிறகே OTP காத்திருப்பிற்குச் செல்ல வேண்டும்.
     2. **Upload Document ➡️ Save / Next**: `<input type="file">`-ல் கோப்பின் பெயர் தெரிந்தாலே பதிவேற்றம் முடிந்துவிட்டதாகக் கருதக் கூடாது (`uploadInpVal`, `hasFileName`, `input.files[0]` ஆகியவை போலி உறுதி!). அரசு சர்வரின் `"வெற்றிகரமாக பதிவேற்றப்பட்டது"` Toast / பச்சை Chip (`#69f777`, `.badge-success`, `.alert-success`, clear `'x'` button, அல்லது upload button disabled) வந்த பிறகே `Save Member` / `Next` அழுத்த வேண்டும்.
     3. **Verify OTP ➡️ Next Form / Next Member**: OTP சமர்ப்பித்த பிறகு, போர்ட்டல் பிழையின்றி OTP சாளரம் மூடி அடுத்த நிலை / அட்டவணையில் உறுப்பினர் வரிசை உறுதியான பிறகே அடுத்த உறுப்பினருக்கோ அடுத்த கட்டத்திற்கோ செல்ல வேண்டும்.
-    4. **Zero Blind Aadhaar Auto-Resend**: UIDAI ஆதார் OTP சாளரத்தில் ஆப்ரேட்டர் அனுமதியின்றி தானாக `"மீண்டும் அனுப்பவும்"` (Resend) அழுத்தி `txn` குறியீட்டை அழிக்கக் கூடாது.
+    4. **Zero Blind or Duplicate OTP Auto-Resend**: போர்ட்டலின் டைமர் முடியும் முன்னரோ, பட்டன் disabled நிலையில் இருக்கும்போதோ, ஆபரேட்டர் தானே Resend/OTP உள்ளிட்ட பிறகோ கண்மூடித்தனமாகவோ இரட்டை கிளிக்காகவோ (Double-Click) Resend அழுத்தி `txn` குறியீட்டை அழிக்கக் கூடாது (பார்க்க Golden Rule 23).
     5. **Halt Loudly at Step N**: படி N உறுதிப்படுத்தப்படவில்லை எனில், அங்கேயே சிவப்பு HUD (`🔴 பிழை`) மற்றும் சாட் எச்சரிக்கையுடன் பாதுகாப்பாக நிறுத்த வேண்டும் — தவறான படிக்கு ஓடக் கூடாது.
 - **Automated Gate**: Enforce via `node scripts/preflight_check.js` and `tests/regression_suite.js` on every change.
+
+### 🔁 Golden Rule 23: Universal Single-Click OTP Resend, Countdown Intelligence & Zero-Double-Click Law (OTP டைமர் ஆய்வு, ஒற்றை-கிளிக் மீண்டும் அனுப்புதல் & இரட்டை-கிளிக் முழுத் தடை விதி)
+- **Mandatory OTP Lifecycle Analysis on EVERY Service (எல்லா OTP படிகளிலும் கட்டாய ஆய்வு)**:
+  - இனி உருவாக்கப்படும் அல்லது பராமரிக்கப்படும் அனைத்து அரசு சேவைகளிலும், **ஒவ்வொரு OTP கட்டத்தையும் (Initial Mobile OTP, Login OTP, Aadhaar UIDAI OTP, TNeGA CAN OTP, மற்றும் புதிய போர்ட்டல் OTPகள்)** சேர்க்கும்போது:
+    1. போர்ட்டலில் OTP கவுண்டவுன் எவ்வளவு நேரம் ஓடுகிறது (எ.கா: முதல் முறை `120` நொடிகள் ➡️ Resend செய்தால் `60` நொடிகள் ➡️ அடுத்தடுத்து சுருங்கும் டைமர்),
+    2. `"மீண்டும் அனுப்பு" / Resend` பொத்தான் எப்போது disabled/hidden நிலையில் இருக்கும், எப்போது clickable ஆகும், ஒரு முறை கிளிக் செய்ததும் போர்ட்டல் எப்படி லாக் ஆகி அடுத்த கவுண்டவுனைத் தொடங்கும்,
+    ஆகியவற்றை நேரடியாக DOM-ல் ஆய்வு செய்து அதற்கேற்ப வடிவமைக்க வேண்டும்.
+- **Absolute Zero-Double-Click Invariant (OTP-ல் இரட்டை கிளிக் முழுத் தடை)**:
+  - **1 Expiry Cycle = Max 1 Click**: OTP டைமர் `0` ஆகி, `"மீண்டும் அனுப்பு"` பொத்தான் உண்மையிலேயே clickable ஆகி, ஆபரேட்டர் OTP உள்ளிடாமலும் மனிதராக Resend அழுத்தாமலும் இருந்தால் மட்டுமே, ஆட்டோமேஷன் **சரியாக 1 முறை** மட்டுமே கிளிக் செய்ய வேண்டும். ஒருபோதும் `Resend` அல்லது `Submit` பொத்தான்களை இரண்டு முறை கிளிக் செய்யக் கூடாது.
+  - **Anti-Substring Bug Law**: `'0 நொடிகள்'` / `'0 seconds'` போன்ற substring சோதனைகள் (`"120 நொடிகள்"`, `"60 நொடிகள்"` ஆகியவற்றை `0` எனத் தவறாகப் படிப்பதால்) முற்றிலும் தடைசெய்யப்பட்டுள்ளன. எண் எல்லைப் பகுப்பாய்வு (Numeric boundary parsing) மட்டுமே பயன்படுத்த வேண்டும்.
+  - **Single Shared Engine Only**: அனைத்து OTP காத்திருப்புகளும் [src/portal/common/otp_copilot_watcher.js](file:///d:/downloads/ai%20assitant%202/src/portal/common/otp_copilot_watcher.js) (`tryCopilotAutoResendIfExpired`, `shouldBotTriggerResend`, `performVisibleModalResend`, `shouldBotTriggerSubmit`) வழியாக மட்டுமே இயங்க வேண்டும் — `WeakSet` + Browser Cycle Lock (`botResendCyclePendingReset`) + Human-First Yield (`isTrusted`) + 15-min SMS flood cap (`maxAutoResends = 2`) ஆகியவை எப்போதும் செயலில் இருக்க வேண்டும்.
+- **Automated Regression Lock**: `npm.cmd test` (`TEST 75` & `TEST 77`) எப்போதும் இதனைத் தானாகவே சரிபார்த்துப் பாதுகாக்கும்.
+
+### 🧱 Golden Rule 24: The "100% Fresh Service Run + Complete PC & Cloud Archive Vault" Law (ஒவ்வொரு சேவையும் 100% Fresh + ஆவணங்கள், CAN & ரசீதுகள் PC + Cloud சேமிப்பு விதி)
+- **Zero Per-Service Delta / Auto-Resume Complexity (குழப்பமான பழைய சேவைத் தொடர்ச்சி முழுத் தடை)**:
+  - எல்லா 14 ஏற்கனவே உள்ள சேவைகளிலும், இனி உருவாக்கப்படும் #15 முதல் #100+ புதிய அரசு சேவைகளிலும் **ஒரே ஒரு எளிய விதி மட்டுமே** பொருந்தும்:
+  - **1. ஒவ்வொரு சேவையும் எப்போதும் 100% ஃப்ரெஷ்ஷாகவே தொடங்கும் (`resetTransientServiceInputs(sess)`)**:
+    - எந்தவொரு சேவையின் `enterService()` அழைக்கப்படும்போதும், [src/cartridges/_fresh_service_guard.js](file:///d:/downloads/ai%20assitant%202/src/cartridges/_fresh_service_guard.js) (`resetTransientServiceInputs(sess)`) முதலில் இயக்கப்பட்டு:
+      1. முன்பு பதிவேற்றிய அனைத்து ஆவணங்களையும் + இறுதி விண்ணப்ப ரசீதுகளையும் (`savedVaultDocs[]`, `submittedApplications[]`) இழப்பின்றி பாதுகாப்பாக Archive செய்யும் (`archiveCustomerDocumentsAndResults(sess)`),
+      2. பின்னர் **அனைத்து நடப்பு வேலை புலங்கள் & வேலை ஆவணங்களையும்** (`ACTIVE_WORKING_PROFILE_FIELDS`, `TRANSIENT_PROFILE_FIELDS`, `documents`, `tempUploads`, `base64Docs`, `canNumber`, `members`) சுத்தம் செய்து புதிய சேவையை **எப்போதும் படி 1-லிருந்து 100% Pure Fresh-ஆகத்** தொடங்கும் — `+ புதிய வாடிக்கையாளர்` அமர்வு தொடங்கும்போதும்கூட பழைய வரைவிலிருந்து எதுவும் ஆட்டோ-லோட் / auto-resume செய்யப்படாது!
+  - **2. முழுமையான PC + Cloud சேமிப்பு & ஒத்திசைவு (Archive Vault — Delete = Both)**:
+    - வாடிக்கையாளர் பதிவேற்றும் ஆவணங்கள், CAN எண், மற்றும் சமர்ப்பிக்கப்பட்ட **இறுதி முடிவு ஆவணங்கள் (End-Result Application Ref No + Receipt PDFs)** அனைத்தும் PC (`<mobile>.json`) மற்றும் Cloud (Firebase Firestore + Storage) ஆகிய இரண்டிலும் தொடர்ந்து சேமிக்கப்படும்.
+    - ஆபரேட்டர் Delete அழுத்தினால் PC + Cloud இரண்டிலிருந்தும் ஒரே நேரத்தில் சுத்தமாக அழிக்கப்படும்.
+    - சேமிக்கப்பட்ட வரலாற்று ஆவணங்கள் வெறும் பார்வை / டவுன்லோட் / ஆபரேட்டர் பயன்பாட்டிற்கே — ஒருபோதும் புதிய சேவையின் கேள்வி ஓட்டத்தில் குறுக்கிடாது.
+  - **Template Mandate**: `src/cartridges/_template/flow.js` இயல்பாகவே `resetTransientServiceInputs(sess)` அழைக்கும்படி அமைக்கப்பட்டுள்ளது — அனைத்து புதிய சேவைகளும் இதையே கட்டாயம் பின்பற்ற வேண்டும்.
 
 ---
 

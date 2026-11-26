@@ -1,16 +1,16 @@
+/**
+ * eSevaDraft Unified Citizen Database Facade
+ *
+ * Single Canonical Store Law:
+ * Every customer record lives in STRICTLY ONE local JSON file inside getActiveDraftsDir()
+ * (AppData/Roaming/esevadraft-desktop/data/drafts/<mobile>.json in Desktop mode;
+ * <repo>/data/drafts/<mobile>.json in workspace/test mode).
+ * NEVER duplicates customer data into citizens.json or citizens.json.bak.
+ */
 const fs = require('fs');
 const path = require('path');
 const { resolveTnDistrict } = require('./tn_district_mapper');
-
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const dbFilePath = path.join(dataDir, 'citizens.json');
-const dbBackupPath = path.join(dataDir, 'citizens.json.bak');
-const draftsDir = path.join(dataDir, 'drafts');
-const appDataDraftsDir = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts');
+const { getActiveDraftsDir, isSpecificDraftId, extractMobileFromDraftKey, getActiveDraftIdForMobile } = require('./src/services/db/firestore_client');
 
 function safeWriteJsonSync(targetPath, data) {
     try {
@@ -32,13 +32,13 @@ function safeWriteJsonSync(targetPath, data) {
     }
 }
 
+function getDraftFilePath(cleanMob) {
+    return path.join(getActiveDraftsDir(), `${cleanMob}.json`);
+}
+
 function findDraftFile(cleanMob) {
-    const fileName = `${cleanMob}.json`;
-    const localP = path.join(draftsDir, fileName);
-    if (fs.existsSync(localP)) return localP;
-    const appDataP = path.join(appDataDraftsDir, fileName);
-    if (fs.existsSync(appDataP)) return appDataP;
-    return null;
+    const p = getDraftFilePath(cleanMob);
+    return fs.existsSync(p) ? p : null;
 }
 
 function maskAadhaar(aadhaar) {
@@ -50,80 +50,54 @@ function maskAadhaar(aadhaar) {
     return aadhaar;
 }
 
-// Clean fresh initial database (no demo data)
-const initialDatabase = {};
-
 function loadDatabase() {
+    const db = {};
+    const dir = getActiveDraftsDir();
+    if (!fs.existsSync(dir)) return db;
     try {
-        if (!fs.existsSync(dbFilePath)) {
-            safeWriteJsonSync(dbFilePath, initialDatabase);
-            return initialDatabase;
-        }
-        const data = fs.readFileSync(dbFilePath, 'utf-8');
-        if (!data || !data.trim()) {
-            throw new Error('citizens.json is empty');
-        }
-        return JSON.parse(data);
-    } catch (e) {
-        console.error('Error loading database, attempting backup restore:', e.message);
-        if (fs.existsSync(dbBackupPath)) {
+        const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+        for (const f of files) {
             try {
-                const bakData = fs.readFileSync(dbBackupPath, 'utf-8');
-                const parsedBak = JSON.parse(bakData);
-                console.log('🛡️ [Database Rescue] Successfully recovered citizens database from citizens.json.bak!');
-                safeWriteJsonSync(dbFilePath, parsedBak);
-                return parsedBak;
-            } catch (bakErr) {
-                console.error('Backup rescue failed:', bakErr.message);
-            }
+                const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+                if (!d || d.isDeleted === true || d.status === 'TRASHED') continue;
+                const mob = String(d.mobileNumber || f.replace('.json', '')).trim();
+                if (mob && d.citizenProfile) {
+                    db[mob] = { ...d.citizenProfile, mobileNumber: mob, lastUpdated: d.lastUpdated || d.citizenProfile.lastUpdated };
+                }
+            } catch (_) {}
         }
-        return initialDatabase;
-    }
-}
-
-function saveDatabase(db) {
-    try {
-        const success = safeWriteJsonSync(dbFilePath, db);
-        if (success) {
-            try { fs.copyFileSync(dbFilePath, dbBackupPath); } catch (_) {}
-        }
-        return success;
-    } catch (e) {
-        console.error('Error saving database:', e.message);
-        return false;
-    }
+    } catch (_) {}
+    return db;
 }
 
 function getCitizenProfile(mobileNumber) {
     if (!mobileNumber) return null;
     const cleanMob = String(mobileNumber).trim();
-    const isTestEnv = !!(process.env.ESEVA_TEST_MODE === '1' || process.argv.some(a => a.includes('test')));
+    const isTestEnv = !!(process.env.ESEVA_TEST_MODE === '1' || process.env.REGRESSION_TEST === 'true' || process.argv.some(a => a.includes('test')));
     const filterDummyProfile = (prof) => {
         if (!prof || isTestEnv) return prof;
         const aadh = String(prof.headAadhaar || prof.aadhaarNumber || '').replace(/\D/g, '');
         if (aadh === '123456789012' || aadh === '987654321012') return null;
         return prof;
     };
-    // 1. Check drafts directory first (primary single source of truth across workspace & AppData)
     const draftPath = findDraftFile(cleanMob);
     if (draftPath) {
         try {
             const draft = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
-            if (draft && draft.citizenProfile) {
+            if (draft && !draft.isDeleted && draft.status !== 'TRASHED' && draft.citizenProfile) {
                 return filterDummyProfile(draft.citizenProfile);
             }
         } catch (_) {}
     }
-    // 2. Fall back to citizens.json
-    const db = loadDatabase();
-    return filterDummyProfile(db[cleanMob] || null);
+    return null;
 }
 
 function saveCitizenProfile(mobileNumber, profileData) {
     if (!mobileNumber) return null;
-    const cleanMob = String(mobileNumber).trim();
-    const db = loadDatabase();
-    const cleanData = { ...profileData };
+    const rawKey = String(mobileNumber).trim();
+    const routedActiveId = !isSpecificDraftId(rawKey) ? getActiveDraftIdForMobile(rawKey) : null;
+    const cleanMob = routedActiveId || rawKey;
+    const cleanData = { ...(profileData || {}) };
     if (cleanData.district || cleanData.taluk || cleanData.village || cleanData.pincode) {
         const fullAddr = [cleanData.streetEng, cleanData.streetTam, cleanData.areaEng, cleanData.areaTam].filter(Boolean).join(' ');
         const resolved = resolveTnDistrict(cleanData.district, cleanData.taluk, cleanData.village, cleanData.pincode, fullAddr);
@@ -140,43 +114,61 @@ function saveCitizenProfile(mobileNumber, profileData) {
             cleanData.districtCorrectionReason = resolved.reason;
         }
     }
-    db[cleanMob] = {
-        ...(db[cleanMob] || {}),
-        ...cleanData,
-        isExtracted: true,
-        lastUpdated: new Date().toISOString()
-    };
-    saveDatabase(db);
 
-    // Also keep local & AppData drafts synchronized if present
-    const targetPaths = [path.join(draftsDir, `${cleanMob}.json`), path.join(appDataDraftsDir, `${cleanMob}.json`)];
-    for (const dPath of targetPaths) {
-        if (fs.existsSync(dPath)) {
-            try {
-                const draft = JSON.parse(fs.readFileSync(dPath, 'utf8'));
-                draft.citizenProfile = { ...(draft.citizenProfile || {}), ...cleanData };
-                safeWriteJsonSync(dPath, draft);
-            } catch (_) {}
-        }
+    const nowIso = new Date().toISOString();
+    const dPath = getDraftFilePath(cleanMob);
+    let draft = null;
+    if (fs.existsSync(dPath)) {
+        try {
+            const parsed = JSON.parse(fs.readFileSync(dPath, 'utf8'));
+            if (parsed && !parsed.isDeleted && parsed.status !== 'TRASHED') {
+                draft = parsed;
+            }
+        } catch (_) {}
     }
 
-    return db[cleanMob];
+    const displayMob = extractMobileFromDraftKey(cleanData.mobileNumber || cleanMob);
+    const mergedProfile = {
+        ...((draft && draft.citizenProfile) || {}),
+        ...cleanData,
+        mobileNumber: displayMob,
+        isExtracted: true,
+        lastUpdated: nowIso
+    };
+
+    const updatedDraft = {
+        ...(draft || {
+            draftId: cleanMob,
+            mobileNumber: displayMob,
+            intakeState: 'SERVICE_SELECTION',
+            step: 'draft',
+            status: 'DRAFT_SAVED'
+        }),
+        draftId: (draft && draft.draftId) || cleanMob,
+        mobileNumber: displayMob,
+        name: mergedProfile.fullNameTam || mergedProfile.fullNameEng || (draft && draft.name) || '',
+        citizenProfile: mergedProfile,
+        lastUpdated: nowIso
+    };
+
+    safeWriteJsonSync(dPath, updatedDraft);
+    return mergedProfile;
 }
 
 function addFamilyMember(mobileNumber, memberData) {
-    const db = loadDatabase();
-    if (!db[mobileNumber]) return null;
-    if (!db[mobileNumber].members) db[mobileNumber].members = [];
-    db[mobileNumber].members.push(memberData);
-    db[mobileNumber].lastUpdated = new Date().toISOString();
-    saveDatabase(db);
-    return db[mobileNumber];
+    if (!mobileNumber) return null;
+    const cleanMob = String(mobileNumber).trim();
+    const existing = getCitizenProfile(cleanMob);
+    if (!existing) return null;
+    const members = Array.isArray(existing.members) ? [...existing.members] : [];
+    members.push(memberData);
+    return saveCitizenProfile(cleanMob, { ...existing, members });
 }
 
 function getCitizenDocuments(mobileNumber) {
     const profile = getCitizenProfile(mobileNumber);
     if (!profile) return [];
-    
+
     const docs = [];
     if (profile.headPhotoPath && fs.existsSync(profile.headPhotoPath)) {
         docs.push({
@@ -188,13 +180,14 @@ function getCitizenDocuments(mobileNumber) {
         });
     }
 
-    if (profile.residenceProof && fs.existsSync(profile.residenceProof)) {
+    const resPath = typeof profile.residenceProof === 'string' ? profile.residenceProof : profile.residenceProof?.docPath;
+    if (resPath && fs.existsSync(resPath)) {
         docs.push({
             id: 'residence_proof',
             title: 'இருப்பிடச் சான்று ஆவணம்',
-            type: profile.residenceProof.endsWith('.pdf') ? 'application/pdf' : 'image/png',
-            filename: path.basename(profile.residenceProof),
-            path: profile.residenceProof
+            type: resPath.endsWith('.pdf') ? 'application/pdf' : 'image/png',
+            filename: path.basename(resPath),
+            path: resPath
         });
     }
 
@@ -210,13 +203,14 @@ function getCitizenDocuments(mobileNumber) {
 
     if (Array.isArray(profile.members)) {
         profile.members.forEach((m, idx) => {
-            if (m.aadhaarDocPath && fs.existsSync(m.aadhaarDocPath)) {
+            const mDoc = m.aadhaarDocPath || m.docPath;
+            if (mDoc && fs.existsSync(mDoc)) {
                 docs.push({
                     id: `member_aadhaar_${idx + 1}`,
                     title: `உறுப்பினர் ஆதார் - ${m.name || m.nameEng || idx + 1}`,
-                    type: m.aadhaarDocPath.endsWith('.pdf') ? 'application/pdf' : 'image/png',
-                    filename: path.basename(m.aadhaarDocPath),
-                    path: m.aadhaarDocPath
+                    type: mDoc.endsWith('.pdf') ? 'application/pdf' : 'image/png',
+                    filename: path.basename(mDoc),
+                    path: mDoc
                 });
             }
         });
@@ -226,42 +220,32 @@ function getCitizenDocuments(mobileNumber) {
 }
 
 function getAllCitizensSummary() {
-    const db = loadDatabase();
-    const citizensMap = new Map();
-
-    // 1. From citizens.json
-    Object.values(db).forEach(c => {
-        if (c && c.mobileNumber) citizensMap.set(c.mobileNumber, c);
-    });
-
-    // 2. Merge drafts from data/drafts/ and AppData drafts
-    const scanDirs = [draftsDir, appDataDraftsDir];
-    for (const dir of scanDirs) {
-        if (fs.existsSync(dir)) {
-            try {
-                const draftFiles = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-                draftFiles.forEach(df => {
-                    try {
-                        const d = JSON.parse(fs.readFileSync(path.join(dir, df), 'utf8'));
-                        const mob = d.mobileNumber || df.replace('.json', '');
-                        const prof = d.citizenProfile || {};
-                        citizensMap.set(mob, {
-                            fullNameTam: prof.fullNameTam || d.name,
-                            fullNameEng: prof.fullNameEng || d.name,
-                            mobileNumber: mob,
-                            headAadhaar: prof.headAadhaar,
-                            district: prof.district,
-                            isSubmitted: d.status === 'SUBMITTED',
-                            applicationNumber: d.applicationNumber,
-                            lastUpdated: d.lastUpdated || prof.lastUpdated
-                        });
-                    } catch (_) {}
-                });
-            } catch (_) {}
-        }
+    const citizens = [];
+    const dir = getActiveDraftsDir();
+    if (fs.existsSync(dir)) {
+        try {
+            const draftFiles = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+            for (const df of draftFiles) {
+                try {
+                    const d = JSON.parse(fs.readFileSync(path.join(dir, df), 'utf8'));
+                    if (!d || d.isDeleted === true || d.status === 'TRASHED') continue;
+                    const mob = d.mobileNumber || df.replace('.json', '');
+                    const prof = d.citizenProfile || {};
+                    citizens.push({
+                        fullNameTam: prof.fullNameTam || d.name,
+                        fullNameEng: prof.fullNameEng || d.name,
+                        mobileNumber: mob,
+                        headAadhaar: prof.headAadhaar,
+                        district: prof.district,
+                        isSubmitted: d.status === 'SUBMITTED',
+                        applicationNumber: d.applicationNumber,
+                        lastUpdated: d.lastUpdated || prof.lastUpdated
+                    });
+                } catch (_) {}
+            }
+        } catch (_) {}
     }
 
-    const citizens = Array.from(citizensMap.values());
     return {
         totalCitizens: citizens.length,
         totalApplicationsSubmitted: citizens.filter(c => c.applicationNumber || c.isSubmitted).length,
@@ -281,20 +265,16 @@ function deleteCitizenProfile(mobileNumber) {
     const rawKey = String(mobileNumber).trim();
     const keysToClean = Array.from(new Set([cleanMob, rawKey].filter(Boolean)));
     try {
-        const db = loadDatabase();
-        let changed = false;
+        const dir = getActiveDraftsDir();
         for (const k of keysToClean) {
-            if (db[k]) {
-                delete db[k];
-                changed = true;
+            const fPath = path.join(dir, `${k}.json`);
+            if (fs.existsSync(fPath)) {
+                try { fs.unlinkSync(fPath); } catch (_) {}
             }
-        }
-        if (changed) {
-            saveDatabase(db);
         }
         return true;
     } catch (e) {
-        console.error('Error deleting citizen from database:', e.message);
+        console.error('Error deleting citizen profile:', e.message);
         return false;
     }
 }
@@ -309,4 +289,3 @@ module.exports = {
     loadDatabase,
     maskAadhaar
 };
-

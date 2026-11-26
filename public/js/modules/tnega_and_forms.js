@@ -43,6 +43,7 @@
 
                 // 4. Clear client session
                 localStorage.removeItem('eseva_active_customer_mobile');
+                localStorage.removeItem('eseva_active_draft_id');
                 localStorage.removeItem('eseva_active_customer_name');
                 currentCitizenData = null;
 
@@ -128,7 +129,7 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert('🎉 வாடிக்கையாளரின் (+91 ' + mobile + ') Master Profile-ல் CAN எண் (' + canNumber + ') நிரந்தரமாக இணைக்கப்பட்டது!');
+                    alert('🎉 வாடிக்கையாளரின் (+91 ' + mobile + ') விண்ணப்பத்தில் CAN எண் (' + canNumber + ') சேமிக்கப்பட்டது!');
                     fetchOperatorDrafts();
                 } else {
                     alert('இணைப்பதில் பிழை: ' + (data.error || 'தெரியாத பிழை'));
@@ -254,7 +255,7 @@
                         ${familyRowsHtml}
                         <div style="display: flex; gap: 6px; margin-top: 10px;">
                             <button onclick="const m = document.getElementById('tnegaCanTargetMobile')?.value.trim() || currentCanTargetMobile; linkCanToCustomerMaster(m, '${data.canNumber}')" style="flex: 1; height: 32px; background: #16a34a; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                                <i class="fa-solid fa-floppy-disk"></i> Master Profile-ல் சேமி
+                                <i class="fa-solid fa-floppy-disk"></i> விண்ணப்பத்தில் சேமி
                             </button>
                             <button onclick="closeTnegaCanModal(); startDirectApplyService('வருமானச் சான்றிதழ்');" style="flex: 1; height: 32px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">
                                 📜 வருமானச் சான்றிதழ்
@@ -363,110 +364,5 @@
         }
 
         let pendingDocUploads = {};
-
-        function formatDocUrl(docPath) {
-            if (!docPath || typeof docPath !== 'string') return '';
-            if (docPath.startsWith('http://') || docPath.startsWith('https://') || docPath.startsWith('data:') || docPath.startsWith('/api/')) return docPath;
-            const clean = docPath.replace(/\\/g, '/').replace(/^\/app\//, '');
-            const upIdx = clean.toLowerCase().indexOf('uploads/');
-            if (upIdx !== -1) {
-                return '/' + clean.substring(upIdx);
-            }
-            const compIdx = clean.toLowerCase().indexOf('compressed/');
-            if (compIdx !== -1) {
-                return '/' + clean.substring(compIdx);
-            }
-            const stripped = clean.startsWith('/') ? clean.substring(1) : clean;
-            return '/uploads/' + stripped;
-        }
-
-        function isPdfPath(docPath) {
-            if (!docPath || typeof docPath !== 'string') return false;
-            return docPath.toLowerCase().endsWith('.pdf') || docPath.includes('application/pdf');
-        }
-
-        function renderDocPreview(docPath, imgId, phId, pdfId, statusId, viewBtnId, defaultPrompt, deleteBtnId = null, forcedIsPdf = false) {
-            const imgEl = document.getElementById(imgId);
-            const phEl = document.getElementById(phId);
-            const pdfEl = pdfId ? document.getElementById(pdfId) : null;
-            const stEl = document.getElementById(statusId);
-            const vbEl = viewBtnId ? document.getElementById(viewBtnId) : null;
-            const delEl = deleteBtnId ? document.getElementById(deleteBtnId) : null;
-
-            if (docPath) {
-                const url = formatDocUrl(docPath);
-                const isPdf = Boolean(forcedIsPdf) || isPdfPath(docPath) || isPdfPath(url);
-                if (isPdf) {
-                    if (imgEl) imgEl.style.display = 'none';
-                    if (phEl) phEl.style.display = 'none';
-                    if (pdfEl) {
-                        pdfEl.style.display = 'flex';
-                        pdfEl.style.cursor = 'pointer';
-                        pdfEl.title = 'ஆவணத்தைப் பார்க்க கிளிக் செய்யவும் (Click to view PDF)';
-                        pdfEl.onclick = () => window.open(url, '_blank');
-                    }
-                } else {
-                    if (imgEl) {
-                        imgEl.style.cursor = 'pointer';
-                        imgEl.title = 'ஆவணத்தைப் பார்க்க கிளிக் செய்யவும் (Click to view document)';
-                        imgEl.onclick = () => window.open(url, '_blank');
-                        imgEl.onerror = function() {
-                            imgEl.style.display = 'none';
-                            // If image fails to decode (e.g. PDF file misnamed as .jpg, or TIFF),
-                            // switch to PDF badge or placeholder, but NEVER hide the View or Delete buttons!
-                            if (pdfEl) {
-                                pdfEl.style.display = 'flex';
-                                pdfEl.style.cursor = 'pointer';
-                                pdfEl.onclick = () => window.open(url, '_blank');
-                                if (phEl) phEl.style.display = 'none';
-                            } else if (phEl) {
-                                phEl.style.display = 'block';
-                            }
-                            if (stEl) {
-                                const fname = docPath.split('/').pop().split('\\').pop();
-                                stEl.innerText = `✅ ஆவணம்: ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
-                                stEl.style.color = '#16a34a';
-                                stEl.style.fontWeight = '600';
-                            }
-                            if (vbEl) {
-                                vbEl.href = url;
-                                vbEl.style.display = 'inline-flex';
-                            }
-                            if (delEl) delEl.style.display = 'inline-flex';
-                        };
-                        imgEl.src = url;
-                        imgEl.style.display = 'block';
-                    }
-                    if (phEl) phEl.style.display = 'none';
-                    if (pdfEl) pdfEl.style.display = 'none';
-                }
-                if (stEl) {
-                    const fname = docPath.split('/').pop().split('\\').pop();
-                    stEl.innerText = `✅ ${fname.length > 20 ? fname.substring(0, 18) + '...' : fname}`;
-                    stEl.style.color = '#16a34a';
-                    stEl.style.fontWeight = '600';
-                }
-                if (vbEl) {
-                    vbEl.href = url;
-                    vbEl.style.display = 'inline-flex';
-                }
-                if (delEl) {
-                    delEl.style.display = 'inline-flex';
-                }
-            } else {
-                if (imgEl) imgEl.style.display = 'none';
-                if (phEl) phEl.style.display = 'block';
-                if (pdfEl) pdfEl.style.display = 'none';
-                if (stEl) {
-                    stEl.innerText = defaultPrompt;
-                    stEl.style.color = '#64748b';
-                    stEl.style.fontWeight = 'normal';
-                }
-                if (vbEl) vbEl.style.display = 'none';
-                if (delEl) delEl.style.display = 'none';
-            }
-        }
-
-        window.formatDocUrl = formatDocUrl;
-        window.isPdfPath = isPdfPath;
-        window.renderDocPreview = renderDocPreview;
+        // Note: formatDocUrl, isPdfPath, and renderDocPreview are owned cleanly by edit_modal_manager.js
+        // (with enhanced inline PDF preview rendering). Removed duplicate override here.

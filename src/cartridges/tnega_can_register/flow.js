@@ -1,4 +1,5 @@
 const { ensureBilingualPair, formatStreetWithHamlet } = require('../../utils/bilingual_helper');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function advanceFlow(sess, prefixMessage = '') {
     if (!sess.targetService) {
@@ -115,6 +116,7 @@ function advanceFlow(sess, prefixMessage = '') {
 }
 
 function enterService(sess, { greeting = '', isDirectOperator = false } = {}) {
+    resetTransientServiceInputs(sess);
     sess.subService = 'CAN_REGISTER';
     sess.pluginId = 'TNEGA_CAN_REGISTER';
     if (sess.citizenProfile) {

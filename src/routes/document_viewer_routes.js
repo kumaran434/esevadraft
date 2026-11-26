@@ -18,7 +18,8 @@ router.get('/api/documents', (req, res) => {
 
 // 2. GET /api/documents/download/:filename
 router.get('/api/documents/download/:filename', (req, res) => {
-    const filename = req.params.filename;
+    const filename = path.basename(String(req.params.filename || ''));
+    if (!filename) return res.status(400).json({ error: 'Invalid filename.' });
     const filePath = path.join(uploadDir, filename);
     if (fs.existsSync(filePath)) {
         return res.download(filePath);

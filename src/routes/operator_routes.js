@@ -117,109 +117,57 @@ router.post('/api/operator/new-customer', async (req, res) => {
     }
 
     const initialName = (customerName || '').trim();
-    if (cleanMobile && sessions.has(cleanMobile)) {
-        sessions.delete(cleanMobile);
+    const normOpUid = normalizeOperatorUid(operatorUid);
+    const { generateUniqueDraftId, setActiveDraftIdForMobile } = require('../services/db/firestore_client');
+    const uniqueDraftId = isTempWalkin ? cleanMobile : generateUniqueDraftId(cleanMobile);
+
+    // Every operator + customer session gets a 100% isolated session & unique draftId.
+    // Same customer mobile number can be entered and saved independently by ANY number of operators!
+    const freshProf = createFreshProfile(cleanMobile);
+    freshProf.fullNameTam = initialName;
+    freshProf.fullNameEng = initialName;
+    freshProf.mobileNumber = isTempWalkin ? '' : cleanMobile;
+
+    const sess = {
+        draftId: uniqueDraftId,
+        mobileNumber: cleanMobile,
+        operatorUid: normOpUid || null,
+        operatorName: operatorName || null,
+        operatorMobile: operatorMobile || null,
+        role: 'citizen',
+        isTempWalkin,
+        citizenProfile: freshProf,
+        subService: null,
+        subServiceData: null,
+        applicationNumber: null,
+        applicationPdfUrl: null,
+        targetMemberCount: 1,
+        currentMemberIdx: 1,
+        step: 'intake',
+        intakeState: 'SERVICE_SELECTION',
+        chatHistory: [],
+        _draftChecked: true,
+        _isPureFreshSession: true,
+        tempUploads: {},
+        documents: {},
+        base64Docs: {},
+        tempMember: null
+    };
+
+    if (!isTempWalkin) {
+        setActiveDraftIdForMobile(cleanMobile, uniqueDraftId, normOpUid);
+        sessions.set(uniqueDraftId, sess);
+        if (normOpUid) {
+            sessions.set(`${normOpUid}::${cleanMobile}`, sess);
+        }
     }
-    const sess = setActiveSession(cleanMobile);
-    sess.operatorUid = operatorUid || null;
-    sess.operatorName = operatorName || null;
-    sess.operatorMobile = operatorMobile || null;
-    sess.role = 'citizen';
-    sess.isTempWalkin = isTempWalkin;
-
-    let existingDraft = null;
-    if (!isTempWalkin && cleanMobile) {
-        try {
-            existingDraft = await getCitizenDraft(cleanMobile);
-        } catch (e) {}
+    const existingBare = cleanMobile ? sessions.get(cleanMobile) : null;
+    const existingBareOp = normalizeOperatorUid(existingBare?.operatorUid);
+    if (!existingBare || !normOpUid || !existingBareOp || existingBareOp === normOpUid) {
+        sessions.set(cleanMobile, sess);
     }
-
-    let masterCitizen = null;
-    if (!isTempWalkin && cleanMobile) {
-        try {
-            const masterLookup = lookupCitizen(cleanMobile);
-            if (masterLookup && masterLookup.citizen) {
-                masterCitizen = masterLookup.citizen;
-            }
-        } catch (_) {}
-    }
-
-    if (existingDraft && !existingDraft.isDeleted && existingDraft.status !== 'TRASHED' && existingDraft.citizenProfile) {
-        const existingOp = normalizeOperatorUid(existingDraft.operatorUid);
-        const incomingOp = normalizeOperatorUid(operatorUid);
-        const existingMob = (existingDraft.operatorMobile || '').trim();
-        const incomingMob = (operatorMobile || '').trim();
-        const existingName = (existingDraft.operatorName || '').trim().toLowerCase();
-        const incomingName = (operatorName || '').trim().toLowerCase();
-
-        // STRICT TENANT BOUNDARY:
-        // If the draft has an owner and the incoming operator UID does not match, ACCESS IS STRICTLY FORBIDDEN!
-        let isSameOperator = true;
-        if (existingOp && incomingOp && existingOp !== incomingOp) {
-            isSameOperator = false;
-        } else if (existingOp && !incomingOp) {
-            // Draft belongs to an operator, but requester is unauthenticated
-            isSameOperator = false;
-        }
-
-        if (!isSameOperator) {
-            return res.status(403).json({ 
-                error: `இந்த வாடிக்கையாளர் (${cleanMobile}) ஏற்கெனவே மற்றொரு இ-சேவை மையத்தால் (${existingDraft.operatorName || 'வேறு மையம்'}) பதிவு செய்யப்பட்டுள்ளது. விவரங்கள் பாதுகாக்கப்பட்டுள்ளன.` 
-            });
-        }
-
-        if (incomingOp) sess.operatorUid = incomingOp;
-        if (operatorName) sess.operatorName = operatorName;
-        if (operatorMobile) sess.operatorMobile = operatorMobile;
-
-        sess.citizenProfile = { ...(masterCitizen || {}), ...existingDraft.citizenProfile };
-        if (!serviceName) {
-            sess.subService = null;
-            sess.subServiceData = null;
-            sess.citizenProfile.subService = null;
-            sess.citizenProfile.subServiceData = null;
-        }
-        if (initialName && !sess.citizenProfile.fullNameTam) {
-            sess.citizenProfile.fullNameTam = initialName;
-        }
-        if (existingDraft.applicationNumber && !serviceName) {
-            sess.applicationNumber = existingDraft.applicationNumber;
-        } else {
-            sess.applicationNumber = null;
-            sess.applicationPdfUrl = null;
-        }
-    } else if (masterCitizen) {
-        sess.citizenProfile = {
-            ...createFreshProfile(cleanMobile),
-            ...masterCitizen,
-            mobileNumber: cleanMobile
-        };
-        if (initialName && !sess.citizenProfile.fullNameTam) {
-            sess.citizenProfile.fullNameTam = initialName;
-        }
-        sess.subService = null;
-        sess.subServiceData = null;
-        sess.applicationNumber = null;
-        sess.applicationPdfUrl = null;
-        if (masterCitizen.documents) {
-            sess.tempUploads = { ...masterCitizen.documents, ...sess.tempUploads };
-        }
-    } else {
-        sess.citizenProfile = createFreshProfile(cleanMobile);
-        sess.subService = null;
-        sess.subServiceData = null;
-        sess.citizenProfile.fullNameTam = initialName;
-        sess.citizenProfile.fullNameEng = initialName;
-        sess.citizenProfile.mobileNumber = isTempWalkin ? '' : cleanMobile;
-        sess.applicationNumber = null;
-        sess.applicationPdfUrl = null;
-    }
-    sess.targetMemberCount = (sess.citizenProfile.members && sess.citizenProfile.members.length) || 1;
-    sess.currentMemberIdx = 1;
-    sess.step = 'intake';
-    sess.tempUploads = { ...((existingDraft && existingDraft.documents) || (existingDraft && existingDraft.citizenProfile && existingDraft.citizenProfile.documents) || (masterCitizen && masterCitizen.documents) || {}) };
-    sess.tempMember = null;
-    if (sess.citizenProfile) sess.citizenProfile.tempMember = null;
+    if (typeof storageService.setActiveMobile === 'function') storageService.setActiveMobile(cleanMobile);
+    if (typeof storageService.setSessionState === 'function') storageService.setSessionState(sess);
 
     const phoneDisplay = isTempWalkin ? '' : ` (+91 ${cleanMobile})`;
     const resolvedName = (sess.citizenProfile && (sess.citizenProfile.fullNameTam || sess.citizenProfile.fullNameEng)) || initialName || '';
@@ -293,31 +241,36 @@ router.post('/api/operator/new-customer', async (req, res) => {
 
     if (!isTempWalkin) {
         try {
-            await saveCitizenDraft(cleanMobile, {
-                operatorUid,
+            await saveCitizenDraft(uniqueDraftId, {
+                draftId: uniqueDraftId,
+                mobileNumber: cleanMobile,
+                operatorUid: normOpUid || null,
                 operatorName,
                 operatorMobile,
                 citizenProfile: sess.citizenProfile,
                 subService: sess.subService || null,
                 subServiceData: sess.subServiceData || null,
-                documents: (existingDraft && existingDraft.documents) || {},
+                documents: {},
                 chatHistory: sess.chatHistory,
                 intakeState: sess.intakeState || 'SERVICE_SELECTION',
                 step: sess.intakeState || sess.step || 'SERVICE_SELECTION',
                 status: 'DRAFT_SAVED'
             });
-            saveCitizenMaster(cleanMobile, sess.citizenProfile);
-            persistSessions();
+            persistSessions(sess);
         } catch (e) {}
     }
 
     const lastBotMsg = (sess.chatHistory && sess.chatHistory.length > 0) ? sess.chatHistory[sess.chatHistory.length - 1] : {};
     res.json({
         success: true,
+        draftId: uniqueDraftId,
         customerMobile: cleanMobile,
         isWalkin: isTempWalkin,
         customerName: initialName,
+        subService: sess.subService || null,
+        subServiceData: sess.subServiceData || null,
         citizenProfile: sess.citizenProfile,
+        documentsList: [],
         chatHistory: sess.chatHistory,
         intakeState: sess.intakeState,
         step: sess.intakeState || sess.step,
@@ -332,6 +285,12 @@ router.post('/api/operator/new-customer', async (req, res) => {
 router.post('/api/operator/telemetry-log', async (req, res) => {
     try {
         const body = req.body || {};
+        const reqOpUid = body.operatorUid || req.headers['x-operator-uid'] || '';
+        const isSyntheticTest = reqOpUid === 'test_suite_operator_uid' ||
+            /^9999900\d{3}$/.test(String(body.mobile || body.activeMobile || body.customerMobile || ''));
+        if (isSyntheticTest) {
+            return res.json({ success: true, skippedTestTelemetry: true });
+        }
         const { event, details, mobile, type, message, filename, lineno, colno, stack, reason } = body;
         const errType = type || event || 'CLIENT_TELEMETRY';
         const errMsg = message || reason || (typeof details === 'string' ? details : JSON.stringify(details || {}));
@@ -387,6 +346,10 @@ router.post('/api/operator/telemetry-log', async (req, res) => {
 router.post('/api/operator/flight-recorder', async (req, res) => {
     try {
         const body = req.body || {};
+        const isSyntheticTest = /^9999900\d{3}$/.test(String(body.domSnapshot?.activeCustomer || ''));
+        if (isSyntheticTest) {
+            return res.json({ success: true, skippedTestTelemetry: true });
+        }
         const timestamp = body.recordedAt || new Date().toISOString();
 
         // 1. Write structured app_flight_recorder.json
@@ -518,6 +481,15 @@ router.post('/api/operator/submit-complete', async (req, res) => {
     sess.citizenProfile.applicationNumber = cleanAppNo;
     sess.citizenProfile.applicationPdfUrl = pdfUrl;
     sess.citizenProfile.submittedAt = new Date().toISOString();
+    sess.citizenProfile.submittedApplications = Array.isArray(sess.citizenProfile.submittedApplications) ? sess.citizenProfile.submittedApplications : [];
+    if (!sess.citizenProfile.submittedApplications.some(a => String(a.applicationNumber || '').trim() === cleanAppNo)) {
+        sess.citizenProfile.submittedApplications.push({
+            applicationNumber: cleanAppNo,
+            service: sess.subService || sess.citizenProfile.subService || 'NEW_CARD',
+            pdfUrl,
+            submittedAt: sess.citizenProfile.submittedAt
+        });
+    }
 
     if (customerName) {
         if (!sess.citizenProfile.fullNameTam && !sess.citizenProfile.fullNameEng) {

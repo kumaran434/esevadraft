@@ -16,7 +16,8 @@ async function handleAutomationStarter(ctx, req, res) {
     const activeMobile = storageService.getActiveMobile();
 
     const isExplicitMock = req.body.forceRealGovtOtp === false || req.body.isMockSandbox === true || text.toLowerCase().includes('mock') || text.includes('சோதனை');
-    const isExplicitLiveText = text.toLowerCase().includes('real_live_otp') || text.toLowerCase().includes('real') || text.includes('நேரலை') || text.includes('உண்மையான') || text.toLowerCase().includes('unmai') || text.toLowerCase().includes('unmya');
+    const lowText = text.toLowerCase().trim();
+    const isExplicitLiveText = lowText.includes('real_live_otp') || lowText === 'real' || lowText.includes('real otp') || text.includes('நேரலை') || text.includes('உண்மையான') || lowText.includes('unmai') || lowText.includes('unmya');
 
     let isStartCommand = false;
     let isRealGovtOtpRequested = false;

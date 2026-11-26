@@ -16,10 +16,17 @@
 
                 // If operator is logged in and has NO customer selected, KEEP SIDEBAR DASHED and DO NOT poll customer data!
                 if (isOp && !activeCustMob) {
-                    resetSidebarToOperatorView();
-                    if (noCustBanner) noCustBanner.style.display = 'flex';
-                    if (activeTitle) activeTitle.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
-                    if (saveBtn) saveBtn.style.display = 'none';
+                    const opCard = document.getElementById('sidebarOperatorDeskCard');
+                    const custBox = document.getElementById('sidebarCustomerDetailsBox');
+                    const alreadyInOperatorView = opCard && opCard.style.display === 'flex' && custBox && custBox.style.display === 'none';
+                    if (!alreadyInOperatorView) {
+                        resetSidebarToOperatorView();
+                    }
+                    if (noCustBanner && noCustBanner.style.display !== 'flex') noCustBanner.style.display = 'flex';
+                    if (activeTitle && !activeTitle.innerText.includes('ஏஐ உரையாடல் மையம்')) {
+                        activeTitle.innerHTML = `<i class="fa-solid fa-robot"></i> eSevaDraft ஏஐ உரையாடல் மையம்`;
+                    }
+                    if (saveBtn && saveBtn.style.display !== 'none') saveBtn.style.display = 'none';
                     if (!chatMessages || chatMessages.children.length === 0) {
                         renderDefaultWelcomeMessage();
                     }
@@ -33,10 +40,14 @@
                 if (clearHeader) clearHeader.style.display = 'inline-flex';
                 if (clearSidebar) clearSidebar.style.display = 'inline-flex';
 
-                const url = activeCustMob ? `/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}` : '/api/chat/history';
+                const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+                const url = activeCustMob
+                    ? `/api/chat/history?mobile=${encodeURIComponent(activeCustMob)}${activeDraftId ? `&draftId=${encodeURIComponent(activeDraftId)}` : ''}`
+                    : '/api/chat/history';
                 const res = await fetch(url, {
                     headers: {
                         'x-session-mobile': activeCustMob,
+                        'x-draft-id': activeDraftId,
                         'x-operator-uid': opUid
                     }
                 });
@@ -99,6 +110,7 @@
         async function resetIntakeChat() {
             try {
                 window.isScreenResetting = true;
+                window.isAutomationManuallyStopped = true;
                 setTimeout(() => { window.isScreenResetting = false; }, 3000);
 
                 if (otpCountdownInterval) {
@@ -107,22 +119,42 @@
                 }
                 otpSecondsLeft = 0;
 
-                // Hide all banners and progress bars
+                // Hide all banners, progress bars, stop buttons, and remove any lingering live stepper cards immediately
                 const rBanner = document.getElementById('resumeBanner');
                 if (rBanner) { rBanner.classList.remove('show'); rBanner.style.display = 'none'; }
                 const aBanner = document.getElementById('appNumberBanner');
                 if (aBanner) { aBanner.classList.remove('show'); aBanner.style.display = 'none'; }
                 const pBar = document.getElementById('automationProgressBar');
-                if (pBar) pBar.classList.remove('active');
+                if (pBar) {
+                    pBar.classList.remove('active');
+                    pBar.dataset.lastLocalUpdate = String(Date.now() + 60000);
+                }
+                const headerStopBtn = document.getElementById('btnStopAutomationHeader');
+                if (headerStopBtn) headerStopBtn.style.display = 'none';
+                document.querySelectorAll('#liveAutomationStepperCard, .live-automation-stepper, #liveAutomationStatusCard, .automation-stopped-pill, .live-milestone-step, .compact-otp-card, #globalOtpCardContainer').forEach(el => el.remove());
 
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
                 const oldMob = localStorage.getItem('eseva_active_customer_mobile') || '';
                 lastRenderedChatHistoryJson = '';
                 lastRenderedChatHistoryLength = 0;
                 currentCitizenData = null;
+                window.lastSubService = null;
+                window.lastSubServiceData = null;
+
+                // Ensure any running browser/server automation is also stopped silently on Reset
+                if (window.esevaDesktopBridge && typeof window.esevaDesktopBridge.stopLiveAutomation === 'function') {
+                    window.esevaDesktopBridge.stopLiveAutomation({ silent: true }).catch(() => {});
+                }
+                fetch('/api/automation/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': oldMob },
+                    body: JSON.stringify({ mobileNumber: oldMob })
+                }).catch(() => {});
+                fetch('/api/tnega/stop', { method: 'POST' }).catch(() => {});
 
                 if (isOp) {
                     localStorage.removeItem('eseva_active_customer_mobile');
+                    localStorage.removeItem('eseva_active_draft_id');
                     localStorage.removeItem('eseva_active_customer_name');
                     resetSidebarToOperatorView();
                     const titleEl = document.getElementById('activeCustomerTitle');
@@ -238,9 +270,17 @@
             lastRenderedChatHistoryJson = historyJson;
             lastRenderedChatHistoryLength = history.length;
 
-            // Preserve active live milestone steps across history renders
-            const existingMilestones = Array.from(chatBox.querySelectorAll('.live-milestone-step'));
-            const existingStepper = chatBox.querySelector('#liveAutomationStepperCard');
+            // Preserve ONLY genuinely active, unfinished live stepper card for the currently active customer
+            const isOpMode = localStorage.getItem('eseva_user_role') === 'operator';
+            const hasActiveCustomer = !isOpMode || Boolean(localStorage.getItem('eseva_active_customer_mobile'));
+            const candidateStepper = chatBox.querySelector('#liveAutomationStepperCard');
+            const existingStepper = (
+                candidateStepper &&
+                !window.isScreenResetting &&
+                !window.isAutomationManuallyStopped &&
+                hasActiveCustomer &&
+                candidateStepper.dataset.finished !== 'true'
+            ) ? candidateStepper : null;
 
             chatBox.innerHTML = '';
 
@@ -593,7 +633,12 @@
             }
 
             try {
-                const res = await fetch('/api/chat/resend-otp', { method: 'POST' });
+                const activeMob = localStorage.getItem('eseva_active_customer_mobile') || localStorage.getItem('eseva_user_mobile') || '';
+                const res = await fetch('/api/chat/resend-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-session-mobile': activeMob },
+                    body: JSON.stringify({ mobileNumber: activeMob })
+                });
                 const data = await res.json();
                 startOtpTimer(60);
                 fetchHistory();

@@ -96,7 +96,7 @@ async function executeAddressLoginSteps({ page, userMobile, onProgress, options,
         const curUrl = page.url();
         if (!curUrl.includes('/auth/login') && !curUrl.includes('/service-request') && !curUrl.includes('/cardmaintenance')) {
             try {
-                const addrLink = page.locator('a:has-text("முகவரி மாற்றம்"), a:has-text("Change of Address"), [routerlink*="service-request"], a[href*="service-request"]').first();
+                const addrLink = page.locator('a:has-text("முகவரி மாற்றம்"), a:has-text("Change of Address")').first();
                 if (await addrLink.count() > 0 && await addrLink.isVisible().catch(() => false)) {
                     onProgress('[படி 1/12] 🔗 முகப்பில் "முகவரி மாற்றம்" இணைப்பு கிளிக் செய்யப்படுகிறது...');
                     await addrLink.click({ force: true }).catch(() => {});

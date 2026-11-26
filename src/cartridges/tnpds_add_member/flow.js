@@ -3,12 +3,14 @@ const childFsm = require('../../core/fsm/fsm_add_member_child');
 const docFsm = require('../../core/fsm/fsm_member_doc_upload');
 const { renderSubserviceReadySummary } = require('../../core/fsm/fsm_summary_formatter');
 const { getVerifiedRationCardDocs } = require('../../services/profile_helpers');
+const { resetTransientServiceInputs } = require('../_fresh_service_guard');
 
 function cleanupAddMemberUploads(sess) {
     if (sess.tempUploads) {
         delete sess.tempUploads.memberAadhaar;
         delete sess.tempUploads.memberAadhaarFront;
         delete sess.tempUploads.memberAadhaarBack;
+        delete sess.tempUploads.mergedAadhaar;
         delete sess.tempUploads.birthCertificate;
         delete sess.tempUploads.surrenderProof;
     }
@@ -27,6 +29,38 @@ function cleanupAddMemberUploads(sess) {
         delete sess.documents.memberAadhaars;
         delete sess.documents.birthCertificate;
         delete sess.documents.surrenderProof;
+    }
+    if (sess.base64Docs) {
+        delete sess.base64Docs.memberAadhaarBase64;
+        delete sess.base64Docs.memberAadhaarName;
+        delete sess.base64Docs.memberAadhaarFrontBase64;
+        delete sess.base64Docs.memberAadhaarFrontName;
+        delete sess.base64Docs.memberAadhaarBackBase64;
+        delete sess.base64Docs.memberAadhaarBackName;
+        delete sess.base64Docs.memberAadhaarsBase64;
+        delete sess.base64Docs.birthCertificateBase64;
+        delete sess.base64Docs.surrenderProofBase64;
+    }
+    if (sess.citizenProfile && sess.citizenProfile.base64Docs) {
+        delete sess.citizenProfile.base64Docs.memberAadhaarBase64;
+        delete sess.citizenProfile.base64Docs.memberAadhaarName;
+        delete sess.citizenProfile.base64Docs.memberAadhaarFrontBase64;
+        delete sess.citizenProfile.base64Docs.memberAadhaarFrontName;
+        delete sess.citizenProfile.base64Docs.memberAadhaarBackBase64;
+        delete sess.citizenProfile.base64Docs.memberAadhaarBackName;
+        delete sess.citizenProfile.base64Docs.memberAadhaarsBase64;
+        delete sess.citizenProfile.base64Docs.birthCertificateBase64;
+        delete sess.citizenProfile.base64Docs.surrenderProofBase64;
+    }
+    if (sess.storageUrls) {
+        delete sess.storageUrls.memberAadhaar;
+        delete sess.storageUrls.memberAadhaarFront;
+        delete sess.storageUrls.memberAadhaarBack;
+        delete sess.storageUrls.birthCertificate;
+        delete sess.storageUrls.surrenderProof;
+    }
+    if (sess.citizenProfile) {
+        sess.citizenProfile.tempMember = null;
     }
 }
 
@@ -48,6 +82,36 @@ function enterService(sess, { isDirectOperator = false } = {}) {
     }
 
     const subData = sess.subServiceData || sess.citizenProfile?.subServiceData || {};
+    const prof = sess.citizenProfile || {};
+    const headName = prof.fullNameTam || prof.fullNameEng || 'குடும்பத் தலைவர்';
+    const isSameAsHead = (candidateName, candidateAadh) => {
+        const cleanCandAadh = String(candidateAadh || '').replace(/\D/g, '');
+        const cleanHeadAadh = String(prof.headAadhaar || '').replace(/\D/g, '');
+        if (cleanCandAadh && cleanHeadAadh && cleanCandAadh === cleanHeadAadh) return true;
+        if (candidateName && prof.fullNameTam && String(candidateName).trim() === String(prof.fullNameTam).trim() && !subData.relationshipTam) return true;
+        return false;
+    };
+    if (isSameAsHead(subData.memberNameTam || subData.memberName, subData.aadhaarNo || subData.aadhaarNumber)) {
+        delete subData.memberName;
+        delete subData.memberNameTam;
+        delete subData.memberNameEng;
+        delete subData.aadhaarNo;
+        delete subData.aadhaarNumber;
+        delete subData.dob;
+        delete subData.gender;
+        delete subData.genderTam;
+        delete subData.fatherNameTam;
+        delete subData.fatherNameEng;
+        delete subData.relationshipTam;
+        delete subData.relationship;
+        delete subData.docPath;
+        delete subData.aadhaarDocPath;
+        if (sess.tempUploads && sess.tempUploads.memberAadhaar && prof.documents?.headAadhaar &&
+            String(sess.tempUploads.memberAadhaar) === String(prof.documents.headAadhaar)) {
+            delete sess.tempUploads.memberAadhaar;
+        }
+    }
+
     const tempMem = sess.tempMember || sess.citizenProfile?.tempMember || null;
     if (tempMem) {
         const isHead = (tempMem.nameTam && tempMem.nameTam === sess.citizenProfile?.fullNameTam) ||
@@ -69,89 +133,124 @@ function enterService(sess, { isDirectOperator = false } = {}) {
 
     const { memberAadhaarDoc, hasMemberAadhaarDoc } = getVerifiedRationCardDocs(sess.citizenProfile, sess.tempUploads);
     let existingMemDoc = subData.aadhaarDocPath || subData.docPath;
-    if (!existingMemDoc && hasMemberAadhaarDoc) existingMemDoc = memberAadhaarDoc;
-
-    if (existingMemDoc && sess.citizenProfile) {
-        const prof = sess.citizenProfile;
-        if (!subData.memberNameTam && prof.fullNameTam) subData.memberNameTam = prof.fullNameTam;
-        if (!subData.memberNameEng && prof.fullNameEng) subData.memberNameEng = prof.fullNameEng;
-        if (!subData.memberName) subData.memberName = subData.memberNameTam || subData.memberNameEng || '';
-        if (!subData.fatherNameTam && prof.fatherNameTam) subData.fatherNameTam = prof.fatherNameTam;
-        if (!subData.fatherNameEng && prof.fatherNameEng) subData.fatherNameEng = prof.fatherNameEng;
-        if (!subData.dob && prof.dob) subData.dob = prof.dob;
-        if (!subData.gender && prof.gender) subData.gender = prof.gender;
-        if (!subData.genderTam && (prof.genderTam || prof.gender)) {
-            subData.genderTam = prof.genderTam || (prof.gender === 'Female' ? 'பெண்' : (prof.gender === 'Male' ? 'ஆண்' : prof.gender));
+    if (!existingMemDoc && hasMemberAadhaarDoc) {
+        const headPath = prof.headAadhaarDocPath || prof.documents?.headAadhaar || '';
+        const headPdfMatch = prof.members?.[0]?.docPath || '';
+        if (memberAadhaarDoc !== headPath && memberAadhaarDoc !== headPdfMatch) {
+            existingMemDoc = memberAadhaarDoc;
         }
-        if (!subData.aadhaarNo && (prof.headAadhaar || prof.aadhaarNumber)) {
-            subData.aadhaarNo = prof.headAadhaar || prof.aadhaarNumber;
-        }
-        subData.docPath = existingMemDoc;
-        subData.aadhaarDocPath = existingMemDoc;
-        if (!sess.tempUploads) sess.tempUploads = {};
-        sess.tempUploads.memberAadhaar = existingMemDoc;
-        if (!prof.documents) prof.documents = {};
-        prof.documents.memberAadhaar = existingMemDoc;
     }
+
     if (existingMemDoc && !subData.docPath) subData.docPath = existingMemDoc;
+    if (existingMemDoc && !subData.aadhaarDocPath) subData.aadhaarDocPath = existingMemDoc;
 
-    const memberName = subData.memberName || subData.memberNameTam || subData.memberNameEng || '';
-    const aadhaarNo = subData.aadhaarNo || subData.aadhaarNumber || '';
-    const relTam = subData.relationshipTam || '';
+    const rawMemberName = String(subData.memberNameTam || subData.memberName || subData.memberNameEng || '').trim();
+    const memberName = (rawMemberName && rawMemberName !== 'புதிய குடும்ப உறுப்பினர்') ? rawMemberName : '';
+    const aadhaarNo = String(subData.aadhaarNo || subData.aadhaarNumber || '').replace(/\D/g, '');
+    const cleanHeadAadh = String(prof.headAadhaar || '').replace(/\D/g, '');
+    const hasValidMemAadhaar = aadhaarNo.length === 12 && (!cleanHeadAadh || aadhaarNo !== cleanHeadAadh);
+    const relTam = String(subData.relationshipTam || '').trim();
 
-    if (memberName && aadhaarNo && relTam && existingMemDoc) {
-        sess.subServiceData = subData;
-        sess.intakeState = 'READY_TO_APPLY';
-        sess.step = 'READY';
-        sess.chatHistory.push(renderSubserviceReadySummary(sess));
-        return true;
+    // Collect any previously saved non-head family members (for optional 1-click reuse at ₹0 AI cost)
+    const savedCandidates = [];
+    const pushCandidate = (m) => {
+        if (!m) return;
+        const mNameTam = String(m.memberNameTam || m.nameTam || m.memberName || m.name || '').trim();
+        const mNameEng = String(m.memberNameEng || m.nameEng || '').trim();
+        const mName = mNameTam || mNameEng;
+        if (!mName || mName === 'புதிய குடும்ப உறுப்பினர்') return;
+        const mAadh = String(m.aadhaarNo || m.aadhaarNumber || '').replace(/\D/g, '');
+        if (cleanHeadAadh && mAadh && mAadh === cleanHeadAadh) return;
+        const mRelTam = String(m.relationshipTam || m.relationTam || m.relationship || m.relation || '').trim();
+        const mGender = String(m.gender || '').trim();
+        const mGenderTam = String(m.genderTam || (mGender === 'Female' || mGender === 'பெண்' ? 'பெண்' : (mGender === 'Male' || mGender === 'ஆண்' ? 'ஆண்' : ''))).trim();
+        if (!savedCandidates.some(c => (c.aadhaarNo && mAadh && c.aadhaarNo === mAadh) || (!mAadh && (c.memberNameTam || c.memberName) === mName))) {
+            savedCandidates.push({
+                memberName: mName,
+                memberNameTam: mNameTam || mName,
+                memberNameEng: mNameEng,
+                fatherNameTam: m.fatherNameTam || '',
+                fatherNameEng: m.fatherNameEng || '',
+                aadhaarNo: mAadh,
+                dob: m.dob || '',
+                gender: mGender,
+                genderTam: mGenderTam,
+                relationshipTam: mRelTam,
+                relationshipEng: m.relationshipEng || '',
+                isChild: Boolean(m.isChild),
+                docPath: m.docPath || m.aadhaarDocPath || '',
+                aadhaarDocPath: m.aadhaarDocPath || m.docPath || ''
+            });
+        }
+    };
+
+    if (memberName && (hasValidMemAadhaar || relTam) && (existingMemDoc || relTam)) {
+        pushCandidate({ ...subData, memberName, aadhaarNo, docPath: existingMemDoc || subData.docPath });
+    }
+    if (Array.isArray(subData.addMembersList)) {
+        subData.addMembersList.forEach(pushCandidate);
+    }
+    if (Array.isArray(prof.savedFamilyMembers)) {
+        prof.savedFamilyMembers.forEach(pushCandidate);
     }
 
-    if (existingMemDoc && ((existingMemDoc && !relTam) || (memberName && aadhaarNo && !relTam))) {
-        sess.subServiceData = subData;
-        sess.intakeState = 'RATION_ADD_MEMBER_RELATION';
-        const nameDisplay = subData.memberNameTam && subData.memberNameEng
-            ? `${subData.memberNameTam} (${subData.memberNameEng})`
-            : (memberName || 'புதிய குடும்ப உறுப்பினர்');
-        const aadhaarDisplay = aadhaarNo ? `\n• 🪪 **ஆதார் எண்:** ${aadhaarNo.replace(/(\d{4})/g, '$1 ').trim()}` : '';
-        const dobDisplay = subData.dob ? `\n• 📅 **பிறந்த தேதி:** ${subData.dob}` : '';
-        const genderDisplay = subData.genderTam ? `\n• ⚧ **பாலினம்:** ${subData.genderTam}` : '';
-        sess.chatHistory.push({
-            sender: 'bot',
-            text: `✅ **ஆதார் அட்டை விவரங்கள் ஏற்கெனவே பெறப்பட்டுள்ளன!** 🪪\n\n` +
-                  `• 👤 **உறுப்பினர் பெயர்:** ${nameDisplay}${aadhaarDisplay}${dobDisplay}${genderDisplay}\n\n` +
-                  `❓ **குடும்பத் தலைவருடன் இவரின் உறவுமுறை என்ன?**\n\n` +
-                  `கீழே உள்ள விருப்பத்தைத் தேர்ந்தெடுக்கவும் (அல்லது நேரடியாக தட்டச்சு செய்யவும்):`,
-            options: [
-                { label: "👦 மகன் (Son)", value: "மகன்" },
-                { label: "👧 மகள் (Daughter)", value: "மகள்" },
-                { label: "👰 மனைவி (Wife)", value: "மனைவி" },
-                { label: "🤵 கணவர் (Husband)", value: "கணவர்" },
-                { label: "👵 தாய் (Mother)", value: "தாய்" },
-                { label: "👴 தந்தை (Father)", value: "தந்தை" },
-                { label: "👫 மருமகள் (Daughter-in-law)", value: "மருமகள்" },
-                { label: "👫 மருமகன் (Son-in-law)", value: "மருமகன்" },
-                { label: "🔄 புதிய ஆவணம் மாற்று", value: "RATION_ADD_MEMBER_RESET" },
-                { label: "🔙 பின்செல்ல", value: "ரேஷன் கார்டு" }
-            ]
-        });
-        return true;
+    // Golden Rule 24 (5-Basic Vault + Always-Fresh Service Run):
+    // ALWAYS start fresh at Step 1 (Member Count: 1 / 2 / 3 / 4) — NEVER surprise-jump mid-stream!
+    // If previously scanned family member(s) exist in Saved Family Vault, show optional 1-click chip(s) right below (₹0 AI waste).
+    resetTransientServiceInputs(sess);
+    cleanupAddMemberUploads(sess);
+    sess.subServiceData = savedCandidates.length > 0 ? { _savedCandidates: savedCandidates.slice(0, 3) } : {};
+    if (sess.citizenProfile) {
+        sess.citizenProfile.subServiceData = sess.subServiceData;
     }
 
-    sess.intakeState = 'RATION_ADD_MEMBER_TYPE';
-    sess.step = 'RATION_ADD_MEMBER_TYPE';
+    const savedChips = savedCandidates.slice(0, 3).map((m, i) => ({
+        label: `💡 சேமித்த நபர்: ${m.memberNameTam}${m.relationshipTam ? ` (${m.relationshipTam})` : ''}`,
+        value: `ADD_MEMBER_RESUME_${i}`
+    }));
+
+    sess.intakeState = 'RATION_ADD_MEMBER_COUNT';
+    sess.step = 'RATION_ADD_MEMBER_COUNT';
     sess.chatHistory.push({
         sender: 'bot',
-        text: `➕ **குடும்ப உறுப்பினர் சேர்க்கை (Add Family Member)**\n\n` +
-              `சேர்க்கப்பட வேண்டிய புதிய உறுப்பினரின் **ஆதார் அட்டையைப்** பதிவேற்றவும் (அல்லது புகைப்படம் எடுக்கவும்):`,
-        actionRequired: 'upload',
-        uploadPrompt: 'உறுப்பினர் ஆதார் அட்டை',
+        text: `➕ **குடும்ப உறுப்பினர் சேர்க்கை (Add Family Member - TNPDS)**\n\n` +
+              `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+              `• 📌 **முக்கிய விதி:** புதிய உறுப்பினர் சேர்க்கைக்கு (குழந்தை / மருமகள் / பெரியவர் அனைவருக்கும்) **ஆதார் அட்டை (Aadhaar Card) மட்டுமே** கட்டாயம். *(பிறப்புச் சான்றிதழ் இங்கு ஏற்கப்படாது)*.\n\n` +
+              `1️⃣ **எத்தனை புதிய உறுப்பினர்களைச் சேர்க்கப் போகிறீர்கள்?**\n` +
+              `கீழே எண்ணிக்கையைத் தேர்ந்தெடுக்கவும்` +
+              (savedChips.length > 0 ? ` *(அல்லது கீழே உள்ள சேமித்த குடும்ப உறுப்பினரை ஒரே கிளிக்கில் தேர்வு செய்யலாம்)*:` : ` (அல்லது 1, 2, 3 எனத் தட்டச்சு செய்யவும்):`),
         options: [
-            { label: "📷 ஆதார் அட்டை பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "👤 1 புதிய உறுப்பினர்", value: "ADD_MEMBER_COUNT_1" },
+            { label: "👥 2 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_2" },
+            { label: "👨‍👩‍👧 3 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_3" },
+            { label: "👨‍👩‍👧‍👦 4 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_4" },
+            ...savedChips,
             { label: "🔙 ரேஷன் கார்டு சேவைகள்", value: "ரேஷன் கார்டு" }
         ]
     });
     return true;
+}
+
+function buildUploadPromptForMember(sess, idx, total) {
+    const prof = sess.citizenProfile || {};
+    const headName = prof.fullNameTam || prof.fullNameEng || 'குடும்பத் தலைவர்';
+    const progressLine = total > 1
+        ? `2️⃣ **புதிய உறுப்பினர் ${idx} / ${total} — ஆதார் அட்டையைப் பதிவேற்றவும்:**`
+        : `2️⃣ **சேர்க்கப்பட வேண்டிய புதிய உறுப்பினரின் ஆதார் அட்டையைப் பதிவேற்றவும்:**`;
+    return {
+        sender: 'bot',
+        text: `➕ **குடும்ப உறுப்பினர் சேர்க்கை (${total > 1 ? `உறுப்பினர் ${idx} / ${total}` : '1 புதிய உறுப்பினர்'})**\n\n` +
+              `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+              `${progressLine}\n` +
+              `*(முன்பக்கம் / முழு PDF — பெயர், பிறந்த தேதி, பாலினம், ஆதார் எண் தானாகப் பெறப்பட்டு, அடுத்து உறவுமுறை கேட்கப்படும்)*`,
+        actionRequired: 'upload',
+        uploadPrompt: 'உறுப்பினர் ஆதார் அட்டை',
+        options: [
+            { label: "📷 புதிய உறுப்பினர் ஆதார் அட்டை பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
+            { label: "✏️ படிவத்தில் உள்ளிட (Open Form)", value: "TRIGGER_EDIT_MODAL" },
+            { label: "🔙 எண்ணிக்கை மாற்று", value: "குடும்ப உறுப்பினர் சேர்க்க" }
+        ]
+    };
 }
 
 async function handleFlow(text, sess, uploadedDoc = null, extractedDoc = null) {
@@ -160,7 +259,8 @@ async function handleFlow(text, sess, uploadedDoc = null, extractedDoc = null) {
 
     if (text === 'RATION_ADD_MEMBER_RESET' || (text && text.includes('புதிய ஆவணம் மாற்று'))) {
         sess.subService = 'ADD_MEMBER';
-        sess.subServiceData = {};
+        const prevCount = Number(sess.subServiceData?.targetAddCount || 1);
+        sess.subServiceData = { targetAddCount: prevCount, currentAddIndex: 1, addMembersList: [] };
         cleanupAddMemberUploads(sess);
         sess.intakeState = 'RATION_ADD_MEMBER_TYPE';
         sess.step = 'RATION_ADD_MEMBER_TYPE';
@@ -173,6 +273,154 @@ async function handleFlow(text, sess, uploadedDoc = null, extractedDoc = null) {
             options: [
                 { label: "📷 ஆதார் அட்டை பதிவேற்றவும்", value: "TRIGGER_FILE_UPLOAD" },
                 { label: "🔙 ரேஷன் கார்டு சேவைகள்", value: "ரேஷன் கார்டு" }
+            ]
+        });
+        return true;
+    }
+
+    // Optional 1-click Saved Family Member selection (works from either RATION_ADD_MEMBER_COUNT or RATION_ADD_MEMBER_RESUME_GATE)
+    if (currentState === 'RATION_ADD_MEMBER_RESUME_GATE' || (currentState === 'RATION_ADD_MEMBER_COUNT' && /^ADD_MEMBER_RESUME_\d+$/i.test(String(text || '').trim()))) {
+        const cleanTxt = String(text || '').trim();
+        const candidates = Array.isArray(sess.subServiceData?._savedCandidates)
+            ? sess.subServiceData._savedCandidates
+            : (Array.isArray(sess.citizenProfile?.savedFamilyMembers) ? sess.citizenProfile.savedFamilyMembers : []);
+
+        const resumeMatch = cleanTxt.match(/^ADD_MEMBER_RESUME_(\d+)$/i);
+        if (resumeMatch || /தொடர்க|continue|resume|இதே உறுப்பினர்/i.test(cleanTxt)) {
+            const idx = resumeMatch ? parseInt(resumeMatch[1], 10) : 0;
+            const chosen = candidates[idx] || candidates[0];
+            if (chosen) {
+                const normChosen = {
+                    ...chosen,
+                    memberName: chosen.memberName || chosen.memberNameTam || chosen.nameTam || chosen.name || chosen.memberNameEng || chosen.nameEng || '',
+                    memberNameTam: chosen.memberNameTam || chosen.nameTam || chosen.memberName || chosen.name || '',
+                    memberNameEng: chosen.memberNameEng || chosen.nameEng || '',
+                    relationshipTam: chosen.relationshipTam || chosen.relationTam || chosen.relationship || chosen.relation || '',
+                    aadhaarNo: String(chosen.aadhaarNo || chosen.aadhaarNumber || '').replace(/\D/g, ''),
+                    genderTam: chosen.genderTam || (chosen.gender === 'Female' || chosen.gender === 'பெண்' ? 'பெண்' : (chosen.gender === 'Male' || chosen.gender === 'ஆண்' ? 'ஆண்' : ''))
+                };
+                sess.subServiceData = {
+                    ...normChosen,
+                    targetAddCount: 1,
+                    currentAddIndex: 1,
+                    addMembersList: [normChosen]
+                };
+                if (normChosen.docPath) {
+                    sess.tempUploads = sess.tempUploads || {};
+                    sess.tempUploads.memberAadhaar = normChosen.docPath;
+                    if (sess.citizenProfile) {
+                        sess.citizenProfile.documents = sess.citizenProfile.documents || {};
+                        sess.citizenProfile.documents.memberAadhaar = normChosen.docPath;
+                    }
+                }
+                if (sess.citizenProfile) sess.citizenProfile.subServiceData = sess.subServiceData;
+
+                if (normChosen.relationshipTam) {
+                    sess.intakeState = 'READY_TO_APPLY';
+                    sess.step = 'READY';
+                    sess.chatHistory.push(renderSubserviceReadySummary(sess));
+                    return true;
+                }
+                sess.intakeState = 'RATION_ADD_MEMBER_RELATION';
+                sess.step = 'RATION_ADD_MEMBER_RELATION';
+                const prof = sess.citizenProfile || {};
+                const headName = prof.fullNameTam || prof.fullNameEng || 'குடும்பத் தலைவர்';
+                sess.chatHistory.push({
+                    sender: 'bot',
+                    text: `✅ **${normChosen.memberNameTam} விவரம் தேர்ந்தெடுக்கப்பட்டது!**\n\n❓ **குடும்பத் தலைவர் (${headName}) அவர்களுக்கு ${normChosen.memberNameTam} என்ன உறவுமுறை?**`,
+                    options: [
+                        { label: "👧 மகள் (Daughter)", value: "மகள்" },
+                        { label: "👦 மகன் (Son)", value: "மகன்" },
+                        { label: "👫 மருமகள் (Daughter-in-law)", value: "மருமகள்" },
+                        { label: "👰 மனைவி (Wife)", value: "மனைவி" },
+                        { label: "🤵 கணவர் (Husband)", value: "கணவர்" },
+                        { label: "👵 தாய் (Mother)", value: "தாய்" },
+                        { label: "👴 தந்தை (Father)", value: "தந்தை" },
+                        { label: "👫 மருமகன் (Son-in-law)", value: "மருமகன்" }
+                    ]
+                });
+                return true;
+            }
+        }
+
+        if (cleanTxt === 'ADD_MEMBER_START_NEW' || /புதிதாக|வேறு உறுப்பினர்|new member|fresh/i.test(cleanTxt)) {
+            cleanupAddMemberUploads(sess);
+            sess.subServiceData = {};
+            if (sess.citizenProfile) sess.citizenProfile.subServiceData = {};
+            const prof = sess.citizenProfile || {};
+            const headName = prof.fullNameTam || prof.fullNameEng || 'குடும்பத் தலைவர்';
+            sess.intakeState = 'RATION_ADD_MEMBER_COUNT';
+            sess.step = 'RATION_ADD_MEMBER_COUNT';
+            sess.chatHistory.push({
+                sender: 'bot',
+                text: `➕ **புதிய குடும்ப உறுப்பினர் சேர்க்கை (Add Family Member - TNPDS)**\n\n` +
+                      `• 👤 **குடும்பத் தலைவர்:** ${headName}\n` +
+                      `• 📌 **முக்கிய விதி:** புதிய உறுப்பினர் சேர்க்கைக்கு **ஆதார் அட்டை (Aadhaar Card) மட்டுமே** கட்டாயம்.\n\n` +
+                      `1️⃣ **எத்தனை புதிய உறுப்பினர்களைச் சேர்க்கப் போகிறீர்கள்?**`,
+                options: [
+                    { label: "👤 1 புதிய உறுப்பினர்", value: "ADD_MEMBER_COUNT_1" },
+                    { label: "👥 2 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_2" },
+                    { label: "👨‍👩‍👧 3 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_3" },
+                    { label: "👨‍👩‍👧‍👦 4 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_4" },
+                    { label: "🔙 ரேஷன் கார்டு சேவைகள்", value: "ரேஷன் கார்டு" }
+                ]
+            });
+            return true;
+        }
+    }
+
+    // Step 1 Handler: Member Count Selection (RATION_ADD_MEMBER_COUNT)
+    if (currentState === 'RATION_ADD_MEMBER_COUNT') {
+        const cleanTxt = String(text || '').trim();
+        // Seamless direct upload or legacy child/adult option click -> default count to 1 and continue immediately
+        if (uploadedDoc || extractedDoc || cleanTxt === 'TRIGGER_FILE_UPLOAD') {
+            sess.subServiceData = { ...(sess.subServiceData || {}), targetAddCount: 1, currentAddIndex: 1, addMembersList: [] };
+            sess.intakeState = 'RATION_ADD_MEMBER_TYPE';
+            sess.step = 'RATION_ADD_MEMBER_TYPE';
+            return await docFsm.handleMemberDocUpload(text, sess, 'RATION_ADD_MEMBER_TYPE', uploadedDoc, extractedDoc);
+        }
+        if (['ADD_MEMBER_CHILD', 'CHILD_UNDER_5', 'ADULT_ABOVE_5', 'ADD_MEMBER_ADULT'].includes(cleanTxt)) {
+            sess.subServiceData = { ...(sess.subServiceData || {}), targetAddCount: 1, currentAddIndex: 1, addMembersList: [] };
+            sess.intakeState = 'RATION_ADD_MEMBER_TYPE';
+            sess.step = 'RATION_ADD_MEMBER_TYPE';
+            if (await childFsm.handleAddMemberChild(text, sess, 'RATION_ADD_MEMBER_TYPE', uploadedDoc, extractedDoc)) return true;
+            if (await adultFsm.handleAddMemberAdult(text, sess, 'RATION_ADD_MEMBER_TYPE', uploadedDoc, extractedDoc)) return true;
+        }
+
+        const countBtnMatch = cleanTxt.match(/^ADD_MEMBER_COUNT_(\d+)$/i);
+        const digitMatch = cleanTxt.match(/^(\d{1,2})\s*(உறுப்பினர்|உறுப்பினர்கள்|நபர்|நபர்கள்|member|members|புதிய.*)?$/i) ||
+                           cleanTxt.match(/(\d{1,2})\s*(உறுப்பினர்|நபர்|member)/i);
+        let parsedCount = countBtnMatch ? parseInt(countBtnMatch[1], 10) : (digitMatch ? parseInt(digitMatch[1], 10) : 0);
+        if (!parsedCount) {
+            if (/^ஒன்று|ஒரு/i.test(cleanTxt)) parsedCount = 1;
+            else if (/^இரண்டு|ரெண்டு/i.test(cleanTxt)) parsedCount = 2;
+            else if (/^மூன்று|மூணு/i.test(cleanTxt)) parsedCount = 3;
+            else if (/^நான்கு|நாலு/i.test(cleanTxt)) parsedCount = 4;
+        }
+        if (parsedCount >= 1 && parsedCount <= 10) {
+            sess.subServiceData = {
+                ...(sess.subServiceData || {}),
+                targetAddCount: parsedCount,
+                currentAddIndex: 1,
+                addMembersList: []
+            };
+            if (sess.citizenProfile) {
+                sess.citizenProfile.subServiceData = sess.subServiceData;
+            }
+            sess.intakeState = 'RATION_ADD_MEMBER_TYPE';
+            sess.step = 'RATION_ADD_MEMBER_TYPE';
+            sess.chatHistory.push(buildUploadPromptForMember(sess, 1, parsedCount));
+            return true;
+        }
+
+        sess.chatHistory.push({
+            sender: 'bot',
+            text: `⚠️ தயவுசெய்து சேர்க்க வேண்டிய புதிய உறுப்பினர்களின் எண்ணிக்கையை (1 முதல் 10 வரை) தேர்ந்தெடுக்கவும்:`,
+            options: [
+                { label: "👤 1 புதிய உறுப்பினர்", value: "ADD_MEMBER_COUNT_1" },
+                { label: "👥 2 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_2" },
+                { label: "👨‍👩‍👧 3 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_3" },
+                { label: "👨‍👩‍👧‍👦 4 புதிய உறுப்பினர்கள்", value: "ADD_MEMBER_COUNT_4" }
             ]
         });
         return true;

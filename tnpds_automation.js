@@ -21,6 +21,11 @@ const addMemberStepHealer = require('./src/portal/tnpds/add_member/add_member_st
 const newCardOtpVerifier = require('./src/portal/tnpds/steps/step21_new_card_otp_verifier');
 const automationLoggerModule = require('./src/services/automation_logger');
 const { startLiveInspectionWatchdog } = require('./src/portal/tnpds/helpers/live_inspection_watchdog');
+const {
+    installOtpModalCopilot,
+    performVisibleModalResend,
+    tryCopilotAutoResendIfExpired
+} = require('./src/portal/common/otp_copilot_watcher');
 
 let chromium = null, browser = null, context = null, page = null;
 let pendingOtpResolver = null, cachedUserOtp = '', cachedOtpTimestamp = 0;
@@ -192,14 +197,37 @@ async function getLiveOtpStatus() {
 }
 
 async function resendOtp() {
-    if (!page) return { success: false, message: 'Browser session not active.' };
-    try {
-        const btn = page.locator('button:has-text("OTP மீண்டும் அனுப்பவும்"), button:has-text("மீண்டும் அனுப்பவும்")').first();
-        if (await btn.count() > 0 && await btn.isVisible()) {
-            await btn.click({ force: true });
-            return { success: true, message: '✅ OTP மீண்டும் அனுப்பப்பட்டது!' };
+    let targetPage = page;
+    if (!targetPage || targetPage.isClosed()) {
+        for (const [, sess] of activeSessions) {
+            const sp = sess && typeof sess.getPage === 'function' ? sess.getPage() : null;
+            if (sp && !sp.isClosed()) {
+                targetPage = sp;
+                break;
+            }
         }
-        return { success: false, message: '⚠️ பொத்தான் கிடைக்கவில்லை.' };
+    }
+    if (!targetPage || targetPage.isClosed()) return { success: false, message: 'Browser session not active.' };
+    try {
+        const clicked = await performVisibleModalResend(targetPage, { allowInlinePage: true, ignoreTimer: true });
+        if (clicked) {
+            clearStaleOtpState();
+            return { success: true, message: '✅ "மீண்டும் அனுப்பு" 1 முறை அழுத்தப்பட்டு புதிய OTP கோரப்பட்டது!' };
+        }
+        const disabledCheck = await targetPage.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'));
+            const resendEl = btns.find(b => {
+                const t = (b.innerText || b.value || '').toLowerCase();
+                return t.includes('மீண்டும்') || t.includes('மறுமுறை') || t.includes('resend');
+            });
+            if (!resendEl) return 'NOT_FOUND';
+            if (resendEl.disabled || resendEl.hasAttribute('disabled') || resendEl.classList.contains('disabled')) return 'LOCKED_BY_TIMER';
+            return 'NOT_VISIBLE';
+        }).catch(() => 'NOT_FOUND');
+        if (disabledCheck === 'LOCKED_BY_TIMER') {
+            return { success: false, message: '⏳ அரசு போர்ட்டலில் கவுண்டவுன் முடியும் வரை "மீண்டும் அனுப்பு" பொத்தான் பூட்டப்பட்டுள்ளது.' };
+        }
+        return { success: false, message: '⚠️ "மீண்டும் அனுப்பு" பொத்தான் தற்போது திரையில் கிடைக்கவில்லை.' };
     } catch (e) {
         return { success: false, message: e.message };
     }
@@ -207,8 +235,12 @@ async function resendOtp() {
 
 function createOtpWaitPromise({ p, promptMsg, otpType, onProgress, onSetWaiting, onResolveHook }) {
     onProgress(promptMsg);
+    if (p && !p.isClosed()) {
+        installOtpModalCopilot(p, { forceReset: false, allowInlinePage: true }).catch(() => {});
+    }
     return new Promise((resolve) => {
         let settled = false;
+        let isPollTickRunning = false;
         const cleanup = (val) => {
             if (settled) return;
             settled = true;
@@ -220,7 +252,9 @@ function createOtpWaitPromise({ p, promptMsg, otpType, onProgress, onSetWaiting,
         let radwareTick = 0;
         let missingOtpTicks = 0;
         const poll = setInterval(async () => {
+            if (settled || isPollTickRunning) return;
             if (!p || p.isClosed()) return cleanup('CLOSED');
+            isPollTickRunning = true;
             try {
                 // Auto-dismiss accidental exit modal immediately
                 await p.evaluate(() => {
@@ -280,11 +314,20 @@ function createOtpWaitPromise({ p, promptMsg, otpType, onProgress, onSetWaiting,
                     const isSubmittingOnPortal = Boolean(document.querySelector('.spinner-border, .loading'));
                     if (isSubmittingOnPortal && !isModalVisible && type === 'mobile_login') return 'ALREADY_VERIFIED_ON_PORTAL';
                     if (type !== 'aadhaar_otp' && !isModalVisible && u.includes('newsmartcard')) {
-                        const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
-                        const isDobVisible = dobInp && (dobInp.offsetParent !== null || window.getComputedStyle(dobInp).display !== 'none');
-                        const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));
-                        const isAddMemVisible = addMemBtn && (addMemBtn.offsetParent !== null || window.getComputedStyle(addMemBtn).display !== 'none');
-                        if (isDobVisible || isAddMemVisible) {
+                        const isShownEl = (el) => Boolean(el && (el.offsetParent !== null || window.getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0));
+                        const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+                        const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                            if (!isShownEl(b)) return false;
+                            const t = (b.innerText || '').trim().toLowerCase();
+                            return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+                        });
+                        const mobScope = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+                        const hasEditBtn = Array.from(mobScope.querySelectorAll('button')).some(b => {
+                            if (!isShownEl(b)) return false;
+                            const t = (b.innerText || '').trim();
+                            return t === 'திருத்தம்' || /^edit$/i.test(t);
+                        });
+                        if (mobInp && !hasGenOtpBtn && (mobInp.disabled || hasEditBtn)) {
                             return 'ALREADY_VERIFIED_ON_PORTAL';
                         }
                     }
@@ -389,9 +432,25 @@ function createOtpWaitPromise({ p, promptMsg, otpType, onProgress, onSetWaiting,
                 if (detected) {
                     sessionLog(20, 'OTP_WATCH', `Detected OTP: ${detected}`);
                     cleanup(detected);
+                    return;
+                }
+
+                // Co-Pilot single-click Resend watcher when portal OTP timer expires
+                // (skipped only when new_card_otp_config's dedicated watcher owns the tick)
+                if (otpType !== 'new_card_mobile_otp') {
+                    await tryCopilotAutoResendIfExpired(p, {
+                        allowInlinePage: true,
+                        graceAfterZeroMs: 4000,
+                        maxAutoResends: 2,
+                        onProgress,
+                        clearStaleOtpState,
+                        stageLabel: otpType === 'aadhaar_otp' ? 'ஆதார் OTP' : 'OTP'
+                    });
                 }
             } catch (e) {
                 sessionLog(20, 'OTP_WATCH_ERROR', String(e));
+            } finally {
+                isPollTickRunning = false;
             }
         }, 500);
     });

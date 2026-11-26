@@ -54,12 +54,12 @@ function startFromChat({ sess, req, res, targetMobile, activeMobile, isMockTest,
         isMockTest,
         req,
         bannerText: `${modeText}யில் தமிழ்நாடு அரசு TNeGA சாதிச் சான்றிதழ் (REV-101) விண்ணப்ப ஆட்டோமேஷன் தொடங்கப்படுகிறது! 🛡️\n\n` +
-            `• 🔢 **CAN எண்:** **${p.canNumber || '133370337878397'}** ✅\n` +
+            `• 🔢 **CAN எண்:** **${p.canNumber || 'தேடப்படும்'}** ✅\n` +
             `• 👤 **விண்ணப்பதாரர்:** ${p.fullNameTam || p.fullNameEng || 'விண்ணப்பதாரர்'}\n` +
             `• 👩 **தாயின் பெயர்:** ${p.motherNameTam || p.motherNameEng || '—'}\n` +
             `• 🕉️ **மதம்:** ${p.religion || 'Hindu'}\n` +
-            `• 🏛️ **வகுப்பு:** ${p.community || 'MBC'} ✅\n` +
-            `• 🏷️ **சாதி உட்பிரிவு:** ${p.caste || p.subCaste || 'Agamudayar'} ✅\n` +
+            `• 🏛️ **வகுப்பு:** ${p.community || '—'} ✅\n` +
+            `• 🏷️ **சாதி உட்பிரிவு:** ${p.caste || p.subCaste || '—'} ✅\n` +
             `• 🏠 **முகவரி:** ${p.doorNo ? p.doorNo + ', ' : ''}${p.streetTam || p.streetEng || ''}, ${p.village || ''} - ${p.pincode || ''}\n\n` +
             `Chrome உலாவியில் TNeGA போர்ட்டல் மூலம் சாதிச் சான்றிதழ் படிவம் திறக்கப்படுகிறது...`
     });

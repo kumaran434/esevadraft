@@ -184,13 +184,24 @@ class UniversalOtpListener {
                                     }
                                 }
 
-                                // 0. Check if post-OTP stage is genuinely unlocked (e.g., Member section visible)
-                                const dobInp = document.querySelector('input[formcontrolname="dateOfBirth"]');
-                                const isDobVisible = dobInp && (dobInp.offsetParent !== null || window.getComputedStyle(dobInp).display !== 'none');
-                                const addMemBtn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText || '').includes('உறுப்பினரை சேர்க்க'));
-                                const isAddMemVisible = addMemBtn && (addMemBtn.offsetParent !== null || window.getComputedStyle(addMemBtn).display !== 'none');
-                                if (isDobVisible || isAddMemVisible) {
-                                    return 'ALREADY_VERIFIED_ON_PORTAL';
+                                // 0. Check if post-OTP mobile verification is genuinely complete (NEVER trust Add Member button alone!)
+                                if (u.includes('newsmartcard')) {
+                                    const isShownEl = (el) => Boolean(el && (el.offsetParent !== null || window.getComputedStyle(el).display !== 'none') && (el.offsetWidth > 0 || el.offsetHeight > 0));
+                                    const mobInp = document.querySelector('input[formcontrolname="mobileNumber"]');
+                                    const hasGenOtpBtn = Array.from(document.querySelectorAll('button')).some(b => {
+                                        if (!isShownEl(b)) return false;
+                                        const t = (b.innerText || '').trim().toLowerCase();
+                                        return t.includes('otp ஐ உருவாக்கு') || t.includes('generate otp');
+                                    });
+                                    const mobScope = mobInp ? (mobInp.closest('.row, .form-group, div')?.parentElement || document) : document;
+                                    const hasEditBtn = Array.from(mobScope.querySelectorAll('button')).some(b => {
+                                        if (!isShownEl(b)) return false;
+                                        const t = (b.innerText || '').trim();
+                                        return t === 'திருத்தம்' || /^edit$/i.test(t);
+                                    });
+                                    if (mobInp && !hasGenOtpBtn && (mobInp.disabled || hasEditBtn)) {
+                                        return 'ALREADY_VERIFIED_ON_PORTAL';
+                                    }
                                 }
 
                                 // 1. Inspect any visible modal inputs strictly

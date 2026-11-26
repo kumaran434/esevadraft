@@ -6,17 +6,114 @@ const path = require('path');
 let Firestore = null;
 let Storage = null;
 
-const LOCAL_DRAFTS_DIR = path.join(__dirname, '..', '..', '..', 'data', 'drafts');
-if (!fs.existsSync(LOCAL_DRAFTS_DIR)) {
-    try { fs.mkdirSync(LOCAL_DRAFTS_DIR, { recursive: true }); } catch (_) {}
+const LOCAL_DATA_DIR = path.join(__dirname, '..', '..', '..', 'data');
+const APPDATA_DATA_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data');
+
+const LOCAL_DRAFTS_DIR = path.join(LOCAL_DATA_DIR, 'drafts');
+const APPDATA_DRAFTS_DIR = path.join(APPDATA_DATA_DIR, 'drafts');
+const APPDATA_SUITE_DRAFTS_DIR = null;
+
+function isDesktopRuntime() {
+    if (process.env.REGRESSION_TEST === 'true' || process.env.NODE_ENV === 'test') return false;
+    if (Array.isArray(process.argv) && process.argv.some(a => /regression_suite|simulate_tnega_flows/i.test(String(a)))) return false;
+    return !!(process.versions.electron || process.env.DESKTOP_RUNTIME === '1' || process.env.IS_DESKTOP);
 }
-const APPDATA_DRAFTS_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-desktop', 'data', 'drafts');
-if (!fs.existsSync(APPDATA_DRAFTS_DIR)) {
-    try { fs.mkdirSync(APPDATA_DRAFTS_DIR, { recursive: true }); } catch (_) {}
+
+/**
+ * Single Canonical Active Data Directory Law:
+ * - Desktop App runtime -> strictly AppData/Roaming/esevadraft-desktop/data
+ * - Workspace / Test / Server runtime -> strictly <repo>/data
+ * NEVER cross-reads or duplicates between two local directories.
+ */
+function getActiveDataDir() {
+    const dir = isDesktopRuntime() ? APPDATA_DATA_DIR : LOCAL_DATA_DIR;
+    if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    return dir;
 }
-const APPDATA_SUITE_DRAFTS_DIR = path.join(process.env.APPDATA || 'C:\\Users\\ADMIN\\AppData\\Roaming', 'esevadraft-suite', 'data', 'drafts');
+
+function getActiveDraftsDir() {
+    const dir = path.join(getActiveDataDir(), 'drafts');
+    if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    return dir;
+}
+
+function getActiveUploadsDir() {
+    const dir = path.join(getActiveDataDir(), 'uploads');
+    if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    return dir;
+}
+
+// Ensure active drafts directory exists on boot
+getActiveDraftsDir();
 
 const _deletedDraftFence = new Map();
+
+function isSpecificDraftId(key) {
+    return typeof key === 'string' && /^[0-9]{10}_[a-z0-9]+$/i.test(key.trim());
+}
+
+function extractMobileFromDraftKey(key) {
+    if (!key) return '';
+    const s = String(key).trim();
+    const m = s.match(/^([0-9]{10})_[a-z0-9]+$/i);
+    if (m) return m[1];
+    if (s.startsWith('walkin_')) return s;
+    const digits = s.replace(/\D/g, '');
+    return digits.length >= 10 ? digits.slice(-10) : s;
+}
+
+function generateUniqueDraftId(mobile) {
+    const cleanMob = extractMobileFromDraftKey(mobile);
+    if (!cleanMob || cleanMob.startsWith('walkin_')) return cleanMob || `walkin_${Date.now()}`;
+    global.__esevaDraftIdSeq = ((global.__esevaDraftIdSeq || 0) + 1) % 1000;
+    return `${cleanMob}_${Date.now()}${String(global.__esevaDraftIdSeq).padStart(3, '0')}`;
+}
+
+// Single-Source Central Router stored on `global` so Electron app.asar & resources/src ALWAYS share the exact same Map!
+const _activeDraftIdByMobile = global.__esevaActiveDraftIdByMobile || (global.__esevaActiveDraftIdByMobile = new Map());
+
+function makeOperatorDraftRouteKey(mobile, operatorUid = null) {
+    const cleanMob = extractMobileFromDraftKey(mobile);
+    if (!cleanMob || cleanMob.startsWith('walkin_')) return null;
+    const normOp = normalizeOperatorUid(operatorUid);
+    return normOp ? `${normOp}::${cleanMob}` : cleanMob;
+}
+
+function setActiveDraftIdForMobile(mobile, draftId, operatorUid = null) {
+    const routeKey = makeOperatorDraftRouteKey(mobile, operatorUid);
+    if (!routeKey) return;
+    if (draftId && isSpecificDraftId(String(draftId).trim())) {
+        _activeDraftIdByMobile.set(routeKey, String(draftId).trim());
+    } else {
+        _activeDraftIdByMobile.delete(routeKey);
+    }
+}
+
+function getActiveDraftIdForMobile(mobile, operatorUid = null) {
+    const routeKey = makeOperatorDraftRouteKey(mobile, operatorUid);
+    if (!routeKey) return null;
+    return _activeDraftIdByMobile.get(routeKey) || null;
+}
+
+function clearActiveDraftId(keyOrMobile, operatorUid = null) {
+    if (!keyOrMobile) return;
+    const raw = String(keyOrMobile).trim();
+    const routeKey = makeOperatorDraftRouteKey(raw, operatorUid);
+    if (!routeKey) return;
+    if (isSpecificDraftId(raw)) {
+        if (_activeDraftIdByMobile.get(routeKey) === raw) {
+            _activeDraftIdByMobile.delete(routeKey);
+        }
+    } else {
+        _activeDraftIdByMobile.delete(routeKey);
+    }
+}
 
 function normalizeFenceKeys(keyOrKeys) {
     const rawList = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
@@ -25,8 +122,11 @@ function normalizeFenceKeys(keyOrKeys) {
         if (!item) continue;
         const s = String(item).trim();
         if (s) out.add(s);
-        const digits = s.replace(/\D/g, '').slice(-10);
-        if (digits) out.add(digits);
+        // Only add 10-digit mobile alias when fencing a plain mobile key (NEVER fence sibling apps when deleting 1 specific draftId!)
+        if (!isSpecificDraftId(s)) {
+            const digits = s.replace(/\D/g, '').slice(-10);
+            if (digits) out.add(digits);
+        }
     }
     return Array.from(out);
 }
@@ -144,8 +244,8 @@ async function uploadDocToStorage(localFilePath, storagePath) {
 }
 
 async function downloadDocFromStorage(storageUrl, targetLocalPath) {
-    if (!storageAvailable || !storageInstance) return false;
-    if (!storageUrl || !storageUrl.startsWith('gs://')) return false;
+    if (!storageAvailable || !storageInstance) return null;
+    if (!storageUrl || !storageUrl.startsWith('gs://')) return null;
     try {
         const parts = storageUrl.replace('gs://', '').split('/');
         const bucketName = parts[0];
@@ -155,10 +255,10 @@ async function downloadDocFromStorage(storageUrl, targetLocalPath) {
 
         const bucket = storageInstance.bucket(bucketName);
         await bucket.file(filePath).download({ destination: targetLocalPath });
-        return fs.existsSync(targetLocalPath);
+        return fs.existsSync(targetLocalPath) ? targetLocalPath : null;
     } catch (e) {
         console.warn(`Storage download failed for ${storageUrl}:`, e.message);
-        return false;
+        return null;
     }
 }
 
@@ -222,10 +322,21 @@ module.exports = {
     LOCAL_DRAFTS_DIR,
     APPDATA_DRAFTS_DIR,
     APPDATA_SUITE_DRAFTS_DIR,
+    isDesktopRuntime,
+    getActiveDataDir,
+    getActiveDraftsDir,
+    getActiveUploadsDir,
     PROJECT_ID,
     STORAGE_BUCKET,
     COLLECTION_NAME,
     normalizeOperatorUid,
+    isSpecificDraftId,
+    extractMobileFromDraftKey,
+    generateUniqueDraftId,
+    makeOperatorDraftRouteKey,
+    setActiveDraftIdForMobile,
+    getActiveDraftIdForMobile,
+    clearActiveDraftId,
     markDraftDeleted,
     isDraftStaleDueToDelete,
     deleteStoragePrefix,
