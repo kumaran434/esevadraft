@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../../../utils/bilingual_helper');
 const { fillAndVerifyInput, selectAndVerifyOption } = require('../../../common/strict_step_gate');
+const { findBestRelationshipOption } = require('../../helpers/relationship_matcher');
 
 let produceCompliantDocument;
 for (const candidate of [
@@ -126,34 +127,8 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     onProgress(`📍 [உறுப்பினர் ${memNum}] உறவுமுறை (${targetRelTam || targetRelEng}) தேர்ந்தெடுக்கப்படுகிறது...`);
     const relSelect = page.locator('select[formcontrolname="relationship"]').last();
     if (await relSelect.count() > 0) {
-        const rOptions = await relSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
-        const rTamLower = (targetRelTam || '').toLowerCase();
-        const rEngLower = (targetRelEng || '').toLowerCase();
-
-        let targetOpt = rOptions.find(o => {
-            const ot = (o.text || '').toLowerCase();
-            const ov = (o.value || '').toLowerCase();
-            return (rTamLower && ot.includes(rTamLower)) || (rEngLower && (ot.includes(rEngLower) || ov.includes(rEngLower)));
-        });
-
-        if (!targetOpt) {
-            const keywords = [
-                { keys: ['கணவர்', 'husband'], match: o => o.text.includes('கணவர்') || o.text.toLowerCase().includes('husband') || o.value.toLowerCase().includes('husband') },
-                { keys: ['மனைவி', 'wife'], match: o => o.text.includes('மனைவி') || o.text.toLowerCase().includes('wife') || o.value.toLowerCase().includes('wife') },
-                { keys: ['தந்தை', 'father'], match: o => o.text.includes('தந்தை') || o.text.toLowerCase().includes('father') || o.value.toLowerCase().includes('father') },
-                { keys: ['தாய்', 'mother'], match: o => o.text.includes('தாய்') || o.text.toLowerCase().includes('mother') || o.value.toLowerCase().includes('mother') },
-                { keys: ['மகன்', 'son'], match: o => o.text.includes('மகன்') || o.text.toLowerCase().includes('son') || o.value.toLowerCase().includes('son') },
-                { keys: ['மகள்', 'daughter'], match: o => o.text.includes('மகள்') || o.text.toLowerCase().includes('daughter') || o.value.toLowerCase().includes('daughter') },
-                { keys: ['சகோதரன்', 'brother'], match: o => o.text.includes('சகோதரன்') || o.text.toLowerCase().includes('brother') || o.value.toLowerCase().includes('brother') },
-                { keys: ['சகோதரி', 'sister'], match: o => o.text.includes('சகோதரி') || o.text.toLowerCase().includes('sister') || o.value.toLowerCase().includes('sister') }
-            ];
-            for (const kw of keywords) {
-                if (kw.keys.some(k => rTamLower.includes(k) || rEngLower.includes(k))) {
-                    targetOpt = rOptions.find(kw.match);
-                    if (targetOpt) break;
-                }
-            }
-        }
+        const rOptions = await relSelect.evaluate(s => Array.from(s.options).map((o, idx) => ({ index: idx, value: o.value, text: o.text }))).catch(() => []);
+        const targetOpt = findBestRelationshipOption(rOptions, targetRelTam, targetRelEng);
 
         if (targetOpt) {
             await relSelect.selectOption(targetOpt.value).catch(() => {});

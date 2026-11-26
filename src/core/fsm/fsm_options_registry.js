@@ -91,35 +91,12 @@ function getRelationshipOptions(headGender = '') {
 }
 
 function mapRelationshipToEng(tamRel) {
-    const map = {
-        'கணவர்': { eng: 'Husband', tam: 'கணவர்', gender: 'Male', genderTam: 'ஆண்' },
-        'மனைவி': { eng: 'Wife', tam: 'மனைவி', gender: 'Female', genderTam: 'பெண்' },
-        'மகன்': { eng: 'Son', tam: 'மகன்', gender: 'Male', genderTam: 'ஆண்' },
-        'மகள்': { eng: 'Daughter', tam: 'மகள்', gender: 'Female', genderTam: 'பெண்' },
-        'மருமகள்': { eng: 'Daughter-in-law', tam: 'மருமகள்', gender: 'Female', genderTam: 'பெண்' },
-        'மருமகன்': { eng: 'Son-in-law', tam: 'மருமகன்', gender: 'Male', genderTam: 'ஆண்' },
-        'சகோதரன்': { eng: 'Brother', tam: 'சகோதரன்', gender: 'Male', genderTam: 'ஆண்' },
-        'சகோதரி': { eng: 'Sister', tam: 'சகோதரி', gender: 'Female', genderTam: 'பெண்' },
-        'தாய்': { eng: 'Mother', tam: 'தாய்', gender: 'Female', genderTam: 'பெண்' },
-        'தந்தை': { eng: 'Father', tam: 'தந்தை', gender: 'Male', genderTam: 'ஆண்' },
-        'மாமனார்': { eng: 'Father-in-law', tam: 'மாமனார்', gender: 'Male', genderTam: 'ஆண்' },
-        'மாமியார்': { eng: 'Mother-in-law', tam: 'மாமியார்', gender: 'Female', genderTam: 'பெண்' }
-    };
-    for (const [key, val] of Object.entries(map)) {
-        if (tamRel.includes(key)) return val;
+    const { normalizeRelationshipPair } = require('../../portal/tnpds/helpers/relationship_matcher');
+    const raw = String(tamRel || '').trim();
+    const res = normalizeRelationshipPair(raw, raw);
+    if (res.key) {
+        return { eng: res.eng, tam: res.tam, gender: res.gender, genderTam: res.genderTam };
     }
-    const lower = tamRel.toLowerCase();
-    if (lower.includes('daughter-in-law') || lower.includes('daughter in law')) return map['மருமகள்'];
-    if (lower.includes('son-in-law') || lower.includes('son in law')) return map['மருமகன்'];
-    if (lower.includes('husband')) return map['கணவர்'];
-    if (lower.includes('wife')) return map['மனைவி'];
-    if (lower.includes('son')) return map['மகன்'];
-    if (lower.includes('daughter')) return map['மகள்'];
-    if (lower.includes('brother')) return map['சகோதரன்'];
-    if (lower.includes('sister')) return map['சகோதரி'];
-    if (lower.includes('mother')) return map['தாய்'];
-    if (lower.includes('father')) return map['தந்தை'];
-
     return { eng: 'Husband', tam: 'கணவர்', gender: 'Male', genderTam: 'ஆண்' };
 }
 

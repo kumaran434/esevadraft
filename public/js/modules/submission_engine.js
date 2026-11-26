@@ -247,10 +247,13 @@ window.getActiveDraftKey = window.getActiveDraftKey || function() {
                             const resolvedTargetService = isExplicitTnpdsSub ? '' : (payloadPlugin?.portal === 'TNEGA' ? payloadPlugin.subService : (draftData.targetService || dJson.draft?.targetService || prof.targetService || ''));
                             const effectiveIntakeState = draftData.intakeState || dJson.draft.intakeState || prof.intakeState || '';
 
+                            const mergedSubServiceData = (prof.subServiceData || dJson.draft.subServiceData || draftData.subServiceData)
+                                ? Object.assign({}, dJson.draft.subServiceData || {}, prof.subServiceData || {}, (triggerOptions?.fromEditModal && draftData.subServiceData) ? draftData.subServiceData : {})
+                                : undefined;
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
                                 subService: effectiveSubService,
                                 targetService: isExplicitTnpdsSub ? '' : (resolvedTargetService || draftData.targetService),
-                                subServiceData: draftData.subServiceData || dJson.draft.subServiceData || prof.subServiceData,
+                                subServiceData: mergedSubServiceData,
                                 intakeState: effectiveIntakeState,
                                 fullNameEng: prof.fullNameEng || draftData.fullNameEng,
                                 fullNameTam: prof.fullNameTam || draftData.fullNameTam,

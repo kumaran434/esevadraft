@@ -398,28 +398,26 @@ async function handleMemberDocUpload(text, sess, currentState, uploadedDoc, extr
     }
 
     if (currentState === 'RATION_ADD_MEMBER_RELATION') {
-        const raw = (text || '').toLowerCase().trim();
-        let relTam = text ? text.trim() : 'மகன்';
+        const { normalizeRelationshipPair } = require('../../portal/tnpds/helpers/relationship_matcher');
+        const rawText = String(text || '').trim();
+        const raw = rawText.toLowerCase();
+        let relTam = rawText || 'மகன்';
         let relEng = 'Member';
         let gen = sess.subServiceData?.gender || 'Male';
         let genTam = sess.subServiceData?.genderTam || 'ஆண்';
 
-        if (raw.includes('மருமகள்') || raw.includes('daughter-in-law')) {
-            relTam = 'மருமகள்'; relEng = 'Daughter-in-law'; gen = 'Female'; genTam = 'பெண்';
-        } else if (raw.includes('மருமகன்') || raw.includes('son-in-law')) {
-            relTam = 'மருமகன்'; relEng = 'Son-in-law'; gen = 'Male'; genTam = 'ஆண்';
-        } else if (raw.includes('மகள்') || raw.includes('daughter') || raw === 'child_daughter' || raw === 'rel_daughter') {
+        if (raw === 'child_daughter' || raw === 'rel_daughter') {
             relTam = 'மகள்'; relEng = 'Daughter'; gen = 'Female'; genTam = 'பெண்';
-        } else if (raw.includes('மகன்') || raw.includes('son') || raw === 'child_son' || raw === 'rel_son') {
+        } else if (raw === 'child_son' || raw === 'rel_son') {
             relTam = 'மகன்'; relEng = 'Son'; gen = 'Male'; genTam = 'ஆண்';
-        } else if (raw.includes('மனைவி') || raw.includes('wife')) {
-            relTam = 'மனைவி'; relEng = 'Wife'; gen = 'Female'; genTam = 'பெண்';
-        } else if (raw.includes('கணவர்') || raw.includes('husband')) {
-            relTam = 'கணவர்'; relEng = 'Husband'; gen = 'Male'; genTam = 'ஆண்';
-        } else if (raw.includes('தாய்') || raw.includes('அம்மா') || raw.includes('mother')) {
-            relTam = 'தாய்'; relEng = 'Mother'; gen = 'Female'; genTam = 'பெண்';
-        } else if (raw.includes('தந்தை') || raw.includes('அப்பா') || raw.includes('father')) {
-            relTam = 'தந்தை'; relEng = 'Father'; gen = 'Male'; genTam = 'ஆண்';
+        } else {
+            const normRel = normalizeRelationshipPair(rawText, rawText);
+            if (normRel.key) {
+                relTam = normRel.tam;
+                relEng = normRel.eng;
+                gen = normRel.gender;
+                genTam = normRel.genderTam;
+            }
         }
 
         sess.subServiceData = sess.subServiceData || {};

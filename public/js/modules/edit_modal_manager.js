@@ -1207,15 +1207,19 @@
                                     <div>
                                         <label style="font-size: 11px; font-weight: 700; color: #475569;">உறவுமுறை (Relationship):</label>
                                         <select id="editMemberRel_${mIdx}" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700;">
-                                            <option value="மனைவி" ${mRel.includes('மனைவி') || mRel.toLowerCase().includes('wife') ? 'selected' : ''}>மனைவி (Wife)</option>
-                                            <option value="கணவர்" ${mRel.includes('கணவர்') || mRel.toLowerCase().includes('husband') ? 'selected' : ''}>கணவர் (Husband)</option>
-                                            <option value="மகன்" ${mRel.includes('மகன்') || mRel.toLowerCase().includes('son') ? 'selected' : ''}>மகன் (Son)</option>
-                                            <option value="மகள்" ${mRel.includes('மகள்') || mRel.toLowerCase().includes('daughter') ? 'selected' : ''}>மகள் (Daughter)</option>
-                                            <option value="தந்தை" ${mRel.includes('தந்தை') || mRel.toLowerCase().includes('father') ? 'selected' : ''}>தந்தை (Father)</option>
-                                            <option value="தாய்" ${mRel.includes('தாய்') || mRel.toLowerCase().includes('mother') ? 'selected' : ''}>தாய் (Mother)</option>
-                                            <option value="சகோதரர்" ${mRel.includes('சகோதர') || mRel.toLowerCase().includes('brother') ? 'selected' : ''}>சகோதரர் (Brother)</option>
-                                            <option value="சகோதரி" ${mRel.includes('சகோதரி') || mRel.toLowerCase().includes('sister') ? 'selected' : ''}>சகோதரி (Sister)</option>
-                                            <option value="மற்றவை" ${!['மனைவி','கணவர்','மகன்','மகள்','தந்தை','தாய்','சகோதரர்','சகோதரி'].some(x => mRel.includes(x)) ? 'selected' : ''}>மற்றவை (Others)</option>
+                                            <option value="மனைவி" ${mRel.includes('மனைவி') || /\bwife\b/i.test(mRel) ? 'selected' : ''}>மனைவி (Wife)</option>
+                                            <option value="கணவர்" ${mRel.includes('கணவர்') || mRel.includes('கணவன்') || /\bhusband\b/i.test(mRel) ? 'selected' : ''}>கணவர் (Husband)</option>
+                                            <option value="மகன்" ${(!mRel.includes('மருமகன்') && !/\bgrand\s*-?\s*son\b/i.test(mRel) && !/\bson[-\s]in[-\s]law\b/i.test(mRel) && (mRel.includes('மகன்') || /\bson\b/i.test(mRel))) ? 'selected' : ''}>மகன் (Son)</option>
+                                            <option value="மகள்" ${(!mRel.includes('மருமகள்') && !/\bgrand\s*-?\s*daughter\b/i.test(mRel) && !/\bdaughter[-\s]in[-\s]law\b/i.test(mRel) && (mRel.includes('மகள்') || /\bdaughter\b/i.test(mRel))) ? 'selected' : ''}>மகள் (Daughter)</option>
+                                            <option value="தந்தை" ${!mRel.includes('மாமனார்') && !/\bfather[-\s]in[-\s]law\b/i.test(mRel) && (mRel.includes('தந்தை') || /\bfather\b/i.test(mRel)) ? 'selected' : ''}>தந்தை (Father)</option>
+                                            <option value="தாய்" ${!mRel.includes('மாமியார்') && !/\bmother[-\s]in[-\s]law\b/i.test(mRel) && (mRel.includes('தாய்') || /\bmother\b/i.test(mRel)) ? 'selected' : ''}>தாய் (Mother)</option>
+                                            <option value="மருமகன்" ${mRel.includes('மருமகன்') || /\bson[-\s]in[-\s]law\b/i.test(mRel) ? 'selected' : ''}>மருமகன் (Son-in-law)</option>
+                                            <option value="மருமகள்" ${mRel.includes('மருமகள்') || /\bdaughter[-\s]in[-\s]law\b/i.test(mRel) ? 'selected' : ''}>மருமகள் (Daughter-in-law)</option>
+                                            <option value="பேரன்" ${mRel.includes('பேரன்') || /\bgrand\s*-?\s*son\b/i.test(mRel) ? 'selected' : ''}>பேரன் (Grandson)</option>
+                                            <option value="பேத்தி" ${mRel.includes('பேத்தி') || /\bgrand\s*-?\s*daughter\b/i.test(mRel) ? 'selected' : ''}>பேத்தி (Granddaughter)</option>
+                                            <option value="சகோதரர்" ${mRel.includes('சகோதர') || /\bbrother\b/i.test(mRel) ? 'selected' : ''}>சகோதரர் (Brother)</option>
+                                            <option value="சகோதரி" ${mRel.includes('சகோதரி') || /\bsister\b/i.test(mRel) ? 'selected' : ''}>சகோதரி (Sister)</option>
+                                            <option value="மற்றவை" ${!['மனைவி','கணவர்','கணவன்','மகன்','மகள்','தந்தை','தாய்','மருமகன்','மருமகள்','பேரன்','பேத்தி','சகோதர','சகோதரி'].some(x => mRel.includes(x)) && !/\b(wife|husband|son|daughter|father|mother|grandson|granddaughter|brother|sister)\b/i.test(mRel) ? 'selected' : ''}>மற்றவை (Others)</option>
                                         </select>
                                     </div>
                                     <div>
@@ -1576,6 +1580,16 @@
                     if (mNameTamEl || mNameEngEl || mAadhEl || mDocTypeEl) {
                         const resolvedDocType = mDocTypeEl ? mDocTypeEl.value : (existingMembers[idx].docType || 'AADHAAR_CARD');
                         const isBc = resolvedDocType === 'BIRTH_CERTIFICATE';
+                        const relTamVal = mRelEl ? mRelEl.value : existingMembers[idx].relationshipTam;
+                        const relEngMap = {
+                            'மனைவி': 'Wife', 'கணவர்': 'Husband', 'கணவன்': 'Husband',
+                            'மகன்': 'Son', 'மகள்': 'Daughter', 'தந்தை': 'Father', 'தாய்': 'Mother',
+                            'மாமனார்': 'Father-in-law', 'மாமியார்': 'Mother-in-law',
+                            'மருமகன்': 'Son-in-law', 'மருமகள்': 'Daughter-in-law',
+                            'பேரன்': 'Grand Son', 'பேத்தி': 'Grand Daughter',
+                            'சகோதரர்': 'Brother', 'சகோதரன்': 'Brother', 'சகோதரி': 'Sister',
+                            'மற்றவை': 'Others'
+                        };
                         existingMembers[idx] = {
                             ...existingMembers[idx],
                             docType: resolvedDocType,
@@ -1584,8 +1598,9 @@
                             nameTam: mNameTamEl ? mNameTamEl.value.trim() : existingMembers[idx].nameTam,
                             nameEng: mNameEngEl ? mNameEngEl.value.trim() : existingMembers[idx].nameEng,
                             name: (mNameEngEl && mNameEngEl.value.trim()) || (mNameTamEl && mNameTamEl.value.trim()) || existingMembers[idx].name,
-                            relationshipTam: mRelEl ? mRelEl.value : existingMembers[idx].relationshipTam,
-                            relationship: mRelEl ? mRelEl.value : existingMembers[idx].relationship,
+                            relationshipTam: relTamVal,
+                            relationshipEng: mRelEl ? (relEngMap[relTamVal] || relTamVal) : existingMembers[idx].relationshipEng,
+                            relationship: relTamVal,
                             dob: mDobEl ? mDobEl.value.trim() : existingMembers[idx].dob,
                             gender: mGenEl ? mGenEl.value : existingMembers[idx].gender,
                             genderTam: mGenEl ? (mGenEl.value === 'Female' ? 'பெண்' : 'ஆண்') : existingMembers[idx].genderTam,

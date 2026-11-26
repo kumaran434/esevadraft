@@ -6223,6 +6223,208 @@ async function runTests() {
                 passedCount += 2;
             }
 
+            // TEST 84: Relationship Canonical Matching (Son vs Grandson) + Edit Modal Save & Submit Fidelity
+            {
+                const { findBestRelationshipOption, normalizeRelationshipPair } = require('../src/portal/tnpds/helpers/relationship_matcher');
+                const { mapRelationshipToEng } = require('../src/core/fsm/fsm_options_registry');
+                const { executeSteps5To7Demographics } = require('../src/portal/tnpds/flows/add_member/add_member_steps5_7_demographics');
+
+                // 1. Canonical option matching never lets "Son" match "Grand Son"/"Grandson"/"Son-in-law"/"மருமகன்"
+                const engFirstOpts = [
+                    { index: 0, value: '0', text: '-- Select --' },
+                    { index: 1, value: 'GRAND_SON', text: 'Grandson' },
+                    { index: 2, value: 'GRAND_DAUGHTER', text: 'Grand Daughter' },
+                    { index: 3, value: 'SON_IN_LAW', text: 'Son-in-law' },
+                    { index: 4, value: 'DAUGHTER_IN_LAW', text: 'Daughter-in-law' },
+                    { index: 5, value: 'SON', text: 'Son' },
+                    { index: 6, value: 'DAUGHTER', text: 'Daughter' }
+                ];
+                const tamFirstOpts = [
+                    { index: 0, value: '', text: 'தேர்ந்தெடுக்கவும்' },
+                    { index: 1, value: 'G1', text: 'பேரன் (Grandson)' },
+                    { index: 2, value: 'G2', text: 'மருமகன் (Son-in-law)' },
+                    { index: 3, value: 'S1', text: 'மகன் (Son)' },
+                    { index: 4, value: 'D1', text: 'மருமகள் (Daughter-in-law)' },
+                    { index: 5, value: 'D2', text: 'மகள் (Daughter)' }
+                ];
+                assert(findBestRelationshipOption(engFirstOpts, 'மகன்', 'Son')?.value === 'SON', 'TEST 84.rel1: மகன்/Son matches SON even when Grandson & Son-in-law appear earlier');
+                assert(findBestRelationshipOption(engFirstOpts, 'மகள்', 'Daughter')?.value === 'DAUGHTER', 'TEST 84.rel2: மகள்/Daughter matches DAUGHTER even when Grand Daughter & Daughter-in-law appear earlier');
+                assert(findBestRelationshipOption(tamFirstOpts, 'மகன்', 'Son')?.value === 'S1', 'TEST 84.rel3: Tamil dropdown matches மகன் (S1), not பேரன் or மருமகன்');
+                assert(findBestRelationshipOption(tamFirstOpts, 'பேரன்', '')?.value === 'G1', 'TEST 84.rel4: Explicit பேரன் still matches பேரன் (G1)');
+                assert(mapRelationshipToEng('மருமகன்').eng === 'Son-in-law', 'TEST 84.rel5: mapRelationshipToEng maps மருமகன் to Son-in-law');
+                assert(mapRelationshipToEng('மருமகள்').eng === 'Daughter-in-law', 'TEST 84.rel6: mapRelationshipToEng maps மருமகள் to Daughter-in-law');
+                assert(normalizeRelationshipPair('மகன்', 'Grand Son').eng === 'Son', 'TEST 84.rel7: normalizeRelationshipPair prioritizes edited Tamil மகன் over stale English Grand Son');
+
+                // 2. Simulated TNPDS DOM execution of executeSteps5To7Demographics ensures Son never selects Grandson
+                const { chromium } = require('playwright');
+                const browser84 = await chromium.launch({ headless: true });
+                let domRelPicked = '';
+                let editUiRes = null;
+                const amMob = '9999900084';
+                const amDraftId = `${amMob}_test84_${Date.now()}`;
+                const amHdr = { 'x-session-mobile': amMob, 'x-operator-uid': 'test_suite_operator_uid', 'x-draft-id': amDraftId };
+                try {
+                    const domPage = await browser84.newPage();
+                    await domPage.route('**/*', route => {
+                        if (route.request().url().includes('tnpds.gov.in')) {
+                            return route.fulfill({
+                                status: 200,
+                                contentType: 'text/html; charset=utf-8',
+                                body: `<!DOCTYPE html><html><body>
+                                    <form>
+                                        <input formcontrolname="name" />
+                                        <input formcontrolname="lname" />
+                                        <select formcontrolname="gender"><option value="0">தேர்வு</option><option value="M">ஆண்</option><option value="F">பெண்</option></select>
+                                        <input formcontrolname="dateOfBirth" value="10/06/1993" />
+                                        <select formcontrolname="relationship">
+                                            <option value="0">-- தேர்வு --</option>
+                                            <option value="1">Grandson / பேரன்</option>
+                                            <option value="2">Son-in-law / மருமகன்</option>
+                                            <option value="3">Son / மகன்</option>
+                                        </select>
+                                        <input type="radio" name="diffAbled" value="false" />
+                                    </form>
+                                </body></html>`
+                            });
+                        }
+                        return route.continue();
+                    });
+                    await domPage.goto('https://www.tnpds.gov.in/pages/service-request');
+                    await executeSteps5To7Demographics(domPage, {
+                        memberNameTam: 'குமரன் கி',
+                        memberNameEng: 'Kumaran K',
+                        dob: '10/06/1993',
+                        genderTam: 'ஆண்',
+                        relTam: 'மகன்',
+                        relEng: 'Son'
+                    }, () => {}, {
+                        showBrowserHud: async () => {},
+                        selectDateInMatCalendar: async () => true
+                    });
+                    domRelPicked = await domPage.locator('select[formcontrolname="relationship"]').inputValue();
+                    await domPage.close();
+
+                    // 3. Edit Modal save + direct submit fidelity for ADD_MEMBER
+                    await request('POST', '/api/drafts/save', {
+                        draftId: amDraftId,
+                        mobileNumber: amMob,
+                        operatorUid: 'test_suite_operator_uid',
+                        subService: 'ADD_MEMBER',
+                        subServiceData: {
+                            subService: 'ADD_MEMBER',
+                            memberName: 'பழைய பெயர்',
+                            memberNameTam: 'பழைய பெயர்',
+                            memberNameEng: 'Old Name',
+                            fatherNameTam: 'பழைய தந்தை',
+                            fatherNameEng: 'Old Father',
+                            dob: '10/06/1993',
+                            gender: 'Male',
+                            genderTam: 'ஆண்',
+                            relationshipTam: 'பேரன்',
+                            relationshipEng: 'Grand Son',
+                            relationship: 'பேரன்',
+                            aadhaarNo: '575567662931',
+                            docPath: '/uploads/test_sample_doc.jpg',
+                            aadhaarDocPath: '/uploads/test_sample_doc.jpg',
+                            addMembersList: [{
+                                memberName: 'பழைய பெயர்',
+                                memberNameTam: 'பழைய பெயர்',
+                                memberNameEng: 'Old Name',
+                                relationshipTam: 'பேரன்',
+                                relationshipEng: 'Grand Son',
+                                dob: '10/06/1993',
+                                gender: 'Male',
+                                genderTam: 'ஆண்',
+                                aadhaarNo: '575567662931',
+                                docPath: '/uploads/test_sample_doc.jpg'
+                            }]
+                        },
+                        citizenProfile: {
+                            mobileNumber: amMob,
+                            subService: 'ADD_MEMBER',
+                            documents: { memberAadhaar: '/uploads/test_sample_doc.jpg' },
+                            subServiceData: {
+                                subService: 'ADD_MEMBER',
+                                memberName: 'பழைய பெயர்',
+                                memberNameTam: 'பழைய பெயர்',
+                                memberNameEng: 'Old Name',
+                                relationshipTam: 'பேரன்',
+                                relationshipEng: 'Grand Son',
+                                relationship: 'பேரன்',
+                                dob: '10/06/1993',
+                                gender: 'Male',
+                                genderTam: 'ஆண்',
+                                aadhaarNo: '575567662931',
+                                docPath: '/uploads/test_sample_doc.jpg',
+                                aadhaarDocPath: '/uploads/test_sample_doc.jpg',
+                                addMembersList: [{
+                                    memberName: 'பழைய பெயர்',
+                                    memberNameTam: 'பழைய பெயர்',
+                                    memberNameEng: 'Old Name',
+                                    relationshipTam: 'பேரன்',
+                                    relationshipEng: 'Grand Son',
+                                    dob: '10/06/1993',
+                                    gender: 'Male',
+                                    genderTam: 'ஆண்',
+                                    aadhaarNo: '575567662931',
+                                    docPath: '/uploads/test_sample_doc.jpg'
+                                }]
+                            }
+                        }
+                    }, amHdr);
+
+                    const page84 = await browser84.newPage();
+                    await page84.goto(`${BASE_URL}/index.html`);
+                    await page84.waitForTimeout(400);
+                    editUiRes = await page84.evaluate(async ({ mob, dId }) => {
+                        localStorage.setItem('eseva_user_role', 'operator');
+                        localStorage.setItem('eseva_operator_uid', 'test_suite_operator_uid');
+                        localStorage.setItem('eseva_active_customer_mobile', mob);
+                        localStorage.setItem('eseva_active_draft_id', dId);
+                        await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-operator-uid': 'test_suite_operator_uid', 'x-draft-id': dId },
+                            body: JSON.stringify({ draftId: dId, mobileNumber: mob, customerMobile: mob, isCustomerSession: true, operatorUid: 'test_suite_operator_uid' })
+                        });
+                        await fetchHistory(true);
+                        await openEditModal(dId, false);
+                        document.getElementById('editAddMemberCardNo').value = '05/G/0458921';
+                        document.getElementById('editAddMemberRel').value = 'மகன்';
+                        document.getElementById('editAddMemberNameTam').value = 'குமரன் கி';
+                        document.getElementById('editAddMemberNameEng').value = 'Kumaran K';
+                        document.getElementById('editAddMemberFatherTam').value = 'கிருபாகரன்';
+                        document.getElementById('editAddMemberFatherEng').value = 'Kirubakaran';
+                        await saveEditedProfile(false);
+                        const savedSidebarRel = document.getElementById('infoAddMemberRel')?.innerText || '';
+                        const savedSidebarName = document.getElementById('infoAddMemberName')?.innerText || '';
+
+                        let launchedPayload = null;
+                        window.esevaDesktopBridge = {
+                            isDesktopApp: true,
+                            startLiveAutomation: async (p) => { launchedPayload = p; return { success: true }; },
+                            onAutomationUpdate: () => {},
+                            onAutomationFinished: () => {}
+                        };
+                        await openEditModal(dId, false);
+                        const reopenedRel = document.getElementById('editAddMemberRel')?.value || '';
+                        document.getElementById('editAddMemberRel').value = 'மருமகன்';
+                        await submitDirectlyFromEditModal();
+                        return { savedSidebarRel, savedSidebarName, reopenedRel, launchedPayload };
+                    }, { mob: amMob, dId: amDraftId });
+                    await page84.close();
+                } finally {
+                    await browser84.close();
+                    await request('DELETE', `/api/drafts/${encodeURIComponent(amDraftId)}?permanent=true`, null, amHdr).catch(() => {});
+                }
+
+                assert(domRelPicked === '3', `TEST 84.domSelect: Simulated TNPDS form selected value "3" (Son / மகன்), got "${domRelPicked}"`);
+                assert(editUiRes.savedSidebarRel.includes('மகன்') && editUiRes.savedSidebarName.includes('குமரன் கி'), `TEST 84.sidebarSync: Sidebar immediately shows edited member & relationship (got name="${editUiRes.savedSidebarName}", rel="${editUiRes.savedSidebarRel}")`);
+                assert(editUiRes.reopenedRel === 'மகன்', `TEST 84.reopenEdit: Reopening Edit Modal preserves saved மகன் (got "${editUiRes.reopenedRel}")`);
+                assert(editUiRes.launchedPayload?.subServiceData?.relationshipTam === 'மருமகன்' && editUiRes.launchedPayload?.subServiceData?.relationshipEng === 'Son-in-law', `TEST 84.submitSync: Direct submit carries edited relationshipTam=மருமகன் & relationshipEng=Son-in-law`);
+                assert(editUiRes.launchedPayload?.subServiceData?.addMembersList?.[0]?.relationshipTam === 'மருமகன்' && editUiRes.launchedPayload?.subServiceData?.memberNameEng === 'Kumaran K', `TEST 84.listSync: addMembersList[0] stays 100% synced with Edit Modal changes`);
+                passedCount += 12;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

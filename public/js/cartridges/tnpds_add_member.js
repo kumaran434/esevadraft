@@ -12,6 +12,37 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
+    const ADD_MEMBER_REL_DEFS = [
+        { tam: 'பேரன்', eng: 'Grand Son', aliases: ['பேரன்', 'பெயரன்', 'கிராண்ட்சன்', 'grandson', 'grand son', 'grand-son'] },
+        { tam: 'பேத்தி', eng: 'Grand Daughter', aliases: ['பேத்தி', 'பெயர்த்தி', 'கிராண்ட்டாட்டர்', 'granddaughter', 'grand daughter', 'grand-daughter'] },
+        { tam: 'மருமகன்', eng: 'Son-in-law', aliases: ['மருமகன்', 'son-in-law', 'son in law'] },
+        { tam: 'மருமகள்', eng: 'Daughter-in-law', aliases: ['மருமகள்', 'daughter-in-law', 'daughter in law'] },
+        { tam: 'மாமனார்', eng: 'Father-in-law', aliases: ['மாமனார்', 'father-in-law', 'father in law'] },
+        { tam: 'மாமியார்', eng: 'Mother-in-law', aliases: ['மாமியார்', 'mother-in-law', 'mother in law'] },
+        { tam: 'மகன்', eng: 'Son', aliases: ['மகன்', 'குமாரன்', 'பையன்', 'son'] },
+        { tam: 'மகள்', eng: 'Daughter', aliases: ['மகள்', 'புதல்வி', 'daughter'] },
+        { tam: 'மனைவி', eng: 'Wife', aliases: ['மனைவி', 'wife'] },
+        { tam: 'கணவர்', eng: 'Husband', aliases: ['கணவர்', 'கணவன்', 'husband'] },
+        { tam: 'தந்தை', eng: 'Father', aliases: ['தந்தை', 'அப்பா', 'father'] },
+        { tam: 'தாய்', eng: 'Mother', aliases: ['தாய்', 'அம்மா', 'mother'] },
+        { tam: 'சகோதரர்', eng: 'Brother', aliases: ['சகோதரர்', 'சகோதரன்', 'அண்ணன்', 'தம்பி', 'brother'] },
+        { tam: 'சகோதரி', eng: 'Sister', aliases: ['சகோதரி', 'அக்கா', 'தங்கை', 'sister'] },
+        { tam: 'மற்றவை', eng: 'Others', aliases: ['மற்றவை', 'இதர', 'பிற', 'others', 'other'] }
+    ];
+
+    function normalizeAddMemberRel(rawTam, rawEng) {
+        const candidates = [rawTam, rawEng].map(v => String(v || '').trim()).filter(Boolean);
+        for (const c of candidates) {
+            const lower = c.toLowerCase().replace(/[_/\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+            for (const def of ADD_MEMBER_REL_DEFS) {
+                if (def.aliases.some(a => lower === a || c.includes(a) || new RegExp(`\\b${a.replace(/\s+/g, '\\s+')}\\b`, 'i').test(lower))) {
+                    return { tam: def.tam, eng: def.eng };
+                }
+            }
+        }
+        return { tam: candidates[0] || 'மகன்', eng: 'Son' };
+    }
+
     return {
         id: 'TNPDS_ADD_MEMBER',
         ownedDocTypes: ['smartCard', 'rationCard', 'memberAadhaar', 'applicationPdf'],
@@ -62,33 +93,31 @@
 
             const relEl = document.getElementById('editAddMemberRel');
             if (relEl) {
-                const relVal = sData.relationshipTam || sData.relationship || 'மகன்';
-                relEl.value = relVal;
-                if (!relEl.value && relVal) {
-                    for (const opt of relEl.options) {
-                        if (opt.text.includes(relVal) || opt.value.includes(relVal)) {
-                            relEl.value = opt.value;
-                            break;
-                        }
-                    }
-                }
+                const sMem0 = (Array.isArray(sData.addMembersList) && sData.addMembersList[0]) || {};
+                const relPair = normalizeAddMemberRel(
+                    sData.relationshipTam || sMem0.relationshipTam || sData.relationship || sMem0.relationship,
+                    sData.relationshipEng || sMem0.relationshipEng
+                );
+                relEl.value = relPair.tam;
+                if (!relEl.value) relEl.value = 'மகன்';
             }
 
+            const sMem0 = (Array.isArray(sData.addMembersList) && sData.addMembersList[0]) || {};
             const nameTamEl = document.getElementById('editAddMemberNameTam');
-            if (nameTamEl) nameTamEl.value = sData.memberNameTam || '';
+            if (nameTamEl) nameTamEl.value = sData.memberNameTam || sMem0.memberNameTam || sData.memberName || sMem0.memberName || '';
             const nameEngEl = document.getElementById('editAddMemberNameEng');
-            if (nameEngEl) nameEngEl.value = sData.memberNameEng || '';
+            if (nameEngEl) nameEngEl.value = sData.memberNameEng || sMem0.memberNameEng || '';
             const fatTamEl = document.getElementById('editAddMemberFatherTam');
-            if (fatTamEl) fatTamEl.value = sData.fatherNameTam || '';
+            if (fatTamEl) fatTamEl.value = sData.fatherNameTam || sMem0.fatherNameTam || '';
             const fatEngEl = document.getElementById('editAddMemberFatherEng');
-            if (fatEngEl) fatEngEl.value = sData.fatherNameEng || '';
+            if (fatEngEl) fatEngEl.value = sData.fatherNameEng || sMem0.fatherNameEng || '';
             const dobEl = document.getElementById('editAddMemberDob');
-            if (dobEl) dobEl.value = sData.dob || '';
+            if (dobEl) dobEl.value = sData.dob || sMem0.dob || '';
             const genEl = document.getElementById('editAddMemberGender');
-            if (genEl) genEl.value = sData.gender || 'Male';
+            if (genEl) genEl.value = sData.gender || sMem0.gender || 'Male';
             const aadhEl = document.getElementById('editAddMemberAadhaar');
             if (aadhEl) {
-                const rawAadh = sData.aadhaarNo || '';
+                const rawAadh = sData.aadhaarNo || sMem0.aadhaarNo || '';
                 aadhEl.value = rawAadh ? rawAadh.replace(/(\d{4})/g, '$1 ').trim() : '';
             }
             return true;
@@ -100,20 +129,51 @@
             if (!hasAddCtx) return null;
 
             const memCard = document.getElementById('editAddMemberCardNo')?.value.trim() || '';
-            const memRel = document.getElementById('editAddMemberRel')?.value || 'மகன்';
+            const memRelRaw = document.getElementById('editAddMemberRel')?.value || 'மகன்';
+            const memRelPair = normalizeAddMemberRel(memRelRaw, '');
             const memNameTam = document.getElementById('editAddMemberNameTam')?.value.trim() || '';
             const memNameEng = document.getElementById('editAddMemberNameEng')?.value.trim() || '';
             const memFatherTam = document.getElementById('editAddMemberFatherTam')?.value.trim() || '';
             const memFatherEng = document.getElementById('editAddMemberFatherEng')?.value.trim() || '';
             const memDob = document.getElementById('editAddMemberDob')?.value.trim() || '';
             const memGender = document.getElementById('editAddMemberGender')?.value || 'Male';
+            const memGenderTam = memGender === 'Female' ? 'பெண்' : 'ஆண்';
             const memAadhaar = (document.getElementById('editAddMemberAadhaar')?.value || '').replace(/\s+/g, '');
+            let memIsChild = Boolean(sData.isChild);
+            if (memDob && /\d{4}/.test(memDob)) {
+                const yrMatch = memDob.match(/(\d{4})/);
+                if (yrMatch) memIsChild = (new Date().getFullYear() - parseInt(yrMatch[1], 10)) < 5;
+            }
+
+            const existingList = Array.isArray(sData.addMembersList) ? sData.addMembersList.map(m => ({ ...m })) : [];
+            const editedMemSummary = {
+                memberName: memNameTam || memNameEng || '',
+                memberNameTam: memNameTam,
+                memberNameEng: memNameEng,
+                fatherNameTam: memFatherTam,
+                fatherNameEng: memFatherEng,
+                dob: memDob,
+                gender: memGender,
+                genderTam: memGenderTam,
+                relationshipTam: memRelPair.tam,
+                relationshipEng: memRelPair.eng,
+                relationship: memRelPair.tam,
+                aadhaarNo: memAadhaar,
+                isChild: memIsChild
+            };
+            if (existingList.length > 0) {
+                existingList[0] = {
+                    ...existingList[0],
+                    ...editedMemSummary
+                };
+            }
 
             const updatedSubServiceData = {
                 ...sData,
                 smartCardNumber: memCard,
-                relationshipTam: memRel,
-                relationship: memRel,
+                relationshipTam: memRelPair.tam,
+                relationshipEng: memRelPair.eng,
+                relationship: memRelPair.tam,
                 memberNameTam: memNameTam,
                 memberNameEng: memNameEng,
                 memberName: memNameTam || memNameEng || '',
@@ -121,8 +181,10 @@
                 fatherNameEng: memFatherEng,
                 dob: memDob,
                 gender: memGender,
-                genderTam: memGender === 'Female' ? 'பெண்' : 'ஆண்',
-                aadhaarNo: memAadhaar
+                genderTam: memGenderTam,
+                aadhaarNo: memAadhaar,
+                isChild: memIsChild,
+                ...(existingList.length > 0 ? { addMembersList: existingList } : {})
             };
             return {
                 overrideUpdated: {

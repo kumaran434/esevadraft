@@ -387,6 +387,8 @@ router.post('/api/profile/update', async (req, res) => {
                     operatorUid: sess.operatorUid || null,
                     operatorName: sess.operatorName || null,
                     operatorMobile: sess.operatorMobile || null,
+                    subService: sess.subService || sess.citizenProfile?.subService || null,
+                    subServiceData: sess.citizenProfile?.subServiceData || sess.subServiceData || null,
                     citizenProfile: sess.citizenProfile,
                     documents: docsToSave,
                     base64Docs: base64Docs,

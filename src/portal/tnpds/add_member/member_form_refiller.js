@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { findBestRelationshipOption } = require('../helpers/relationship_matcher');
 
 /**
  * Refills member form fields on live TNPDS portal with proper Angular Reactive Form events.
@@ -47,16 +48,20 @@ async function refillMemberFormFields(page, memberData, helpers = {}) {
         }, dob).catch(() => {});
     }
 
-    const relSel = page.locator('select#relationship, select[formcontrolname="relationship"]').first();
+    const relSel = page.locator('select#relationship, select[formcontrolname="relationship"], select[formcontrolname="relation"]').first();
     if (await relSel.count() > 0) {
-        const opts = await relSel.locator('option').allInnerTexts().catch(() => []);
-        const match = opts.find(o => o.includes(relTam) || (relEng && o.toLowerCase().includes(relEng.toLowerCase())));
-        if (match) {
-            await relSel.selectOption({ label: match }).catch(() => {});
-        } else {
-            await relSel.selectOption({ index: 1 }).catch(() => {});
+        const relOptions = await relSel.evaluate(s => Array.from(s.options).map((o, idx) => ({
+            index: idx,
+            value: String(o.value ?? ''),
+            text: (o.innerText || o.text || '').trim()
+        }))).catch(() => []);
+        const matchedRelOpt = findBestRelationshipOption(relOptions, relTam, relEng);
+        if (matchedRelOpt) {
+            await relSel.selectOption({ index: matchedRelOpt.index }).catch(async () => {
+                if (matchedRelOpt.value) await relSel.selectOption(matchedRelOpt.value).catch(() => {});
+            });
+            await relSel.dispatchEvent('change').catch(() => {});
         }
-        await relSel.dispatchEvent('change').catch(() => {});
     }
 
     const pTypeSel = page.locator('select[formcontrolname="proofType"]').first();

@@ -1,6 +1,7 @@
 /**
  * TNPDS Add Member - Step 9a: Form Audit, Healing & Add Member Button Click
  */
+const { findBestRelationshipOption } = require('../../helpers/relationship_matcher');
 
 async function executeStep9AuditAndSave(page, memberContext, onProgress, sharedContext) {
     const { showBrowserHud = async () => {} } = sharedContext;
@@ -9,9 +10,25 @@ async function executeStep9AuditAndSave(page, memberContext, onProgress, sharedC
         uploadedBadgeText = '', fileName = 'aadhaar.jpg'
     } = memberContext;
 
+    // Resolve the exact portal <option> in Node BEFORE entering page.evaluate (zero substring collision)
+    let targetRelOptValue = '';
+    try {
+        const relOptions = await page.evaluate(() => {
+            const relSel = document.querySelector('select#relationship, select[formcontrolname="relationship"], select[formcontrolname="relation"]');
+            if (!relSel) return [];
+            return Array.from(relSel.options).map((o, idx) => ({
+                index: idx,
+                value: String(o.value ?? ''),
+                text: (o.innerText || o.text || '').trim()
+            }));
+        }).catch(() => []);
+        const matchedRelOpt = findBestRelationshipOption(relOptions, relTam, relEng);
+        if (matchedRelOpt) targetRelOptValue = matchedRelOpt.value;
+    } catch (_) {}
+
     onProgress(`[படி 9/12] 🔍 உறுப்பினர் படிவத்தின் அனைத்து புலங்களும் (Angular Form Audit) சரிபார்க்கப்படுகின்றன...`);
 
-    const formAuditResult = await page.evaluate(({ isChild, memberNameEng, memberNameTam, dob, relTam, relEng, genderTam, uploadedBadgeText, fileName, aadhaarDigits }) => {
+    const formAuditResult = await page.evaluate(({ isChild, memberNameEng, memberNameTam, dob, relTam, relEng, targetRelOptValue, genderTam, uploadedBadgeText, fileName, aadhaarDigits }) => {
         const auditLog = [];
         const invalidDetails = [];
 
@@ -87,13 +104,19 @@ async function executeStep9AuditAndSave(page, memberContext, onProgress, sharedC
             }
         }
 
-        // 6. Ensure Relationship
-        const relSel = document.querySelector('select#relationship, select[formcontrolname="relationship"]');
-        if (relSel && (!relSel.value || relSel.value === '0')) {
-            const rOpt = Array.from(relSel.options).find(o => o.text.includes(relTam) || (relEng && o.text.toLowerCase().includes(relEng.toLowerCase())));
-            if (rOpt) {
-                relSel.value = rOpt.value;
-                relSel.dispatchEvent(new Event('change', { bubbles: true }));
+        // 6. Ensure Relationship (Strictly apply exact canonical target option resolved in Node)
+        const relSel = document.querySelector('select#relationship, select[formcontrolname="relationship"], select[formcontrolname="relation"]');
+        if (relSel && targetRelOptValue) {
+            const curVal = String(relSel.value ?? '');
+            if (curVal !== targetRelOptValue) {
+                const rOpt = Array.from(relSel.options).find(o => String(o.value ?? '') === targetRelOptValue);
+                if (rOpt) {
+                    relSel.value = rOpt.value;
+                    relSel.selectedIndex = rOpt.index;
+                    relSel.dispatchEvent(new Event('change', { bubbles: true }));
+                    relSel.dispatchEvent(new Event('input', { bubbles: true }));
+                    auditLog.push(`Corrected relationship to ${rOpt.text} [${rOpt.value}]`);
+                }
             }
         }
 
@@ -208,7 +231,7 @@ async function executeStep9AuditAndSave(page, memberContext, onProgress, sharedC
         } catch (_) {}
 
         return { auditLog, invalidDetails, ivyFormValid };
-    }, { isChild, memberNameEng, memberNameTam, dob, relTam, relEng, genderTam, uploadedBadgeText, fileName, aadhaarDigits: (aadhaarNo || '').replace(/\D/g, '') }).catch(() => ({ auditLog: [], invalidDetails: [], ivyFormValid: null }));
+    }, { isChild, memberNameEng, memberNameTam, dob, relTam, relEng, targetRelOptValue, genderTam, uploadedBadgeText, fileName, aadhaarDigits: (aadhaarNo || '').replace(/\D/g, '') }).catch(() => ({ auditLog: [], invalidDetails: [], ivyFormValid: null }));
 
     await page.keyboard.press('Escape').catch(() => {});
     await page.waitForTimeout(200);

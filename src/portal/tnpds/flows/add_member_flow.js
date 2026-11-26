@@ -12,6 +12,7 @@ const { launchAddMemberBrowser } = require('./add_member/add_member_browser');
 const { executeFastTestGate, executeStep1Preflight } = require('./add_member/add_member_step1_preflight');
 const { executeSteps2And3Auth } = require('./add_member/add_member_step2_step3_auth');
 const { executeStep4Nav } = require('./add_member/add_member_step4_nav');
+const { normalizeRelationshipPair } = require('../helpers/relationship_matcher');
 const { executeSteps5To7Demographics } = require('./add_member/add_member_steps5_7_demographics');
 const { executeStep8Upload } = require('./add_member/add_member_step8_upload');
 const { executeStep9AuditAndSave } = require('./add_member/add_member_step9_audit_and_save');
@@ -32,6 +33,7 @@ async function startTnpdsAddMemberFlow(citizenProfile, onProgress = () => {}, op
     isDryRunMode = isDryRunActive;
 
     const sData = citizenProfile.subServiceData || {};
+    const sMem0 = (Array.isArray(sData.addMembersList) && sData.addMembersList[0]) || {};
     const rawMem0 = (citizenProfile.members && citizenProfile.members[0]) || {};
     const isMem0FamilyHead = Boolean(
         !rawMem0 ||
@@ -43,17 +45,18 @@ async function startTnpdsAddMemberFlow(citizenProfile, onProgress = () => {}, op
 
     const userMobile = (citizenProfile.mobileNumber || citizenProfile.mobile || '').replace(/\D/g, '');
     const rationCardNo = (citizenProfile.smartCardNumber || citizenProfile.rationCardNumber || citizenProfile.rationCardNo || sData.smartCardNumber || '').trim();
-    const memberNameTam = (citizenProfile.memberNameTamil || citizenProfile.memberNameTam || sData.memberNameTam || sData.memberName || mem0.nameTam || mem0.name || '').trim();
-    const memberNameEng = (citizenProfile.memberNameEnglish || citizenProfile.memberNameEng || sData.memberNameEng || mem0.nameEng || '').trim();
-    const relTam = (citizenProfile.relationshipTamil || citizenProfile.relTam || sData.relationshipTam || mem0.relationshipTam || sData.relationship || mem0.relationship || '').trim();
-    const rawRelEng = (citizenProfile.relationshipEnglish || citizenProfile.relEng || sData.relationshipEng || mem0.relationshipEng || (sData.relationship && /^[A-Za-z\s/-]+$/.test(sData.relationship) ? sData.relationship : '') || (mem0.relationship && /^[A-Za-z\s/-]+$/.test(mem0.relationship) ? mem0.relationship : '')).trim();
-    const relTamToEngMap = { 'மகன்': 'Son', 'மகள்': 'Daughter', 'மனைவி': 'Wife', 'கணவன்': 'Husband', 'பேரன்': 'Grand Son', 'பேத்தி': 'Grand Daughter', 'தந்தை': 'Father', 'தாய்': 'Mother', 'மருமகள்': 'Daughter-in-Law', 'மருமகன்': 'Son-in-Law' };
-    const relEng = rawRelEng || relTamToEngMap[relTam] || (relTam ? 'Son' : '');
-    const genderTam = (citizenProfile.genderTamil || citizenProfile.genderTam || sData.genderTam || mem0.genderTam || '').trim();
-    const gender = (citizenProfile.gender || sData.gender || mem0.gender || '').trim();
-    const dob = (citizenProfile.dob || citizenProfile.dateOfBirth || sData.dob || mem0.dob || '').trim();
-    const aadhaarNo = (citizenProfile.aadhaarNumber || citizenProfile.aadhaarNo || sData.aadhaarNo || mem0.aadhaarNumber || mem0.aadhaarNo || '').replace(/\D/g, '');
-    const isChild = citizenProfile.isChild || sData.isChild || mem0.isChild || false;
+    const memberNameTam = (citizenProfile.memberNameTamil || citizenProfile.memberNameTam || sData.memberNameTam || sData.memberName || sMem0.memberNameTam || mem0.nameTam || mem0.name || '').trim();
+    const memberNameEng = (citizenProfile.memberNameEnglish || citizenProfile.memberNameEng || sData.memberNameEng || sMem0.memberNameEng || mem0.nameEng || '').trim();
+    const rawRelTamInput = (citizenProfile.relationshipTamil || citizenProfile.relTam || sData.relationshipTam || sMem0.relationshipTam || sData.relationship || sMem0.relationship || mem0.relationshipTam || mem0.relationship || '').trim();
+    const rawRelEngInput = (citizenProfile.relationshipEnglish || citizenProfile.relEng || sData.relationshipEng || sMem0.relationshipEng || mem0.relationshipEng || (sData.relationship && /^[A-Za-z\s/-]+$/.test(sData.relationship) ? sData.relationship : '') || (mem0.relationship && /^[A-Za-z\s/-]+$/.test(mem0.relationship) ? mem0.relationship : '')).trim();
+    const normalizedRel = normalizeRelationshipPair(rawRelTamInput, rawRelEngInput);
+    const relTam = normalizedRel.tam || rawRelTamInput || (normalizedRel.eng === 'Son' ? 'மகன்' : '');
+    const relEng = normalizedRel.eng || rawRelEngInput || (relTam ? 'Son' : '');
+    const genderTam = (citizenProfile.genderTamil || citizenProfile.genderTam || sData.genderTam || sMem0.genderTam || mem0.genderTam || normalizedRel.genderTam || '').trim();
+    const gender = (citizenProfile.gender || sData.gender || sMem0.gender || mem0.gender || normalizedRel.gender || '').trim();
+    const dob = (citizenProfile.dob || citizenProfile.dateOfBirth || sData.dob || sMem0.dob || mem0.dob || '').trim();
+    const aadhaarNo = (citizenProfile.aadhaarNumber || citizenProfile.aadhaarNo || sData.aadhaarNo || sMem0.aadhaarNo || mem0.aadhaarNumber || mem0.aadhaarNo || '').replace(/\D/g, '');
+    const isChild = citizenProfile.isChild || sData.isChild || sMem0.isChild || mem0.isChild || false;
 
     // Fast test bypass for automated regression testing
     if (options.fastTest === true || (process.env.REGRESSION_TEST === 'true' && options.isTestSuite === true)) {

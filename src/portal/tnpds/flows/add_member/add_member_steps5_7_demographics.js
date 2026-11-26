@@ -2,6 +2,7 @@
  * TNPDS Add Member - Steps 5 to 7: Member Names, DOB, Gender, Relationship & Disability
  */
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+const { findBestRelationshipOption, classifyRelationship } = require('../../helpers/relationship_matcher');
 
 async function executeSteps5To7Demographics(page, memberContext, onProgress, sharedContext) {
     const {
@@ -107,20 +108,37 @@ async function executeSteps5To7Demographics(page, memberContext, onProgress, sha
 
     const relSelect = page.locator('select[formcontrolname="relationship"], select[formcontrolname="relation"]').first();
     if (await relSelect.count() > 0 && await relSelect.isVisible().catch(() => false)) {
-        let relMatched = false;
-        const optCount = await relSelect.locator('option').count();
-        for (let i = 0; i < optCount; i++) {
-            const optText = (await relSelect.locator('option').nth(i).innerText().catch(() => '')).trim();
-            if (optText.includes(relTam) || optText.toLowerCase().includes(relEng.toLowerCase())) {
-                await relSelect.selectOption({ index: i });
-                relMatched = true;
-                break;
+        const relOptions = await relSelect.evaluate(s => Array.from(s.options).map((o, idx) => ({
+            index: idx,
+            value: String(o.value ?? ''),
+            text: (o.innerText || o.text || '').trim()
+        }))).catch(() => []);
+        const matchedOpt = findBestRelationshipOption(relOptions, relTam, relEng);
+        if (matchedOpt) {
+            await relSelect.selectOption({ index: matchedOpt.index }).catch(async () => {
+                if (matchedOpt.value) await relSelect.selectOption(matchedOpt.value).catch(() => {});
+            });
+            await relSelect.dispatchEvent('change').catch(() => {});
+            await relSelect.dispatchEvent('blur').catch(() => {});
+            await page.waitForTimeout(300);
+            const selectedInfo = await relSelect.evaluate(s => {
+                const o = s.options[s.selectedIndex];
+                return o ? { index: s.selectedIndex, value: String(o.value ?? ''), text: (o.innerText || o.text || '').trim() } : null;
+            }).catch(() => null);
+            const targetDef = classifyRelationship(relTam) || classifyRelationship(relEng);
+            const pickedDef = selectedInfo ? (classifyRelationship(selectedInfo.text) || classifyRelationship(selectedInfo.value)) : null;
+            if (targetDef && pickedDef && pickedDef.key !== targetDef.key) {
+                onProgress(`⚠️ [உறவுமுறை சரிபார்ப்பு] எதிர்பார்த்த "${relTam} (${relEng})" என்பதற்குப் பதில் "${selectedInfo?.text}" பதிவானது — மீண்டும் "${matchedOpt.text}" சரிசெய்யப்படுகிறது...`);
+                await relSelect.selectOption({ index: matchedOpt.index }).catch(() => {});
+                await relSelect.dispatchEvent('change').catch(() => {});
+            } else {
+                onProgress(`✅ [உறவுமுறை உறுதி] போர்ட்டலில் "${selectedInfo?.text || matchedOpt.text}" (${relTam} / ${relEng}) துல்லியமாகத் தேர்வு செய்யப்பட்டது.`);
             }
+        } else {
+            const availSummary = relOptions.map(o => `${o.text} [${o.value}]`).join(', ');
+            onProgress(`🛑 **பிழை:** போர்ட்டல் உறவுமுறைப் பட்டியலில் "${relTam} (${relEng})" கிடைக்கவில்லை! (பட்டியல்: ${availSummary})`);
+            throw new Error(`RELATIONSHIP_OPTION_MISMATCH: Cannot find "${relTam}" (${relEng}) in TNPDS dropdown.`);
         }
-        if (!relMatched && optCount > 1) {
-            await relSelect.selectOption({ index: 1 });
-        }
-        await relSelect.dispatchEvent('change').catch(() => {});
         await page.waitForTimeout(500);
     }
 

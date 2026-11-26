@@ -3,6 +3,7 @@ const fs = require('fs');
 const { syncFatherOrHusband, normalizeDobWithYearFallback } = require('./profile_helpers');
 const { resolveTnDistrict } = require('../../tn_district_mapper');
 const { ensureBilingualPair } = require('../utils/bilingual_helper');
+const { normalizeRelationshipPair } = require('../portal/tnpds/helpers/relationship_matcher');
 
 function applyProfileUpdates(sess, updated) {
     if (updated.fullNameTam !== undefined) sess.citizenProfile.fullNameTam = updated.fullNameTam;
@@ -101,6 +102,7 @@ function applyProfileUpdates(sess, updated) {
     }
     if (updated.headAadhaar !== undefined) sess.citizenProfile.headAadhaar = updated.headAadhaar;
     if (updated.rationCardNo !== undefined) sess.citizenProfile.rationCardNo = updated.rationCardNo;
+    if (updated.smartCardNumber !== undefined) sess.citizenProfile.smartCardNumber = updated.smartCardNumber;
 
     // Explicit Document Path & Deletion Handlers
     if (updated.headPhotoPath === null || updated.headPhotoPath === '') {
@@ -208,6 +210,46 @@ function applyProfileUpdates(sess, updated) {
             for (const staleKey of ['memberName', 'memberNameTam', 'memberNameEng', 'relationshipTam', 'relationshipEng', 'aadhaarNo', 'docPath', 'aadhaarDocPath', 'doorNo', 'streetTam', 'streetEng', 'areaTam', 'areaEng', 'pincode', 'proofType', 'addressProofDocPath', 'isNewAddressEntered']) {
                 delete mergedSubData[staleKey];
             }
+        } else if (activeSubSvc === 'ADD_MEMBER') {
+            const relPair = normalizeRelationshipPair(
+                mergedSubData.relationshipTam || mergedSubData.relationship,
+                mergedSubData.relationshipEng
+            );
+            if (relPair.key) {
+                mergedSubData.relationshipTam = relPair.tam;
+                mergedSubData.relationshipEng = relPair.eng;
+                mergedSubData.relationship = relPair.tam;
+            }
+            if (Array.isArray(mergedSubData.addMembersList) && mergedSubData.addMembersList.length > 0) {
+                mergedSubData.addMembersList = mergedSubData.addMembersList.map((m, idx) => idx === 0 ? {
+                    ...m,
+                    memberName: mergedSubData.memberName || mergedSubData.memberNameTam || mergedSubData.memberNameEng || m.memberName || '',
+                    memberNameTam: mergedSubData.memberNameTam !== undefined ? mergedSubData.memberNameTam : (m.memberNameTam || ''),
+                    memberNameEng: mergedSubData.memberNameEng !== undefined ? mergedSubData.memberNameEng : (m.memberNameEng || ''),
+                    fatherNameTam: mergedSubData.fatherNameTam !== undefined ? mergedSubData.fatherNameTam : (m.fatherNameTam || ''),
+                    fatherNameEng: mergedSubData.fatherNameEng !== undefined ? mergedSubData.fatherNameEng : (m.fatherNameEng || ''),
+                    dob: mergedSubData.dob !== undefined ? mergedSubData.dob : (m.dob || ''),
+                    gender: mergedSubData.gender !== undefined ? mergedSubData.gender : (m.gender || ''),
+                    genderTam: mergedSubData.genderTam !== undefined ? mergedSubData.genderTam : (m.genderTam || ''),
+                    aadhaarNo: mergedSubData.aadhaarNo !== undefined ? mergedSubData.aadhaarNo : (m.aadhaarNo || ''),
+                    relationshipTam: mergedSubData.relationshipTam || m.relationshipTam || '',
+                    relationshipEng: mergedSubData.relationshipEng || m.relationshipEng || '',
+                    relationship: mergedSubData.relationship || mergedSubData.relationshipTam || m.relationship || '',
+                    isChild: mergedSubData.isChild !== undefined ? Boolean(mergedSubData.isChild) : Boolean(m.isChild)
+                } : m);
+            }
+            sess.citizenProfile.tempMember = {
+                ...(sess.citizenProfile.tempMember || {}),
+                nameTam: mergedSubData.memberNameTam || mergedSubData.memberName || '',
+                nameEng: mergedSubData.memberNameEng || '',
+                dob: mergedSubData.dob || '',
+                aadhaarNo: mergedSubData.aadhaarNo || '',
+                gender: mergedSubData.gender || '',
+                genderTam: mergedSubData.genderTam || '',
+                relationshipTam: mergedSubData.relationshipTam || '',
+                relationshipEng: mergedSubData.relationshipEng || '',
+                docPath: mergedSubData.docPath || mergedSubData.aadhaarDocPath || sess.citizenProfile.tempMember?.docPath || ''
+            };
         }
         sess.citizenProfile.subServiceData = mergedSubData;
         sess.subServiceData = { ...mergedSubData };

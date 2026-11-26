@@ -360,7 +360,8 @@
             // 1. Immediately render documents without bouncing counts (Server Cache First = ZERO FLICKER):
             // If we are at SERVICE_SELECTION (no service selected yet), hide documents box entirely!
             const curStateEarly = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
-            const isServiceSelectionOnlyEarly = (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || curStateEarly === 'REVENUE_DEPARTMENT_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
+            const hasSavedSubSvcEarly = Boolean((a && a.subService && a.subService !== 'NEW_CARD') || (a && a.subServiceData && Object.keys(a.subServiceData).length > 0));
+            const isServiceSelectionOnlyEarly = !hasSavedSubSvcEarly && (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || curStateEarly === 'REVENUE_DEPARTMENT_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
             const docsBoxEarly = document.getElementById('sidebarDocumentsBox');
             const setDispIfChanged = (el, val) => { if (el && el.style.display !== val) el.style.display = val; };
 
@@ -476,7 +477,8 @@
                 // Authoritative Per-Service Cartridge Sidebar Resolution (Zero cross-service ladders)
                 const curState = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
                 const svcHint = window.pendingSelectedService || a.serviceName || data?.serviceName || '';
-                const isServiceSelectionOnly = (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || curState === 'REVENUE_DEPARTMENT_SERVICES' || (!curState && !window.pendingSelectedService));
+                const hasSavedSubSvc = Boolean((a && a.subService && a.subService !== 'NEW_CARD') || (a && a.subServiceData && Object.keys(a.subServiceData).length > 0));
+                const isServiceSelectionOnly = !hasSavedSubSvc && (curState === 'SERVICE_SELECTION' || curState === 'RATION_CARD_SERVICES' || curState === 'REVENUE_DEPARTMENT_SERVICES' || (!curState && !window.pendingSelectedService));
                 const viewerPlugin = (!isServiceSelectionOnly && window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function')
                     ? window.ESEVA_PLUGINS.resolveServicePlugin({ ...a, intakeState: curState || a.intakeState }, { overrideHint: svcHint })
                     : null;
