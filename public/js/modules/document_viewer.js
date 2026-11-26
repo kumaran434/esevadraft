@@ -70,7 +70,11 @@
                 });
             }
 
-            const normalizeSigUrl = (u) => String(u || '').replace(/([?&])_t=\d+/g, '$1').replace(/[?&]$/, '');
+            const normalizeSigUrl = (u) => {
+                const clean = String(u || '').replace(/([?&])_t=\d+/g, '$1').replace(/[?&]$/, '');
+                const m = clean.match(/\/api\/drafts\/[^/]+\/doc\/(.+)$/);
+                return m ? `/doc/${m[1]}` : clean;
+            };
             const signature = `${curSub}::` + filteredDocs.map(d => `${d.type || ''}|${d.title || ''}|${Boolean(d.isPdf)}|${normalizeSigUrl(d.downloadUrl)}`).join(';;');
             if (signature === lastRenderedDocsSignature && docsList.children.length > 0) {
                 return; // ZERO FLICKER: Prevents unnecessary DOM thrashing & scroll jumps!
@@ -78,12 +82,13 @@
             lastRenderedDocsSignature = signature;
 
             if (filteredDocs.length === 0) {
-                docsList.innerHTML = '<div style="font-size: 11px; color: #94a3b8; padding: 4px 0;">பதிவேற்றப்பட்ட ஆவணங்கள் எதுவும் இல்லை.</div>';
-                if (docsCount) docsCount.innerText = '0';
+                const emptyHtml = '<div style="font-size: 11px; color: #94a3b8; padding: 4px 0;">பதிவேற்றப்பட்ட ஆவணங்கள் எதுவும் இல்லை.</div>';
+                if (docsList.innerHTML !== emptyHtml) docsList.innerHTML = emptyHtml;
+                if (docsCount && docsCount.innerText !== '0') docsCount.innerText = '0';
                 return;
             }
 
-            if (docsCount) docsCount.innerText = filteredDocs.length;
+            if (docsCount && docsCount.innerText !== String(filteredDocs.length)) docsCount.innerText = filteredDocs.length;
             docsList.innerHTML = filteredDocs.map((doc, dIdx) => {
                 const iconClass = (doc.icon && doc.icon.startsWith('fa-')) ? doc.icon : 'fa-file-lines';
                 const docType = doc.type || '';
@@ -144,6 +149,8 @@
         let cachedServerDocsByMobile = {};
         let cachedDocsFetchedAtByMobile = {};
         let cachedDocsSubByMobile = {};
+        let cachedDocKeysSigByMobile = {};
+        let inFlightSidebarDocsPromise = {};
 
         function downloadDocumentFile(url, suggestedName, isPdf) {
             let filename = suggestedName || 'document';
@@ -169,6 +176,8 @@
             cachedServerDocsByMobile = {};
             cachedDocsFetchedAtByMobile = {};
             cachedDocsSubByMobile = {};
+            cachedDocKeysSigByMobile = {};
+            inFlightSidebarDocsPromise = {};
             lastRenderedDocsSignature = '';
         }
         window.resetSidebarDocsCache = resetSidebarDocsCache;
@@ -183,6 +192,7 @@
                     delete cachedServerDocsByMobile[k];
                     delete cachedDocsFetchedAtByMobile[k];
                     delete cachedDocsSubByMobile[k];
+                    delete cachedDocKeysSigByMobile[k];
                 }
             }
             lastRenderedDocsSignature = '';
@@ -191,46 +201,60 @@
 
         async function fetchSidebarDocuments(mobile) {
             const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+            const opUid = localStorage.getItem('eseva_operator_uid') || '';
             const cleanMob = (mobile && String(mobile).includes('_')) ? mobile : (activeDraftId || mobile || (currentCitizenData && currentCitizenData.mobileNumber) || 'active_session');
             const curSub = currentCitizenData?.subService || window.lastSubService || '';
+            const inFlightKey = `${cleanMob}::${curSub}`;
+            if (inFlightSidebarDocsPromise[inFlightKey]) {
+                return inFlightSidebarDocsPromise[inFlightKey];
+            }
             const subQuery = curSub ? `?subService=${encodeURIComponent(curSub)}&liveOnly=1` : '?liveOnly=1';
             cachedDocsFetchedAtByMobile[cleanMob] = Date.now();
             cachedDocsSubByMobile[cleanMob] = curSub;
-            try {
-                const res = await fetch(`/api/drafts/${encodeURIComponent(cleanMob)}/documents-list${subQuery}`);
-                const data = await res.json();
-                if (data && data.success && Array.isArray(data.documents) && data.documents.length > 0) {
-                    let filteredDocs = data.documents;
-                    const activePluginForDocs = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function' && currentCitizenData)
-                        ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
-                        : null;
-                    const allowedDocTypes = activePluginForDocs?.uiCartridge?.ownedDocTypes;
-                    if (Array.isArray(allowedDocTypes) && allowedDocTypes.length > 0 && (currentCitizenData?.subService || currentCitizenData?.service || currentCitizenData?.pluginId)) {
-                        filteredDocs = data.documents.filter(d => {
-                            const t = String(d?.type || '');
-                            if (t.startsWith('memberAadhaar')) return allowedDocTypes.includes('memberAadhaar');
-                            return allowedDocTypes.includes(t);
-                        });
-                    }
-                    cachedServerDocsByMobile[cleanMob] = filteredDocs;
-                    renderSidebarDocuments(filteredDocs);
-                } else {
-                    const localDocs = currentCitizenData ? extractDocumentsFromProfile(currentCitizenData, cleanMob) : [];
-                    if (localDocs.length > 0) {
-                        cachedServerDocsByMobile[cleanMob] = localDocs;
-                        renderSidebarDocuments(localDocs);
+            const reqHeaders = {};
+            if (opUid) reqHeaders['x-operator-uid'] = opUid;
+            if (activeDraftId) reqHeaders['x-draft-id'] = activeDraftId;
+            const p = (async () => {
+                try {
+                    const res = await fetch(`/api/drafts/${encodeURIComponent(cleanMob)}/documents-list${subQuery}`, { headers: reqHeaders });
+                    const data = await res.json();
+                    if (data && data.success && Array.isArray(data.documents) && data.documents.length > 0) {
+                        let filteredDocs = data.documents;
+                        const activePluginForDocs = (window.ESEVA_PLUGINS && typeof window.ESEVA_PLUGINS.resolveServicePlugin === 'function' && currentCitizenData)
+                            ? window.ESEVA_PLUGINS.resolveServicePlugin(currentCitizenData)
+                            : null;
+                        const allowedDocTypes = activePluginForDocs?.uiCartridge?.ownedDocTypes;
+                        if (Array.isArray(allowedDocTypes) && allowedDocTypes.length > 0 && (currentCitizenData?.subService || currentCitizenData?.service || currentCitizenData?.pluginId)) {
+                            filteredDocs = data.documents.filter(d => {
+                                const t = String(d?.type || '');
+                                if (t.startsWith('memberAadhaar')) return allowedDocTypes.includes('memberAadhaar');
+                                return allowedDocTypes.includes(t);
+                            });
+                        }
+                        cachedServerDocsByMobile[cleanMob] = filteredDocs;
+                        renderSidebarDocuments(filteredDocs);
                     } else {
+                        const localDocs = currentCitizenData ? extractDocumentsFromProfile(currentCitizenData, cleanMob) : [];
+                        if (localDocs.length > 0) {
+                            cachedServerDocsByMobile[cleanMob] = localDocs;
+                            renderSidebarDocuments(localDocs);
+                        } else {
+                            cachedServerDocsByMobile[cleanMob] = [];
+                            renderSidebarDocuments([]);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch sidebar documents:', err);
+                    if (!cachedServerDocsByMobile[cleanMob]) {
                         cachedServerDocsByMobile[cleanMob] = [];
                         renderSidebarDocuments([]);
                     }
+                } finally {
+                    delete inFlightSidebarDocsPromise[inFlightKey];
                 }
-            } catch (err) {
-                console.error('Failed to fetch sidebar documents:', err);
-                if (!cachedServerDocsByMobile[cleanMob]) {
-                    cachedServerDocsByMobile[cleanMob] = [];
-                    renderSidebarDocuments([]);
-                }
-            }
+            })();
+            inFlightSidebarDocsPromise[inFlightKey] = p;
+            return p;
         }
 
         function resolveCustomerDisplayName(profile, fallbackName = '') {
@@ -338,41 +362,44 @@
             const curStateEarly = (data && (data.step || data.intakeState)) || (currentCitizenData && currentCitizenData.intakeState) || '';
             const isServiceSelectionOnlyEarly = (curStateEarly === 'SERVICE_SELECTION' || curStateEarly === 'RATION_CARD_SERVICES' || curStateEarly === 'REVENUE_DEPARTMENT_SERVICES' || (!curStateEarly && !window.pendingSelectedService));
             const docsBoxEarly = document.getElementById('sidebarDocumentsBox');
+            const setDispIfChanged = (el, val) => { if (el && el.style.display !== val) el.style.display = val; };
 
             if (isServiceSelectionOnlyEarly) {
-                if (docsBoxEarly) docsBoxEarly.style.display = 'none';
+                setDispIfChanged(docsBoxEarly, 'none');
             } else {
-                if (docsBoxEarly) docsBoxEarly.style.display = 'block';
+                setDispIfChanged(docsBoxEarly, 'block');
+                const activeDraftIdEarly = (localStorage.getItem('eseva_active_draft_id') || '').trim();
+                const docCacheKey = activeDraftIdEarly || targetMobile;
                 const activeSubNow = (a && a.subService) || window.lastSubService || '';
-                const prevCachedDocs = cachedServerDocsByMobile[targetMobile];
-                const hasMoreIncomingDocs = Boolean(data?.documents && Object.values(data.documents).filter(Boolean).length > (prevCachedDocs ? prevCachedDocs.length : 0));
-                if (hasMoreIncomingDocs) {
-                    delete cachedServerDocsByMobile[targetMobile];
-                    delete cachedDocsFetchedAtByMobile[targetMobile];
+                const incomingDocKeysSig = data?.documents ? Object.entries(data.documents).filter(([, v]) => Boolean(v)).map(([k, v]) => `${k}:${v}`).sort().join('|') : '';
+                if (incomingDocKeysSig && cachedDocKeysSigByMobile[docCacheKey] && incomingDocKeysSig !== cachedDocKeysSigByMobile[docCacheKey]) {
+                    delete cachedServerDocsByMobile[docCacheKey];
+                    delete cachedDocsFetchedAtByMobile[docCacheKey];
                 }
+                if (incomingDocKeysSig) cachedDocKeysSigByMobile[docCacheKey] = incomingDocKeysSig;
                 if (Array.isArray(data?.documentsList)) {
-                    cachedServerDocsByMobile[targetMobile] = data.documentsList;
-                    cachedDocsFetchedAtByMobile[targetMobile] = Date.now();
-                    cachedDocsSubByMobile[targetMobile] = activeSubNow;
+                    cachedServerDocsByMobile[docCacheKey] = data.documentsList;
+                    cachedDocsFetchedAtByMobile[docCacheKey] = Date.now();
+                    cachedDocsSubByMobile[docCacheKey] = activeSubNow;
                 }
-                const cachedDocs = cachedServerDocsByMobile[targetMobile];
-                const cachedSub = cachedDocsSubByMobile[targetMobile] || '';
-                const fetchedAt = cachedDocsFetchedAtByMobile[targetMobile] || 0;
+                const cachedDocs = cachedServerDocsByMobile[docCacheKey];
+                const cachedSub = cachedDocsSubByMobile[docCacheKey] || '';
+                const fetchedAt = cachedDocsFetchedAtByMobile[docCacheKey] || 0;
                 const cacheMatchesSub = Array.isArray(cachedDocs) && cachedSub === activeSubNow;
-                const cacheIsFresh = cacheMatchesSub && cachedDocs.length > 0 && (Date.now() - fetchedAt < 8000);
+                const cacheIsFresh = cacheMatchesSub && cachedDocs.length > 0 && (Date.now() - fetchedAt < 30000);
 
                 if (Array.isArray(data?.documentsList)) {
                     renderSidebarDocuments(data.documentsList);
                 } else if (cacheMatchesSub && cachedDocs.length > 0) {
                     renderSidebarDocuments(cachedDocs);
                 } else {
-                    const instantDocs = extractDocumentsFromProfile(a, targetMobile, appNo, pdfUrl);
+                    const instantDocs = extractDocumentsFromProfile(a, docCacheKey, appNo, pdfUrl);
                     renderSidebarDocuments(instantDocs);
                 }
 
-                // 2. Refresh from server when cache is missing, service switched, new docs arrived, or stale (> 8s)
-                if (targetMobile && !cacheIsFresh && !Array.isArray(data?.documentsList)) {
-                    fetchSidebarDocuments(targetMobile);
+                // 2. Refresh from server when cache is missing, service switched, new docs arrived, or stale (> 30s)
+                if (docCacheKey && !cacheIsFresh && !Array.isArray(data?.documentsList)) {
+                    fetchSidebarDocuments(docCacheKey);
                 }
             }
 
@@ -462,31 +489,28 @@
                     curState.includes('MEMBER') || curState.includes('HEAD_') || curState.includes('RESIDENCE_PROOF') || curState.includes('GAS_') || curState.includes('CARD_TYPE') || curState === 'READY_TO_APPLY' || curState === 'MOBILE_NUMBER' || curState === 'ADDRESS_CHOICE'
                 )));
 
-                // 1. Sidebar Head Title & Box Visibility
+                // 1. Sidebar Head Title & Box Visibility (Zero-Flicker: skip unchanged DOM writes!)
                 const headBoxEl = document.getElementById('sidebarHeadBox');
-                if (headBoxEl) {
-                    headBoxEl.style.display = (isAddMemberService && !hasRealHead) ? 'none' : 'block';
-                }
+                setDispIfChanged(headBoxEl, (isAddMemberService && !hasRealHead) ? 'none' : 'block');
                 const headTitleEl = document.getElementById('sidebarHeadTitle');
-                if (headTitleEl) {
-                    headTitleEl.innerHTML = sbCfg.headTitle || (isNewRationCardService ? '👤 1. குடும்பத் தலைவர்' : '👤 வாடிக்கையாளர் விவரங்கள்');
+                const nextHeadTitle = sbCfg.headTitle || (isNewRationCardService ? '👤 1. குடும்பத் தலைவர்' : '👤 வாடிக்கையாளர் விவரங்கள்');
+                if (headTitleEl && headTitleEl.innerHTML !== nextHeadTitle) {
+                    headTitleEl.innerHTML = nextHeadTitle;
                 }
 
-                // 2. Hide ALL Service-Scoped Sidebar Boxes, then show & populate ONLY active Cartridge Box
+                // 2. Show & populate active Cartridge Box FIRST, then hide only other boxes (ZERO hide->show flicker!)
                 const allSidebarBoxIds = [
                     'sidebarIncomeBox', 'sidebarResidenceBox', 'sidebarCommunityBox',
                     'sidebarFirstGraduateBox', 'sidebarObcBox', 'sidebarWidowBox',
                     'sidebarAddMemberBox', 'sidebarChangeAddressBox', 'sidebarUpdateMobileBox',
                     'sidebarRemoveMemberBox', 'sidebarDynamicServiceBox'
                 ];
-                for (const boxId of allSidebarBoxIds) {
-                    const el = document.getElementById(boxId);
-                    if (el) el.style.display = 'none';
-                }
+                let activeBoxIdToShow = null;
                 if (!isServiceSelectionOnly && typeof uiCart?.renderDynamicSidebar === 'function') {
                     const dynBoxEl = document.getElementById('sidebarDynamicServiceBox');
                     if (dynBoxEl && uiCart.renderDynamicSidebar(dynBoxEl, a, subData, { setVal, activeCustMob }) !== false) {
-                        dynBoxEl.style.display = 'block';
+                        activeBoxIdToShow = 'sidebarDynamicServiceBox';
+                        setDispIfChanged(dynBoxEl, 'block');
                     }
                 } else if (!isServiceSelectionOnly && sbCfg.boxId) {
                     const activeBoxEl = document.getElementById(sbCfg.boxId);
@@ -495,8 +519,15 @@
                         if (typeof uiCart.populateSidebar === 'function') {
                             populated = uiCart.populateSidebar(a, subData, { setVal, activeCustMob }) !== false;
                         }
-                        if (populated) activeBoxEl.style.display = 'block';
+                        if (populated) {
+                            activeBoxIdToShow = sbCfg.boxId;
+                            setDispIfChanged(activeBoxEl, 'block');
+                        }
                     }
+                }
+                for (const boxId of allSidebarBoxIds) {
+                    if (boxId === activeBoxIdToShow) continue;
+                    setDispIfChanged(document.getElementById(boxId), 'none');
                 }
 
                 // 3.5 Address Box (2-Lane Rule: hide old Master Address on ALL 5 TNPDS card modification services!)
@@ -507,34 +538,24 @@
                     'TNPDS_UPDATE_MOBILE',
                     'TNPDS_CHANGE_HEAD'
                 ].includes(vpId);
-                const addrBox = document.getElementById('sidebarAddressBox');
-                if (addrBox) {
-                    addrBox.style.display = (isServiceSelectionOnly || isTnpdsModService) ? 'none' : 'block';
-                }
+                setDispIfChanged(document.getElementById('sidebarAddressBox'), (isServiceSelectionOnly || isTnpdsModService) ? 'none' : 'block');
 
                 // 3.6 Documents Box (Shown only when a specific service is chosen, NEVER during service selection!)
-                const docsBox = document.getElementById('sidebarDocumentsBox');
-                if (docsBox) {
-                    docsBox.style.display = isServiceSelectionOnly ? 'none' : 'block';
-                }
+                setDispIfChanged(document.getElementById('sidebarDocumentsBox'), isServiceSelectionOnly ? 'none' : 'block');
 
                 // 4. Gas Connection Box (Shown strictly ONLY for New Ration Card!)
                 const gasBox = document.getElementById('gasSidebarBox');
-                if (gasBox) {
+                const nextGasDisp = isNewRationCardService ? 'block' : 'none';
+                if (gasBox && gasBox.style.display !== nextGasDisp) {
                     gasBox.style.display = isNewRationCardService ? 'block' : 'none';
                 }
 
                 // 5. Residence Proof and Card Type Rows (Shown strictly ONLY for New Ration Card!)
-                const rowRes = document.getElementById('rowResidenceProof');
-                if (rowRes) rowRes.style.display = isNewRationCardService ? 'flex' : 'none';
-                const rowCard = document.getElementById('rowCardType');
-                if (rowCard) rowCard.style.display = isNewRationCardService ? 'flex' : 'none';
+                setDispIfChanged(document.getElementById('rowResidenceProof'), isNewRationCardService ? 'flex' : 'none');
+                setDispIfChanged(document.getElementById('rowCardType'), isNewRationCardService ? 'flex' : 'none');
 
                 // 6. Service Selection Prompt Box
-                const promptBox = document.getElementById('sidebarServiceSelectionPromptBox');
-                if (promptBox) {
-                    promptBox.style.display = isServiceSelectionOnly ? 'block' : 'none';
-                }
+                setDispIfChanged(document.getElementById('sidebarServiceSelectionPromptBox'), isServiceSelectionOnly ? 'block' : 'none');
 
                 if (a.gasDetails && isNewRationCardService) {
                     if (a.gasDetails.hasGas === false) {

@@ -87,8 +87,18 @@ window.getActiveDraftKey = window.getActiveDraftKey || function() {
                 )
             );
 
+            const hasExplicitSubservicePayload = Boolean(
+                isExplicitRationFlowTop &&
+                rawSubCheck &&
+                !['NEW_CARD', 'NEW_RATION_CARD', 'NEW_SMART_CARD'].includes(rawSubCheck)
+            ) || Boolean(
+                currentCitizenData?.subServiceData &&
+                Object.keys(currentCitizenData.subServiceData).length > 0 &&
+                currentCitizenData.subService &&
+                !['NEW_CARD', 'NEW_RATION_CARD', 'NEW_SMART_CARD'].includes(String(currentCitizenData.subService).toUpperCase())
+            );
             const hasHead = currentCitizenData && (currentCitizenData.headAadhaar || currentCitizenData.canNumber || isTnegaActive || (currentCitizenData.members && currentCitizenData.members.length > 0));
-            if (!hasHead && !isAddMember) {
+            if (!hasHead && !isAddMember && !hasExplicitSubservicePayload) {
                 alert('⚠️ விண்ணப்பத்தைத் தொடங்குவதற்கு முன், தேவையான விவரங்கள் மற்றும் ஆவணங்களைச் சேகரிக்க வேண்டும்.');
                 return;
             }

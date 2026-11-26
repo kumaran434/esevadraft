@@ -2,9 +2,11 @@
 
         async function fetchHistory(forceScroll = false) {
             if (window.isScreenResetting) return;
+            if (!forceScroll && window.__fetchHistoryInFlight) return;
             const authScreen = document.getElementById('authScreen');
             if (authScreen && authScreen.style.display !== 'none') return;
 
+            window.__fetchHistoryInFlight = true;
             try {
                 const isOp = localStorage.getItem('eseva_user_role') === 'operator';
                 const activeCustMob = localStorage.getItem('eseva_active_customer_mobile') || '';
@@ -82,6 +84,8 @@
                 }
             } catch (e) {
                 console.error('History fetch failed:', e);
+            } finally {
+                window.__fetchHistoryInFlight = false;
             }
         }
 

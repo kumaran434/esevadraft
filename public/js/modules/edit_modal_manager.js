@@ -844,7 +844,10 @@
             // NEVER overwrite an active Pure Fresh chat session with an old saved customer draft!
             if (activeDraftKey && targetMobile) {
                 try {
-                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(activeDraftKey)}`);
+                    const opUidEdit = localStorage.getItem('eseva_operator_uid') || '';
+                    const dRes = await fetch(`/api/drafts/${encodeURIComponent(activeDraftKey)}`, {
+                        headers: opUidEdit ? { 'x-operator-uid': opUidEdit } : {}
+                    });
                     const dJson = await dRes.json();
                     if (dJson && dJson.draft && dJson.draft.citizenProfile) {
                         data = Object.assign({}, dJson.draft, dJson.draft.citizenProfile, {

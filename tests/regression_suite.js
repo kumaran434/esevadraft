@@ -6115,6 +6115,114 @@ async function runTests() {
                 passedCount += 6;
             }
 
+            // [TEST 83] Saved CHANGE_ADDRESS Draft Submit Without Head Aadhaar + Zero-Flicker Sidebar Invariant
+            {
+                const addrMob = '9999900058';
+                const addrHdr = { 'x-operator-uid': 'test_suite_operator_uid', 'x-session-mobile': addrMob };
+                await request('DELETE', `/api/drafts/${addrMob}?permanent=true`, null, addrHdr);
+                const initAddr = await request('POST', '/api/operator/new-customer', {
+                    customerMobile: addrMob,
+                    serviceName: 'முகவரி மாற்றம்',
+                    operatorUid: 'test_suite_operator_uid'
+                }, addrHdr);
+                const addrDraftId = initAddr.body?.draftId;
+                await request('POST', '/api/drafts/save', {
+                    draftId: addrDraftId,
+                    mobileNumber: addrMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'CHANGE_ADDRESS',
+                    intakeState: 'READY_TO_APPLY',
+                    documents: { newAddressProof: '/uploads/test_sample_doc.jpg' },
+                    subServiceData: {
+                        subService: 'CHANGE_ADDRESS',
+                        proofType: 'மின்சார ரசீது',
+                        doorNo: '622601',
+                        streetTam: 'மேட்டு தெரு',
+                        streetEng: 'Mettu Street',
+                        pincode: '631151',
+                        district: 'Ranipet',
+                        taluk: 'Arakkonam',
+                        addressProofDocPath: '/uploads/test_sample_doc.jpg',
+                        docPath: '/uploads/test_sample_doc.jpg'
+                    },
+                    citizenProfile: {
+                        mobileNumber: addrMob,
+                        headAadhaar: '',
+                        members: [],
+                        subService: 'CHANGE_ADDRESS',
+                        documents: { newAddressProof: '/uploads/test_sample_doc.jpg' },
+                        subServiceData: {
+                            subService: 'CHANGE_ADDRESS',
+                            proofType: 'மின்சார ரசீது',
+                            doorNo: '622601',
+                            streetTam: 'மேட்டு தெரு',
+                            streetEng: 'Mettu Street',
+                            pincode: '631151',
+                            district: 'Ranipet',
+                            taluk: 'Arakkonam',
+                            addressProofDocPath: '/uploads/test_sample_doc.jpg',
+                            docPath: '/uploads/test_sample_doc.jpg'
+                        }
+                    }
+                }, { ...addrHdr, 'x-draft-id': addrDraftId });
+
+                const { chromium } = require('playwright');
+                const browser83 = await chromium.launch({ headless: true });
+                let uiCheck83 = null;
+                try {
+                    const page83 = await browser83.newPage();
+                    await page83.goto(`${BASE_URL}/index.html`);
+                    await page83.waitForTimeout(400);
+                    uiCheck83 = await page83.evaluate(async ({ mob, dId }) => {
+                        localStorage.setItem('eseva_user_role', 'operator');
+                        localStorage.setItem('eseva_operator_uid', 'test_suite_operator_uid');
+                        localStorage.setItem('eseva_active_customer_mobile', mob);
+                        localStorage.setItem('eseva_active_draft_id', dId);
+                        await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-operator-uid': 'test_suite_operator_uid', 'x-draft-id': dId },
+                            body: JSON.stringify({ draftId: dId, mobileNumber: mob, customerMobile: mob, isCustomerSession: true, operatorUid: 'test_suite_operator_uid' })
+                        });
+                        await fetchHistory(true);
+                        let mutCount = 0;
+                        const obs = new MutationObserver((list) => {
+                            for (const m of list) {
+                                if (m.target && (m.target.id === 'sidebarChangeAddressBox' || m.target.id === 'sidebarDocumentsBox' || m.target.id === 'sidebarDocsList' || m.target.id === 'sidebarHeadTitle')) {
+                                    mutCount++;
+                                }
+                            }
+                        });
+                        const sb = document.getElementById('sidebarCustomerDetailsBox');
+                        if (sb) obs.observe(sb, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
+                        await fetchHistory(true);
+                        await fetchHistory(true);
+                        obs.disconnect();
+
+                        let launchedPayload = null;
+                        let capturedAlerts = [];
+                        const origAlert = window.alert;
+                        window.alert = (msg) => { capturedAlerts.push(msg); };
+                        window.esevaDesktopBridge = {
+                            isDesktopApp: true,
+                            startLiveAutomation: async (p) => { launchedPayload = p; return { success: true }; },
+                            onAutomationUpdate: () => {},
+                            onAutomationFinished: () => {}
+                        };
+                        await openEditModal(dId, false);
+                        await submitDirectlyFromEditModal();
+                        window.alert = origAlert;
+                        return { mutCount, launched: Boolean(launchedPayload), subService: launchedPayload?.subService, alerts: capturedAlerts };
+                    }, { mob: addrMob, dId: addrDraftId });
+                } finally {
+                    await browser83.close();
+                }
+
+                assert(uiCheck83.mutCount === 0, `TEST 83.zeroFlicker: Repeated fetchHistory produces 0 sidebar DOM mutations (got ${uiCheck83.mutCount})`);
+                assert(uiCheck83.launched === true && uiCheck83.subService === 'CHANGE_ADDRESS', `TEST 83.addrSubmit: Saved CHANGE_ADDRESS draft submits cleanly without false headAadhaar alert (alerts=${JSON.stringify(uiCheck83.alerts)})`);
+                await request('DELETE', `/api/drafts/${encodeURIComponent(addrDraftId)}?permanent=true`, null, addrHdr);
+                passedCount += 2;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

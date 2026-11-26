@@ -263,7 +263,7 @@ router.get('/api/chat/history', async (req, res) => {
     }
 
     const activeSub = sess.subService || sess.citizenProfile?.subService || null;
-    const docsList = extractDraftDocumentsList(sess, sess._isPureFreshSession ? null : (sess.draftData || null), mobile, activeSub);
+    const docsList = extractDraftDocumentsList(sess, sess._isPureFreshSession ? null : (sess.draftData || null), sess.draftId || mobile, activeSub);
     const cleanChatHistory = (Array.isArray(sess.chatHistory) ? sess.chatHistory : []).filter(m => {
         if (!m || !m.text) return false;
         const t = m.text;
