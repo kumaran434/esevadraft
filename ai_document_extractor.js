@@ -81,7 +81,8 @@ async function inspectAndExtractDocument(filePath, options = {}) {
 
         let learnedHintsBlock = '';
         try {
-            const { buildDynamicAiPromptHints } = require('./src/services/ai_correction_memory');
+            const { buildDynamicAiPromptHints, syncMemoryFromCloudIfStale } = require('./src/services/ai_correction_memory');
+            syncMemoryFromCloudIfStale(false).catch(() => {});
             learnedHintsBlock = buildDynamicAiPromptHints(14) || '';
         } catch (_) {}
 
@@ -130,7 +131,7 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * "BANK_PASSBOOK" (வங்கி கணக்குப் புத்தகம்)
   * "NONE" (if it is photo or aadhaar)
 - Full Name in English and accurate Tamil transliteration.
-  * CRITICAL TAMIL INITIAL RULE: For single-letter initials in names (e.g., "G. Suman", "Suman G", "J. Kumar", "K. Priya"), NEVER leave the initial in English and NEVER write wrong phonetic consonants (like க for G or ஜ for J). Strictly map standard Tamil letter-sounds: G -> ஜி, J -> ஜே, K -> கி, C -> சி, S -> எஸ், R -> ஆர், M -> எம், N -> என், P -> பி, B -> பி, D -> டி, T -> டி, V -> வி, L -> எல், A -> அ, E -> இ, I -> ஐ, O -> ஓ, U -> யூ, H -> ஹெச், F -> எஃப்.
+  * CRITICAL TAMIL INITIAL RULE: FIRST, if the Aadhaar card ALREADY prints the person's name in Tamil script with a Tamil initial (e.g., "பபிதா ஆ", "சு பிரசாந்த்", "உதயகுமார் வே", "மு கார்த்திக்", "ப பழனி"), ALWAYS preserve that EXACT printed Tamil initial! NEVER replace printed Tamil initials (ஆ, சு, வே, மு, ப, செ, கோ) with phonetic English letters (அ, எஸ், வி, எம்). ONLY when Tamil script is missing/unclear, map single-letter English initials cleanly (G -> ஜி, J -> ஜே, K -> கி, C -> சி, S -> எஸ், R -> ஆர், M -> எம், N -> என், P -> பி, B -> பி, D -> டி, T -> டி, V -> வி, L -> எல், A -> அ, E -> இ, I -> ஐ, O -> ஓ, U -> யூ, H -> ஹெச், F -> எஃப்) and NEVER leave a raw English initial inside fullNameTam.
 - Father / Husband Name & Relationship Rule (CRITICAL — NEVER CONFUSE W/O HUSBAND WITH FATHER!):
   * Examine BOTH Aadhaar Front AND Back carefully.
   * Look specifically for "W/o" (Wife of / க/பெ / கணவர் பெயர் / மனைவி) vs "S/o" (Son of / த/பெ) vs "D/o" (Daughter of) vs "C/o".

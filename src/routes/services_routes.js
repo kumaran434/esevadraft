@@ -156,21 +156,46 @@ router.get('/api/download/desktop-app', (req, res) => {
             return res.download(path.join(distDir, latestExe), latestExe);
         }
     }
-    let latestVer = '1.1.54';
-    try { latestVer = require('../../package.json').version || '1.1.54'; } catch (_) {}
+    let latestVer = '1.1.55';
+    try { latestVer = require('../../package.json').version || '1.1.55'; } catch (_) {}
     return res.redirect(`https://github.com/kumaran434/esevadraft/releases/download/v${latestVer}/eSevaDraft-Desktop-Setup-${latestVer}.exe`);
 });
 
 // 8. GET /api/download/version - Returns latest available desktop application version info
 router.get('/api/download/version', (req, res) => {
-    let latestVer = '1.1.54';
-    try { latestVer = require('../../package.json').version || '1.1.54'; } catch (_) {}
+    let latestVer = '1.1.55';
+    try { latestVer = require('../../package.json').version || '1.1.55'; } catch (_) {}
     res.json({
         success: true,
         latestVersion: latestVer,
         downloadUrl: '/api/download/desktop-app',
         releaseName: `eSevaDraft Desktop Suite v${latestVer}`
     });
+});
+
+// 9. Shared Cloud AI Auto-Learning Memory Endpoints (Zero PII: only TN villages, initials & common street spellings)
+router.get('/api/learning/memory', async (req, res) => {
+    try {
+        const aiMem = require('../services/ai_correction_memory');
+        const memory = await aiMem.syncMemoryFromCloudIfStale(false);
+        return res.json({ success: true, memory });
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/api/learning/memory', async (req, res) => {
+    try {
+        const aiMem = require('../services/ai_correction_memory');
+        const payload = req.body || {};
+        const merged = aiMem.applyIncomingCloudRelayUpdate(payload);
+        return res.json({ success: true, counts: {
+            villages: Object.keys(merged.villageToTaluk || {}).length,
+            initials: Object.keys(merged.initialMap || {}).length
+        } });
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 module.exports = router;

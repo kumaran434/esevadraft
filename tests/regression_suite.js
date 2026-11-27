@@ -6965,6 +6965,62 @@ async function runTests() {
                 passedCount += 6;
             }
 
+            // [TEST 94] 🧠 Cloud Auto-Learning 2-Time Safe Filter, Printed Tamil Initial Preservation & Relay Endpoint
+            console.log('\n[TEST 94] 🧠 Verifying Printed Tamil Initial Preservation, 2-Time Safe Auto-Filter & Cloud Learning API...');
+            {
+                const { normalizeTamilInitialsFromEnglish } = require('../src/utils/bilingual_helper');
+                const aiMem94 = require('../src/services/ai_correction_memory');
+
+                // 1. Printed Tamil father-name initials MUST be preserved (ஆ, சு, வே, மு, ப), never clobbered into அ/எஸ்/வி!
+                assert(
+                    normalizeTamilInitialsFromEnglish('Papitha A', 'பபிதா ஆ') === 'பபிதா ஆ' &&
+                    normalizeTamilInitialsFromEnglish('S Prasanth', 'சு பிரசாந்த்') === 'சு பிரசாந்த்' &&
+                    normalizeTamilInitialsFromEnglish('Udayakumar V', 'உதயகுமார் வே') === 'உதயகுமார் வே',
+                    'TEST 94.preservePrintedInitials: Printed Tamil initials (ஆ, சு, வே) are preserved accurately without clobbering'
+                );
+                // Garbled mismatch (Suman G -> சுமன் ஜே) still gets auto-corrected to ஜி
+                assert(
+                    normalizeTamilInitialsFromEnglish('Suman G', 'சுமன் ஜே') === 'சுமன் ஜி',
+                    'TEST 94.fixGarbledInitial: Mismatched garbled initial (G -> ஜே) still corrects cleanly to ஜி'
+                );
+
+                // 2. Initial pattern extractor captures ONLY (English Initial -> Tamil Initial) without personal full names
+                const initPairs = aiMem94.extractInitialCorrectionPair('S Prasanth', 'எஸ் பிரசாந்த்', 'சு பிரசாந்த்');
+                assert(
+                    Array.isArray(initPairs) && initPairs.length === 1 && initPairs[0].letter === 'S' && initPairs[0].tamilInitial === 'சு',
+                    `TEST 94.extractInitialOnly: Extracts pure initial rule S->சு cleanly without storing personal name (got=${JSON.stringify(initPairs)})`
+                );
+
+                // 3. 2-Time Safe Auto-Filter: count=1 typo is NOT promoted; count>=2 verified correction IS promoted!
+                const mockMem = {
+                    villageToTaluk: {},
+                    initialMap: { S: { 'சு': 2 }, A: { 'எ': 1 } },
+                    fieldCorrections: {
+                        streetTam: [
+                            { from: 'பஜனை கோவில் ஸ்ட்ரீட்', to: 'பஜனை கோவில் தெரு', count: 2 },
+                            { from: 'ஒரேஒருதவறு', to: 'தவறுதிருத்தம்', count: 1 }
+                        ]
+                    }
+                };
+                const hints94 = aiMem94.buildDynamicAiPromptHints(14, mockMem);
+                assert(
+                    hints94.includes('S -> சு') &&
+                    !hints94.includes('A -> எ') &&
+                    hints94.includes('பஜனை கோவில் தெரு') &&
+                    !hints94.includes('ஒரேஒருதவறு'),
+                    'TEST 94.twoTimeFilter: 2-Time Safe Auto-Filter promotes >=2 verified rules and blocks single-typo pollution'
+                );
+
+                // 4. Shared Cloud Learning API endpoint returns 200 OK
+                const memRes94 = await request('GET', '/api/learning/memory');
+                assert(
+                    memRes94.status === 200 && memRes94.body?.success === true && Boolean(memRes94.body?.memory),
+                    'TEST 94.cloudEndpoint: GET /api/learning/memory returns 200 OK with shared memory payload'
+                );
+
+                passedCount += 5;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

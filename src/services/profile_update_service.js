@@ -4,18 +4,24 @@ const { syncFatherOrHusband, normalizeDobWithYearFallback } = require('./profile
 const { resolveTnDistrict, isOfficialTnTaluk, lookupTnTaluk } = require('../../tn_district_mapper');
 const { ensureBilingualPair } = require('../utils/bilingual_helper');
 const { normalizeRelationshipPair } = require('../portal/tnpds/helpers/relationship_matcher');
-const { recordVerifiedVillageTaluk, recordFieldCorrection } = require('./ai_correction_memory');
+const { recordVerifiedVillageTaluk, recordInitialCorrection, recordFieldCorrection } = require('./ai_correction_memory');
 
 function applyProfileUpdates(sess, updated) {
     const prevForLearning = (updated && updated.fromEditModal && sess && sess.citizenProfile)
         ? {
+            fullNameEng: sess.citizenProfile.fullNameEng || '',
             fullNameTam: sess.citizenProfile.fullNameTam || '',
+            fatherNameEng: sess.citizenProfile.fatherNameEng || '',
             fatherNameTam: sess.citizenProfile.fatherNameTam || '',
+            streetEng: sess.citizenProfile.streetEng || '',
             streetTam: sess.citizenProfile.streetTam || '',
             areaTam: sess.citizenProfile.areaTam || '',
             village: sess.citizenProfile.village || '',
             taluk: sess.citizenProfile.taluk || '',
-            district: sess.citizenProfile.district || ''
+            district: sess.citizenProfile.district || '',
+            members: Array.isArray(sess.citizenProfile.members)
+                ? sess.citizenProfile.members.map(m => ({ nameEng: m?.nameEng || '', nameTam: m?.nameTam || '' }))
+                : []
         }
         : null;
     if (updated && updated.fromEditModal) {
@@ -447,7 +453,39 @@ function applyProfileUpdates(sess, updated) {
                     });
                 }
             }
-            for (const fk of ['fullNameTam', 'fatherNameTam', 'streetTam', 'areaTam', 'village']) {
+            // 2. Learn Tamil Initial preferences ONLY (never store personal full names!)
+            if (prevForLearning.fullNameTam && curProf.fullNameTam && prevForLearning.fullNameTam !== curProf.fullNameTam) {
+                recordInitialCorrection({
+                    engName: curProf.fullNameEng || prevForLearning.fullNameEng,
+                    beforeTam: prevForLearning.fullNameTam,
+                    afterTam: curProf.fullNameTam,
+                    mobile: mobLearn
+                });
+            }
+            if (prevForLearning.fatherNameTam && curProf.fatherNameTam && prevForLearning.fatherNameTam !== curProf.fatherNameTam) {
+                recordInitialCorrection({
+                    engName: curProf.fatherNameEng || prevForLearning.fatherNameEng,
+                    beforeTam: prevForLearning.fatherNameTam,
+                    afterTam: curProf.fatherNameTam,
+                    mobile: mobLearn
+                });
+            }
+            if (Array.isArray(curProf.members) && Array.isArray(prevForLearning.members)) {
+                for (let mi = 1; mi < curProf.members.length; mi++) {
+                    const pM = prevForLearning.members[mi];
+                    const cM = curProf.members[mi];
+                    if (pM && cM && pM.nameTam && cM.nameTam && pM.nameTam !== cM.nameTam) {
+                        recordInitialCorrection({
+                            engName: cM.nameEng || pM.nameEng,
+                            beforeTam: pM.nameTam,
+                            afterTam: cM.nameTam,
+                            mobile: mobLearn
+                        });
+                    }
+                }
+            }
+            // 3. Learn recurring street/area/village spelling corrections (2-Time Safe Auto-Filter in AI prompt)
+            for (const fk of ['streetTam', 'streetEng', 'areaTam', 'village']) {
                 if (prevForLearning[fk] && curProf[fk] && prevForLearning[fk] !== curProf[fk]) {
                     recordFieldCorrection({
                         fieldKey: fk,

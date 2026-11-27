@@ -261,6 +261,37 @@ const INITIAL_ENG_TO_TAM = {
     'u': 'யூ', 'v': 'வி', 'w': 'டபிள்யூ', 'x': 'எக்ஸ்', 'y': 'ஒய்', 'z': 'இசட்'
 };
 
+// Valid Tamil father-name initial letters printed on Tamil Nadu Aadhaar cards
+// (NEVER clobber a genuine printed Tamil initial like ஆ, சு, வே, மு, ப, கோ into அ/எஸ்/வி/எம்!)
+const VALID_TAMIL_INITIALS_BY_ENG = {
+    'a': ['அ', 'ஆ'],
+    'b': ['ப', 'பா', 'பி', 'பீ', 'பு', 'பூ', 'பெ', 'பே', 'பொ', 'போ'],
+    'c': ['ச', 'சா', 'சி', 'சீ', 'சு', 'செ', 'சே', 'சொ', 'சோ'],
+    'd': ['த', 'தா', 'தி', 'தீ', 'து', 'தூ', 'தெ', 'தே', 'ட', 'டி'],
+    'e': ['எ', 'ஏ', 'இ', 'ஈ'],
+    'f': ['எஃப்', 'ப', 'ஃப'],
+    'g': ['க', 'கா', 'கி', 'கு', 'கெ', 'கே', 'கொ', 'கோ', 'ஜி'],
+    'h': ['ஹ', 'ஹா', 'ஹி', 'ஹெ', 'ஹெச்'],
+    'i': ['இ', 'ஈ', 'ஐ'],
+    'j': ['ஜ', 'ஜா', 'ஜி', 'ஜீ', 'ஜெ', 'ஜே', 'ஜோ'],
+    'k': ['க', 'கா', 'கி', 'கீ', 'கு', 'கூ', 'கெ', 'கே', 'கை', 'கொ', 'கோ'],
+    'l': ['ல', 'லா', 'லி', 'லு', 'லோ', 'எல்'],
+    'm': ['ம', 'மா', 'மி', 'மீ', 'மு', 'மூ', 'மெ', 'மே', 'மை', 'மொ', 'மோ', 'எம்'],
+    'n': ['ந', 'நா', 'நி', 'நீ', 'நு', 'நெ', 'நே', 'என்'],
+    'o': ['ஒ', 'ஓ'],
+    'p': ['ப', 'பா', 'பி', 'பீ', 'பு', 'பூ', 'பெ', 'பே', 'பை', 'பொ', 'போ'],
+    'q': ['க்யூ', 'கு'],
+    'r': ['ர', 'ரா', 'ரி', 'ரு', 'ரெ', 'ரே', 'ரோ', 'ஆர்'],
+    's': ['ச', 'சா', 'சி', 'சீ', 'சு', 'சூ', 'செ', 'சே', 'சொ', 'சோ', 'ஸ', 'ஷ', 'ஸ்ரீ', 'எஸ்'],
+    't': ['த', 'தா', 'தி', 'தீ', 'து', 'தூ', 'தெ', 'தே', 'ட', 'டி'],
+    'u': ['உ', 'ஊ', 'யூ'],
+    'v': ['வ', 'வா', 'வி', 'வீ', 'வெ', 'வே', 'வை'],
+    'w': ['வ', 'வா', 'வி', 'வே', 'டபிள்யூ'],
+    'x': ['எக்ஸ்'],
+    'y': ['ய', 'யா', 'யு', 'யோ', 'ஒய்'],
+    'z': ['இசட்', 'ஜ']
+};
+
 /**
  * Splits dotted or attached single-letter initials cleanly:
  * e.g. "G.Suman" -> "G Suman", "A.B. Kumar" -> "A B Kumar", "Suman.G" -> "Suman G"
@@ -294,10 +325,17 @@ function normalizeTamilInitialsFromEnglish(engText, tamText) {
     const engLastIsInit = /^[A-Za-z]$/.test(engTokens[engTokens.length - 1]);
 
     const replaceIfShortTamilInitial = (tok, expectedEngChar) => {
-        const expectedTam = INITIAL_ENG_TO_TAM[expectedEngChar.toLowerCase()];
+        const lowerChar = expectedEngChar.toLowerCase();
+        const expectedTam = INITIAL_ENG_TO_TAM[lowerChar];
         if (!expectedTam) return tok;
-        // Replace if token is raw Latin letter (e.g. 'G'), OR short phonetic artifact (<=3 chars) that isn't already expectedTam
+        // Replace raw Latin letter (e.g. 'G') with Tamil letter sound
         if (/^[A-Za-z]$/.test(tok)) return expectedTam;
+        // PRESERVE genuine Tamil father-name initial printed on Aadhaar (e.g. ஆ, சு, வே, மு, ப, கோ)!
+        const validSet = VALID_TAMIL_INITIALS_BY_ENG[lowerChar];
+        if (validSet && validSet.includes(tok)) {
+            return tok;
+        }
+        // Only fix mismatched short phonetic errors (e.g. 'G' misread as 'ஜே', 'S' misread as 'ஸ்')
         if (tok.length <= 4 && !/^[0-9]+$/.test(tok)) {
             return expectedTam;
         }
