@@ -26,34 +26,31 @@ async function waitForOtpModalOpened(page, timeoutMs = 10000) {
     return false;
 }
 
-async function verifyServerUploadConfirmed(page, inputSelector = 'input[type="file"]', waitMs = 8000) {
+async function verifyServerUploadConfirmed(page, inputSelector = 'input[type="file"]', waitMs = 8000, preExistingToasts = []) {
     if (!page || page.isClosed()) return false;
     const deadline = Date.now() + waitMs;
+    const prevSet = Array.isArray(preExistingToasts) ? preExistingToasts : [];
     while (Date.now() < deadline) {
-        const confirmed = await page.evaluate((sel) => {
-            const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim());
-            if (toasts.some(t => t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t))) return true;
+        const confirmed = await page.evaluate(({ sel, prevToasts }) => {
+            const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim()).filter(Boolean);
+            if (toasts.some(t => !prevToasts.includes(t) && (t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t)))) return true;
             if (document.querySelector('div[style*="69f777"]')) return true;
 
             const inputs = Array.from(document.querySelectorAll(sel));
             const targetInp = inputs[inputs.length - 1];
-            let container = targetInp ? targetInp.parentElement : null;
-            for (let i = 0; i < 4 && container; i++) {
+            let container = targetInp ? (targetInp.closest('.form-group, .input-group, .col-md-4, .col-md-6, .col-sm-6') || targetInp.parentElement) : null;
+            for (let i = 0; i < 2 && container; i++) {
                 const hasClearBtn = Array.from(container.querySelectorAll('button, a')).some(b => {
                     const txt = (b.innerText || '').trim().toLowerCase();
                     return b.offsetParent !== null && (txt === 'x' || txt === '×');
                 });
-                const uploadBtn = Array.from(container.querySelectorAll('button, div.btn')).find(b => {
-                    const t = (b.innerText || '').toLowerCase();
-                    return t.includes('பதிவேற்ற') || t.includes('upload');
-                });
-                const isUploadDisabled = uploadBtn ? (uploadBtn.disabled || uploadBtn.getAttribute('disabled') !== null) : false;
-                const greenEl = container.querySelectorAll('.badge-success, .badge.bg-success, .bg-success, .text-success, i.fa-check, i.fa-check-circle, .alert-success');
-                if (hasClearBtn || isUploadDisabled || greenEl.length > 0) return true;
+                const greenEl = Array.from(container.querySelectorAll('.badge-success, .badge.bg-success, .bg-success, .text-success, i.fa-check, i.fa-check-circle, .alert-success'))
+                    .filter(el => el.offsetParent !== null);
+                if (hasClearBtn || greenEl.length > 0) return true;
                 container = container.parentElement;
             }
             return false;
-        }, inputSelector).catch(() => false);
+        }, { sel: inputSelector, prevToasts: prevSet }).catch(() => false);
         if (confirmed) return true;
         await page.waitForTimeout(500);
     }

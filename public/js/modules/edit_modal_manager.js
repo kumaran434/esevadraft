@@ -468,6 +468,7 @@
 
             const setVal = (id, val) => {
                 const el = document.getElementById(id);
+                if (el && el.dataset.userEdited === '1') return;
                 if (el && val !== undefined && val !== null && String(val).trim() !== '') {
                     if (el.value !== String(val)) {
                         el.value = String(val);
@@ -824,7 +825,22 @@
 
         async function openEditModal(targetMobile, forceMasterProfile = false) {
             const modalEl = document.getElementById('editModal');
-            if (modalEl) modalEl.style.display = 'flex'; // Instantly display modal to eliminate any lag or unresponsive click perception!
+            if (modalEl) {
+                modalEl.style.display = 'flex'; // Instantly display modal to eliminate any lag or unresponsive click perception!
+                modalEl.querySelectorAll('input, select, textarea').forEach(el => {
+                    if (el.dataset) delete el.dataset.userEdited;
+                });
+                if (!modalEl.dataset.editTrackBound) {
+                    modalEl.dataset.editTrackBound = '1';
+                    const markEdited = (ev) => {
+                        if (ev && ev.isTrusted && ev.target && ev.target.dataset) {
+                            ev.target.dataset.userEdited = '1';
+                        }
+                    };
+                    modalEl.addEventListener('input', markEdited, true);
+                    modalEl.addEventListener('change', markEdited, true);
+                }
+            }
             try {
                 currentEditModalIsMasterProfile = Boolean(forceMasterProfile);
                 window.forceMasterProfile = currentEditModalIsMasterProfile;
@@ -1633,6 +1649,26 @@
                 const fEngSave = document.getElementById('editFatherEng').value.trim();
                 const canVal = document.getElementById('editCanNumber')?.value?.replace(/\s+/g, '') || currentCitizenData?.canNumber || '';
 
+                const streetTamVal = document.getElementById('editStreetTam').value.trim();
+                const streetEngInputEl = document.getElementById('editStreetEng');
+                const prevStreetTam = (currentCitizenData?.streetTam || '').trim();
+                const prevStreetEng = (currentCitizenData?.streetEng || '').trim();
+                const resolvedStreetEng = streetEngInputEl
+                    ? (streetEngInputEl.value.trim() || prevStreetEng || '')
+                    : ((streetTamVal === prevStreetTam && prevStreetEng && !/[\u0B80-\u0BFF]/.test(prevStreetEng))
+                        ? prevStreetEng
+                        : (/^[a-zA-Z0-9\s,.\-\/]+$/.test(streetTamVal) ? streetTamVal : ''));
+
+                const areaTamVal = document.getElementById('editAreaTam').value.trim();
+                const areaEngInputEl = document.getElementById('editAreaEng');
+                const prevAreaTam = (currentCitizenData?.areaTam || currentCitizenData?.hamletTam || currentCitizenData?.hamlet || '').trim();
+                const prevAreaEng = (currentCitizenData?.areaEng || '').trim();
+                const resolvedAreaEng = areaEngInputEl
+                    ? (areaEngInputEl.value.trim() || prevAreaEng || '')
+                    : ((areaTamVal === prevAreaTam && prevAreaEng && !/[\u0B80-\u0BFF]/.test(prevAreaEng))
+                        ? prevAreaEng
+                        : (/^[a-zA-Z0-9\s,.\-\/]+$/.test(areaTamVal) ? areaTamVal : ''));
+
                 updated = {
                     subService: keepSub,
                     subServiceData: keepSubData,
@@ -1653,10 +1689,10 @@
                     headGender: document.getElementById('editGender').value,
                     headGenderTam: document.getElementById('editGender').value === 'Female' ? 'பெண்' : 'ஆண்',
                     doorNo: document.getElementById('editDoorNo').value.trim(),
-                    streetTam: document.getElementById('editStreetTam').value.trim(),
-                    streetEng: document.getElementById('editStreetEng')?.value.trim() || document.getElementById('editStreetTam').value.trim(),
-                    areaTam: document.getElementById('editAreaTam').value.trim(),
-                    areaEng: document.getElementById('editAreaEng')?.value.trim() || document.getElementById('editAreaTam').value.trim(),
+                    streetTam: streetTamVal,
+                    streetEng: resolvedStreetEng,
+                    areaTam: areaTamVal,
+                    areaEng: resolvedAreaEng,
                     pincode: document.getElementById('editPin').value.trim(),
                     district: document.getElementById('editDistrict').value.trim(),
                     taluk: document.getElementById('editTaluk').value.trim(),
@@ -1717,6 +1753,7 @@
                         incomeTaxReturn: currentCitizenData?.incomeTaxReturn || currentCitizenData?.incomeProof || currentCitizenData?.documents?.incomeTaxReturn || currentCitizenData?.documents?.incomeProof || null,
                         mobileNumber: targetMob, 
                         oldMobileNumber: isMobileChanged ? originalEditingMobile : undefined,
+                        draftId: (!isMobileChanged && editDraftId) ? editDraftId : undefined,
                         fromEditModal: true, 
                         silent: true 
                     })
@@ -1736,6 +1773,7 @@
                 // Do not spam chat interface with duplicate confirmation prompts
                 if (data.citizenProfile) {
                     currentCitizenData = data.citizenProfile;
+                    window.currentCitizenData = data.citizenProfile;
                     updateSidebar(data);
                 }
                 if (!silent && data.chatHistory && typeof renderMessages === 'function') {

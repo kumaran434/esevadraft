@@ -215,10 +215,17 @@ window.getActiveDraftKey = window.getActiveDraftKey || function() {
                         });
                         const dJson = await dRes.json();
                         if (dJson && dJson.draft) {
-                            const prof = dJson.draft.citizenProfile || {};
+                            const rawProf = dJson.draft.citizenProfile || {};
+                            const isLocalEditNewer = Boolean(
+                                (triggerOptions?.fromEditModal && draftData?._editedInModalAt) &&
+                                (!rawProf._editedInModalAt || String(draftData._editedInModalAt) >= String(rawProf._editedInModalAt))
+                            );
+                            const prof = isLocalEditNewer
+                                ? Object.assign({}, rawProf, draftData)
+                                : Object.assign({}, rawProf);
                             let fEng = (prof.fatherNameEng || draftData.fatherNameEng || '').trim();
                             let fTam = (prof.fatherNameTam || draftData.fatherNameTam || '').trim();
-                            const mList = (prof.members && prof.members.length > 0) ? prof.members : (draftData.members || []);
+                            const mList = (Array.isArray(prof.members) && prof.members.length > 0) ? prof.members : (draftData.members || []);
                             if ((!fEng || !fTam) && Array.isArray(mList)) {
                                 const husb = mList.find(m => m && (m.relationship === 'Husband' || m.relationshipTam === 'கணவர்'));
                                 const fath = mList.find(m => m && (m.relationship === 'Father' || m.relationshipTam === 'தந்தை'));
@@ -250,34 +257,48 @@ window.getActiveDraftKey = window.getActiveDraftKey || function() {
                             const mergedSubServiceData = (prof.subServiceData || dJson.draft.subServiceData || draftData.subServiceData)
                                 ? Object.assign({}, dJson.draft.subServiceData || {}, prof.subServiceData || {}, (triggerOptions?.fromEditModal && draftData.subServiceData) ? draftData.subServiceData : {})
                                 : undefined;
+                            const pickEditable = (key) => (prof[key] !== undefined ? prof[key] : draftData[key]);
+                            const mergedGasDetails = (prof.gasDetails && prof.gasDetails.hasGas === false)
+                                ? { ...prof.gasDetails }
+                                : Object.assign({}, draftData.gasDetails || {}, prof.gasDetails || {});
+                            const syncedCitizenProfile = Object.assign({}, dJson.draft.citizenProfile || {}, prof, {
+                                subService: effectiveSubService,
+                                subServiceData: mergedSubServiceData,
+                                fatherNameEng: fEng,
+                                fatherNameTam: fTam,
+                                gasDetails: mergedGasDetails,
+                                members: mList
+                            });
                             draftData = Object.assign({}, draftData, dJson.draft, prof, {
+                                citizenProfile: syncedCitizenProfile,
                                 subService: effectiveSubService,
                                 targetService: isExplicitTnpdsSub ? '' : (resolvedTargetService || draftData.targetService),
                                 subServiceData: mergedSubServiceData,
                                 intakeState: effectiveIntakeState,
-                                fullNameEng: prof.fullNameEng || draftData.fullNameEng,
-                                fullNameTam: prof.fullNameTam || draftData.fullNameTam,
+                                fullNameEng: pickEditable('fullNameEng'),
+                                fullNameTam: pickEditable('fullNameTam'),
                                 fatherNameEng: fEng,
                                 fatherNameTam: fTam,
-                                doorNo: prof.doorNo || draftData.doorNo,
-                                streetTam: prof.streetTam || draftData.streetTam,
-                                streetEng: prof.streetEng || draftData.streetEng,
-                                areaTam: prof.areaTam || draftData.areaTam,
-                                areaEng: prof.areaEng || draftData.areaEng,
-                                district: prof.district || draftData.district,
-                                taluk: prof.taluk || draftData.taluk,
-                                village: prof.village || draftData.village,
-                                pincode: prof.pincode || draftData.pincode,
-                                headAadhaar: prof.headAadhaar || draftData.headAadhaar,
-                                headDob: prof.headDob || draftData.headDob,
-                                headGender: prof.headGender || draftData.headGender,
-                                gasDetails: Object.assign({}, draftData.gasDetails || {}, prof.gasDetails || {}),
+                                doorNo: pickEditable('doorNo'),
+                                streetTam: pickEditable('streetTam'),
+                                streetEng: pickEditable('streetEng'),
+                                areaTam: pickEditable('areaTam'),
+                                areaEng: pickEditable('areaEng'),
+                                district: pickEditable('district'),
+                                taluk: pickEditable('taluk'),
+                                village: pickEditable('village'),
+                                pincode: pickEditable('pincode'),
+                                headAadhaar: pickEditable('headAadhaar'),
+                                headDob: pickEditable('headDob'),
+                                headGender: pickEditable('headGender'),
+                                gasDetails: mergedGasDetails,
                                 headPhotoPath: prof.headPhotoPath || dJson.draft.documents?.profilePhoto || null,
-                                members: (prof.members && prof.members.length > 0) ? prof.members : draftData.members,
+                                members: mList,
                                 documents: dJson.draft.documents || draftData.documents,
                                 base64Docs: dJson.draft.base64Docs || draftData.base64Docs || {}
                             });
                             currentCitizenData = draftData;
+                            window.currentCitizenData = draftData;
                         }
                     } catch (e) {
                         console.warn('Draft fetch error in desktop submit:', e);

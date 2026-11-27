@@ -226,29 +226,32 @@ async function processDraftDocuments(cleanMob, prof, docPackage, draftData, opti
 
     if (Array.isArray(prof.members) && prof.members.length > 1) {
         docPackage.memberAadhaars = [];
-        for (let i = 1; i < prof.members.length; i++) {
-            const mDoc = prof.members[i]?.docPath || docPackage[`memberAadhaar_${i}`];
-            if (mDoc) docPackage.memberAadhaars.push(mDoc);
-        }
-    }
-
-    if (Array.isArray(docPackage.memberAadhaars) && docPackage.memberAadhaars.length > 0) {
+        const existingMemBase64s = Array.isArray(base64Docs.memberAadhaarsBase64) ? base64Docs.memberAadhaarsBase64 : [];
+        const rebuiltMemBase64s = [];
         const memberUrls = [];
-        const memberBase64s = Array.isArray(base64Docs.memberAadhaarsBase64) ? [...base64Docs.memberAadhaarsBase64] : [];
-        for (let i = 0; i < docPackage.memberAadhaars.length; i++) {
-            const mPath = docPackage.memberAadhaars[i];
-            if (!mPath || !fs.existsSync(mPath)) continue;
-            const fileName = path.basename(mPath);
-            const storagePath = `drafts/${cleanMob}/memberAadhaars/member_${i}_${fileName}`;
-            if (shouldUploadToCloud && isStorageAvailable()) {
-                const url = await uploadDocToStorage(mPath, storagePath);
-                if (url) memberUrls.push(url);
+        for (let i = 1; i < prof.members.length; i++) {
+            const slotIdx = i - 1;
+            const memObj = prof.members[i] || {};
+            const isBc = memObj.docType === 'BIRTH_CERTIFICATE' || memObj.proofType === 'BIRTH_CERTIFICATE';
+            const mPath = memObj.docPath || (isBc ? memObj.birthCertificatePath : '') || docPackage[`memberDoc_${i}`] || docPackage[`memberAadhaar${slotIdx}`] || docPackage[`memberAadhaar_${i}`] || '';
+            if (mPath) docPackage.memberAadhaars[slotIdx] = mPath;
+            if (mPath && fs.existsSync(mPath)) {
+                const fileName = path.basename(mPath);
+                const storagePath = `drafts/${cleanMob}/memberAadhaars/member_${slotIdx}_${fileName}`;
+                if (shouldUploadToCloud && isStorageAvailable()) {
+                    const url = await uploadDocToStorage(mPath, storagePath);
+                    if (url) memberUrls[slotIdx] = url;
+                }
+                const b64 = fileToBase64(mPath);
+                if (b64) {
+                    rebuiltMemBase64s[slotIdx] = { name: fileName, docType: memObj.docType || 'AADHAAR_CARD', memberIdx: i, base64: b64 };
+                }
+            } else if (existingMemBase64s[slotIdx]) {
+                rebuiltMemBase64s[slotIdx] = existingMemBase64s[slotIdx];
             }
-            const b64 = fileToBase64(mPath);
-            if (b64) memberBase64s.push({ name: fileName, base64: b64 });
         }
-        if (memberUrls.length > 0) storageUrls.memberAadhaars = memberUrls;
-        if (memberBase64s.length > 0) base64Docs.memberAadhaarsBase64 = memberBase64s;
+        if (memberUrls.some(Boolean)) storageUrls.memberAadhaars = memberUrls.filter(Boolean);
+        if (rebuiltMemBase64s.some(Boolean)) base64Docs.memberAadhaarsBase64 = rebuiltMemBase64s;
     } else if (docPackage.memberAadhaar && fs.existsSync(docPackage.memberAadhaar)) {
         const mB64 = fileToBase64(docPackage.memberAadhaar);
         if (mB64) {

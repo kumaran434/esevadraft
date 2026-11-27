@@ -144,14 +144,17 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
         }
         if (docCategory === 'memberAadhaar' && Array.isArray(b64Map.memberAadhaarsBase64) && b64Map.memberAadhaarsBase64.length > 0) {
             const pickIdx = (memberIndex >= 0) ? memberIndex : 0;
-            const matched = pickIdx < b64Map.memberAadhaarsBase64.length ? b64Map.memberAadhaarsBase64[pickIdx] : null;
+            const targetSlotNum = pickIdx + 1;
+            const matched = b64Map.memberAadhaarsBase64.find(m => m && typeof m === 'object' && Number(m.memberIdx) === targetSlotNum)
+                || (pickIdx < b64Map.memberAadhaarsBase64.length ? b64Map.memberAadhaarsBase64[pickIdx] : null);
             if (matched) {
                 const rawMemB64 = typeof matched === 'object' ? (matched.base64 || matched.data || '') : matched;
                 if (rawMemB64 && rawMemB64.length > 50) {
                     try {
                         const cleanB64 = rawMemB64.includes('base64,') ? rawMemB64.split('base64,')[1] : rawMemB64;
                         const isPdfB64 = cleanB64.trim().startsWith('JVBERi');
-                        const mName = (typeof matched === 'object' && matched.name) ? matched.name : (isPdfB64 ? 'member_aadhaar.pdf' : 'member_aadhaar.jpg');
+                        const baseMName = (typeof matched === 'object' && matched.name) ? matched.name : (isPdfB64 ? 'member_aadhaar.pdf' : 'member_aadhaar.jpg');
+                        const mName = `mem${targetSlotNum}_${path.basename(baseMName)}`;
                         const targetFile = path.join(cacheDir, mName);
                         fs.writeFileSync(targetFile, Buffer.from(cleanB64, 'base64'));
                         return targetFile;

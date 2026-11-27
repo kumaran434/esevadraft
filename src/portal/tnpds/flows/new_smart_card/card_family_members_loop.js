@@ -112,67 +112,113 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         onProgress(`📍 [உறுப்பினர் ${memNum}] ${docLabel} பதிவேற்றம் ("பதிவேற்றம்") பொத்தான் அழுத்தப்படுகிறது...`);
         await showBrowserHud(`📤 [உறுப்பினர் ${memNum}] ${docLabel} பதிவேற்றம்`, 'அரசு தளத்தில் பதிவேற்றம் ஆகிறது • காத்திருக்கவும்...', 'warning');
 
-        let uploadClicked = false;
-        const memUploadBtn = page.locator('div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload"), div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")').last();
-        if (await memUploadBtn.count() > 0) {
-            await memUploadBtn.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
-            await memUploadBtn.click({ force: true, timeout: 3000 }).then(() => { uploadClicked = true; }).catch(() => {});
-        }
-        if (!uploadClicked) {
-            await page.evaluate(() => {
+        const snapshotUploadMarkers = async () => {
+            return await page.evaluate(() => {
+                const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success'))
+                    .map(t => (t.innerText || '').trim()).filter(Boolean);
+                const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
+                const lastInp = allDocInputs[allDocInputs.length - 1];
+                let container = lastInp ? (lastInp.closest('.form-group, .input-group, .col-md-4, .col-md-6, .col-sm-6') || lastInp.parentElement) : null;
+                let clearBtnCount = 0;
+                if (container) {
+                    clearBtnCount = Array.from(container.querySelectorAll('button, a')).filter(b => {
+                        const txt = (b.innerText || '').trim().toLowerCase();
+                        return b.offsetParent !== null && (txt === 'x' || txt === '×');
+                    }).length;
+                }
+                return { toasts, clearBtnCount };
+            }).catch(() => ({ toasts: [], clearBtnCount: 0 }));
+        };
+
+        const clickMemberUploadBtn = async () => {
+            const memUploadBtn = page.locator([
+                'div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்")',
+                'div:has(> input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")',
+                'div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்")',
+                'div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")',
+                'div.input-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்")',
+                'div.input-group:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload")',
+                'div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button.btn-secondary',
+                'input[formcontrolname="supportingDocumentProof"] ~ button'
+            ].join(', ')).last();
+            if (await memUploadBtn.count() > 0) {
+                await memUploadBtn.scrollIntoViewIfNeeded({ timeout: 2500 }).catch(() => {});
+                for (let ew = 0; ew < 6; ew++) {
+                    const isEn = await memUploadBtn.evaluate(b => !b.disabled && b.getAttribute('disabled') === null).catch(() => false);
+                    if (isEn) break;
+                    await page.waitForTimeout(300);
+                }
+                await memUploadBtn.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
+                await memUploadBtn.click({ timeout: 3000 }).catch(async () => {
+                    await memUploadBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+                });
+                return true;
+            }
+            return await page.evaluate(() => {
                 const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
                 const lastInp = allDocInputs[allDocInputs.length - 1];
                 let parent = lastInp ? lastInp.parentElement : null;
                 for (let i = 0; i < 4 && parent; i++) {
                     const btn = Array.from(parent.querySelectorAll('button')).find(b => {
                         const t = (b.innerText || '').trim().toLowerCase();
-                        return t.includes('பதிவேற்றம்') || t.includes('upload');
+                        return t.includes('பதிவேற்றம்') || t.includes('upload') || b.classList.contains('btn-secondary');
                     });
                     if (btn) {
                         btn.disabled = false; btn.removeAttribute('disabled');
                         btn.click();
-                        return;
+                        return true;
                     }
                     parent = parent.parentElement;
-                }
-            }).catch(() => {});
-        }
-
-        const verifyMemDocUploaded = async () => {
-            return await page.evaluate(() => {
-                const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
-                const lastInp = allDocInputs[allDocInputs.length - 1];
-                const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim());
-                const hasSuccessToast = toasts.some(t => t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t));
-                if (hasSuccessToast) return true;
-                if (!lastInp || !lastInp.parentElement) return false;
-                let container = lastInp.parentElement;
-                for (let i = 0; i < 4 && container; i++) {
-                    const hasClearBtn = Array.from(container.querySelectorAll('button')).some(b => {
-                        const txt = (b.innerText || '').trim().toLowerCase();
-                        return txt === 'x' || txt === '×';
-                    });
-                    const uploadBtn = Array.from(container.querySelectorAll('button')).find(b => {
-                        const t = (b.innerText || '').toLowerCase();
-                        return t.includes('பதிவேற்றம்') || t.includes('upload');
-                    });
-                    const isUploadDisabled = uploadBtn ? uploadBtn.disabled : false;
-                    const greenEl = container.querySelectorAll('.badge.bg-success, .text-success, i.fa-check, .alert-success');
-                    if (hasClearBtn || isUploadDisabled || greenEl.length > 0) return true;
-                    container = container.parentElement;
                 }
                 return false;
             }).catch(() => false);
         };
 
+        const verifyMemDocUploaded = async (baseline) => {
+            return await page.evaluate(({ prevToasts, prevClearCount }) => {
+                const allDocInputs = Array.from(document.querySelectorAll('input[formcontrolname="supportingDocumentProof"]'));
+                const lastInp = allDocInputs[allDocInputs.length - 1];
+                const toasts = Array.from(document.querySelectorAll('.p-toast-message, .toast, .alert-success')).map(t => (t.innerText || '').trim()).filter(Boolean);
+                const hasNewSuccessToast = toasts.some(t => !prevToasts.includes(t) && (t.includes('வெற்றிகரமாக') || /uploaded\s*successfully/i.test(t)));
+                if (hasNewSuccessToast) return true;
+                if (!lastInp || !lastInp.parentElement) return false;
+                let container = lastInp.closest('.form-group, .input-group, .col-md-4, .col-md-6, .col-sm-6') || lastInp.parentElement;
+                for (let i = 0; i < 2 && container; i++) {
+                    const curClearCount = Array.from(container.querySelectorAll('button, a')).filter(b => {
+                        const txt = (b.innerText || '').trim().toLowerCase();
+                        return b.offsetParent !== null && (txt === 'x' || txt === '×');
+                    }).length;
+                    const greenEl = Array.from(container.querySelectorAll('.badge-success, .badge.bg-success, .bg-success, .text-success, i.fa-check, i.fa-check-circle, .alert-success'))
+                        .filter(el => el.offsetParent !== null);
+                    if (curClearCount > prevClearCount || curClearCount > 0 || greenEl.length > 0) return true;
+                    container = container.parentElement;
+                }
+                return false;
+            }, { prevToasts: baseline.toasts || [], prevClearCount: baseline.clearBtnCount || 0 }).catch(() => false);
+        };
+
         let isGreenInDOM = false;
-        for (let uw = 0; uw < 8; uw++) {
-            await page.waitForTimeout(1000);
-            isGreenInDOM = await verifyMemDocUploaded();
-            if (isGreenInDOM) break;
+        for (let uploadAttempt = 1; uploadAttempt <= 2 && !isGreenInDOM; uploadAttempt++) {
+            const baseline = await snapshotUploadMarkers();
+            if (uploadAttempt === 2) {
+                onProgress(`🔄 [உறுப்பினர் ${memNum}] ${docLabel} கோப்பு மீண்டும் இணைக்கப்பட்டு பதிவேற்றம் முயற்சிக்கப்படுகிறது...`);
+                const reInp = page.locator('input[formcontrolname="supportingDocumentProof"]').last();
+                if (await reInp.count() > 0) {
+                    await reInp.setInputFiles(memPdf, { timeout: 8000 }).catch(() => {});
+                    await reInp.dispatchEvent('input').catch(() => {});
+                    await reInp.dispatchEvent('change').catch(() => {});
+                    await page.waitForTimeout(500);
+                }
+            }
+            await clickMemberUploadBtn();
+            for (let uw = 0; uw < 8; uw++) {
+                await page.waitForTimeout(1000);
+                isGreenInDOM = await verifyMemDocUploaded(baseline);
+                if (isGreenInDOM) break;
+            }
+            await scanAndBroadcastToasts();
+            if (!isGreenInDOM) isGreenInDOM = await verifyMemDocUploaded(baseline);
         }
-        await scanAndBroadcastToasts();
-        if (!isGreenInDOM) isGreenInDOM = await verifyMemDocUploaded();
 
         if (!isGreenInDOM && !isMockSandboxMode) {
             const upErrMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ${docLabel} பதிவேற்றம் ஆகவில்லை!`;

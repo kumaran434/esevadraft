@@ -113,22 +113,30 @@ function resolveDiskDraftAndGas(customerMobile, draftData) {
                         diskDraft?.documents?.gasBook ||
                         localGasFound;
 
-    const effectiveGasDetails = {
-        ...(diskGas || {}),
-        ...(draftData?.gasDetails || {}),
-        ...(draftData?.citizenProfile?.gasDetails || {})
-    };
-    if (diskGas.consumerNumber && !effectiveGasDetails.consumerNumber) effectiveGasDetails.consumerNumber = diskGas.consumerNumber;
-    if (diskGas.agencyName && !effectiveGasDetails.agencyName) effectiveGasDetails.agencyName = diskGas.agencyName;
-    if (diskGas.cylinders && (!effectiveGasDetails.cylinders || effectiveGasDetails.cylinders === '0')) effectiveGasDetails.cylinders = diskGas.cylinders;
-    if (diskGas.oilCompany && !effectiveGasDetails.oilCompany) effectiveGasDetails.oilCompany = diskGas.oilCompany;
-    if (diskGas.oilCompanyDisplay && !effectiveGasDetails.oilCompanyDisplay) effectiveGasDetails.oilCompanyDisplay = diskGas.oilCompanyDisplay;
-    if (existingGas || effectiveGasDetails.consumerNumber) {
-        effectiveGasDetails.hasGas = true;
-        if (!effectiveGasDetails.gasBookPath && existingGas) effectiveGasDetails.gasBookPath = existingGas;
-        if (!effectiveGasDetails.cylinders || effectiveGasDetails.cylinders === '0') effectiveGasDetails.cylinders = '1';
-        if (!effectiveGasDetails.oilCompany) effectiveGasDetails.oilCompany = 'IOC';
-        if (!effectiveGasDetails.oilCompanyDisplay) effectiveGasDetails.oilCompanyDisplay = 'Indane Gas (IOCL)';
+    const isGasExplicitOff = Boolean(
+        draftData?.gasDetails?.hasGas === false ||
+        draftData?.citizenProfile?.gasDetails?.hasGas === false
+    );
+    const effectiveGasDetails = isGasExplicitOff
+        ? { ...(draftData?.citizenProfile?.gasDetails || {}), ...(draftData?.gasDetails || {}), hasGas: false }
+        : {
+            ...(diskGas || {}),
+            ...(draftData?.citizenProfile?.gasDetails || {}),
+            ...(draftData?.gasDetails || {})
+        };
+    if (!isGasExplicitOff) {
+        if (diskGas.consumerNumber && !effectiveGasDetails.consumerNumber) effectiveGasDetails.consumerNumber = diskGas.consumerNumber;
+        if (diskGas.agencyName && !effectiveGasDetails.agencyName) effectiveGasDetails.agencyName = diskGas.agencyName;
+        if (diskGas.cylinders && (!effectiveGasDetails.cylinders || effectiveGasDetails.cylinders === '0')) effectiveGasDetails.cylinders = diskGas.cylinders;
+        if (diskGas.oilCompany && !effectiveGasDetails.oilCompany) effectiveGasDetails.oilCompany = diskGas.oilCompany;
+        if (diskGas.oilCompanyDisplay && !effectiveGasDetails.oilCompanyDisplay) effectiveGasDetails.oilCompanyDisplay = diskGas.oilCompanyDisplay;
+        if (existingGas || effectiveGasDetails.consumerNumber) {
+            effectiveGasDetails.hasGas = true;
+            if (!effectiveGasDetails.gasBookPath && existingGas) effectiveGasDetails.gasBookPath = existingGas;
+            if (!effectiveGasDetails.cylinders || effectiveGasDetails.cylinders === '0') effectiveGasDetails.cylinders = '1';
+            if (!effectiveGasDetails.oilCompany) effectiveGasDetails.oilCompany = 'IOC';
+            if (!effectiveGasDetails.oilCompanyDisplay) effectiveGasDetails.oilCompanyDisplay = 'Indane Gas (IOCL)';
+        }
     }
 
     const effectiveResidence = draftData?.residenceProof || 
@@ -1071,8 +1079,8 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                                    (draftData?.service === 'வருமானச் சான்றிதழ்' || draftData?.serviceId === 'INCOME_CERTIFICATE' ? 'INCOME' : ''))))))))))))));
 
     const targetProfile = {
-        ...(draftData || {}),
         ...(draftData?.citizenProfile || {}),
+        ...(draftData || {}),
         mobileNumber: extractClean10DigitMobile(draftData?.mobileNumber || draftData?.citizenProfile?.mobileNumber || resolved.mobClean),
         draftId: draftData?.draftId || draftData?.citizenProfile?.draftId || resolved.diskDraft?.draftId || '',
         canNumber: String(draftData?.canNumber || draftData?.citizenProfile?.canNumber || resolved.diskDraft?.canNumber || resolved.diskDraft?.citizenProfile?.canNumber || '').replace(/\D+/g, ''),
@@ -1091,17 +1099,21 @@ async function executeLiveDesktopAutomation(draftData, mainWindow, getActiveModu
                     (isChangeMobile ? 'UPDATE_MOBILE' :
                     (isChangeHead ? 'CHANGE_HEAD' : 'NEW_CARD'))))))))))))),
         targetService: detectedTargetService || draftData?.targetService || draftData?.citizenProfile?.targetService || '',
-        subServiceData: isNewCard ? {} : (draftData?.subServiceData || draftData?.citizenProfile?.subServiceData || {}),
+        subServiceData: isNewCard ? {} : {
+            ...(draftData?.citizenProfile?.subServiceData || {}),
+            ...(draftData?.subServiceData || {})
+        },
         intakeState: draftData?.intakeState || '',
         residenceProof: resolved.effectiveResidence,
         documents: {
-            ...(draftData?.documents || {}),
-            ...(draftData?.citizenProfile?.documents || {}),
             ...(resolved.diskDraft?.documents || {}),
+            ...(draftData?.citizenProfile?.documents || {}),
+            ...(draftData?.documents || {}),
             ...(resolved.existingGas ? { gasBook: resolved.existingGas, residenceProof: resolved.existingGas } : {})
         },
         gasDetails: resolved.effectiveGasDetails
     };
+    delete targetProfile.citizenProfile;
 
     const base64Docs = Object.assign({}, draftData?.base64Docs || {}, draftData?.citizenProfile?.base64Docs || {});
     const isRevenueCert = Boolean(isIncome || isResidence || isCommunity || isFirstGraduate || isObc || isLegalHeir || isWidow);

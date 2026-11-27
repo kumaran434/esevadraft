@@ -6,6 +6,12 @@ const { ensureBilingualPair } = require('../utils/bilingual_helper');
 const { normalizeRelationshipPair } = require('../portal/tnpds/helpers/relationship_matcher');
 
 function applyProfileUpdates(sess, updated) {
+    if (updated && updated.fromEditModal) {
+        sess.citizenProfile._editedInModalAt = new Date().toISOString();
+        const prevEdited = Array.isArray(sess.citizenProfile._operatorEditedFields) ? sess.citizenProfile._operatorEditedFields : [];
+        const newEdited = Object.keys(updated).filter(k => updated[k] !== undefined && !['fromEditModal', 'silent', 'draftId', 'mobileNumber', 'oldMobileNumber'].includes(k));
+        sess.citizenProfile._operatorEditedFields = Array.from(new Set([...prevEdited, ...newEdited]));
+    }
     if (updated.fullNameTam !== undefined) sess.citizenProfile.fullNameTam = updated.fullNameTam;
     if (updated.fullNameEng !== undefined) sess.citizenProfile.fullNameEng = updated.fullNameEng;
     if (updated.relationship !== undefined) {
@@ -61,19 +67,53 @@ function applyProfileUpdates(sess, updated) {
     if (updated.headGender !== undefined) sess.citizenProfile.headGender = updated.headGender;
     if (updated.headGenderTam !== undefined) sess.citizenProfile.headGenderTam = updated.headGenderTam;
     if (updated.doorNo !== undefined) sess.citizenProfile.doorNo = updated.doorNo;
+    const prevStreetEngClean = String(sess.citizenProfile.streetEng || '').trim();
     if (updated.streetTam !== undefined) sess.citizenProfile.streetTam = updated.streetTam;
-    if (updated.streetEng !== undefined) sess.citizenProfile.streetEng = updated.streetEng || updated.streetTam;
-    if (sess.citizenProfile.streetEng || sess.citizenProfile.streetTam) {
-        const sPair = ensureBilingualPair(sess.citizenProfile.streetEng, sess.citizenProfile.streetTam);
-        sess.citizenProfile.streetEng = sPair.eng;
-        sess.citizenProfile.streetTam = sPair.tam;
+    if (updated.streetEng !== undefined) {
+        const upStreetEng = String(updated.streetEng || '').trim();
+        if (upStreetEng) {
+            sess.citizenProfile.streetEng = upStreetEng;
+        } else if (updated.streetTam && !/[\u0B80-\u0BFF]/.test(String(updated.streetTam))) {
+            sess.citizenProfile.streetEng = updated.streetTam;
+        } else if (updated.streetTam === '') {
+            sess.citizenProfile.streetEng = '';
+        } else if (!prevStreetEngClean || /[\u0B80-\u0BFF]/.test(prevStreetEngClean)) {
+            sess.citizenProfile.streetEng = updated.streetTam || '';
+        }
     }
+    if (sess.citizenProfile.streetEng || sess.citizenProfile.streetTam) {
+        const opEditedStreetTam = Boolean(updated.fromEditModal && updated.streetTam && /[\u0B80-\u0BFF]/.test(String(updated.streetTam)));
+        const sPair = ensureBilingualPair(sess.citizenProfile.streetEng, sess.citizenProfile.streetTam);
+        if (!opEditedStreetTam || !sess.citizenProfile.streetEng || /[\u0B80-\u0BFF]/.test(sess.citizenProfile.streetEng)) {
+            sess.citizenProfile.streetEng = sPair.eng;
+        }
+        if (!opEditedStreetTam) {
+            sess.citizenProfile.streetTam = sPair.tam;
+        }
+    }
+    const prevAreaEngClean = String(sess.citizenProfile.areaEng || '').trim();
     if (updated.areaTam !== undefined) sess.citizenProfile.areaTam = updated.areaTam;
-    if (updated.areaEng !== undefined) sess.citizenProfile.areaEng = updated.areaEng || updated.areaTam;
+    if (updated.areaEng !== undefined) {
+        const upAreaEng = String(updated.areaEng || '').trim();
+        if (upAreaEng) {
+            sess.citizenProfile.areaEng = upAreaEng;
+        } else if (updated.areaTam && !/[\u0B80-\u0BFF]/.test(String(updated.areaTam))) {
+            sess.citizenProfile.areaEng = updated.areaTam;
+        } else if (updated.areaTam === '') {
+            sess.citizenProfile.areaEng = '';
+        } else if (!prevAreaEngClean || /[\u0B80-\u0BFF]/.test(prevAreaEngClean)) {
+            sess.citizenProfile.areaEng = updated.areaTam || '';
+        }
+    }
     if (sess.citizenProfile.areaEng || sess.citizenProfile.areaTam) {
+        const opEditedAreaTam = Boolean(updated.fromEditModal && updated.areaTam && /[\u0B80-\u0BFF]/.test(String(updated.areaTam)));
         const aPair = ensureBilingualPair(sess.citizenProfile.areaEng, sess.citizenProfile.areaTam);
-        sess.citizenProfile.areaEng = aPair.eng;
-        sess.citizenProfile.areaTam = aPair.tam;
+        if (!opEditedAreaTam || !sess.citizenProfile.areaEng || /[\u0B80-\u0BFF]/.test(sess.citizenProfile.areaEng)) {
+            sess.citizenProfile.areaEng = aPair.eng;
+        }
+        if (!opEditedAreaTam) {
+            sess.citizenProfile.areaTam = aPair.tam;
+        }
     }
     if (updated.pincode !== undefined) sess.citizenProfile.pincode = updated.pincode;
     if (updated.district !== undefined) sess.citizenProfile.district = updated.district;
@@ -88,15 +128,29 @@ function applyProfileUpdates(sess, updated) {
         sess.citizenProfile.pincode,
         profAddrText
     );
-    sess.citizenProfile.district = resolvedLoc.district;
-    sess.citizenProfile.districtTam = resolvedLoc.districtTam;
-    if (resolvedLoc.taluk) sess.citizenProfile.taluk = resolvedLoc.taluk;
-    if (resolvedLoc.talukTam) sess.citizenProfile.talukTam = resolvedLoc.talukTam;
-    if (resolvedLoc.village && (resolvedLoc.wasAutoCorrected || !sess.citizenProfile.village)) sess.citizenProfile.village = resolvedLoc.village;
-    if (resolvedLoc.villageTam && resolvedLoc.wasAutoCorrected) sess.citizenProfile.villageTam = resolvedLoc.villageTam;
+    const preserveOperatorJurisdiction = Boolean(updated && updated.fromEditModal);
+    if (!preserveOperatorJurisdiction) {
+        sess.citizenProfile.district = resolvedLoc.district;
+        sess.citizenProfile.districtTam = resolvedLoc.districtTam;
+        if (resolvedLoc.taluk) sess.citizenProfile.taluk = resolvedLoc.taluk;
+        if (resolvedLoc.talukTam) sess.citizenProfile.talukTam = resolvedLoc.talukTam;
+        if (resolvedLoc.village && (resolvedLoc.wasAutoCorrected || !sess.citizenProfile.village)) sess.citizenProfile.village = resolvedLoc.village;
+        if (resolvedLoc.villageTam && resolvedLoc.wasAutoCorrected) sess.citizenProfile.villageTam = resolvedLoc.villageTam;
+    } else {
+        if (!sess.citizenProfile.district && resolvedLoc.district) sess.citizenProfile.district = resolvedLoc.district;
+        if (!sess.citizenProfile.districtTam && resolvedLoc.districtTam) sess.citizenProfile.districtTam = resolvedLoc.districtTam;
+        if (!sess.citizenProfile.taluk && resolvedLoc.taluk) {
+            sess.citizenProfile.taluk = resolvedLoc.taluk;
+            if (resolvedLoc.talukTam) sess.citizenProfile.talukTam = resolvedLoc.talukTam;
+        }
+        if (!sess.citizenProfile.village && resolvedLoc.village) {
+            sess.citizenProfile.village = resolvedLoc.village;
+            if (resolvedLoc.villageTam) sess.citizenProfile.villageTam = resolvedLoc.villageTam;
+        }
+    }
     if (resolvedLoc.areaEng && !sess.citizenProfile.areaEng) sess.citizenProfile.areaEng = resolvedLoc.areaEng;
     if (resolvedLoc.areaTam && !sess.citizenProfile.areaTam) sess.citizenProfile.areaTam = resolvedLoc.areaTam;
-    if (resolvedLoc.wasAutoCorrected) {
+    if (resolvedLoc.wasAutoCorrected && !preserveOperatorJurisdiction) {
         sess.citizenProfile.districtAutoCorrected = true;
         sess.citizenProfile.districtCorrectionReason = resolvedLoc.reason;
     }
@@ -256,24 +310,32 @@ function applyProfileUpdates(sess, updated) {
     }
     if (updated.gasDetails) {
         const prevGas = sess.citizenProfile.gasDetails || {};
-        const newGas = { ...prevGas, ...updated.gasDetails };
-        if (!newGas.consumerNumber && prevGas.consumerNumber) newGas.consumerNumber = prevGas.consumerNumber;
-        if (!newGas.agencyName && prevGas.agencyName) newGas.agencyName = prevGas.agencyName;
-        if ((!newGas.cylinders || newGas.cylinders === '0') && prevGas.cylinders && prevGas.cylinders !== '0') newGas.cylinders = prevGas.cylinders;
-        if (!newGas.oilCompany && prevGas.oilCompany) newGas.oilCompany = prevGas.oilCompany;
-        if (!newGas.oilCompanyDisplay && prevGas.oilCompanyDisplay) newGas.oilCompanyDisplay = prevGas.oilCompanyDisplay;
-        if (!newGas.gasBookPath && prevGas.gasBookPath) newGas.gasBookPath = prevGas.gasBookPath;
-        if (updated.gasDetails.hasGas !== false && prevGas.hasGas) newGas.hasGas = true;
+        if (updated.gasDetails.hasGas === false) {
+            sess.citizenProfile.gasDetails = {
+                ...prevGas,
+                ...updated.gasDetails,
+                hasGas: false
+            };
+        } else {
+            const newGas = { ...prevGas, ...updated.gasDetails };
+            if (!newGas.consumerNumber && prevGas.consumerNumber && !updated.fromEditModal) newGas.consumerNumber = prevGas.consumerNumber;
+            if (!newGas.agencyName && prevGas.agencyName && !updated.fromEditModal) newGas.agencyName = prevGas.agencyName;
+            if ((!newGas.cylinders || newGas.cylinders === '0') && prevGas.cylinders && prevGas.cylinders !== '0') newGas.cylinders = prevGas.cylinders;
+            if (!newGas.oilCompany && prevGas.oilCompany) newGas.oilCompany = prevGas.oilCompany;
+            if (!newGas.oilCompanyDisplay && prevGas.oilCompanyDisplay) newGas.oilCompanyDisplay = prevGas.oilCompanyDisplay;
+            if (!newGas.gasBookPath && prevGas.gasBookPath) newGas.gasBookPath = prevGas.gasBookPath;
+            if (updated.gasDetails.hasGas !== false && prevGas.hasGas) newGas.hasGas = true;
 
-        sess.citizenProfile.gasDetails = newGas;
-        if (newGas.gasBookPath) {
-            if (!sess.tempUploads) sess.tempUploads = {};
-            sess.tempUploads.gasBook = newGas.gasBookPath;
-            sess.tempUploads.residenceProof = newGas.gasBookPath;
-            if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
-            sess.citizenProfile.documents.gasBook = newGas.gasBookPath;
-            sess.citizenProfile.documents.residenceProof = newGas.gasBookPath;
-            sess.citizenProfile.gasDetails.hasGas = true;
+            sess.citizenProfile.gasDetails = newGas;
+            if (newGas.gasBookPath) {
+                if (!sess.tempUploads) sess.tempUploads = {};
+                sess.tempUploads.gasBook = newGas.gasBookPath;
+                sess.tempUploads.residenceProof = newGas.gasBookPath;
+                if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
+                sess.citizenProfile.documents.gasBook = newGas.gasBookPath;
+                sess.citizenProfile.documents.residenceProof = newGas.gasBookPath;
+                sess.citizenProfile.gasDetails.hasGas = true;
+            }
         }
     }
     if (updated.residenceProof) {
@@ -298,16 +360,28 @@ function applyProfileUpdates(sess, updated) {
     }
 
     if (updated.members && Array.isArray(updated.members) && updated.members.length > 0) {
-        sess.citizenProfile.members = updated.members;
+        const prevMembers = Array.isArray(sess.citizenProfile.members) ? sess.citizenProfile.members : [];
+        sess.citizenProfile.members = updated.members.map((editedMem, idx) => {
+            const prevMem = prevMembers[idx] || {};
+            const merged = { ...prevMem, ...editedMem };
+            if (!merged.docPath && prevMem.docPath && editedMem.docPath !== null && editedMem.docPath !== '') {
+                merged.docPath = prevMem.docPath;
+            }
+            if (merged.docType === 'BIRTH_CERTIFICATE' && !merged.birthCertificatePath && prevMem.birthCertificatePath && editedMem.birthCertificatePath !== null) {
+                merged.birthCertificatePath = prevMem.birthCertificatePath;
+            }
+            if (idx > 0) merged._editedInModal = Boolean(updated.fromEditModal);
+            return merged;
+        });
     }
 
     if (sess.citizenProfile.members && sess.citizenProfile.members.length > 0) {
-        sess.citizenProfile.members[0].nameEng = sess.citizenProfile.fullNameEng || sess.citizenProfile.members[0].nameEng;
-        sess.citizenProfile.members[0].nameTam = sess.citizenProfile.fullNameTam || sess.citizenProfile.members[0].nameTam;
-        sess.citizenProfile.members[0].dob = sess.citizenProfile.headDob || sess.citizenProfile.members[0].dob;
-        sess.citizenProfile.members[0].gender = sess.citizenProfile.headGender || sess.citizenProfile.members[0].gender;
-        sess.citizenProfile.members[0].genderTam = sess.citizenProfile.headGenderTam || sess.citizenProfile.members[0].genderTam;
-        sess.citizenProfile.members[0].aadhaarNumber = sess.citizenProfile.headAadhaar || sess.citizenProfile.members[0].aadhaarNumber;
+        sess.citizenProfile.members[0].nameEng = sess.citizenProfile.fullNameEng !== undefined ? sess.citizenProfile.fullNameEng : sess.citizenProfile.members[0].nameEng;
+        sess.citizenProfile.members[0].nameTam = sess.citizenProfile.fullNameTam !== undefined ? sess.citizenProfile.fullNameTam : sess.citizenProfile.members[0].nameTam;
+        sess.citizenProfile.members[0].dob = sess.citizenProfile.headDob !== undefined ? sess.citizenProfile.headDob : sess.citizenProfile.members[0].dob;
+        sess.citizenProfile.members[0].gender = sess.citizenProfile.headGender !== undefined ? sess.citizenProfile.headGender : sess.citizenProfile.members[0].gender;
+        sess.citizenProfile.members[0].genderTam = sess.citizenProfile.headGenderTam !== undefined ? sess.citizenProfile.headGenderTam : sess.citizenProfile.members[0].genderTam;
+        sess.citizenProfile.members[0].aadhaarNumber = sess.citizenProfile.headAadhaar !== undefined ? sess.citizenProfile.headAadhaar : sess.citizenProfile.members[0].aadhaarNumber;
     }
 
     // Dynamic Extensible Master Profile Property Accumulation

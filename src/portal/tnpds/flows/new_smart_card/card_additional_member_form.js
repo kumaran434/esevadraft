@@ -43,8 +43,12 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     await page.waitForTimeout(300);
 
     let targetMemTam = (mem.nameTam || mem.name || '').trim();
+    const isMemOperatorEdited = Boolean(mem._editedInModal || citizenProfile._editedInModalAt);
+    const memHasBareLatinInit = /(?:^|\s|\.)[A-Za-z](?:\.|\s|$)/.test(targetMemTam);
     if (targetMemEng && targetMemTam) {
-        targetMemTam = normalizeTamilInitialsFromEnglish(targetMemEng, targetMemTam);
+        if (!isMemOperatorEdited || !/[\u0B80-\u0BFF]/.test(targetMemTam) || memHasBareLatinInit) {
+            targetMemTam = normalizeTamilInitialsFromEnglish(targetMemEng, targetMemTam);
+        }
     } else if (targetMemEng && !targetMemTam) {
         targetMemTam = ensureBilingualPair(targetMemEng, '').tam;
     }
@@ -132,6 +136,7 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
 
         if (targetOpt) {
             await relSelect.selectOption(targetOpt.value).catch(() => {});
+            await relSelect.dispatchEvent('input').catch(() => {});
             await relSelect.dispatchEvent('change').catch(() => {});
         } else {
             onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} உறவுமுறை (${targetRelTam || targetRelEng}) தேர்வு செய்யப்படவில்லை!`);
@@ -267,18 +272,32 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     
     const aadhaarFileInput = page.locator('input[formcontrolname="supportingDocumentProof"]').last();
     if (await aadhaarFileInput.count() > 0) {
+        await aadhaarFileInput.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
         await aadhaarFileInput.evaluate(el => {
             el.disabled = false; el.removeAttribute('disabled');
             el.removeAttribute('readonly'); el.readOnly = false;
             el.style.display = 'block'; el.style.opacity = '1'; el.style.visibility = 'visible';
         }).catch(() => {});
-        try {
-            await aadhaarFileInput.setInputFiles(memPdf, { timeout: 2000 });
-            await aadhaarFileInput.dispatchEvent('change').catch(() => {});
-        } catch (e) {
-            console.warn('[Member Aadhaar Upload] setInputFiles timed out or failed:', e.message);
+        let attachedCount = 0;
+        for (let attachTry = 1; attachTry <= 2; attachTry++) {
+            try {
+                await aadhaarFileInput.setInputFiles(memPdf, { timeout: 8000 });
+                await aadhaarFileInput.dispatchEvent('input').catch(() => {});
+                await aadhaarFileInput.dispatchEvent('change').catch(() => {});
+                await page.waitForTimeout(400);
+                attachedCount = await aadhaarFileInput.evaluate(el => (el.files ? el.files.length : 0)).catch(() => 0);
+                if (attachedCount > 0) break;
+            } catch (e) {
+                console.warn(`[Member ${memNum} Doc Attach] Attempt ${attachTry} warning:`, e.message);
+            }
+            await page.waitForTimeout(400);
         }
-        await page.waitForTimeout(500);
+        if (attachedCount === 0 && !isMockSandboxMode) {
+            const attachErr = `உறுப்பினர் ${memNum} ஆவணம் (${path.basename(memPdf)}) கோப்பு உள்ளீட்டில் இணையவில்லை!`;
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** ${attachErr}`);
+            return { success: false, message: attachErr };
+        }
+        await page.waitForTimeout(400);
     } else {
         onProgress(`⚠️ **பிழை:** உறுப்பினர் ${memNum} ஆதார் கோப்பு உள்ளீட்டுக் களம் கிடைக்கவில்லை!`);
         return { success: false, message: `உறுப்பினர் ${memNum} கோப்பு உள்ளீட்டுக் களம் இல்லை.` };

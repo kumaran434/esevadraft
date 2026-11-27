@@ -387,6 +387,7 @@ router.post('/api/profile/update', async (req, res) => {
                     operatorUid: sess.operatorUid || null,
                     operatorName: sess.operatorName || null,
                     operatorMobile: sess.operatorMobile || null,
+                    fromEditModal: Boolean(req.body.fromEditModal),
                     subService: sess.subService || sess.citizenProfile?.subService || null,
                     subServiceData: sess.citizenProfile?.subServiceData || sess.subServiceData || null,
                     citizenProfile: sess.citizenProfile,
@@ -396,7 +397,7 @@ router.post('/api/profile/update', async (req, res) => {
                     intakeState: sess.intakeState,
                     step: sess.step || 'draft',
                     status: sess.applicationNumber ? 'SUBMITTED' : 'DRAFT_SAVED'
-                });
+                }, { fromEditModal: Boolean(req.body.fromEditModal) });
             } catch (e) {
                 console.warn('Draft sync on profile update error:', e.message);
             }

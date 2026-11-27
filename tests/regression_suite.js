@@ -6647,6 +6647,119 @@ async function runTests() {
                 passedCount += 4;
             }
 
+            // [TEST 89] 🛡️ Operator Edit Modal Strict Precedence + Member 2 Compressed Upload Gate Integrity
+            console.log('\n[TEST 89] 🛡️ Verifying Edit Modal Operator Overrides & Member 2 Upload Verification Gate...');
+            {
+                const { sanitizeNewCardProfile } = require('../src/portal/tnpds/flows/new_smart_card/card_navigation_preflight');
+                const { resolveDocFromOptions } = require('../src/portal/tnpds/helpers/doc_resolver');
+                const editMob = '9999900089';
+                const editDraftId = `${editMob}_1795700001089`;
+                const editHdr = { 'x-operator-uid': 'test_suite_operator_uid', 'x-session-mobile': editMob, 'x-draft-id': editDraftId };
+                const sampleDocPath = path.join(__dirname, '../uploads/test_sample_doc.jpg');
+
+                await request('POST', '/api/drafts/save', {
+                    draftId: editDraftId,
+                    mobileNumber: editMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'NEW_CARD',
+                    intakeState: 'READY_TO_APPLY',
+                    citizenProfile: {
+                        mobileNumber: editMob,
+                        subService: 'NEW_CARD',
+                        fullNameEng: 'Old OCR Name',
+                        fullNameTam: 'பழைய பெயர்',
+                        fatherNameEng: 'Old Father',
+                        fatherNameTam: 'பழைய தந்தை',
+                        streetEng: 'Vallalar Street',
+                        streetTam: 'வள்ளலார் ஸ்ட்ரீட்',
+                        pincode: '632510',
+                        district: 'Ranipet',
+                        taluk: 'Nemili',
+                        village: 'Minnal',
+                        gasDetails: { hasGas: true, oilCompany: 'IOC', consumerNumber: '11223344', agencyName: 'OLD GAS' },
+                        members: [
+                            { nameEng: 'Old OCR Name', nameTam: 'பழைய பெயர்', docPath: sampleDocPath },
+                            { nameEng: 'Old Mem 2', nameTam: 'பழைய உறுப்பினர்', relationshipTam: 'கணவர்', relationshipEng: 'Husband', docPath: sampleDocPath, docType: 'AADHAAR_CARD' }
+                        ]
+                    },
+                    documents: { memberDoc_1: sampleDocPath, memberAadhaar0: sampleDocPath }
+                }, editHdr);
+
+                // Operator edits details in Edit Modal (including explicit Taluk/Village, Tamil street, Member 2, and disabling gas)
+                const upRes89 = await request('POST', '/api/profile/update', {
+                    draftId: editDraftId,
+                    mobileNumber: editMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'NEW_CARD',
+                    fromEditModal: true,
+                    silent: true,
+                    fullNameEng: 'Sandhiya P',
+                    fullNameTam: 'சந்தியா பி',
+                    fatherNameEng: 'Udayakumar V',
+                    fatherNameTam: 'உதயகுமார் வே',
+                    streetEng: 'Vallalar Street',
+                    streetTam: 'வல்லலர் தெரு',
+                    areaTam: 'கக்கன் காலனி',
+                    areaEng: '',
+                    pincode: '632510',
+                    district: 'Ranipet',
+                    taluk: 'Arakkonam',
+                    village: 'Anwarthikanpettai',
+                    gasDetails: { hasGas: false, oilCompany: '', oilCompanyDisplay: '', consumerNumber: '', agencyName: '', cylinders: '0' },
+                    members: [
+                        { nameEng: 'Sandhiya P', nameTam: 'சந்தியா பி', dob: '10/06/1996', gender: 'Female', aadhaarNumber: '289042006438' },
+                        { nameEng: 'Udayakumar V', nameTam: 'உதயகுமார் வே', relationshipTam: 'கணவர்', relationshipEng: 'Husband', dob: '05/04/1990', gender: 'Male', aadhaarNumber: '748928664754', docType: 'AADHAAR_CARD' }
+                    ]
+                }, editHdr);
+                assert(upRes89.status === 200 && upRes89.body?.success === true, 'TEST 89.editSave: POST /api/profile/update with fromEditModal returns 200 OK');
+
+                const getRes89 = await request('GET', `/api/drafts/${encodeURIComponent(editDraftId)}`, null, editHdr);
+                const d89Prof = getRes89.body?.draft?.citizenProfile || {};
+                assert(
+                    d89Prof.fullNameTam === 'சந்தியா பி' &&
+                    d89Prof.fatherNameTam === 'உதயகுமார் வே' &&
+                    d89Prof.streetTam === 'வல்லலர் தெரு' &&
+                    d89Prof.streetEng === 'Vallalar Street' &&
+                    d89Prof.taluk === 'Arakkonam' &&
+                    d89Prof.village === 'Anwarthikanpettai',
+                    `TEST 89.strictJurisdictionAndBilingual: Operator-edited Tamil/English & Taluk/Village preserved over OCR/pincode guesses (got taluk=${d89Prof.taluk}, village=${d89Prof.village}, streetTam=${d89Prof.streetTam}, streetEng=${d89Prof.streetEng})`
+                );
+                assert(d89Prof.gasDetails?.hasGas === false, 'TEST 89.gasDisable: Unchecking gas in Edit Modal stays disabled without resurrecting old gas details');
+                assert(
+                    d89Prof.members?.[1]?.nameTam === 'உதயகுமார் வே' &&
+                    d89Prof.members?.[1]?.docPath === sampleDocPath,
+                    'TEST 89.member2Preserved: Operator-edited Member 2 details win while preserving uploaded docPath'
+                );
+
+                // sanitizeNewCardProfile MUST NOT overwrite operator-edited Tamil initials!
+                const san89 = sanitizeNewCardProfile(d89Prof);
+                assert(san89.tamFather === 'உதயகுமார் வே', `TEST 89.tamPreserved: sanitizeNewCardProfile keeps operator Tamil name (${san89.tamFather})`);
+
+                // Member 2 base64 resolution & upload gate safety checks
+                const dummyB64 = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%test-member-2-compressed-payload-bytes\n').toString('base64');
+                const resolvedMem2Pdf = await resolveDocFromOptions(null, {
+                    draftData: {
+                        base64Docs: {
+                            memberAadhaarsBase64: [{ name: 'mem2_compressed.pdf', memberIdx: 1, base64: dummyB64 }]
+                        }
+                    }
+                }, {}, 'memberAadhaar', 0);
+                assert(Boolean(resolvedMem2Pdf && fs.existsSync(resolvedMem2Pdf) && path.basename(resolvedMem2Pdf).startsWith('mem1_')), 'TEST 89.mem2Resolve: Member 2 base64 document resolves cleanly to isolated file');
+
+                const loopSrc89 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_family_members_loop.js'), 'utf8');
+                const addFormSrc89 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_additional_member_form.js'), 'utf8');
+                const strictGateSrc89 = fs.readFileSync(path.join(__dirname, '../src/portal/common/strict_step_gate.js'), 'utf8');
+                const subEngSrc89 = fs.readFileSync(path.join(__dirname, '../public/js/modules/submission_engine.js'), 'utf8');
+                const runnerSrc89 = fs.readFileSync(path.join(__dirname, '../desktop/automation_runner.js'), 'utf8');
+
+                assert(!loopSrc89.includes('isUploadDisabled') && !strictGateSrc89.includes('isUploadDisabled'), 'TEST 89.noDisabledFalsePos: Upload gates never treat disabled Upload button as uploaded');
+                assert(addFormSrc89.includes('el.files ? el.files.length : 0') && loopSrc89.includes('snapshotUploadMarkers'), 'TEST 89.mem2AttachVerify: Member 2 attachment checks el.files.length and diffs fresh upload confirmation');
+                assert(subEngSrc89.includes('isLocalEditNewer') && runnerSrc89.includes('...(draftData || {})'), 'TEST 89.runnerPriority: Submission & Desktop Runner never overwrite top-level Edit Modal saves with stale nested citizenProfile');
+
+                await request('DELETE', `/api/drafts/${encodeURIComponent(editDraftId)}?permanent=true`, null, editHdr);
+                passedCount += 8;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

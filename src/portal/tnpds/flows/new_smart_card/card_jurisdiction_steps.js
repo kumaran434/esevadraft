@@ -129,10 +129,17 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
 
     const rawAddr = [engStreet, tamStreet, engArea, tamArea].filter(Boolean).join(' ');
     const resolvedLoc = resolveTnDistrict(citizenProfile.district, citizenProfile.taluk, citizenProfile.village, pincode, rawAddr);
-    let targetDist = resolvedLoc.district || citizenProfile.district || 'Ranipet';
-    let targetTaluk = resolvedLoc.taluk || citizenProfile.taluk || 'Nemili';
-    let targetVillage = resolvedLoc.village || citizenProfile.village || 'Kaveripakkam';
-    if (resolvedLoc.wasAutoCorrected) {
+    const hasOperatorEdit = Boolean(citizenProfile._editedInModalAt || (Array.isArray(citizenProfile._operatorEditedFields) && citizenProfile._operatorEditedFields.length > 0));
+    let targetDist = hasOperatorEdit
+        ? (citizenProfile.district || resolvedLoc.district || 'Ranipet')
+        : (resolvedLoc.district || citizenProfile.district || 'Ranipet');
+    let targetTaluk = hasOperatorEdit
+        ? (citizenProfile.taluk || resolvedLoc.taluk || 'Nemili')
+        : (resolvedLoc.taluk || citizenProfile.taluk || 'Nemili');
+    let targetVillage = hasOperatorEdit
+        ? (citizenProfile.village || resolvedLoc.village || 'Kaveripakkam')
+        : (resolvedLoc.village || citizenProfile.village || 'Kaveripakkam');
+    if (resolvedLoc.wasAutoCorrected && !hasOperatorEdit) {
         onProgress(`💡 **மாவட்ட தானியங்கி சரிபார்ப்பு:** ${resolvedLoc.reason}`);
     }
 

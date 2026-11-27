@@ -110,18 +110,24 @@ router.get('/api/drafts/:mobileNumber', async (req, res) => {
     try {
         const draft = await getCitizenDraft(cleanMob, opUid);
         if (draft) {
-            // Overlay live active in-memory session state if active so subService and intakeState are 100% in sync
+            // Overlay live active in-memory session state if active so subService, intakeState & Edit Modal edits are 100% in sync
             try {
                 const storageService = require('../services/storage_service');
-                const sess = storageService.sessions?.get(cleanMob) || (storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : null);
-                if (sess && sess.subService && (!sess.draftId || sess.draftId === cleanMob)) {
-                    draft.subService = sess.subService;
+                const sess = (typeof storageService.resolveSessionForRequest === 'function'
+                    ? storageService.resolveSessionForRequest({ draftId: cleanMob, mobile: draft.mobileNumber || cleanMob, operatorUid: opUid })
+                    : null) || storageService.sessions?.get(cleanMob) || (storageService.getOrCreateSession ? storageService.getOrCreateSession(cleanMob) : null);
+                if (sess && (!sess.draftId || sess.draftId === cleanMob)) {
+                    if (sess.subService) draft.subService = sess.subService;
                     draft.intakeState = sess.intakeState || draft.intakeState;
                     draft.subServiceData = sess.subServiceData || draft.subServiceData;
-                    if (draft.citizenProfile) {
-                        draft.citizenProfile.subService = sess.subService;
-                        draft.citizenProfile.subServiceData = sess.subServiceData || draft.citizenProfile.subServiceData;
-                        if (sess.citizenProfile) {
+                    if (sess.citizenProfile) {
+                        const sessEditTs = String(sess.citizenProfile._editedInModalAt || '');
+                        const draftEditTs = String(draft.citizenProfile?._editedInModalAt || '');
+                        if (sessEditTs && sessEditTs >= draftEditTs) {
+                            draft.citizenProfile = Object.assign({}, draft.citizenProfile || {}, sess.citizenProfile);
+                        } else if (draft.citizenProfile) {
+                            if (sess.subService) draft.citizenProfile.subService = sess.subService;
+                            draft.citizenProfile.subServiceData = sess.subServiceData || draft.citizenProfile.subServiceData;
                             if (sess.citizenProfile.caste) draft.citizenProfile.caste = sess.citizenProfile.caste;
                             if (sess.citizenProfile.community) draft.citizenProfile.community = sess.citizenProfile.community;
                             if (sess.citizenProfile.religion) draft.citizenProfile.religion = sess.citizenProfile.religion;

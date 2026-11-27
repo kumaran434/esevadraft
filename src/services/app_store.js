@@ -149,11 +149,22 @@ async function saveApp(keyOrMobile, draftData = {}, options = {}) {
     const existingProf = existing?.citizenProfile || {};
     const incomingProf = draftData.citizenProfile || {};
 
-    // Clean single-app profile merge (null = explicit delete; non-empty updates; empty preserves existing)
+    // Clean single-app profile merge (null = explicit delete; fromEditModal allows empty-string clears on text fields)
+    const isAuthoritativeEdit = Boolean(
+        draftData.fromEditModal === true ||
+        options.fromEditModal === true ||
+        (incomingProf._editedInModalAt && (!existingProf._editedInModalAt || String(incomingProf._editedInModalAt) >= String(existingProf._editedInModalAt)))
+    );
+    const DOC_PATH_PROTECTED_KEYS = new Set([
+        'headPhotoPath', 'profilePhoto', 'headPhoto', 'headAadhaarDocPath', 'headAadhaarPdfPath',
+        'smartCardDocPath', 'rationCardDocPath', 'communityProof', 'communityCertificatePath', 'familyCommunityProofPath',
+        'incomeProof', 'salaryCertificatePath', 'residenceProof', 'documents', 'base64Docs', 'savedVaultDocs'
+    ]);
     const mergedProfile = { ...existingProf };
     for (const [k, v] of Object.entries(incomingProf)) {
         if (v === null) delete mergedProfile[k];
         else if (v !== '' && v !== undefined) mergedProfile[k] = v;
+        else if (v === '' && isAuthoritativeEdit && !DOC_PATH_PROTECTED_KEYS.has(k)) mergedProfile[k] = '';
         else if (mergedProfile[k] === undefined) mergedProfile[k] = v;
     }
 
@@ -164,7 +175,9 @@ async function saveApp(keyOrMobile, draftData = {}, options = {}) {
     if ((!mergedProfile.members || mergedProfile.members.length === 0) && existingProf.members?.length > 0) {
         mergedProfile.members = existingProf.members;
     }
-    if (existingProf.gasDetails && (!mergedProfile.gasDetails || !mergedProfile.gasDetails.consumerNumber)) {
+    if (incomingProf.gasDetails && incomingProf.gasDetails.hasGas === false) {
+        mergedProfile.gasDetails = { ...incomingProf.gasDetails, hasGas: false };
+    } else if (existingProf.gasDetails && (!mergedProfile.gasDetails || (!mergedProfile.gasDetails.consumerNumber && !isAuthoritativeEdit))) {
         mergedProfile.gasDetails = { ...existingProf.gasDetails, ...(mergedProfile.gasDetails || {}) };
     }
     if (existingProf.residenceProof && !mergedProfile.residenceProof) {

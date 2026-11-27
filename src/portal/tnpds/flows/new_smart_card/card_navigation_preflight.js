@@ -110,9 +110,22 @@ function sanitizeNewCardProfile(citizenProfile) {
     let engStreet = (citizenProfile.streetEng || '').trim();
     let engArea = (citizenProfile.areaEng || '').trim();
 
-    if (engName && tamName) tamName = normalizeTamilInitialsFromEnglish(engName, tamName);
-    else if (engName && !tamName) tamName = ensureBilingualPair(engName, '').tam;
-    if (engFather && tamFather) tamFather = normalizeTamilInitialsFromEnglish(engFather, tamFather);
+    const editedFields = Array.isArray(citizenProfile._operatorEditedFields) ? citizenProfile._operatorEditedFields : [];
+    const hasOperatorEdit = Boolean(citizenProfile._editedInModalAt || editedFields.length > 0);
+    const hasBareLatinInitial = (s) => /(?:^|\s|\.)[A-Za-z](?:\.|\s|$)/.test(String(s || ''));
+
+    if (engName && tamName) {
+        if (!hasOperatorEdit || !/[\u0B80-\u0BFF]/.test(tamName) || hasBareLatinInitial(tamName)) {
+            tamName = normalizeTamilInitialsFromEnglish(engName, tamName);
+        }
+    } else if (engName && !tamName) {
+        tamName = ensureBilingualPair(engName, '').tam;
+    }
+    if (engFather && tamFather) {
+        if (!hasOperatorEdit || !/[\u0B80-\u0BFF]/.test(tamFather) || hasBareLatinInitial(tamFather)) {
+            tamFather = normalizeTamilInitialsFromEnglish(engFather, tamFather);
+        }
+    }
     if (engFather && !tamFather) tamFather = ensureBilingualPair(engFather, '').tam;
     if (tamFather && !engFather) engFather = tamFather;
 
