@@ -99,8 +99,10 @@ router.get('/api/chat/history', async (req, res) => {
     if (needsDraftRestore) {
         sess._draftChecked = true;
         try {
-            const draft = await getCitizenDraft(mobile, reqOpUid);
-            if (draft && draft.citizenProfile && (draft.citizenProfile.fullNameEng || draft.citizenProfile.fullNameTam)) {
+            const lookupKey = requestedDraftId || sess.draftId || mobile;
+            const draft = await getCitizenDraft(lookupKey, reqOpUid);
+            if (draft && draft.citizenProfile && (draft.citizenProfile.fullNameEng || draft.citizenProfile.fullNameTam || draft.subService || draft.citizenProfile.subService || (draft.subServiceData && Object.keys(draft.subServiceData).length > 0))) {
+                if (draft.draftId && !sess.draftId) sess.draftId = draft.draftId;
                 const fresh = createFreshProfile(mobile);
                 const prevProf = sess.citizenProfile || {};
                 const draftProf = draft.citizenProfile || {};

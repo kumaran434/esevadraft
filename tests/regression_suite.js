@@ -6573,6 +6573,65 @@ async function runTests() {
                 passedCount += 6;
             }
 
+            // [TEST 87] 🔒 Multi-Draft Per-Mobile Isolation: Delete 1 Never Wipes Siblings & Poll/Resume Never Switches Services
+            console.log('\n[TEST 87] 🔒 Multi-Draft Delete Isolation & Same-Mobile Cross-Service Polling Guard...');
+            {
+                const { deleteCitizenDraft } = require('../firestore_db');
+                const isoMob = '9999900087';
+                const isoHdr = { 'x-operator-uid': 'test_suite_operator_uid', 'x-session-mobile': isoMob };
+                const dAddId = `${isoMob}_1795700001001`;
+                const dMobId = `${isoMob}_1795700002002`;
+
+                await request('POST', '/api/drafts/save', {
+                    draftId: dAddId,
+                    mobileNumber: isoMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'ADD_MEMBER',
+                    intakeState: 'READY_TO_APPLY',
+                    subServiceData: { subService: 'ADD_MEMBER', memberNameTam: 'குமரன் கி', relationshipTam: 'மகன்', aadhaarNo: '575567662931' },
+                    citizenProfile: { mobileNumber: isoMob, subService: 'ADD_MEMBER', subServiceData: { memberNameTam: 'குமரன் கி', relationshipTam: 'மகன்' } }
+                }, isoHdr);
+
+                await request('POST', '/api/drafts/save', {
+                    draftId: dMobId,
+                    mobileNumber: isoMob,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'UPDATE_MOBILE',
+                    intakeState: 'READY_TO_APPLY',
+                    subServiceData: { subService: 'UPDATE_MOBILE', newMobile: '9790170026' },
+                    citizenProfile: { mobileNumber: isoMob, subService: 'UPDATE_MOBILE', subServiceData: { newMobile: '9790170026' } }
+                }, isoHdr);
+
+                // 1. Resuming & polling dAddId MUST stay ADD_MEMBER even when newer UPDATE_MOBILE exists on same mobile
+                const loginAdd = await request('POST', '/api/auth/login', {
+                    draftId: dAddId,
+                    mobileNumber: isoMob,
+                    customerMobile: isoMob,
+                    isCustomerSession: true,
+                    operatorUid: 'test_suite_operator_uid'
+                }, isoHdr);
+                assert(loginAdd.body?.draftId === dAddId && loginAdd.body?.citizenProfile?.subService === 'ADD_MEMBER', `TEST 87.resumeExact: Resuming ${dAddId} loads ADD_MEMBER, not newer UPDATE_MOBILE`);
+
+                const pollAdd = await request('GET', `/api/chat/history?mobile=${isoMob}&draftId=${encodeURIComponent(dAddId)}`, null, isoHdr);
+                assert(pollAdd.body?.subService === 'ADD_MEMBER' && pollAdd.body?.subServiceData?.memberNameTam === 'குமரன் கி', `TEST 87.pollExact: Polling ${dAddId} stays ADD_MEMBER (got=${pollAdd.body?.subService})`);
+
+                // 2. Deleting dMobId (and even deleting plain 10-digit isoMob without ?all=true!) MUST NEVER delete sibling dAddId!
+                const delMobRes = await request('DELETE', `/api/drafts/${encodeURIComponent(dMobId)}?permanent=true`, null, isoHdr);
+                assert(delMobRes.status === 200 && delMobRes.body?.success === true, 'TEST 87.delSingle: Deleting UPDATE_MOBILE returns 200 OK');
+
+                await deleteCitizenDraft(isoMob, { permanent: true });
+                const checkAddAfter = await request('GET', `/api/drafts/${encodeURIComponent(dAddId)}`, null, isoHdr);
+                assert(
+                    checkAddAfter.status === 200 &&
+                    checkAddAfter.body?.draft?.subService === 'ADD_MEMBER' &&
+                    checkAddAfter.body?.draft?.subServiceData?.memberNameTam === 'குமரன் கி',
+                    'TEST 87.siblingSafe: Deleting sibling or bare mobile NEVER deletes ADD_MEMBER sibling draft'
+                );
+
+                await request('DELETE', `/api/drafts/${encodeURIComponent(dAddId)}?permanent=true`, null, isoHdr);
+                passedCount += 4;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

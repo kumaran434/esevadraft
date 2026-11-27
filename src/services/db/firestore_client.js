@@ -55,13 +55,13 @@ getActiveDraftsDir();
 const _deletedDraftFence = new Map();
 
 function isSpecificDraftId(key) {
-    return typeof key === 'string' && /^[0-9]{10}_[a-z0-9]+$/i.test(key.trim());
+    return typeof key === 'string' && /^[0-9]{10}_[a-z0-9_-]+$/i.test(key.trim());
 }
 
 function extractMobileFromDraftKey(key) {
     if (!key) return '';
     const s = String(key).trim();
-    const m = s.match(/^([0-9]{10})_[a-z0-9]+$/i);
+    const m = s.match(/^([0-9]{10})_[a-z0-9_-]+$/i);
     if (m) return m[1];
     if (s.startsWith('walkin_')) return s;
     const digits = s.replace(/\D/g, '');

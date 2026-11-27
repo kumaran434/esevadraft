@@ -543,9 +543,11 @@
             const rawKey = String(draftKeyOrMob || '').trim();
             if (!rawKey) return;
 
-            const knownDraft = allOperatorDrafts.find(d => (d.draftId || d.mobileNumber) === rawKey || d.mobileNumber === rawKey);
+            const isSpecificKey = /^[0-9]{10}_[a-z0-9_-]+$/i.test(rawKey);
+            const knownDraft = allOperatorDrafts.find(d => (d.draftId || d.mobileNumber) === rawKey)
+                || (!isSpecificKey ? allOperatorDrafts.find(d => d.mobileNumber === rawKey) : null);
             const mobileClean = (knownDraft?.mobileNumber || (rawKey.includes('_') ? rawKey.split('_')[0] : rawKey)).replace(/\D/g, '').slice(-10);
-            const targetDraftId = knownDraft?.draftId || rawKey;
+            const targetDraftId = isSpecificKey ? rawKey : (knownDraft?.draftId || rawKey);
             if (!mobileClean) return;
 
             window.lastSubService = null;
@@ -635,9 +637,11 @@
             const rawKey = String(draftKeyOrMob || '').trim();
             if (!rawKey) return;
 
-            const knownDraft = (allOperatorDrafts || []).find(d => (d.draftId || d.mobileNumber) === rawKey || d.mobileNumber === rawKey);
+            const isSpecificKey = /^[0-9]{10}_[a-z0-9_-]+$/i.test(rawKey);
+            const knownDraft = (allOperatorDrafts || []).find(d => (d.draftId || d.mobileNumber) === rawKey)
+                || (!isSpecificKey ? (allOperatorDrafts || []).find(d => d.mobileNumber === rawKey) : null);
             const mobileClean = (knownDraft?.mobileNumber || (rawKey.includes('_') ? rawKey.split('_')[0] : rawKey)).replace(/\D/g, '').slice(-10);
-            const targetDraftId = knownDraft?.draftId || rawKey;
+            const targetDraftId = isSpecificKey ? rawKey : (knownDraft?.draftId || rawKey);
             if (!mobileClean) return;
 
             window.lastSubService = null;

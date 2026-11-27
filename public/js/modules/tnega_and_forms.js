@@ -1,15 +1,17 @@
 // eSevaDraft Domain Module: tnega_and_forms.js
 
         async function deleteActiveCustomerDraft(forcedMob) {
+            const activeDraftId = (localStorage.getItem('eseva_active_draft_id') || '').trim();
             const mob = forcedMob || localStorage.getItem('eseva_active_customer_mobile') || (currentCitizenData && currentCitizenData.mobileNumber) || '';
+            const deleteKey = (forcedMob && /^[0-9]{10}_[a-z0-9_-]+$/i.test(String(forcedMob))) ? forcedMob : (activeDraftId || mob);
             const name = localStorage.getItem('eseva_active_customer_name') || currentCitizenData?.fullNameTam || currentCitizenData?.fullNameEng || 'வாடிக்கையாளர்';
 
-            if (!mob) {
+            if (!deleteKey) {
                 alert('செயலில் உள்ள வாடிக்கையாளர் வரைவு எதுவும் இல்லை.');
                 return;
             }
 
-            const confirmed = confirm(`வாடிக்கையாளர் "${name}" (+91 ${mob}) வரைவு விண்ணப்பத்தை முற்றிலும் நீக்க வேண்டுமா?\n\n(Do you want to permanently delete this customer draft?)`);
+            const confirmed = confirm(`வாடிக்கையாளர் "${name}" (+91 ${mob || deleteKey}) இந்த வரைவு விண்ணப்பத்தை மட்டும் நீக்க வேண்டுமா?\n\n(Delete ONLY this application draft?)`);
             if (!confirmed) return;
 
             try {
@@ -27,8 +29,8 @@
 
                 await fetch('/api/tnega/stop', { method: 'POST' }).catch(() => {});
 
-                // 3. Delete draft from server
-                const res = await fetch(`/api/drafts/${encodeURIComponent(mob)}`, {
+                // 3. Delete ONLY this specific draft from server (NEVER wipe all drafts for the mobile!)
+                const res = await fetch(`/api/drafts/${encodeURIComponent(deleteKey)}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -37,7 +39,7 @@
                     await fetch('/api/drafts/delete', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mobileNumber: mob })
+                        body: JSON.stringify({ draftId: deleteKey, mobileNumber: mob })
                     }).catch(() => {});
                 }
 

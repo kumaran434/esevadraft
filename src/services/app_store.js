@@ -651,12 +651,12 @@ async function listApps(operatorUid = null) {
 
     const isDesktopLocal = !process.env.K_SERVICE && !process.env.GAE_SERVICE;
     const firestore = getFirestoreInstance();
-    if ((!isDesktopLocal || drafts.length === 0) && isFirestoreAvailable() && firestore) {
+    if (isFirestoreAvailable() && firestore) {
         try {
             const col = firestore.collection(COLLECTION_NAME);
             const queryRef = normTarget ? col.where('operatorUid', '==', normTarget) : col;
             const snap = isDesktopLocal
-                ? await Promise.race([queryRef.get(), new Promise((_, rej) => setTimeout(() => rej(new Error('Cloud sync timeout')), 8000))])
+                ? await Promise.race([queryRef.get(), new Promise((_, rej) => setTimeout(() => rej(new Error('Cloud sync timeout')), 4500))])
                 : await queryRef.get();
             snap.forEach(doc => {
                 const d = doc.data();
@@ -718,24 +718,32 @@ async function deleteApp(keyOrMobile, options = {}) {
     if (!keyOrMobile) return false;
     const rawKey = String(keyOrMobile).trim();
     const isSingle = isSpecificDraftId(rawKey);
+    const wipeAllSiblings = !isSingle && options?.wipeAllSiblings === true;
     const cleanMob = extractMobileFromDraftKey(rawKey);
     const keysToClean = isSingle ? [rawKey] : Array.from(new Set([cleanMob, rawKey, `+91${cleanMob}`, `+91 ${cleanMob}`, `91${cleanMob}`].filter(Boolean)));
 
-    markDraftDeleted(keysToClean);
+    // Only fence the exact key being deleted unless explicit wipeAllSiblings is requested (NEVER fence sibling draftIds!)
+    markDraftDeleted(wipeAllSiblings ? keysToClean : [rawKey]);
     clearActiveDraftId(rawKey);
 
     try {
         const storageService = require('./storage_service');
         if (storageService && typeof storageService.purgeSession === 'function') {
-            for (const k of keysToClean) storageService.purgeSession(k);
+            if (wipeAllSiblings) {
+                for (const k of keysToClean) storageService.purgeSession(k);
+            } else {
+                storageService.purgeSession(rawKey);
+            }
         }
     } catch (_) {}
 
     const firestore = getFirestoreInstance();
     if (isFirestoreAvailable() && firestore) {
         const col = firestore.collection(COLLECTION_NAME);
-        for (const k of keysToClean) { try { await col.doc(k).delete(); } catch (_) {} }
-        if (!isSingle) {
+        for (const k of (wipeAllSiblings ? keysToClean : [rawKey])) {
+            try { await col.doc(k).delete(); } catch (_) {}
+        }
+        if (wipeAllSiblings) {
             try {
                 const snap = await col.where('mobileNumber', 'in', keysToClean.slice(0, 10)).get();
                 for (const doc of snap.docs) await doc.ref.delete().catch(() => {});
@@ -744,7 +752,7 @@ async function deleteApp(keyOrMobile, options = {}) {
     }
 
     if (isStorageAvailable() && !options?.preserveUploads) {
-        if (isSingle) await deleteStoragePrefix(`drafts/${rawKey}/`).catch(() => {});
+        if (isSingle || !wipeAllSiblings) await deleteStoragePrefix(`drafts/${rawKey}/`).catch(() => {});
         else if (cleanMob) {
             await deleteStoragePrefix(`drafts/${cleanMob}/`).catch(() => {});
             await deleteStoragePrefix(`citizens/${cleanMob}/`).catch(() => {});
@@ -755,8 +763,8 @@ async function deleteApp(keyOrMobile, options = {}) {
     const activeDraftsDir = getActiveDraftsDir();
     const activeUploadsDir = getActiveUploadsDir();
 
-    const filesToDelete = new Set(keysToClean.map(k => path.join(activeDraftsDir, `${k}.json`)));
-    if (!isSingle && cleanMob && fs.existsSync(activeDraftsDir)) {
+    const filesToDelete = new Set((wipeAllSiblings ? keysToClean : [rawKey]).map(k => path.join(activeDraftsDir, `${k}.json`)));
+    if (wipeAllSiblings && cleanMob && fs.existsSync(activeDraftsDir)) {
         for (const f of fs.readdirSync(activeDraftsDir)) {
             if (f.startsWith(`${cleanMob}_`) && f.endsWith('.json')) filesToDelete.add(path.join(activeDraftsDir, f));
         }
@@ -779,8 +787,8 @@ async function deleteApp(keyOrMobile, options = {}) {
     }
     for (const fp of filesToDelete) { if (fs.existsSync(fp)) { try { fs.unlinkSync(fp); } catch (_) {} } }
 
-    // Check remaining sibling drafts for this mobile & protect any physical files still referenced by siblings
-    const remainingSiblings = (isSingle && cleanMob && fs.existsSync(activeDraftsDir))
+    // ALWAYS check ALL remaining drafts for this mobile (both <mob>.json & <mob>_*.json) before deleting any upload file!
+    const remainingSiblings = (cleanMob && fs.existsSync(activeDraftsDir))
         ? fs.readdirSync(activeDraftsDir).filter(f => (f === `${cleanMob}.json` || f.startsWith(`${cleanMob}_`)) && f.endsWith('.json'))
         : [];
     const hasSiblings = remainingSiblings.length > 0;

@@ -14,7 +14,7 @@ const {
     deleteCitizenDraft
 } = require('../../firestore_db');
 const { saveCitizenProfile } = require('../../database');
-const { getActiveDraftsDir, isSpecificDraftId, extractMobileFromDraftKey, getActiveDraftIdForMobile, normalizeOperatorUid } = require('./db/firestore_client');
+const { getActiveDraftsDir, isSpecificDraftId, extractMobileFromDraftKey, getActiveDraftIdForMobile, setActiveDraftIdForMobile, normalizeOperatorUid } = require('./db/firestore_client');
 const { getInitialWelcomeMessage } = require('../core/chat_fsm');
 
 // In-memory sessions map (mobile/sessionId -> sessionState)
@@ -381,6 +381,7 @@ function resolveSessionForRequest({ draftId = '', mobile = '', operatorUid = nul
             const s = sessions.get(reqDraftId);
             const sOp = normalizeOperatorUid(s?.operatorUid);
             if (!normOp || !sOp || sOp === normOp) {
+                if (rawMob) setActiveDraftIdForMobile(rawMob, reqDraftId, normOp || sOp);
                 touchSession(reqDraftId);
                 return s;
             }
@@ -391,6 +392,7 @@ function resolveSessionForRequest({ draftId = '', mobile = '', operatorUid = nul
             return null;
         }
         if (normOp && !hOp) hydrated.operatorUid = normOp;
+        if (rawMob) setActiveDraftIdForMobile(rawMob, reqDraftId, normOp || hOp);
         return hydrated;
     }
 

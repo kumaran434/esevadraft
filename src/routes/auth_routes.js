@@ -386,7 +386,7 @@ router.post('/api/auth/login', async (req, res) => {
         sess.applicationPdfUrl = null;
     }
 
-    persistSessions();
+    persistSessions(sess);
 
     res.json({
         success: true,

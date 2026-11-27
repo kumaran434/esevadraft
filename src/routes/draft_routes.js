@@ -395,16 +395,17 @@ router.delete('/api/drafts/:mobileNumber', async (req, res) => {
     const draftKey = String(rawKey).trim();
     if (!draftKey) return res.status(400).json({ error: 'வரைவு அடையாளம் அல்லது மொபைல் எண் தேவை.' });
     const isTrash = req.query.trash === 'true' || req.body?.trash === true;
+    const wipeAllSiblings = req.query.all === 'true' || req.body?.all === true;
     const { isSpecificDraftId } = require('../services/db/firestore_client');
     const isSingleDraft = isSpecificDraftId(draftKey);
     const cleanDigits = isSingleDraft ? '' : draftKey.replace(/\D/g, '');
     try {
         if (isTrash) {
             await trashCitizenDraft(draftKey);
-            if (cleanDigits && cleanDigits !== draftKey) await trashCitizenDraft(cleanDigits).catch(() => {});
+            if (wipeAllSiblings && cleanDigits && cleanDigits !== draftKey) await trashCitizenDraft(cleanDigits).catch(() => {});
         } else {
-            await deleteCitizenDraft(draftKey, { permanent: true });
-            if (cleanDigits && cleanDigits !== draftKey) await deleteCitizenDraft(cleanDigits, { permanent: true }).catch(() => {});
+            await deleteCitizenDraft(draftKey, { permanent: true, wipeAllSiblings });
+            if (wipeAllSiblings && cleanDigits && cleanDigits !== draftKey) await deleteCitizenDraft(cleanDigits, { permanent: true, wipeAllSiblings: true }).catch(() => {});
         }
         if (sessions.has(draftKey)) sessions.delete(draftKey);
         if (cleanDigits && sessions.has(cleanDigits)) sessions.delete(cleanDigits);
