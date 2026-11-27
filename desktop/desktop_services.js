@@ -268,48 +268,78 @@ function checkRemoteVersionFallback(getMainWindow, getPromptShown, setPromptShow
         const { shell } = require('electron');
         const currentVer = (typeof app !== 'undefined' && app.getVersion) ? app.getVersion() : '1.1.24';
         const currentNum = parseSemver(currentVer);
+        const baseUrl = process.env.ESEVA_DEV_URL || 'https://esevadraft.in';
 
-        const req = https.get('https://api.github.com/repos/kumaran434/esevadraft/releases/latest', {
+        const promptDownload = (latestTag, dlUrl) => {
+            const latestNum = parseSemver(latestTag);
+            if (latestNum <= currentNum || getPromptShown()) return false;
+            setPromptShown(true);
+            const mainWindow = getMainWindow ? getMainWindow() : null;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                dialog.showMessageBox(mainWindow, {
+                    type: 'info',
+                    title: 'புதிய பதிப்பு வெளியாகியுள்ளது (New Update Available)',
+                    message: `eSevaDraft புதிய பதிப்பு (v${latestTag}) வெளியாகியுள்ளது! (தற்போதைய பதிப்பு: v${currentVer})`,
+                    detail: 'புதிய பதிப்பில் அனைத்து லாகின் மற்றும் ஆட்டோமேஷன் மேம்பாடுகளும் உள்ளன. இப்போதே பதிவிறக்கம் செய்து அப்டேட் செய்யவா?',
+                    buttons: ['📥 இப்போதே பதிவிறக்கு (Download Update)', 'பின்னர் (Later)'],
+                    defaultId: 0,
+                    cancelId: 1
+                }).then((result) => {
+                    if (result.response === 0) {
+                        shell.openExternal(dlUrl);
+                    }
+                });
+            }
+            return true;
+        };
+
+        const checkGitHubBackup = () => {
+            const gReq = https.get('https://api.github.com/repos/kumaran434/esevadraft/releases/latest', {
+                headers: { 'User-Agent': 'eSevaDraft-Desktop-Updater' },
+                timeout: 8000
+            }, (res) => {
+                if (res.statusCode !== 200) { res.resume(); return; }
+                let body = '';
+                res.on('data', c => { body += c; });
+                res.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        const latestTag = String(data.tag_name || '').replace(/^v/i, '');
+                        const exeAsset = Array.isArray(data.assets) ? data.assets.find(a => a.name && a.name.endsWith('.exe')) : null;
+                        const dlUrl = (exeAsset && exeAsset.browser_download_url) || `https://github.com/kumaran434/esevadraft/releases/download/v${latestTag}/eSevaDraft-Desktop-Setup-${latestTag}.exe`;
+                        promptDownload(latestTag, dlUrl);
+                    } catch (_) {}
+                });
+            });
+            gReq.on('error', () => {});
+            gReq.on('timeout', () => { gReq.destroy(); });
+        };
+
+        // Primary: Zero-rate-limit esevadraft.in/api/download/version endpoint; GitHub API only as backup
+        const req = https.get(`${baseUrl}/api/download/version`, {
             headers: { 'User-Agent': 'eSevaDraft-Desktop-Updater' },
             timeout: 8000
         }, (res) => {
             if (res.statusCode !== 200) {
                 res.resume();
-                return;
+                return checkGitHubBackup();
             }
             let body = '';
             res.on('data', c => { body += c; });
             res.on('end', () => {
                 try {
                     const data = JSON.parse(body);
-                    const latestTag = String(data.tag_name || '').replace(/^v/i, '');
-                    const latestNum = parseSemver(latestTag);
-                    if (latestNum > currentNum && !getPromptShown()) {
-                        setPromptShown(true);
-                        const mainWindow = getMainWindow ? getMainWindow() : null;
-                        if (mainWindow && !mainWindow.isDestroyed()) {
-                            const exeAsset = Array.isArray(data.assets) ? data.assets.find(a => a.name && a.name.endsWith('.exe')) : null;
-                            const dlUrl = (exeAsset && exeAsset.browser_download_url) || `https://github.com/kumaran434/esevadraft/releases/download/v${latestTag}/eSevaDraft-Desktop-Setup-${latestTag}.exe`;
-                            dialog.showMessageBox(mainWindow, {
-                                type: 'info',
-                                title: 'புதிய பதிப்பு வெளியாகியுள்ளது (New Update Available)',
-                                message: `eSevaDraft புதிய பதிப்பு (v${latestTag}) வெளியாகியுள்ளது! (தற்போதைய பதிப்பு: v${currentVer})`,
-                                detail: 'புதிய பதிப்பில் அனைத்து லாகின் மற்றும் ஆட்டோமேஷன் மேம்பாடுகளும் உள்ளன. இப்போதே பதிவிறக்கம் செய்து அப்டேட் செய்யவா?',
-                                buttons: ['📥 இப்போதே பதிவிறக்கு (Download Update)', 'பின்னர் (Later)'],
-                                defaultId: 0,
-                                cancelId: 1
-                            }).then((result) => {
-                                if (result.response === 0) {
-                                    shell.openExternal(dlUrl);
-                                }
-                            });
-                        }
-                    }
-                } catch (_) {}
+                    const latestTag = String(data.latestVersion || '').replace(/^v/i, '');
+                    if (!latestTag) return checkGitHubBackup();
+                    const dlUrl = `${baseUrl}/api/download/desktop-app`;
+                    promptDownload(latestTag, dlUrl);
+                } catch (_) {
+                    checkGitHubBackup();
+                }
             });
         });
-        req.on('error', () => {});
-        req.on('timeout', () => { req.destroy(); });
+        req.on('error', () => checkGitHubBackup());
+        req.on('timeout', () => { req.destroy(); checkGitHubBackup(); });
     } catch (_) {}
 }
 
@@ -384,7 +414,7 @@ function setupAutoUpdater(getMainWindow) {
                             if (typeof stopLocalServer === 'function') stopLocalServer();
                         } catch (_) {}
                         setImmediate(() => {
-                            autoUpdater.quitAndInstall(false, true);
+                            autoUpdater.quitAndInstall(true, true);
                         });
                     }
                 });

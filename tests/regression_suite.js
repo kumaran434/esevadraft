@@ -4713,7 +4713,7 @@ async function runTests() {
             assert(desktopPkg69.build?.nsis?.include === 'build/installer.nsh' && desktopPkg69.build?.nsis?.runAfterFinish === true, 'desktop/package.json wires build/installer.nsh and runAfterFinish');
             assert(installerNsh69.includes('!macro customCheckAppRunning') && installerNsh69.includes('taskkill.exe') && installerNsh69.includes('${APP_EXECUTABLE_FILENAME}'), 'installer.nsh cleanly closes running eSevaDraft Desktop instances before file replacement');
             assert(localSrvSrc69.includes('function stopLocalServer()') && localSrvSrc69.includes('closeAllConnections') && localSrvSrc69.includes('stopLocalServer,'), 'desktop/local_server.js exports stopLocalServer closing keep-alive HTTP connections');
-            assert(deskSvcSrc69.includes('disableWebInstaller = true') && deskSvcSrc69.includes("autoUpdater.on('download-progress'") && deskSvcSrc69.includes('global.__esevaUpdating = true') && deskSvcSrc69.includes('autoUpdater.quitAndInstall(false, true)'), 'desktop_services.js enforces full installer download, progress bar, stopLocalServer, and quitAndInstall(false, true)');
+            assert(deskSvcSrc69.includes('disableWebInstaller = true') && deskSvcSrc69.includes("autoUpdater.on('download-progress'") && deskSvcSrc69.includes('global.__esevaUpdating = true') && deskSvcSrc69.includes('autoUpdater.quitAndInstall(true, true)'), 'desktop_services.js enforces full installer download, progress bar, stopLocalServer, and silent quitAndInstall(true, true)');
             assert(deskMainSrc69.includes('!global.__esevaUpdating') && deskMainSrc69.includes('stopLocalServer()'), 'desktop/main.js stops local server and skips 1200ms hard process.exit during active updater handoff');
             assert(firebaseCfg69.includes(`eSevaDraft-Desktop-Setup-${rootPkg69.version}.exe`), 'firebase.json redirect points to current hyphenated installer release');
 
@@ -6629,6 +6629,21 @@ async function runTests() {
                 );
 
                 await request('DELETE', `/api/drafts/${encodeURIComponent(dAddId)}?permanent=true`, null, isoHdr);
+                passedCount += 4;
+            }
+
+            // [TEST 88] 🔄 Auto-Updater, Direct Download Links & latest.yml Release Pipeline Integrity
+            console.log('\n[TEST 88] 🔄 Auto-Updater Silent Install, Zero-Rate-Limit Version Check & Release Manifest Check...');
+            {
+                const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'desktop_services.js'), 'utf8');
+                const pubRelSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'publish_release.js'), 'utf8');
+                const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+
+                assert(svcSrc.includes('/api/download/version'), 'TEST 88.verEndpoint: Auto-updater fallback uses esevadraft.in/api/download/version without GitHub 403 rate limit');
+                assert(svcSrc.includes('quitAndInstall(true, true)'), 'TEST 88.silentQuitInstall: Auto-updater uses silent quitAndInstall(true, true) for effortless background upgrade');
+                assert(pubRelSrc.includes('latest.yml') && pubRelSrc.includes('.blockmap'), 'TEST 88.releaseAssets: publish_release.js uploads latest.yml and .blockmap alongside .exe');
+                assert(!htmlSrc.includes('href="/api/download/desktop-app" target="_blank"'), 'TEST 88.directDl: Web download links avoid popup-blocked target=_blank');
+
                 passedCount += 4;
             }
 
