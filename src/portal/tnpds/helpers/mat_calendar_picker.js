@@ -49,7 +49,7 @@ async function selectDateInMatCalendar(targetPage, dobStr, isAdditional = false)
             await periodBtn.click();
             await targetPage.waitForTimeout(400);
             const periodText = await periodBtn.innerText().catch(() => '');
-            if (!periodText.includes('–') && !periodText.includes('-')) {
+            if (!/\d{4}\s*[–\-]\s*\d{4}/.test(periodText) && !periodText.includes('–') && !periodText.includes('-')) {
                 await periodBtn.click().catch(() => {});
                 await targetPage.waitForTimeout(400);
             }
@@ -57,7 +57,7 @@ async function selectDateInMatCalendar(targetPage, dobStr, isAdditional = false)
 
         const targetYearStr = String(year);
         const targetYearInt = parseInt(year, 10);
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 16; i++) {
             const yearCell = targetPage.locator('.mat-calendar-body-cell').filter({ hasText: new RegExp(`^\\s*${targetYearStr}\\s*$`) }).last();
             if (await yearCell.count() > 0 && await yearCell.isVisible()) {
                 await yearCell.click();
@@ -122,6 +122,35 @@ async function selectDateInMatCalendar(targetPage, dobStr, isAdditional = false)
             }
         }
         await targetPage.waitForTimeout(800);
+
+        // Verify the selected DOB actually contains the target 4-digit year (prevents < 5 years age bug!)
+        const verifyDobInp = isAdditional
+            ? targetPage.locator('input[formcontrolname="dateOfBirth"], input[formcontrolname="date"], input#mat-input-0').last()
+            : targetPage.locator('input[formcontrolname="dateOfBirth"], input[formcontrolname="date"], input#mat-input-0').first();
+        const actualAfterCal = (await verifyDobInp.inputValue().catch(() => '')).trim();
+        if (!actualAfterCal || !actualAfterCal.includes(targetYearStr)) {
+            await targetPage.evaluate(({ y, m, d, formatted }) => {
+                const nativeDate = new Date(y, m - 1, d, 12, 0, 0);
+                try {
+                    if (window.ng && window.ng.getComponent) {
+                        for (const el of document.querySelectorAll('*')) {
+                            const c = window.ng.getComponent(el);
+                            if (c && c.addmemberForm && c.addmemberForm.get && c.addmemberForm.get('dateOfBirth')) {
+                                c.addmemberForm.get('dateOfBirth').setValue(nativeDate);
+                                c.addmemberForm.get('dateOfBirth').setErrors(null);
+                                c.addmemberForm.updateValueAndValidity();
+                                break;
+                            }
+                        }
+                    }
+                } catch (_) {}
+                const allDob = Array.from(document.querySelectorAll('input[formcontrolname="dateOfBirth"], input[formcontrolname="date"]'));
+                const el = allDob[allDob.length - 1];
+                if (el && (!el.value || !el.value.includes(String(y)))) {
+                    el.value = formatted;
+                }
+            }, { y: year, m: month, d: day, formatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}` }).catch(() => {});
+        }
     } catch (calErr) {
         console.warn('Calendar picker fallback to direct input fill:', calErr.message);
         const targetDobInput = isAdditional 

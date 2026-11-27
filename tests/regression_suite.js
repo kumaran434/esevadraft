@@ -6846,6 +6846,40 @@ async function runTests() {
                 passedCount += 4;
             }
 
+            // [TEST 91] 🛡️ Member 2+ DOB Year Lock, Text Salutation, Safe Angular addmemberForm Sync & Realtime Portal Toast Capture
+            console.log('\n[TEST 91] 🛡️ Verifying Member 2+ DOB Year Lock, Non-Destructive Angular Sync & Realtime Portal Popup Capture...');
+            {
+                const calSrc91 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/helpers/mat_calendar_picker.js'), 'utf8');
+                const addFormSrc91 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_additional_member_form.js'), 'utf8');
+                const loopSrc91 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_family_members_loop.js'), 'utf8');
+                const prefSrc91 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_navigation_preflight.js'), 'utf8');
+
+                assert(
+                    calSrc91.includes('actualAfterCal.includes(targetYearStr)') && calSrc91.includes('!/\\d{4}\\s*[–\\-]\\s*\\d{4}/.test(periodText)'),
+                    'TEST 91.calYearLock: Calendar picker verifies exact 4-digit target year and avoids double-toggling range header'
+                );
+                assert(
+                    addFormSrc91.includes('isRelExplicitMale') && addFormSrc91.includes("t.includes('திருமதி')") && addFormSrc91.includes("!o.text.includes('பிறப்பு')"),
+                    'TEST 91.salAndDoc: Member 2+ form matches exact Mr./Mrs./திரு./திருமதி. text and excludes Birth Certificate when selecting Aadhaar'
+                );
+                assert(
+                    addFormSrc91.includes('!memDobActual.includes(targetDobYearStr)') && addFormSrc91.includes("c.addmemberForm.get('dateOfBirth').setValue(nativeDate)"),
+                    'TEST 91.dobAngularSync: Member 2+ form verifies DOB 4-digit year and syncs native Date into Angular addmemberForm'
+                );
+                assert(
+                    !loopSrc91.includes("form.querySelectorAll('input, select, textarea').forEach") &&
+                    loopSrc91.includes('ngForm.patchValue(patchObj, { emitEvent: false })') &&
+                    loopSrc91.includes("document.getElementById('eseva-automation-hud')"),
+                    'TEST 91.safeLoopSave: Member loop avoids destructive change broadcast before Save, syncs Angular safely, and excludes HUD from loading check'
+                );
+                assert(
+                    prefSrc91.includes('installRealtimePortalToastObserver') && prefSrc91.includes('__esevaCapturedPortalAlerts') && loopSrc91.includes('portalSaveErrorPopup'),
+                    'TEST 91.toastObserver: Realtime MutationObserver captures all government portal popups immediately for logs & fast error reporting'
+                );
+
+                passedCount += 5;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

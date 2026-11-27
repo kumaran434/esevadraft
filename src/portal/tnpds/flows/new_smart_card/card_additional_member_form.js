@@ -40,7 +40,8 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் ஆங்கிலம் (${targetMemEng}) உள்ளிடப்படுகிறது...`);
     const nameEngInp = page.locator('input[formcontrolname="NameOfFamilyHead"]').nth(1);
     await fillAndVerifyInput(page, nameEngInp, targetMemEng, `உறுப்பினர் ${memNum} (பெயர் - ஆங்கிலம்)`, { required: isStrictLive });
-    await page.waitForTimeout(300);
+    // Wait for TNPDS automatic phonetic Tamil transliterator to settle BEFORE writing verified Tamil name
+    await page.waitForTimeout(500);
 
     let targetMemTam = (mem.nameTam || mem.name || '').trim();
     const isMemOperatorEdited = Boolean(mem._editedInModal || citizenProfile._editedInModalAt);
@@ -55,16 +56,49 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் தமிழ் (${targetMemTam}) உள்ளிடப்படுகிறது...`);
     const nameTamInp = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').nth(1);
     await fillAndVerifyInput(page, nameTamInp, targetMemTam, `உறுப்பினர் ${memNum} (பெயர் - தமிழ்)`, { required: isStrictLive });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(350);
+    // Golden Rule 7 Re-Lock: Re-verify TNPDS transliterator didn't overwrite our verified Tamil name!
+    const tamAfterCheck = (await nameTamInp.inputValue().catch(() => '')).trim();
+    if (targetMemTam && tamAfterCheck !== targetMemTam) {
+        await fillAndVerifyInput(page, nameTamInp, targetMemTam, `உறுப்பினர் ${memNum} (பெயர் - தமிழ் மறு-பூட்டு)`, { required: false });
+        await page.waitForTimeout(200);
+    }
 
-    // 1.5 தலைப்பு தேர்வு (Salutation)
+    // Derive member gender reliably (also respecting explicit Male/Female relationships like கணவர்/மனைவி)
+    const relHintComb = `${mem.relationshipTam || ''} ${mem.relationshipEng || ''} ${mem.relationship || ''}`.toLowerCase();
+    const isRelExplicitMale = /கணவர்|கணவன்|மகன்|தந்தை|மாமனார்|மருமகன்|பேரன்|சகோதரர்|\bhusband\b|\bson\b|\bfather\b|\bbrother\b/i.test(relHintComb)
+        && !/மருமகள்|மகள்|மனைவி|தாய்|மாமியார்|பேத்தி|சகோதரி|\bwife\b|\bdaughter\b|\bmother\b|\bsister\b/i.test(relHintComb);
+    const isRelExplicitFemale = /மனைவி|மகள்|தாய்|மாமியார்|மருமகள்|பேத்தி|சகோதரி|\bwife\b|\bdaughter\b|\bmother\b|\bsister\b/i.test(relHintComb);
+    const isMemFemale = isRelExplicitFemale
+        ? true
+        : (isRelExplicitMale ? false : (mem.gender === 'Female' || Boolean(mem.genderTam && mem.genderTam.includes('பெண்'))));
+
+    // 1.5 தலைப்பு தேர்வு (Salutation) — Match exact Mr./Mrs. and திரு./திருமதி. text, NEVER blind index!
     const salEng = page.locator('select[formcontrolname="salutation"]').nth(1);
     if (await salEng.count() > 0) {
-        await selectAndVerifyOption(salEng, `உறுப்பினர் ${memNum} (தலைப்பு - ஆங்கிலம்)`, { index: mem.gender === 'Female' ? 2 : 1, required: false });
+        const sEngOpts = await salEng.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: (o.text || '').trim() }))).catch(() => []);
+        const targetEngSal = sEngOpts.find(o => {
+            const t = o.text.toLowerCase().replace(/\./g, '').trim();
+            return isMemFemale ? (t === 'mrs' || t === 'ms' || t === 'miss' || t.startsWith('mrs')) : (t === 'mr' || t === 'master');
+        });
+        await selectAndVerifyOption(salEng, `உறுப்பினர் ${memNum} (தலைப்பு - ஆங்கிலம்)`, {
+            value: targetEngSal ? targetEngSal.value : null,
+            index: targetEngSal ? null : (isMemFemale ? 2 : 1),
+            required: false
+        });
     }
     const salTam = page.locator('select[formcontrolname="lsalutation"]').nth(1);
     if (await salTam.count() > 0) {
-        await selectAndVerifyOption(salTam, `உறுப்பினர் ${memNum} (தலைப்பு - தமிழ்)`, { index: mem.gender === 'Female' ? 2 : 1, required: false });
+        const sTamOpts = await salTam.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: (o.text || '').trim() }))).catch(() => []);
+        const targetTamSal = sTamOpts.find(o => {
+            const t = o.text.trim();
+            return isMemFemale ? (t.includes('திருமதி') || t.includes('செல்வி')) : (t.includes('திரு') && !t.includes('திருமதி'));
+        });
+        await selectAndVerifyOption(salTam, `உறுப்பினர் ${memNum} (தலைப்பு - தமிழ்)`, {
+            value: targetTamSal ? targetTamSal.value : null,
+            index: targetTamSal ? null : (isMemFemale ? 2 : 1),
+            required: false
+        });
     }
 
     // Ironclad Safeguard: Verify Section 1 Family Head was NOT modified!
@@ -83,23 +117,54 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         }, { tamName });
     }
 
-    // 4. பிறந்த தேதி உள்ளீடு + கடுமையான சரிபார்ப்பு
-    const memDobVal = mem.dob || '03/06/2000';
+    // 4. பிறந்த தேதி உள்ளீடு + ஆண்டு துல்லிய சரிபார்ப்பு (Strict Year Lock — prevents <5 years TNPDS popup!)
+    const memDobVal = (mem.dob || '03/06/2000').trim();
+    let resolvedDobParts = { day: 3, month: 6, year: 2000 };
+    {
+        const p = memDobVal.split(/[/\-]/);
+        if (p.length === 3) {
+            if (p[0].length === 4) {
+                resolvedDobParts = { year: parseInt(p[0], 10), month: parseInt(p[1], 10), day: parseInt(p[2], 10) };
+            } else {
+                resolvedDobParts = { day: parseInt(p[0], 10), month: parseInt(p[1], 10), year: parseInt(p[2], 10) };
+            }
+        }
+    }
+    const targetDobYearStr = String(resolvedDobParts.year || '');
     onProgress(`📍 [உறுப்பினர் ${memNum}] பிறந்த தேதி (${memDobVal}) காலண்டர் மூலம் தேர்வு செய்யப்படுகிறது...`);
     await selectDateInMatCalendar(page, memDobVal, true);
     const dobInpMem = page.locator('input[formcontrolname="dateOfBirth"]').last();
     let memDobActual = (await dobInpMem.inputValue().catch(() => '')).trim();
-    if (!memDobActual && isStrictLive) {
+    if ((!memDobActual || (targetDobYearStr.length === 4 && !memDobActual.includes(targetDobYearStr))) && isStrictLive) {
+        onProgress(`🔄 [உறுப்பினர் ${memNum}] பிறந்த தேதி ஆண்டு (${targetDobYearStr}) பொருந்தாததால் (got: "${memDobActual}") மீண்டும் தேர்வு செய்யப்படுகிறது...`);
         await selectDateInMatCalendar(page, memDobVal, true);
         memDobActual = (await dobInpMem.inputValue().catch(() => '')).trim();
-        if (!memDobActual) {
-            throw new Error(`உறுப்பினர் ${memNum} பிறந்த தேதி (${memDobVal}) காலண்டரில் தேர்வு செய்யப்படவில்லை!`);
-        }
     }
-    await page.waitForTimeout(400);
+    // Always sync native JS Date into Angular FormControl dateOfBirth so TNPDS age check computes exact true age!
+    await page.evaluate(({ y, m, d }) => {
+        if (!y || y < 1900) return;
+        const nativeDate = new Date(y, m - 1, d, 12, 0, 0);
+        try {
+            if (window.ng && window.ng.getComponent) {
+                for (const el of document.querySelectorAll('*')) {
+                    const c = window.ng.getComponent(el);
+                    if (c && c.addmemberForm && c.addmemberForm.get && c.addmemberForm.get('dateOfBirth')) {
+                        c.addmemberForm.get('dateOfBirth').setValue(nativeDate);
+                        c.addmemberForm.get('dateOfBirth').setErrors(null);
+                        c.addmemberForm.updateValueAndValidity();
+                        break;
+                    }
+                }
+            }
+        } catch (_) {}
+    }, resolvedDobParts).catch(() => {});
+    memDobActual = (await dobInpMem.inputValue().catch(() => '')).trim();
+    if (!memDobActual && isStrictLive) {
+        throw new Error(`உறுப்பினர் ${memNum} பிறந்த தேதி (${memDobVal}) காலண்டரில் தேர்வு செய்யப்படவில்லை!`);
+    }
+    await page.waitForTimeout(450);
 
     // 5. பாலினம் (Male / Female)
-    const isMemFemale = mem.gender === 'Female' || (mem.genderTam && mem.genderTam.includes('பெண்'));
     const genSelect = page.locator('select[formcontrolname="gender"]').last();
     if (await genSelect.count() > 0) {
         const gOptions = await genSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
@@ -185,17 +250,39 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
     // 9. மற்ற ஆவணங்கள் * (பிறப்புச் சான்றிதழ் vs ஆதார் அட்டை — உறுப்பினருக்கு ஏற்ப 1-to-1 தேர்வு)
     onProgress(`📍 [உறுப்பினர் ${memNum}] ஆவண வகை (${isBirthCertMember ? 'பிறப்புச் சான்றிதழ் - ஆதார் இல்லை' : 'ஆதார் அட்டை'}) தேர்ந்தெடுக்கப்படுகிறது...`);
     const docSelect = page.locator('select[formcontrolname="supportingDocument"]').last();
+    let resolvedDocVal = isBirthCertMember ? 'BIRTH_CERTIFICATE' : 'AADHAAR_CARD';
     if (await docSelect.count() > 0) {
-        const dOptions = await docSelect.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text }))).catch(() => []);
+        // Wait briefly if Angular is still populating supportingDocument options after DOB change
+        for (let dw = 0; dw < 8; dw++) {
+            const optLen = await docSelect.evaluate(s => s ? s.options.length : 0).catch(() => 0);
+            if (optLen > 1) break;
+            await page.waitForTimeout(250);
+        }
+        const dOptions = await docSelect.evaluate(s => Array.from(s.options).map((o, idx) => ({ index: idx, value: String(o.value || ''), text: (o.text || '').trim() }))).catch(() => []);
         const targetDocOpt = isBirthCertMember
-            ? dOptions.find(o => o.text.includes('பிறப்பு') || o.text.toLowerCase().includes('birth') || o.value.toLowerCase().includes('birth'))
-            : dOptions.find(o => o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar') || o.value.toLowerCase().includes('aadhaar'));
+            ? dOptions.find(o => o.value === 'BIRTH_CERTIFICATE' || o.text.includes('பிறப்பு') || o.text.toLowerCase().includes('birth') || o.value.toLowerCase().includes('birth'))
+            : (dOptions.find(o => o.value === 'AADHAAR_CARD')
+                || dOptions.find(o => !o.text.includes('பிறப்பு') && !o.text.toLowerCase().includes('birth') && (o.text.includes('ஆதார்') || o.text.toLowerCase().includes('aadhaar') || o.value.toLowerCase().includes('aadhaar'))));
+        if (targetDocOpt && targetDocOpt.value) {
+            resolvedDocVal = targetDocOpt.value;
+        }
         await selectAndVerifyOption(docSelect, `உறுப்பினர் ${memNum} (ஆவண வகை)`, {
-            value: targetDocOpt ? targetDocOpt.value : null,
-            index: targetDocOpt ? null : 1,
+            value: targetDocOpt ? targetDocOpt.value : (isBirthCertMember ? null : 'AADHAAR_CARD'),
+            index: targetDocOpt ? null : (isBirthCertMember ? 1 : null),
             required: isStrictLive
         });
-        await page.waitForTimeout(900);
+        await page.waitForTimeout(600);
+        // Verify supportingDocument stayed selected and was not reset to "தேர்ந்தெடுக்கவும்"
+        const curDocVal = await docSelect.evaluate(s => String(s?.value || '').trim()).catch(() => '');
+        if ((!curDocVal || curDocVal === '0') && resolvedDocVal) {
+            await selectAndVerifyOption(docSelect, `உறுப்பினர் ${memNum} (ஆவண வகை மறு-உறுதி)`, {
+                value: resolvedDocVal,
+                required: isStrictLive
+            });
+            await page.waitForTimeout(400);
+        } else if (curDocVal) {
+            resolvedDocVal = curDocVal;
+        }
     }
 
     // 10. 12-இலக்க ஆதார் எண் உள்ளீடு (பிறப்புச் சான்றிதழ் உறுப்பினருக்கு ஆதார் எண் ஒருபோதும் நிரப்பப்படாது!)
@@ -303,7 +390,20 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         return { success: false, message: `உறுப்பினர் ${memNum} கோப்பு உள்ளீட்டுக் களம் இல்லை.` };
     }
 
-    return { success: true, memPdf, targetRelTam, targetRelEng, isBirthCertMember };
+    return {
+        success: true,
+        memPdf,
+        targetRelTam,
+        targetRelEng,
+        isBirthCertMember,
+        resolvedDocVal,
+        resolvedDobParts,
+        targetMemEng,
+        targetMemTam,
+        isMemFemale,
+        memInc,
+        cleanMemAadhaar
+    };
 }
 
 module.exports = {

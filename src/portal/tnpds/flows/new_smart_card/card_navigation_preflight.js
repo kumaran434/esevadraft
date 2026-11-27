@@ -4,20 +4,100 @@
 const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('../../../../utils/bilingual_helper');
 const seenToasts = new Set();
 
-async function scanAndBroadcastToasts(page, onProgress = () => {}, logDiag = () => {}) {
+const PORTAL_ALERT_SELECTORS = [
+    '#toast-container .toast',
+    '#toast-container .toast-message',
+    '.toast',
+    '.toast-message',
+    '.toast-error',
+    '.toast-warning',
+    '.toast-info',
+    '.p-toast',
+    '.p-toast-message',
+    '.p-toast-detail',
+    '.p-dialog .p-dialog-content',
+    '.ui-growl',
+    '.ui-growl-message',
+    '.mat-snack-bar-container',
+    '.alert',
+    '.alert-danger',
+    '.alert-warning',
+    '.swal2-popup',
+    'div[role="alert"]'
+].join(', ');
+
+async function installRealtimePortalToastObserver(page) {
     if (!page || page.isClosed()) return;
-    try {
-        const toastElements = await page.locator('.p-toast, .p-toast-message, .toast, .ui-growl, .ui-growl-message, .mat-snack-bar-container, .alert, .swal2-popup, div[role="alert"]').all();
-        const currentlyVisible = new Set();
-        for (const el of toastElements) {
-            const text = (await el.innerText()).trim();
-            if (text && text.length > 3) {
-                currentlyVisible.add(text);
-                if (!seenToasts.has(text)) {
-                    seenToasts.add(text);
-                    logDiag(0, 'portal_alert', text);
-                    onProgress(`📢 **அரசு இணையதள அறிவிப்பு (Toast Message):**\n"${text}"`);
+    await page.evaluate((sel) => {
+        try {
+            window.__esevaCapturedPortalAlerts = window.__esevaCapturedPortalAlerts || [];
+            if (window.__esevaToastObserverInstalled) return;
+            window.__esevaToastObserverInstalled = true;
+            const recordNode = (node) => {
+                if (!node || node.nodeType !== 1) return;
+                if (node.id === 'eseva-automation-hud' || (node.closest && node.closest('#eseva-automation-hud'))) return;
+                const matches = [];
+                if (node.matches && node.matches(sel)) matches.push(node);
+                if (node.querySelectorAll) {
+                    node.querySelectorAll(sel).forEach(el => matches.push(el));
                 }
+                for (const el of matches) {
+                    if (el.id === 'eseva-automation-hud' || (el.closest && el.closest('#eseva-automation-hud'))) continue;
+                    const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (txt && txt.length > 3) {
+                        const last = window.__esevaCapturedPortalAlerts[window.__esevaCapturedPortalAlerts.length - 1];
+                        if (!last || last.text !== txt || (Date.now() - last.at) > 4000) {
+                            window.__esevaCapturedPortalAlerts.push({ text: txt.slice(0, 400), at: Date.now() });
+                            if (window.__esevaCapturedPortalAlerts.length > 40) {
+                                window.__esevaCapturedPortalAlerts.shift();
+                            }
+                        }
+                    }
+                }
+            };
+            const obs = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.addedNodes && m.addedNodes.length) {
+                        m.addedNodes.forEach(recordNode);
+                    }
+                    if (m.type === 'characterData' && m.target && m.target.parentElement) {
+                        recordNode(m.target.parentElement);
+                    }
+                }
+            });
+            obs.observe(document.body || document.documentElement, { childList: true, subtree: true, characterData: true });
+        } catch (_) {}
+    }, PORTAL_ALERT_SELECTORS).catch(() => {});
+}
+
+async function scanAndBroadcastToasts(page, onProgress = () => {}, logDiag = () => {}) {
+    if (!page || page.isClosed()) return [];
+    const newlyCaptured = [];
+    try {
+        const snapshot = await page.evaluate((sel) => {
+            const drained = Array.isArray(window.__esevaCapturedPortalAlerts)
+                ? window.__esevaCapturedPortalAlerts.splice(0, window.__esevaCapturedPortalAlerts.length).map(x => x.text).filter(Boolean)
+                : [];
+            const visible = [];
+            const els = Array.from(document.querySelectorAll(sel));
+            for (const el of els) {
+                if (el.id === 'eseva-automation-hud' || (el.closest && el.closest('#eseva-automation-hud'))) continue;
+                const st = window.getComputedStyle(el);
+                if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') continue;
+                const txt = (el.innerText || '').replace(/\s+/g, ' ').trim();
+                if (txt && txt.length > 3) visible.push(txt.slice(0, 400));
+            }
+            return { drained, visible };
+        }, PORTAL_ALERT_SELECTORS).catch(() => ({ drained: [], visible: [] }));
+
+        const currentlyVisible = new Set(snapshot.visible || []);
+        const combined = [...(snapshot.drained || []), ...(snapshot.visible || [])];
+        for (const text of combined) {
+            if (text && text.length > 3 && !seenToasts.has(text)) {
+                seenToasts.add(text);
+                newlyCaptured.push(text);
+                logDiag(0, 'portal_alert', text);
+                onProgress(`📢 **அரசு இணையதள அறிவிப்பு (Toast Message):**\n"${text}"`);
             }
         }
         // Prune dismissed toasts so repeat OTP/portal alerts in subsequent attempts are ALWAYS logged!
@@ -27,6 +107,7 @@ async function scanAndBroadcastToasts(page, onProgress = () => {}, logDiag = () 
             }
         }
     } catch (_) {}
+    return newlyCaptured;
 }
 
 async function navigateAndPrepareForm(page, onProgress = () => {}, sharedContext = {}, logDiag = () => {}) {
@@ -155,6 +236,7 @@ function sanitizeNewCardProfile(citizenProfile) {
 
 module.exports = {
     seenToasts,
+    installRealtimePortalToastObserver,
     scanAndBroadcastToasts,
     navigateAndPrepareForm,
     sanitizeNewCardProfile
