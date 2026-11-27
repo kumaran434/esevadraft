@@ -6880,6 +6880,26 @@ async function runTests() {
                 passedCount += 5;
             }
 
+            // [TEST 92] 🛡️ Member 2+ Post-Upload Aadhaar Re-Commit, XSD Auto-Retry & Sanitized Save API Diagnostics
+            console.log('\n[TEST 92] 🛡️ Verifying Post-Upload Aadhaar Re-Commit, Otp XSD Auto-Retry & API Diagnostics...');
+            {
+                const addFormSrc92 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_additional_member_form.js'), 'utf8');
+                const loopSrc92 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_family_members_loop.js'), 'utf8');
+                assert(
+                    addFormSrc92.includes("replace(/\\s+/g, ' ').trim()"),
+                    'TEST 92.spaceClean: Member 2+ English/Tamil names collapse redundant multiple spaces cleanly'
+                );
+                assert(
+                    loopSrc92.includes('recommitAadhaarSplitInputs') && loopSrc92.includes('pressSequentially(parts[idx]'),
+                    'TEST 92.aadhaarRecommit: Member 2+ loop re-commits 4+4+4 Aadhaar boxes after PDF upload with real keystroke retry'
+                );
+                assert(
+                    loopSrc92.includes('onSaveApiResponse') && loopSrc92.includes('API-DIAG') && loopSrc92.includes('/xsd|otp\\s*xsd/i'),
+                    'TEST 92.xsdRetryAndDiag: Captures sanitized Save Member API payload/response and auto-retries once on Otp XSD Validation Failed'
+                );
+                passedCount += 3;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

@@ -35,15 +35,15 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
 
     const isStrictLive = !isMockSandboxMode;
 
-    // 2. பெயர் (ஆங்கிலம்) & 3. பெயர் (தமிழில்) கடுமையான சரிபார்ப்பு (Strict Step Gate)
-    const targetMemEng = (mem.nameEng || mem.name || '').trim();
+    // 2. பெயர் (ஆங்கிலம்) & 3. பெயர் (தமிழில்) கடுமையான சரிபார்ப்பு (Strict Step Gate — collapse multi-spaces!)
+    const targetMemEng = (mem.nameEng || mem.name || '').replace(/\s+/g, ' ').trim();
     onProgress(`📍 [உறுப்பினர் ${memNum}] பெயர் ஆங்கிலம் (${targetMemEng}) உள்ளிடப்படுகிறது...`);
     const nameEngInp = page.locator('input[formcontrolname="NameOfFamilyHead"]').nth(1);
     await fillAndVerifyInput(page, nameEngInp, targetMemEng, `உறுப்பினர் ${memNum} (பெயர் - ஆங்கிலம்)`, { required: isStrictLive });
     // Wait for TNPDS automatic phonetic Tamil transliterator to settle BEFORE writing verified Tamil name
     await page.waitForTimeout(500);
 
-    let targetMemTam = (mem.nameTam || mem.name || '').trim();
+    let targetMemTam = (mem.nameTam || mem.name || '').replace(/\s+/g, ' ').trim();
     const isMemOperatorEdited = Boolean(mem._editedInModal || citizenProfile._editedInModalAt);
     const memHasBareLatinInit = /(?:^|\s|\.)[A-Za-z](?:\.|\s|$)/.test(targetMemTam);
     if (targetMemEng && targetMemTam) {

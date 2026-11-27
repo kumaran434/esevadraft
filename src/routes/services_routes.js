@@ -156,15 +156,15 @@ router.get('/api/download/desktop-app', (req, res) => {
             return res.download(path.join(distDir, latestExe), latestExe);
         }
     }
-    let latestVer = '1.1.52';
-    try { latestVer = require('../../package.json').version || '1.1.52'; } catch (_) {}
+    let latestVer = '1.1.53';
+    try { latestVer = require('../../package.json').version || '1.1.53'; } catch (_) {}
     return res.redirect(`https://github.com/kumaran434/esevadraft/releases/download/v${latestVer}/eSevaDraft-Desktop-Setup-${latestVer}.exe`);
 });
 
 // 8. GET /api/download/version - Returns latest available desktop application version info
 router.get('/api/download/version', (req, res) => {
-    let latestVer = '1.1.52';
-    try { latestVer = require('../../package.json').version || '1.1.52'; } catch (_) {}
+    let latestVer = '1.1.53';
+    try { latestVer = require('../../package.json').version || '1.1.53'; } catch (_) {}
     res.json({
         success: true,
         latestVersion: latestVer,
