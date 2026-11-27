@@ -103,11 +103,19 @@ async function startTnpdsRationCardFlow(citizenProfile, onProgress = () => {}, o
         rawOnProgress(msg);
         if (page && !page.isClosed()) {
             const msgStr = typeof msg === 'string' ? msg : '';
-            const isError = /கடும் பூட்டு|தோல்வி|நிறுத்தப்பட்டது|உறுதி செய்யப்படவில்லை|did not match|\btxn\b|பிழை|error|failed|🛑/i.test(msgStr);
-            const isWarning = !isError && (msgStr.includes('OTP') || msgStr.includes('கட்டத்தைத் திக்') || msgStr.includes('⚠️') || msgStr.includes('⏳'));
-            const isApproval = msgStr.includes('ஒப்புதல்') || msgStr.includes('Approval');
-            const hudType = isError ? 'error' : (isApproval ? 'approval' : (isWarning ? 'warning' : 'info'));
-            const hudTitle = isError ? '🔴 TNPDS பிழை / நிறுத்தம்' : '⚡ TNPDS நேரலை';
+            const isCopilotPause = msgStr.includes('Co-Pilot காத்திருப்பு');
+            const isCopilotResume = msgStr.includes('Co-Pilot தொடர்கிறது');
+            const isApproval = msgStr.includes('Pre-Submit Human Gate') || msgStr.includes('மனிதப் பூட்டு') || msgStr.includes('ஒப்புதல்') || msgStr.includes('Approval');
+            const isError = !isCopilotPause && !isCopilotResume && !isApproval && /கடும் பூட்டு|தோல்வி|நிறுத்தப்பட்டது|உறுதி செய்யப்படவில்லை|did not match|\btxn\b|பிழை|error|failed|🛑/i.test(msgStr);
+            const isWarning = isCopilotPause || (!isError && !isCopilotResume && (msgStr.includes('OTP') || msgStr.includes('கட்டத்தைத் திக்') || msgStr.includes('⚠️') || msgStr.includes('⏳')));
+            const hudType = isCopilotResume ? 'success' : (isError ? 'error' : (isApproval ? 'approval' : (isWarning ? 'warning' : 'info')));
+            const hudTitle = isCopilotPause
+                ? '🤝 Co-Pilot காத்திருப்பு'
+                : (isCopilotResume
+                    ? '✅ Co-Pilot தொடர்கிறது'
+                    : (isApproval
+                        ? '🛡️ இறுதிச் சமர்ப்பிப்பு மனிதப் பூட்டு'
+                        : (isError ? '🔴 TNPDS பிழை / நிறுத்தம்' : '⚡ TNPDS நேரலை')));
             showBrowserHud(hudTitle, msgStr, hudType, page).catch(() => {});
         }
     };

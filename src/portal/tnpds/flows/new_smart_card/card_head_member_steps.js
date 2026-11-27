@@ -3,7 +3,7 @@
  */
 const path = require('path');
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
-const { verifyServerUploadConfirmed, fillAndVerifyInput, selectAndVerifyOption } = require('../../../common/strict_step_gate');
+const { verifyServerUploadConfirmed, fillAndVerifyInput, selectAndVerifyOption, waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
 
 async function isHeadStepPageIntact(page) {
     if (!page || page.isClosed()) return false;
@@ -219,10 +219,24 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     const headDocUploaded = await verifyServerUploadConfirmed(page, 'input[formcontrolname="supportingDocumentProof"]', 8000);
     await scanAndBroadcastToasts();
     if (!headDocUploaded && !isMockSandboxMode) {
-        const headUpErr = 'படி 33: குடும்பத் தலைவர் ஆதார் ஆவணம் அரசு சர்வரில் பதிவேற்றம் உறுதி செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் நிறுத்தப்பட்டது.';
-        await showBrowserHud('🔴 படி 33 ஆவணப் பதிவேற்றப் பிழை', headUpErr, 'error', page).catch(() => {});
-        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${headUpErr}`);
-        return { success: false, message: headUpErr };
+        const headUpErr = 'படி 33: குடும்பத் தலைவர் ஆதார் ஆவணம் அரசு சர்வரில் பதிவேற்றம் தானாக உறுதி ஆகவில்லை.';
+        const recHeadUp = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 33 (குடும்பத் தலைவர் ஆதார் பதிவேற்றம்)',
+            errorMessage: headUpErr,
+            operatorHint: 'நீங்களே குடும்பத் தலைவர் ஆதார் PDF-ஐ பதிவேற்றியவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || '',
+            isMockSandboxMode,
+            onProgress,
+            showBrowserHud,
+            checkCompletedFn: async () => verifyServerUploadConfirmed(page, 'input[formcontrolname="supportingDocumentProof"]', 600)
+        });
+        if (!recHeadUp.recovered) {
+            await showBrowserHud('🔴 படி 33 ஆவணப் பதிவேற்றப் பிழை', headUpErr, 'error', page).catch(() => {});
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${headUpErr}`);
+            return { success: false, message: headUpErr };
+        }
     }
     onProgress('✅ [படி 33/51] குடும்பத் தலைவர் ஆதார் ஆவணம் வெற்றிகரமாகப் பதிவேற்றப்பட்டு பூட்டப்பட்டது!');
 

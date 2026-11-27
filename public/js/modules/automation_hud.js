@@ -246,9 +246,10 @@
                 msg.includes('மொபைல் OTP') || 
                 msg.includes('SMS OTP')
             );
-            const isApproval = (stepNum === 48 || msg.includes('ஒப்புதல் தேவை') || msg.includes('CONFIRM_FINAL_PORTAL_SUBMIT'));
+            const isApproval = (stepNum === 48 || msg.includes('Pre-Submit Human Gate') || msg.includes('மனிதப் பூட்டு') || msg.includes('ஒப்புதல் தேவை') || msg.includes('CONFIRM_FINAL_PORTAL_SUBMIT'));
+            const isCopilotWait = msg.includes('Co-Pilot காத்திருப்பு') || msg.includes('Co-Pilot தொடர்கிறது');
             const isCaptcha = (msg.includes('I am human') || msg.includes('Captcha') || msg.includes('மனித சரிபார்ப்பு'));
-            const isError = (
+            const isError = !isCopilotWait && !isApproval && (
                 msg.includes('ஆட்டோமேஷன் நிறுத்தப்பட்டது') ||
                 msg.includes('ஆட்டோமேஷன் பிழையினால்') ||
                 msg.includes('Strict Gate Halt') ||
@@ -282,7 +283,7 @@
                     };
                 }
             }
-            if (!matchedCanonical && !isCaptcha && !isError && stepNum === 0) {
+            if (!matchedCanonical && !isCaptcha && !isError && !isApproval && !isCopilotWait && stepNum === 0) {
                 return; // non-step raw log
             }
 
@@ -468,19 +469,14 @@
                     }, null, { digits: 6, type: otpType, title: isAadhaarOtp ? 'ஆதார் SMS OTP' : 'TNPDS கைபேசி SMS OTP' });
                 }
             } else if (isApproval && actionContainer) {
-                if (!actionContainer.querySelector('#btnLiveConfirmPortalSubmit')) {
+                if (!actionContainer.querySelector('#livePreSubmitHumanGateNotice')) {
                     actionContainer.innerHTML = `
-                        <div class="stepper-approval-card">
+                        <div class="stepper-approval-card" id="livePreSubmitHumanGateNotice">
                             <div class="stepper-approval-notice">
                                 <span class="stepper-approval-icon" aria-hidden="true"><i class="fa-solid fa-shield-check"></i></span>
                                 <div class="stepper-approval-text">
-                                    அனைத்து விவரங்கள் மற்றும் ஆவணங்கள் Chrome போர்ட்டலில் சரியாக நிரப்பப்பட்டுள்ளன. இறுதி சமர்ப்பிப்பை முடிக்க உங்கள் ஒப்புதல் தேவை!
+                                    <strong>🛡️ இறுதிச் சமர்ப்பிப்பு மனிதப் பூட்டு:</strong> அனைத்து விவரங்களும் ஆவணங்களும் Chrome போர்ட்டலில் 100% நிரப்பப்பட்டுவிட்டன! ஆட்டோமேஷன் இறுதிச் சமர்ப்பிப்பை அழுத்தாது — நீங்களே Chrome திரையில் சரிபார்த்து <strong>"பதிவு செய் / சமர்ப்பி"</strong> அழுத்தவும். நீங்கள் சமர்ப்பித்ததும் அரசு குறிப்பு எண்ணை எடுத்து விண்ணப்ப PDF-ஐ ஆப் தானாகவே பதிவிறக்கித் தரும்!
                                 </div>
-                            </div>
-                            <div class="stepper-approval-actions">
-                                <button onclick="approveFinalPortalSubmit()" id="btnLiveConfirmPortalSubmit" class="stepper-confirm-submit-btn">
-                                    <i class="fa-solid fa-check-double"></i> <span>உறுதி செய்து சமர்ப்பிக்கவும்</span>
-                                </button>
                             </div>
                         </div>
                     `;

@@ -48,17 +48,23 @@ function requestApprovalFromOperator(promptMsg, onProgress, isMockSandboxMode = 
 
         if (page && !page.isClosed()) {
             portalApprovalTimer = setInterval(async () => {
-                if (isResolved || !page || page.isClosed()) {
+                if (isResolved) {
                     if (portalApprovalTimer) clearInterval(portalApprovalTimer);
+                    return;
+                }
+                if (!page || page.isClosed()) {
+                    cleanupAndResolve(false, 'browser_closed', { proceedSubmit: false, action: 'halt_dry_run' });
                     return;
                 }
                 try {
                     const isSubmittedDirectly = await page.evaluate(() => {
-                        const body = document.body ? document.body.innerText : '';
-                        const hasRef = /(?:குறிப்பு\s*எண்|கோரிக்கை\s*எண்|விண்ணப்ப\s*எண்)\s*[:\-]?\s*([0-9A-Za-z]+)/i.test(body) ||
-                                       /352\d{11}/.test(body);
+                        const hud = document.getElementById('esevadraft-browser-hud');
+                        const hudTxt = hud ? (hud.innerText || '') : '';
+                        const body = (document.body ? document.body.innerText : '').replace(hudTxt, '');
+                        const hasRef = /(?:குறிப்பு\s*எண்|கோரிக்கை\s*எண்|கோரிக்கை\s*எண்|விண்ணப்ப\s*(?:குறிப்பு\s*)?எண்|Reference\s*(?:No|Number)|Application\s*(?:No|Number))\s*[:\-–]?\s*([A-Z]?\d{9,18}|[A-Z]{1,3}\d{8,16})/i.test(body) ||
+                                       /\b(?:352\d{11}|N\d{10,16})\b/.test(body);
                         const resultEl = document.querySelector('span.ref-number, .app-no');
-                        return Boolean(hasRef || resultEl);
+                        return Boolean(hasRef || (resultEl && /\d{8,}/.test(resultEl.innerText || '')));
                     }).catch(() => false);
 
                     if (isSubmittedDirectly) {

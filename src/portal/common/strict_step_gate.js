@@ -1,7 +1,132 @@
 /**
- * Universal Strict Step-Completion Gate Helper (Golden Rule 22)
- * Ensures Step N never advances to Step N+1 without genuine server/DOM confirmation.
+ * Universal Strict Step-Completion Gate & Co-Pilot Pause-and-Auto-Resume Helper
+ * Enforces Golden Rule 22 (Zero-Skip) + Golden Rule 25 (Zero-Kill Co-Pilot Pause,
+ * Silent Cloud Error Telemetry, and Seamless Auto-Resume on Operator Completion).
  */
+
+function reportNonFatalCopilotError({
+    serviceName = 'AUTOMATION',
+    step = 'UNKNOWN_STEP',
+    errorType = 'COPILOT_STEP_STALLED',
+    errorMessage = '',
+    customerMobile = '',
+    extraInfo = {}
+} = {}) {
+    try {
+        const telemetryStore = require('../../services/db/telemetry_store');
+        if (telemetryStore && typeof telemetryStore.logOperatorError === 'function') {
+            Promise.resolve(telemetryStore.logOperatorError({
+                serviceName,
+                step,
+                errorType,
+                errorMessage: String(errorMessage || `Step stalled: ${step}`).slice(0, 1200),
+                customerMobile,
+                extraInfo: {
+                    nonFatalCopilotPause: true,
+                    ...(extraInfo && typeof extraInfo === 'object' ? extraInfo : {})
+                }
+            })).catch(() => {});
+        }
+    } catch (_) {}
+}
+
+/**
+ * Universal Co-Pilot Pause & Auto-Resume Gate (Golden Rule 25):
+ * - NEVER skips Step N to advance to Step N+1.
+ * - NEVER hard-kills the automation when Step N stalls on a portal error.
+ * - Immediately logs the non-fatal error silently to Cloud Telemetry for later root-cause fix.
+ * - Enters quiet Watch Mode (zero interfering clicks!) with a clear amber HUD until the
+ *   human operator completes/fixes Step N, then immediately resumes Step N+1 automatically.
+ */
+async function waitForCopilotStepRecovery({
+    page,
+    stepLabel = 'படிநிலை',
+    errorMessage = '',
+    operatorHint = '',
+    serviceName = 'TNPDS_AUTOMATION',
+    customerMobile = '',
+    checkCompletedFn,
+    onProgress = () => {},
+    showBrowserHud = async () => {},
+    timeoutMs = 600000,
+    pollIntervalMs = 1000,
+    isMockSandboxMode = false,
+    extraInfo = {}
+} = {}) {
+    if (isMockSandboxMode || !page || typeof checkCompletedFn !== 'function' || timeoutMs <= 0) {
+        return { recovered: false, reason: 'mock_or_disabled', result: null };
+    }
+    if (typeof page.isClosed === 'function' && page.isClosed()) {
+        return { recovered: false, reason: 'browser_closed', result: null };
+    }
+
+    const cleanErr = String(errorMessage || `${stepLabel} தானாக முடியவில்லை`).trim();
+    const hintText = String(
+        operatorHint ||
+        'நீங்கள் கையால் இந்த ஒரு படியை முடித்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!'
+    ).trim();
+
+    // 1. Log silently to Cloud Telemetry immediately so engineering sees every stall later
+    reportNonFatalCopilotError({
+        serviceName,
+        step: stepLabel,
+        errorType: 'COPILOT_STEP_STALLED',
+        errorMessage: cleanErr,
+        customerMobile,
+        extraInfo
+    });
+
+    // 2. Display clear Watch-Mode amber Co-Pilot banner (never interferes with operator clicks!)
+    const hudSub = `${cleanErr} • ${hintText}`;
+    await showBrowserHud(`🤝 [Co-Pilot காத்திருப்பு] ${stepLabel}`, hudSub, 'warning', page).catch(() => {});
+    onProgress(`🤝 **[Co-Pilot காத்திருப்பு — ${stepLabel}]** ${cleanErr}\n👉 ${hintText} *(பிழை பின்னணியில் எரர் லாக்கில் பதிவு செய்யப்பட்டுவிட்டது — ஆட்டோமேஷன் கட் ஆகாது!)*`);
+
+    // 3. Quiet Watch Loop: poll ONLY for genuine completion (zero auto-clicking while human works)
+    const deadline = Date.now() + timeoutMs;
+    const waitStep = Math.max(10, Math.min(pollIntervalMs, 2000));
+    let lastHudRefreshAt = Date.now();
+
+    while (Date.now() < deadline) {
+        if (typeof page.isClosed === 'function' && page.isClosed()) {
+            return { recovered: false, reason: 'browser_closed', result: null };
+        }
+
+        let checkRes = false;
+        try {
+            checkRes = await checkCompletedFn();
+        } catch (_) {
+            checkRes = false;
+        }
+
+        const isDone = Boolean(
+            checkRes === true ||
+            (checkRes && typeof checkRes === 'object' && (checkRes.completed === true || checkRes.ok === true))
+        );
+        if (isDone) {
+            await showBrowserHud(
+                `✅ [Co-Pilot தொடர்கிறது] ${stepLabel}`,
+                'நீங்கள் இந்தப் படியை முடித்துவிட்டீர்கள் — ஆட்டோமேஷன் அடுத்த கட்டத்திற்குத் தானாகத் தொடர்கிறது!',
+                'success',
+                page
+            ).catch(() => {});
+            onProgress(`✅ **[Co-Pilot தொடர்கிறது — ${stepLabel}]** ஆபரேட்டர் இந்தப் படியை முடித்ததை ஆட்டோமேஷன் உணர்ந்தது — அடுத்த கட்டத்திற்குத் தானாகத் தொடர்கிறது!`);
+            return { recovered: true, reason: 'operator_completed', result: checkRes };
+        }
+
+        if (Date.now() - lastHudRefreshAt >= 15000) {
+            lastHudRefreshAt = Date.now();
+            await showBrowserHud(`🤝 [Co-Pilot காத்திருப்பு] ${stepLabel}`, hudSub, 'warning', page).catch(() => {});
+        }
+
+        if (typeof page.waitForTimeout === 'function') {
+            await page.waitForTimeout(waitStep).catch(() => {});
+        } else {
+            await new Promise((r) => setTimeout(r, waitStep));
+        }
+    }
+
+    return { recovered: false, reason: 'timeout', result: null };
+}
 
 async function waitForOtpModalOpened(page, timeoutMs = 10000) {
     if (!page || page.isClosed()) return false;
@@ -57,7 +182,19 @@ async function verifyServerUploadConfirmed(page, inputSelector = 'input[type="fi
     return false;
 }
 
-async function enforceStrictStepGate(stepLabel, isCompletedFn, { onProgress = () => {}, showBrowserHud = async () => {}, failMessage = '' } = {}) {
+async function enforceStrictStepGate(stepLabel, isCompletedFn, {
+    page = null,
+    serviceName = 'AUTOMATION',
+    customerMobile = '',
+    onProgress = () => {},
+    showBrowserHud = async () => {},
+    failMessage = '',
+    operatorHint = '',
+    allowCopilotPause = true,
+    isMockSandboxMode = false,
+    timeoutMs = 600000,
+    pollIntervalMs = 1000
+} = {}) {
     let ok = false;
     try {
         ok = Boolean(await isCompletedFn());
@@ -66,8 +203,30 @@ async function enforceStrictStepGate(stepLabel, isCompletedFn, { onProgress = ()
     }
     if (ok) return { success: true };
 
-    const msg = failMessage || `${stepLabel} முழுமையாக முடிந்து உறுதி செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் செயல்முறை பாதுகாப்பாக நிறுத்தப்படுகிறது.`;
-    await showBrowserHud(`🔴 ${stepLabel} நிறுத்தம்`, msg, 'error').catch(() => {});
+    const msg = failMessage || `${stepLabel} முழுமையாக முடிந்து உறுதி செய்யப்படவில்லை!`;
+
+    // Golden Rule 25: If live page is available, NEVER hard-kill — pause in Watch Mode & auto-resume when operator finishes!
+    if (page && allowCopilotPause && !isMockSandboxMode) {
+        const rec = await waitForCopilotStepRecovery({
+            page,
+            stepLabel,
+            errorMessage: msg,
+            operatorHint,
+            serviceName,
+            customerMobile,
+            checkCompletedFn: isCompletedFn,
+            onProgress,
+            showBrowserHud,
+            timeoutMs,
+            pollIntervalMs,
+            isMockSandboxMode
+        });
+        if (rec.recovered) {
+            return { success: true, recoveredByOperator: true, result: rec.result };
+        }
+    }
+
+    await showBrowserHud(`🔴 ${stepLabel} நிறுத்தம்`, msg, 'error', page).catch(() => {});
     onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${msg}`);
     return { success: false, step: stepLabel, message: msg };
 }
@@ -147,6 +306,8 @@ async function selectAndVerifyOption(locator, stepLabel, { value = null, index =
 }
 
 module.exports = {
+    reportNonFatalCopilotError,
+    waitForCopilotStepRecovery,
     waitForOtpModalOpened,
     verifyServerUploadConfirmed,
     enforceStrictStepGate,

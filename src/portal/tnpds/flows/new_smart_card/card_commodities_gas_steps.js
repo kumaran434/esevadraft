@@ -3,7 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { verifyServerUploadConfirmed, fillAndVerifyInput, selectAndVerifyOption } = require('../../../common/strict_step_gate');
+const { verifyServerUploadConfirmed, fillAndVerifyInput, selectAndVerifyOption, waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
 
 let produceCompliantDocument;
 for (const candidate of [
@@ -117,10 +117,24 @@ async function executeCommoditiesAndGasSteps(page, citizenProfile, docPrep, opti
     }
 
     if (!residenceDocUploaded) {
-        const resErr = 'படி 40: குடியிருப்புச் சான்று PDF பதிவேற்றத்தில் பச்சைக் குறியீடு உறுதி செய்யப்படவில்லை!';
-        await showBrowserHud('🔴 படி 40 ஆவணப் பதிவேற்றப் பிழை', resErr, 'error');
-        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${resErr}`);
-        return { success: false, message: resErr };
+        const resErr = 'படி 40: குடியிருப்புச் சான்று PDF பதிவேற்றத்தில் பச்சைக் குறியீடு தானாக உறுதி ஆகவில்லை.';
+        const recResUp = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 40 (குடியிருப்புச் சான்று பதிவேற்றம்)',
+            errorMessage: resErr,
+            operatorHint: 'நீங்களே குடியிருப்புச் சான்று ஆவணத்தைப் பதிவேற்றியவுடன் ஆட்டோமேஷன் தானாகவே கேஸ் & இறுதிச் சரிபார்ப்புக்குத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || '',
+            isMockSandboxMode,
+            onProgress,
+            showBrowserHud,
+            checkCompletedFn: async () => verifyServerUploadConfirmed(page, 'input[formcontrolname="residenceProofFile"], input[type="file"]', 600)
+        });
+        if (!recResUp.recovered) {
+            await showBrowserHud('🔴 படி 40 ஆவணப் பதிவேற்றப் பிழை', resErr, 'error');
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${resErr}`);
+            return { success: false, message: resErr };
+        }
     }
     onProgress('✅ [படி 40/51] குடியிருப்புச் சான்று வெற்றிகரமாகப் பதிவேற்றப்பட்டு பச்சைக் குறியீடு உறுதி செய்யப்பட்டது!');
 

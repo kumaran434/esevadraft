@@ -3,6 +3,7 @@
 // =========================================================================
 const path = require('path');
 const { generateMobileChangeReceiptPdf, receiptsDir } = require('../../../../services/tnpds_receipt_generator');
+const { waitForHumanFinalSubmitOnly, downloadOfficialTnpdsApplicationPdf } = require('../../helpers/tnpds_post_submit_receipt');
 
 async function executeMobileChangeSubmitStep({
     page,
@@ -71,23 +72,58 @@ async function executeMobileChangeSubmitStep({
         };
     }
 
-    // Step 10: Official Final Submit with Operator Approval
+    // Step 10: Strict Human-Only Final Submit Gate + Post-Submit Receipt Download (Golden Rule 25)
     const isAutomatedCiTest = process.env.REGRESSION_TEST === 'true' && (options.fastTest === true || options.isTestSuite === true);
     if (!isAutomatedCiTest) {
-        onProgress('🔍 **ஆபரேட்டர் கவனத்திற்கு:** உங்கள் Google Chrome திரையில் உள்ள புதிய எண் OTP மற்றும் விவரங்களை நேரில் ஒருமுறை முழுமையாகச் சரிபார்க்கவும்.');
-        onProgress('👉 **ஏதேனும் பிழை இருந்தால்:** Chrome திரையிலேயே நீங்கள் நேரடியாகத் திருத்தலாம்.');
-        onProgress('🚀 **எல்லாம் சரியாக இருந்தால்:** நீங்களே Chrome திரையில் "சமர்ப்பிக்க" பொத்தானை நேரடியாக அழுத்தவும் (அல்லது UI ஒப்புதல் வழங்கவும்).');
-
-        await requestApprovalFromOperator(
-            '🛡️ **[இறுதி சமர்ப்பிப்பு ஒப்புதல் தேவை]** TNPDS கைபேசி எண் மாற்ற படிவம் மற்றும் OTP சரிபார்ப்பு பூர்த்தி செய்யப்பட்டுவிட்டது!\n\nகுரோம் உலாவியில் உள்ள விவரங்களை ஒருமுறை சரிபார்த்து கீழே உள்ள **"TNPDS-ல் இப்போது சமர்ப்பி"** பொத்தானை அழுத்தவும்:',
+        const humanRes = await waitForHumanFinalSubmitOnly(page, {
+            serviceLabel: 'கைபேசி எண் மாற்ற விண்ணப்பம்',
             onProgress,
-            isMock,
-            page
-        );
-        onProgress('✅ **ஆபரேட்டர் ஒப்புதல் வழங்கிவிட்டார்!** அதிகாரப்பூர்வ அரசு இறுதிச் சமர்ப்பிப்பு தொடர்கிறது...');
+            showBrowserHud,
+            isMockSandboxMode: isMock
+        });
+        if (!humanRes.submitted || !humanRes.refNo) {
+            return {
+                success: true,
+                isPreSubmitGate: true,
+                status: 'PRE_SUBMIT_GATE',
+                isDryRun: true,
+                applicationNumber: null,
+                message: '🛡️ கைபேசி எண் மாற்ற படிவம் 100% பூர்த்தி செய்யப்பட்டு ஆபரேட்டர் சரிபார்ப்பிற்காக பாதுகாப்பாக நிறுத்தப்பட்டது.'
+            };
+        }
+        const officialDl = await downloadOfficialTnpdsApplicationPdf(page, humanRes.refNo, {
+            receiptsDir,
+            onProgress,
+            showBrowserHud,
+            serviceType: 'CHANGE_MOBILE'
+        });
+        let receiptPdfUrl = officialDl.pdfUrl;
+        let receiptPdfPath = officialDl.pdfPath;
+        if (!receiptPdfUrl) {
+            const saveFilename = `Application_${humanRes.refNo}.pdf`;
+            receiptPdfPath = path.join(receiptsDir, saveFilename);
+            await generateMobileChangeReceiptPdf(receiptPdfPath, {
+                refNo: humanRes.refNo,
+                date: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+                rationCardNo,
+                fullName,
+                previousMobile: userMobile,
+                newMobile: newMobile
+            }).catch(() => {});
+            receiptPdfUrl = `/receipts/${saveFilename}`;
+        }
+        return {
+            success: true,
+            applicationNumber: humanRes.refNo,
+            applicationPdfUrl: receiptPdfUrl,
+            receiptPdfUrl,
+            receiptPdfPath,
+            officialPortalPdfDownloaded: Boolean(officialDl.downloaded),
+            message: `TNPDS கைபேசி எண் மாற்றம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது! குறிப்பு எண்: ${humanRes.refNo}`
+        };
     }
 
-    // Locate and click Submit Button on modal / page
+    // CI Automated Test Mode only:
     onProgress('🚀 [இறுதிச் சமர்ப்பிப்பு] அதிகாரப்பூர்வ சமர்ப்பிப்பு பொத்தான் அழுத்தப்படுகிறது...');
     const submitBtn = page.locator('button:has-text("சமர்ப்பிக்க"), button:has-text("Submit"), button.btn-success:has-text("சமர்ப்பிக்க"), button[type="submit"]:has-text("சமர்ப்பிக்க")').first();
     if (await submitBtn.count() > 0 && await submitBtn.isVisible().catch(() => false)) {

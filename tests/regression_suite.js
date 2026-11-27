@@ -1939,7 +1939,7 @@ async function runTests() {
         assert(step9aCode.includes('if (!modalOrRowTriggered && !addMemberClicked)'), 'Step 9a Audit must enforce Single-Click Guard (!modalOrRowTriggered && !addMemberClicked)');
         assert(step9bCode.includes('input[formcontrolname="otp"]') && step9bCode.includes("m.closest('div.modal')"), 'Step 9b Table Verify must detect visible Aadhaar OTP modal without hidden .modal-dialog false positives');
         assert(opApprovalCode.includes('isMockSandboxMode = false') && !opApprovalCode.includes('isMockSandboxMode = true'), 'operator_approval.js must default isMockSandboxMode = false so live submissions never auto-approve without operator consent');
-        assert(step1012Code.includes('requestApprovalFromOperator(') && step1012Code.includes('isMock,') && step1012Code.includes('checkDuplicateAadhaarModal'), 'Step 10-12 Submit must pass isMock and page to requestApprovalFromOperator and check for Duplicate Aadhaar Modal');
+        assert(step1012Code.includes('waitForHumanFinalSubmitOnly(') && step1012Code.includes('isMockSandboxMode: isMock') && step1012Code.includes('downloadOfficialTnpdsApplicationPdf') && step1012Code.includes('checkDuplicateAadhaarModal'), 'Step 10-12 Submit must enforce Human-Only Final Submit Gate, auto-download PDF after submit, and check for Duplicate Aadhaar Modal');
         passedCount += 13;
 
         // 4. Verify FEATURE_LOCK.md Section 13 contract
@@ -7019,6 +7019,117 @@ async function runTests() {
                 );
 
                 passedCount += 5;
+            }
+
+            // [TEST 95] 🤝 Golden Rule 25: Universal Co-Pilot Pause-and-Auto-Resume Gate + Human-Only Final Submit + Post-Submit Receipt Auto-Download
+            console.log('\n[TEST 95] 🤝 Verifying Golden Rule 25 Co-Pilot Pause & Auto-Resume, 3x XSD Retry & Human-Only Final Submit Gate...');
+            {
+                const strictGate95 = require('../src/portal/common/strict_step_gate');
+                const postSubmit95 = require('../src/portal/tnpds/helpers/tnpds_post_submit_receipt');
+
+                // 1. Co-Pilot Pause & Auto-Resume watches quietly without killing, then resumes on operator completion
+                let pollCount = 0;
+                const hudEvents = [];
+                const mockLivePage = {
+                    isClosed: () => false,
+                    waitForTimeout: async () => {}
+                };
+                const recRes95 = await strictGate95.waitForCopilotStepRecovery({
+                    page: mockLivePage,
+                    stepLabel: 'உறுப்பினர் 2 சேமிப்பு',
+                    errorMessage: 'Otp XSD Validation Failed.',
+                    serviceName: 'TNPDS_NEW_CARD',
+                    isMockSandboxMode: false,
+                    timeoutMs: 5000,
+                    pollIntervalMs: 15,
+                    showBrowserHud: async (title, sub, type) => { hudEvents.push({ title, type }); },
+                    checkCompletedFn: async () => {
+                        pollCount++;
+                        return pollCount >= 3 ? { completed: true, mode: 'otp_modal' } : false;
+                    }
+                });
+                assert(
+                    recRes95.recovered === true &&
+                    recRes95.reason === 'operator_completed' &&
+                    recRes95.result?.mode === 'otp_modal' &&
+                    pollCount === 3 &&
+                    hudEvents.some(e => e.type === 'warning') &&
+                    hudEvents.some(e => e.type === 'success'),
+                    `TEST 95.copilotPauseResume: Co-Pilot pauses with amber HUD and auto-resumes the instant operator finishes (pollCount=${pollCount})`
+                );
+
+                // 2. enforceStrictStepGate uses Co-Pilot Pause when live page is supplied
+                let gateChecks = 0;
+                const liveGateRes = await strictGate95.enforceStrictStepGate('படி 40 ஆவணப் பதிவேற்றம்', async () => {
+                    gateChecks++;
+                    return gateChecks >= 2;
+                }, {
+                    page: mockLivePage,
+                    isMockSandboxMode: false,
+                    timeoutMs: 3000,
+                    pollIntervalMs: 15
+                });
+                assert(
+                    liveGateRes.success === true && liveGateRes.recoveredByOperator === true,
+                    'TEST 95.liveStrictGateAutoResume: enforceStrictStepGate pauses and auto-resumes on live page instead of hard-killing'
+                );
+
+                // 3. Reference Number parser extracts Tamil & English TNPDS refs accurately without false positives
+                assert(
+                    postSubmit95.parseTnpdsRefFromText('உங்கள் விண்ணப்பம் சமர்ப்பிக்கப்பட்டது. குறிப்பு எண்: 35212345678901') === '35212345678901' &&
+                    postSubmit95.parseTnpdsRefFromText('கோரிக்கை எண் - N2612345678') === 'N2612345678' &&
+                    postSubmit95.parseTnpdsRefFromText('குறிப்பு எண் இன்னும் உருவாக்கப்படவில்லை') === '',
+                    'TEST 95.refParser: Extracts genuine Tamil/English TNPDS reference numbers and ignores plain labels'
+                );
+
+                // 4. waitForHumanFinalSubmitOnly NEVER clicks anything — waits strictly for human operator submit & ref number
+                let evalTick = 0;
+                let anyClickAttempted = false;
+                const mockHumanPage = {
+                    isClosed: () => false,
+                    waitForTimeout: async () => {},
+                    click: async () => { anyClickAttempted = true; },
+                    locator: () => ({ click: async () => { anyClickAttempted = true; } }),
+                    evaluate: async (fn) => {
+                        const fnSrc = typeof fn === 'function' ? fn.toString() : '';
+                        if (fnSrc.includes('ஏற்கனவே வேறொரு')) return '';
+                        evalTick++;
+                        if (evalTick < 3) return { bodyText: 'படிவம் சரிபார்க்கவும்', refElText: '' };
+                        return { bodyText: 'விண்ணப்பம் வெற்றிகரமாக சமர்ப்பிக்கப்பட்டது. குறிப்பு எண்: 35298765432100', refElText: '' };
+                    }
+                };
+                const humanGateRes = await postSubmit95.waitForHumanFinalSubmitOnly(mockHumanPage, {
+                    serviceLabel: 'புதிய குடும்ப அட்டை',
+                    isMockSandboxMode: false,
+                    timeoutMs: 5000,
+                    pollIntervalMs: 20
+                });
+                assert(
+                    humanGateRes.submitted === true &&
+                    humanGateRes.refNo === '35298765432100' &&
+                    anyClickAttempted === false,
+                    'TEST 95.humanOnlyFinalSubmit: Never auto-clicks Submit and captures Reference Number right after human submits'
+                );
+
+                // 5. All TNPDS submit steps enforce Human-Only Final Submit + Post-Submit PDF Auto-Download, and New Card has ZERO auto-click Submit
+                const newCardSubmitSrc95 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_upload_and_submit_steps.js'), 'utf8');
+                const loopSrc95 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_family_members_loop.js'), 'utf8');
+                const geminiSrc95 = fs.readFileSync(path.join(__dirname, '../GEMINI.md'), 'utf8');
+                assert(
+                    newCardSubmitSrc95.includes('waitForHumanFinalSubmitOnly') &&
+                    newCardSubmitSrc95.includes('downloadOfficialTnpdsApplicationPdf') &&
+                    !newCardSubmitSrc95.includes('button:has-text("உறுதி செய்")') &&
+                    !newCardSubmitSrc95.includes('button:has-text("பதிவு செய்")'),
+                    'TEST 95.noAutoFinalSubmit: New Smart Card submit flow strictly forbids clicking Final Submit and auto-downloads PDF after human submit'
+                );
+                assert(
+                    loopSrc95.includes('waitForCopilotStepRecovery') &&
+                    loopSrc95.includes('isMockSandboxMode ? 1 : 3') &&
+                    geminiSrc95.includes('Golden Rule 25'),
+                    'TEST 95.copilotAndRule25: Family members loop uses 3x XSD retry + Co-Pilot Pause-and-Resume and Golden Rule 25 is persisted in GEMINI.md'
+                );
+
+                passedCount += 6;
             }
 
             passedCount += cartridgeDirs81.length + 25;

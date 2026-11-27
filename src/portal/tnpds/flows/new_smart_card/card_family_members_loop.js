@@ -7,6 +7,7 @@ const { fillAdditionalMemberForm } = require('./card_additional_member_form');
 const { installRealtimePortalToastObserver } = require('./card_navigation_preflight');
 const { isValidNewCardAadhaarOtp } = require('./new_card_otp_config');
 const { assertNoRadwareOrPageRefresh } = require('../../../common/universal_radware_resumption');
+const { waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
 const {
     installOtpModalCopilot,
     resetHumanSubmitWatch,
@@ -100,10 +101,46 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
             await page.waitForTimeout(1200);
         }
 
+        const isMemberRowPresent = async (targetEngTok = '', targetTamTok = '', relTamVal = '', relEngVal = '') => {
+            return await page.evaluate(({ engToken, tamToken, relTam, relEng, cnt }) => {
+                const table = document.querySelector('table');
+                if (!table) return false;
+                const text = table.innerText || '';
+                const rows = Array.from(table.querySelectorAll('tr')).filter(r => !r.innerText.includes('பெயர்') && !r.innerText.includes('name'));
+                const hasRowCount = rows.length >= cnt;
+                const hasTamName = tamToken && text.includes(tamToken);
+                const hasEngName = engToken && text.toLowerCase().includes(engToken.toLowerCase());
+                const hasRelTam = relTam && text.includes(relTam);
+                const hasRelEng = relEng && text.toLowerCase().includes(relEng.toLowerCase());
+                return (hasRowCount && (hasTamName || hasEngName || hasRelTam || hasRelEng)) || (hasTamName && hasRelTam) || hasRowCount;
+            }, { engToken: targetEngTok, tamToken: targetTamTok, relTam: relTamVal, relEng: relEngVal, cnt: memNum }).catch(() => false);
+        };
+
         const totalEngInputs = await page.locator('input[formcontrolname="NameOfFamilyHead"]').count();
         if (totalEngInputs < 2) {
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} சேர்க்கை படிவம் திறக்கப்படவில்லை!`);
-            return { success: false, message: `உறுப்பினர் ${memNum} சேர்க்கை படிவம் திறக்கப்படவில்லை.` };
+            const recOpen = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} படிவம் திறத்தல்`,
+                errorMessage: `உறுப்பினர் ${memNum} சேர்க்கை படிவம் தானாகத் திறக்கப்படவில்லை.`,
+                operatorHint: 'நீங்களே "உறுப்பினரை சேர்க்க" பொத்தானை அழுத்திப் படிவத்தைத் திறந்தவுடன் ஆட்டோமேஷன் தானாகவே நிரப்பித் தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                checkCompletedFn: async () => {
+                    const cnt = await page.locator('input[formcontrolname="NameOfFamilyHead"]').count().catch(() => 0);
+                    return cnt >= 2 || await isMemberRowPresent();
+                }
+            });
+            if (!recOpen.recovered) {
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} சேர்க்கை படிவம் திறக்கப்படவில்லை!`);
+                return { success: false, message: `உறுப்பினர் ${memNum} சேர்க்கை படிவம் திறக்கப்படவில்லை.` };
+            }
+            if (await isMemberRowPresent()) {
+                onProgress(`✅ [உறுப்பினர் ${memNum}] ஆபரேட்டர் ஏற்கனவே அட்டவணையில் சேர்த்துவிட்டார் — அடுத்த கட்டத்திற்குத் தொடர்கிறது!`);
+                continue;
+            }
         }
 
         // Fill Form
@@ -228,11 +265,34 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
             if (!isGreenInDOM) isGreenInDOM = await verifyMemDocUploaded(baseline);
         }
 
+        let operatorAlreadySavedOrOpenedOtp = false;
         if (!isGreenInDOM && !isMockSandboxMode) {
-            const upErrMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ${docLabel} பதிவேற்றம் ஆகவில்லை!`;
-            await showBrowserHud(`🔴 ஆவணப் பதிவேற்றப் பிழை`, upErrMsg, 'error');
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** ${upErrMsg}`);
-            return { success: false, message: upErrMsg };
+            const upErrMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) ${docLabel} பதிவேற்றம் தானாக உறுதி ஆகவில்லை!`;
+            const recUp = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} ${docLabel} பதிவேற்றம்`,
+                errorMessage: upErrMsg,
+                operatorHint: 'நீங்களே இந்த உறுப்பினரின் ஆவணத்தைப் பதிவேற்றி (Upload) முடித்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                checkCompletedFn: async () => {
+                    if (await isMemberRowPresent()) return { completed: true, mode: 'in_table' };
+                    if (await checkAadhaarModal()) return { completed: true, mode: 'otp_modal' };
+                    const okUp = await verifyMemDocUploaded({ toasts: [], clearBtnCount: 0 });
+                    return okUp ? { completed: true, mode: 'uploaded' } : false;
+                }
+            });
+            if (!recUp.recovered) {
+                await showBrowserHud(`🔴 ஆவணப் பதிவேற்றப் பிழை`, upErrMsg, 'error');
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** ${upErrMsg}`);
+                return { success: false, message: upErrMsg };
+            }
+            if (recUp.result && (recUp.result.mode === 'in_table' || recUp.result.mode === 'otp_modal')) {
+                operatorAlreadySavedOrOpenedOtp = true;
+            }
         }
         onProgress(`✅ [உறுப்பினர் ${memNum}] ${docLabel} வெற்றிகரமாகப் பதிவேற்றப்பட்டு பச்சைக் குறியீடு உறுதி செய்யப்பட்டது!`);
 
@@ -431,18 +491,68 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
 
         await page.waitForTimeout(300);
 
-        if (formAudit.btnDisabled && !isMockSandboxMode) {
+        if (!operatorAlreadySavedOrOpenedOtp && formAudit.btnDisabled && !isMockSandboxMode) {
             const invalidInfo = formAudit.invalidControls.length > 0 ? formAudit.invalidControls.join(', ') : 'தெரியாத புலம்';
             const disabledMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) "உறுப்பினர் விவரம் சேமி" பொத்தான் செயலற்ற நிலையில் (Disabled) உள்ளது — முழுமையடையாத புலங்கள்: ${invalidInfo} (DOB=${formAudit.dobDomVal || formAudit.ngDobStr}, Doc=${formAudit.docDomVal})`;
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Member ${memNum} Validation):** ${disabledMsg}`);
-            await showBrowserHud(`🔴 உறுப்பினர் ${memNum} படிவச் சரிபார்ப்புப் பிழை`, disabledMsg, 'error');
-            return { success: false, message: disabledMsg };
+            const recDis = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} படிவச் சரிபார்ப்பு`,
+                errorMessage: disabledMsg,
+                operatorHint: 'நீங்களே விடுபட்ட புலத்தைச் சரிசெய்து "உறுப்பினர் விவரம் சேமி" அழுத்தியவுடன் ஆட்டோமேஷன் தானாகவே தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                checkCompletedFn: async () => {
+                    if (await isMemberRowPresent()) return { completed: true, mode: 'in_table' };
+                    if (await checkAadhaarModal()) return { completed: true, mode: 'otp_modal' };
+                    const enabledNow = await page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                            const t = (b.innerText || '').trim();
+                            return (t.includes('உறுப்பினர் விவரம் சேமி') || t.includes('Save Member')) && b.offsetParent !== null;
+                        });
+                        const targetBtn = btns[btns.length - 1];
+                        return Boolean(targetBtn && !targetBtn.disabled);
+                    }).catch(() => false);
+                    return enabledNow ? { completed: true, mode: 'enabled' } : false;
+                }
+            });
+            if (!recDis.recovered) {
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Member ${memNum} Validation):** ${disabledMsg}`);
+                await showBrowserHud(`🔴 உறுப்பினர் ${memNum} படிவச் சரிபார்ப்புப் பிழை`, disabledMsg, 'error');
+                return { success: false, message: disabledMsg };
+            }
+            if (recDis.result && (recDis.result.mode === 'in_table' || recDis.result.mode === 'otp_modal')) {
+                operatorAlreadySavedOrOpenedOtp = true;
+            }
         }
 
         const saveMemBtn = page.locator('button:has-text("உறுப்பினர் விவரம் சேமி"), button:has-text("Save Member")').last();
-        if (await saveMemBtn.count() === 0) {
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} "உறுப்பினர் விவரம் சேமி" பொத்தான் திரையில் கிடைக்கவில்லை!`);
-            return { success: false, message: `உறுப்பினர் ${memNum} சேமி பொத்தான் கிடைக்கவில்லை.` };
+        if (!operatorAlreadySavedOrOpenedOtp && await saveMemBtn.count() === 0) {
+            const recBtn = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} சேமி பொத்தான்`,
+                errorMessage: `உறுப்பினர் ${memNum} "உறுப்பினர் விவரம் சேமி" பொத்தான் திரையில் கிடைக்கவில்லை.`,
+                operatorHint: 'நீங்களே உறுப்பினர் விவரத்தைச் சேமித்து முடித்தவுடன் ஆட்டோமேஷன் தானாகவே தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                checkCompletedFn: async () => {
+                    if (await isMemberRowPresent()) return { completed: true, mode: 'in_table' };
+                    if (await checkAadhaarModal()) return { completed: true, mode: 'otp_modal' };
+                    return (await saveMemBtn.count().catch(() => 0)) > 0 ? { completed: true, mode: 'btn_ready' } : false;
+                }
+            });
+            if (!recBtn.recovered) {
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம்:** உறுப்பினர் ${memNum} "உறுப்பினர் விவரம் சேமி" பொத்தான் திரையில் கிடைக்கவில்லை!`);
+                return { success: false, message: `உறுப்பினர் ${memNum} சேமி பொத்தான் கிடைக்கவில்லை.` };
+            }
+            if (recBtn.result && (recBtn.result.mode === 'in_table' || recBtn.result.mode === 'otp_modal')) {
+                operatorAlreadySavedOrOpenedOtp = true;
+            }
         }
 
         // Capture sanitized TNPDS API request/response during Save Member so any XSD/UIDAI payload issue is 100% visible in logs!
@@ -484,87 +594,111 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
         page.on('response', onSaveApiResponse);
 
         let portalSaveErrorPopup = '';
-        try {
-            const maxSaveAttempts = isMockSandboxMode ? 1 : 2;
-            for (let saveTry = 1; saveTry <= maxSaveAttempts; saveTry++) {
-                portalSaveErrorPopup = '';
-                if (saveTry === 2) {
-                    onProgress(`🔄 [உறுப்பினர் ${memNum}] அரசு தளத்தில் "Otp XSD Validation Failed" வந்ததால் ஆதார் எண் 3 பெட்டிகளும் மீண்டும் தட்டச்சு செய்யப்பட்டு 2-வது முயற்சி செய்யப்படுகிறது...`);
-                    await page.waitForTimeout(2500);
-                    const reCheck = await recommitAadhaarSplitInputs(true);
-                    onProgress(`🔎 [உறுப்பினர் ${memNum}] ஆதார் மறு-தட்டச்சு உறுதி: ok=${reCheck.ok}, lens=${JSON.stringify(reCheck.lens || [])}`);
-                    await page.waitForTimeout(600);
-                }
+        if (!operatorAlreadySavedOrOpenedOtp) {
+            try {
+                // Up to 3 automatic attempts on transient TNPDS/UIDAI "Otp XSD Validation Failed" glitches
+                const maxSaveAttempts = isMockSandboxMode ? 1 : 3;
+                for (let saveTry = 1; saveTry <= maxSaveAttempts; saveTry++) {
+                    portalSaveErrorPopup = '';
+                    if (saveTry >= 2) {
+                        onProgress(`🔄 [உறுப்பினர் ${memNum}] அரசு தளத்தில் தற்காலிகப் பிழை ("Otp XSD Validation Failed") வந்ததால் ஆதார் எண் 3 பெட்டிகளும் மீண்டும் தட்டச்சு செய்யப்பட்டு முயற்சி ${saveTry}/${maxSaveAttempts} செய்யப்படுகிறது...`);
+                        await page.waitForTimeout(2500);
+                        const reCheck = await recommitAadhaarSplitInputs(true);
+                        onProgress(`🔎 [உறுப்பினர் ${memNum}] ஆதார் மறு-தட்டச்சு உறுதி: ok=${reCheck.ok}, lens=${JSON.stringify(reCheck.lens || [])}`);
+                        await page.waitForTimeout(600);
+                    }
 
-                await saveMemBtn.scrollIntoViewIfNeeded().catch(() => {});
-                await saveMemBtn.click({ timeout: 5000 }).catch(async () => {
-                    await saveMemBtn.click({ force: true }).catch(() => {});
-                });
+                    await saveMemBtn.scrollIntoViewIfNeeded().catch(() => {});
+                    await saveMemBtn.click({ timeout: 5000 }).catch(async () => {
+                        await saveMemBtn.click({ force: true }).catch(() => {});
+                    });
 
-                // Note: NEVER put "தயவுசெய்து காத்திருக்கவும்" in our HUD title so busyState never self-triggers!
-                await showBrowserHud(`⏳ உறுப்பினர் ${memNum} சேமிப்பு`, `${mem.nameTam || mem.nameEng} விவரங்கள் அரசு அட்டவணையில் பதியப்படுகின்றன...`, 'info');
-                for (let s = 1; s <= 15; s++) {
-                    await page.waitForTimeout(1000);
-                    const liveAlerts = await scanAndBroadcastToasts();
-                    if (Array.isArray(liveAlerts) && liveAlerts.length > 0) {
-                        const errLike = liveAlerts.find(t =>
-                            !/வெற்றிகரமாக|successfully/i.test(t) &&
-                            /பிழை|தவறான|கட்டாயம்|வயது|பிறப்பு|ஆதார்|ஏற்கனவே|invalid|error|failed|required|already|mandatory|birth|age|years|xsd/i.test(t)
-                        );
-                        if (errLike) {
-                            portalSaveErrorPopup = errLike;
+                    // Note: NEVER put "தயவுசெய்து காத்திருக்கவும்" in our HUD title so busyState never self-triggers!
+                    await showBrowserHud(`⏳ உறுப்பினர் ${memNum} சேமிப்பு`, `${mem.nameTam || mem.nameEng} விவரங்கள் அரசு அட்டவணையில் பதியப்படுகின்றன...`, 'info');
+                    for (let s = 1; s <= 15; s++) {
+                        await page.waitForTimeout(1000);
+                        const liveAlerts = await scanAndBroadcastToasts();
+                        if (Array.isArray(liveAlerts) && liveAlerts.length > 0) {
+                            const errLike = liveAlerts.find(t =>
+                                !/வெற்றிகரமாக|successfully/i.test(t) &&
+                                /பிழை|தவறான|கட்டாயம்|வயது|பிறப்பு|ஆதார்|ஏற்கனவே|invalid|error|failed|required|already|mandatory|birth|age|years|xsd/i.test(t)
+                            );
+                            if (errLike) {
+                                portalSaveErrorPopup = errLike;
+                                break;
+                            }
+                        }
+                        if (await checkAadhaarModal()) break;
+                        const busyState = await page.evaluate(() => {
+                            // Exclude our own #eseva-automation-hud from loading text check!
+                            const hud = document.getElementById('eseva-automation-hud');
+                            const hudTxt = hud ? (hud.innerText || '') : '';
+                            const bodyTxt = (document.body?.innerText || '').replace(hudTxt, '');
+                            const hasLoading = bodyTxt.includes('தயவுசெய்து காத்திருக்கவும்') || bodyTxt.includes('Please Wait') || Boolean(document.querySelector('.ngx-spinner-overlay, .spinner-border:not(#eseva-automation-hud *)'));
+                            const errSelectors = '#toast-container .toast-error, #toast-container .toast-warning, .p-toast-message-error, .p-toast-message-warn, .toast-error, .toast-warning, .alert-danger, .alert-warning, .swal2-popup';
+                            const errToast = Array.from(document.querySelectorAll(errSelectors))
+                                .filter(el => !el.closest('#eseva-automation-hud'))
+                                .map(t => (t.innerText || '').replace(/\s+/g, ' ').trim())
+                                .filter(Boolean)
+                                .join(' | ');
+                            return { hasLoading, errToast };
+                        }).catch(() => ({ hasLoading: false, errToast: '' }));
+                        if (busyState.errToast && !/வெற்றிகரமாக|successfully/i.test(busyState.errToast)) {
+                            portalSaveErrorPopup = busyState.errToast;
+                            await scanAndBroadcastToasts();
                             break;
                         }
+                        if (!busyState.hasLoading && s >= 2) break;
                     }
-                    if (await checkAadhaarModal()) break;
-                    const busyState = await page.evaluate(() => {
-                        // Exclude our own #eseva-automation-hud from loading text check!
-                        const hud = document.getElementById('eseva-automation-hud');
-                        const hudTxt = hud ? (hud.innerText || '') : '';
-                        const bodyTxt = (document.body?.innerText || '').replace(hudTxt, '');
-                        const hasLoading = bodyTxt.includes('தயவுசெய்து காத்திருக்கவும்') || bodyTxt.includes('Please Wait') || Boolean(document.querySelector('.ngx-spinner-overlay, .spinner-border:not(#eseva-automation-hud *)'));
-                        const errSelectors = '#toast-container .toast-error, #toast-container .toast-warning, .p-toast-message-error, .p-toast-message-warn, .toast-error, .toast-warning, .alert-danger, .alert-warning, .swal2-popup';
-                        const errToast = Array.from(document.querySelectorAll(errSelectors))
-                            .filter(el => !el.closest('#eseva-automation-hud'))
-                            .map(t => (t.innerText || '').replace(/\s+/g, ' ').trim())
-                            .filter(Boolean)
-                            .join(' | ');
-                        return { hasLoading, errToast };
-                    }).catch(() => ({ hasLoading: false, errToast: '' }));
-                    if (busyState.errToast && !/வெற்றிகரமாக|successfully/i.test(busyState.errToast)) {
-                        portalSaveErrorPopup = busyState.errToast;
-                        await scanAndBroadcastToasts();
-                        break;
+                    await page.waitForTimeout(800);
+                    const postAlerts = await scanAndBroadcastToasts();
+                    if (!portalSaveErrorPopup && Array.isArray(postAlerts)) {
+                        const foundErr = postAlerts.find(t => !/வெற்றிகரமாக|successfully/i.test(t) && /பிழை|தவறான|கட்டாயம்|வயது|பிறப்பு|ஆதார்|ஏற்கனவே|invalid|error|failed|required|already|mandatory|birth|age|years|xsd/i.test(t));
+                        if (foundErr) portalSaveErrorPopup = foundErr;
                     }
-                    if (!busyState.hasLoading && s >= 2) break;
-                }
-                await page.waitForTimeout(800);
-                const postAlerts = await scanAndBroadcastToasts();
-                if (!portalSaveErrorPopup && Array.isArray(postAlerts)) {
-                    const foundErr = postAlerts.find(t => !/வெற்றிகரமாக|successfully/i.test(t) && /பிழை|தவறான|கட்டாயம்|வயது|பிறப்பு|ஆதார்|ஏற்கனவே|invalid|error|failed|required|already|mandatory|birth|age|years|xsd/i.test(t));
-                    if (foundErr) portalSaveErrorPopup = foundErr;
-                }
 
-                if (capturedApiLogs.length > 0 && portalSaveErrorPopup) {
-                    onProgress(`🔎 [API-DIAG உறுப்பினர் ${memNum} முயற்சி ${saveTry}] ${capturedApiLogs.slice(-2).join(' || ')}`);
-                }
+                    if (capturedApiLogs.length > 0 && portalSaveErrorPopup) {
+                        onProgress(`🔎 [API-DIAG உறுப்பினர் ${memNum} முயற்சி ${saveTry}] ${capturedApiLogs.slice(-2).join(' || ')}`);
+                    }
 
-                // Auto-retry ONCE specifically if TNPDS returned transient/split-input "Otp XSD Validation Failed"
-                if (portalSaveErrorPopup && /xsd|otp\s*xsd/i.test(portalSaveErrorPopup) && saveTry < maxSaveAttempts) {
-                    continue;
+                    // Auto-retry up to 3x if TNPDS returned transient/split-input "Otp XSD Validation Failed"
+                    if (portalSaveErrorPopup && /xsd|otp\s*xsd/i.test(portalSaveErrorPopup) && saveTry < maxSaveAttempts) {
+                        continue;
+                    }
+                    break;
                 }
-                break;
+            } finally {
+                page.off('response', onSaveApiResponse);
             }
-        } finally {
+        } else {
             page.off('response', onSaveApiResponse);
         }
 
         if (portalSaveErrorPopup && !isMockSandboxMode) {
             const apiTail = capturedApiLogs.length ? ` | API=${capturedApiLogs[capturedApiLogs.length - 1]}` : '';
             const exactPortalFailMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) அரசு போர்ட்டல் பிழை: "${portalSaveErrorPopup}" [DOB=${formAudit.dobDomVal || formAudit.ngDobStr}, Doc=${formAudit.docDomVal}]${apiTail}`;
-            await showBrowserHud(`🔴 உறுப்பினர் ${memNum} போர்ட்டல் பிழை`, exactPortalFailMsg, 'error');
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Portal Error):** ${exactPortalFailMsg}`);
-            return { success: false, message: exactPortalFailMsg };
+            const recSaveErr = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} சேமிப்பு (அரசு தளப் பிழை)`,
+                errorMessage: exactPortalFailMsg,
+                operatorHint: 'நீங்களே "உறுப்பினர் விவரம் சேமி" பொத்தானை அழுத்தி OTP சாளரம் வந்ததும் அல்லது உறுப்பினர் அட்டவணையில் சேர்ந்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                extraInfo: { portalSaveErrorPopup, apiTail },
+                checkCompletedFn: async () => {
+                    if (await isMemberRowPresent()) return { completed: true, mode: 'in_table' };
+                    if (await checkAadhaarModal()) return { completed: true, mode: 'otp_modal' };
+                    return false;
+                }
+            });
+            if (!recSaveErr.recovered) {
+                await showBrowserHud(`🔴 உறுப்பினர் ${memNum} போர்ட்டல் பிழை`, exactPortalFailMsg, 'error');
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Portal Error):** ${exactPortalFailMsg}`);
+                return { success: false, message: exactPortalFailMsg };
+            }
         }
 
         // 14. ஆதார் OTP (ஆதார் உறுப்பினருக்கு Modal தோன்றினால்; பிறப்புச் சான்றிதழ் குழந்தைக்கு ஆதார் OTP தேவையில்லை)
@@ -818,9 +952,23 @@ async function executeFamilyMembersLoop(page, citizenProfile, sanitizedProfile, 
                 `Invalid=${(diagSnap.invalid || []).join(',') || 'none'}`
             ].filter(Boolean).join(' | ');
             const haltMsg = `உறுப்பினர் ${memNum} (${mem.nameTam || mem.nameEng}) அரசு அட்டவணையில் சேமிக்கப்படவில்லை! (${extraDetail})`;
-            await showBrowserHud(`🔴 உறுப்பினர் ${memNum} சேர்க்கை நிறுத்தம்`, haltMsg, 'error');
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltMsg}`);
-            return { success: false, message: haltMsg };
+            const recTbl = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: `உறுப்பினர் ${memNum} அட்டவணை சேர்க்கை`,
+                errorMessage: haltMsg,
+                operatorHint: 'நீங்களே "உறுப்பினர் விவரம் சேமி" & ஆதார் OTP முடித்து இந்த உறுப்பினர் கீழே அட்டவணையில் சேர்ந்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode,
+                onProgress,
+                showBrowserHud,
+                checkCompletedFn: async () => isMemberRowPresent(targetEngToken, targetTamToken, targetRelTam, targetRelEng)
+            });
+            if (!recTbl.recovered) {
+                await showBrowserHud(`🔴 உறுப்பினர் ${memNum} சேர்க்கை நிறுத்தம்`, haltMsg, 'error');
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${haltMsg}`);
+                return { success: false, message: haltMsg };
+            }
         }
         onProgress(`✅ [உறுப்பினர் ${memNum}] ${mem.nameTam || mem.nameEng} அரசு அட்டவணையில் வெற்றிகரமாகச் சேர்க்கப்பட்டு பச்சையாகப் பூட்டப்பட்டது!`);
         clearStaleOtpState();

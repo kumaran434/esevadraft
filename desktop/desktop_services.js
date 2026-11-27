@@ -33,9 +33,9 @@ function isPreSubmitReached(textOrRes) {
             return true;
         }
         const combined = `${textOrRes.step || ''} ${textOrRes.message || ''}`;
-        return /PRE_SUBMIT_GATE|Pre-Submit\s*Gate|ஆவணங்கள்\s*வெற்றிகரமாகப்\s*பதிவேற்றப்பட்டன|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(combined);
+        return /PRE_SUBMIT_GATE|Pre-Submit\s*(?:Human\s*)?Gate|மனிதப்\s*பூட்டு|ஆவணங்கள்\s*வெற்றிகரமாகப்\s*பதிவேற்றப்பட்டன|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(combined);
     }
-    return /PRE_SUBMIT_GATE|Pre-Submit\s*Gate|ஆவணங்கள்\s*வெற்றிகரமாகப்\s*பதிவேற்றப்பட்டன|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(String(textOrRes));
+    return /PRE_SUBMIT_GATE|Pre-Submit\s*(?:Human\s*)?Gate|மனிதப்\s*பூட்டு|ஆவணங்கள்\s*வெற்றிகரமாகப்\s*பதிவேற்றப்பட்டன|பதிவேற்றத்திற்குத்\s*தயார்|இறுதிச்?\s*சமர்ப்பிப்புக்கு\s*முன்/i.test(String(textOrRes));
 }
 
 function writeActiveRunFlight(data = {}) {

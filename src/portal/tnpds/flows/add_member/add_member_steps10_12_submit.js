@@ -3,6 +3,7 @@
  */
 const path = require('path');
 const { generateAddMemberReceiptPdf, receiptsDir } = require('../../../../services/tnpds_receipt_generator');
+const { waitForHumanFinalSubmitOnly, downloadOfficialTnpdsApplicationPdf } = require('../../helpers/tnpds_post_submit_receipt');
 
 async function executeSteps10To12Submit(page, memberContext, options, onProgress, sharedContext) {
     const {
@@ -86,34 +87,69 @@ async function executeSteps10To12Submit(page, memberContext, options, onProgress
     } else {
         const isAutomatedCiTest = process.env.REGRESSION_TEST === 'true' || options.fastTest === true || options.isTestSuite === true;
         if (!isAutomatedCiTest) {
-            onProgress('🛑 **[கட்டாய இறுதிச் சமர்ப்பிப்பு முன்-நிறுத்தம் - Compulsory Pre-Submit Human Gate]**');
-            onProgress('✅ குடும்ப உறுப்பினர் சேர்க்கை விவரங்கள் & ஆதார் ஆவணம் அரசு போர்ட்டலில் 100% பூர்த்தி செய்யப்பட்டுவிட்டன!');
-            await showBrowserHud('🛑 இறுதிச் சமர்ப்பிப்பு முன்-நிறுத்தம் (Operator Inspection Gate)', 'விவரங்களை குரோம் திரையில் சரிபார்த்துவிட்டு நீங்களே "பதிவு செய்" அழுத்தவும்', 'approval');
-
-            const approvalRes = await requestApprovalFromOperator(
-                '🛡️ **[இறுதி சமர்ப்பிப்பு ஒப்புதல் தேவை - Final Submit Approval Required]** TNPDS குடும்ப உறுப்பினர் சேர்க்கை படிவம் 100% பூர்த்தி செய்யப்பட்டுவிட்டது!',
+            // Golden Rule 25: NEVER auto-click Final Submit! Wait ONLY for the human operator to submit in Chrome.
+            const humanRes = await waitForHumanFinalSubmitOnly(page, {
+                serviceLabel: 'குடும்ப உறுப்பினர் சேர்க்கை விண்ணப்பம்',
                 onProgress,
-                isMock,
-                page
-            );
-            if (approvalRes?.action === 'halt_dry_run' || approvalRes?.proceedSubmit === false) {
-                onProgress('🛑 ஆபரேட்டர் இறுதிச் சமர்ப்பிப்பைத் தவிர்த்து பாதுகாப்பாக நிறுத்தினார்.');
+                showBrowserHud,
+                isMockSandboxMode: isMock
+            });
+            if (humanRes.reason === 'duplicate_aadhaar') {
+                onProgress(`ℹ️ [அரசு TNPDS அறிவிப்பு] "${humanRes.duplicateMessage}"`);
                 return {
                     success: true,
+                    alreadyLinkedInPortal: true,
+                    applicationNumber: null,
+                    applicationPdfUrl: null,
+                    message: `✅ **TNPDS குடும்ப உறுப்பினர் சேர்க்கை (படி 1–10) நிறைவுற்றது!**\n• ℹ️ **அரசு போர்ட்டல் அறிவிப்பு:** *"${humanRes.duplicateMessage}"*`
+                };
+            }
+            if (!humanRes.submitted || !humanRes.refNo) {
+                return {
+                    success: true,
+                    isPreSubmitGate: true,
+                    status: 'PRE_SUBMIT_GATE',
                     isDryRun: true,
                     applicationNumber: null,
                     applicationPdfUrl: null,
                     message: `🛡️ **குடும்ப உறுப்பினர் சேர்க்கை படிவம் 100% பூர்த்தி செய்யப்பட்டு ஆபரேட்டர் ஆய்வுக்குப் பின் பாதுகாப்பாக நிறுத்தப்பட்டது.**`
                 };
             }
-            onProgress('✅ **ஆபரேட்டர் ஒப்புதல் வழங்கிவிட்டார்!** அதிகாரப்பூர்வ அரசு இறுதிச் சமர்ப்பிப்பு தொடர்கிறது...');
-            if (approvalRes?.source !== 'portal') {
-                const submitBtn = page.locator('button.btn-success:has-text("பதிவு செய்"), button.btn-success:has-text("சமர்ப்பி"), button#myBtn, button:has-text("Submit"), #btnSubmitApp').first();
-                if (await submitBtn.count() > 0) {
-                    await submitBtn.click();
-                    await page.waitForTimeout(4000);
-                }
+            const officialDl = await downloadOfficialTnpdsApplicationPdf(page, humanRes.refNo, {
+                receiptsDir,
+                onProgress,
+                showBrowserHud,
+                serviceType: 'ADD_MEMBER'
+            });
+            let applicationPdfUrl = officialDl.pdfUrl;
+            if (!applicationPdfUrl) {
+                const saveFilename = `Application_${humanRes.refNo}.pdf`;
+                const savePath = path.join(receiptsDir, saveFilename);
+                await generateAddMemberReceiptPdf(savePath, {
+                    refNo: humanRes.refNo,
+                    date: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+                    rationCardNo,
+                    mobileNumber: userMobile,
+                    memberName: memberNameTam,
+                    memberNameTam,
+                    memberNameEng,
+                    relationshipTam: relTam,
+                    relationshipEng: relEng,
+                    gender: genderTam,
+                    dob,
+                    aadhaarNo,
+                    isChild
+                });
+                applicationPdfUrl = `/receipts/${saveFilename}`;
             }
+            return {
+                success: true,
+                applicationNumber: humanRes.refNo,
+                applicationPdfUrl,
+                receiptPdfUrl: applicationPdfUrl,
+                officialPortalPdfDownloaded: Boolean(officialDl.downloaded),
+                message: `🎉 **குடும்ப உறுப்பினர் சேர்க்கை விண்ணப்பம் TNPDS அரசு போர்ட்டலில் வெற்றிகரமாகச் சமர்ப்பிக்கப்பட்டது!**\n\n• 👤 **உறுப்பினர்:** ${memberNameTam} (${relTam})\n• 📄 **பதிவு எண்:** 👉 **${humanRes.refNo}**`
+            };
         } else {
             onProgress('[படி 11/12] 🚀 TNPDS அரசு போர்ட்டலில் இறுதி விண்ணப்பம் சமர்ப்பிக்கப்படுகிறது (Submitting to Portal)...');
             await showBrowserHud('[படி 11/12] இறுதி விண்ணப்பம் சமர்ப்பிக்கப்படுகிறது', 'TNPDS அரசு போர்ட்டல்');

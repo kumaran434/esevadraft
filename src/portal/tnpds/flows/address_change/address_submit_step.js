@@ -3,6 +3,7 @@
 // =========================================================================
 const path = require('path');
 const { generateAddressChangeReceiptPdf, receiptsDir } = require('../../../../services/tnpds_receipt_generator');
+const { waitForHumanFinalSubmitOnly, downloadOfficialTnpdsApplicationPdf } = require('../../helpers/tnpds_post_submit_receipt');
 
 async function executeAddressSubmitStep({
     page,
@@ -39,32 +40,62 @@ async function executeAddressSubmitStep({
     } else {
         const isAutomatedCiTest = process.env.REGRESSION_TEST === 'true' && (options.fastTest === true || options.isTestSuite === true);
         if (!isAutomatedCiTest) {
-            onProgress('🛑 **[கட்டாய இறுதிச் சமர்ப்பிப்பு முன்-நிறுத்தம் - Compulsory Pre-Submit Human Gate]**');
-            onProgress('✅ முகவரி மாற்ற விவரங்கள் & குடியிருப்புச் சான்று அரசு போர்ட்டலில் 100% பூர்த்தி செய்யப்பட்டுவிட்டன!');
-            onProgress('🔍 **ஆபரேட்டர் கவனத்திற்கு:** உங்கள் Google Chrome திரையில் உள்ள அனைத்து விவரங்களையும் நேரில் ஒருமுறை முழுமையாகச் சரிபார்க்கவும்.');
-            onProgress('👉 **ஏதேனும் பிழை இருந்தால்:** Chrome திரையிலேயே நீங்கள் நேரடியாகத் திருத்தலாம்.');
-            onProgress('🚀 **எல்லாம் சரியாக இருந்தால்:** நீங்களே Chrome திரையில் "பதிவு செய்" பொத்தானை நேரடியாக அழுத்தவும் (அல்லது UI ஒப்புதல் வழங்கவும்).');
-            await showBrowserHud(
-                '🛑 இறுதிச் சமர்ப்பிப்பு முன்-நிறுத்தம் (Operator Inspection Gate)',
-                'விவரங்களை குரோம் திரையில் சரிபார்த்துவிட்டு நீங்களே "பதிவு செய்" அழுத்தவும்',
-                'approval'
-            );
-
-            const approvalRes = await requestApprovalFromOperator(
-                '🛡️ **[இறுதி சமர்ப்பிப்பு ஒப்புதல் தேவை - Final Submit Approval Required]** TNPDS முகவரி மாற்ற படிவம் 100% பூர்த்தி செய்யப்பட்டுவிட்டது!\n\nதயவுசெய்து உங்கள் குரோம் உலாவியில் உள்ள விவரங்களை முழுமையாக ஒருமுறை சரிபார்க்கவும்.\n\nவிவரங்கள் சரியாக இருந்தால் கீழே உள்ள **"TNPDS-ல் இப்போது சமர்ப்பி"** பொத்தானை அழுத்தவும் (அல்லது குரோம் உலாவியில் நீங்களே "பதிவு செய்" அழுத்தலாம்):',
+            // Golden Rule 25: NEVER auto-click Final Submit! Wait ONLY for the human operator to submit in Chrome.
+            const humanRes = await waitForHumanFinalSubmitOnly(page, {
+                serviceLabel: 'குடும்ப அட்டை முகவரி மாற்ற விண்ணப்பம்',
                 onProgress,
-                isMock,
-                page
-            );
-            onProgress('✅ **ஆபரேட்டர் ஒப்புதல் வழங்கிவிட்டார்!** அதிகாரப்பூர்வ அரசு இறுதிச் சமர்ப்பிப்பு தொடர்கிறது...');
-
-            if (!isSubmittedDirectlyByOperator && approvalRes?.source !== 'portal') {
-                const submitBtn = page.locator('button.btn-success:has-text("பதிவு செய்"), button.btn-success:has-text("சமர்ப்பி"), button#myBtn, button:has-text("பதிவு செய்ய"), button:has-text("சமர்ப்பி"), button:has-text("Submit"), #btnSubmitApp').first();
-                if (await submitBtn.count() > 0) {
-                    await submitBtn.click();
-                    await page.waitForTimeout(4000);
-                }
+                showBrowserHud,
+                isMockSandboxMode: isMock
+            });
+            if (!humanRes.submitted || !humanRes.refNo) {
+                return {
+                    success: true,
+                    isPreSubmitGate: true,
+                    status: 'PRE_SUBMIT_GATE',
+                    isDryRun: true,
+                    applicationNumber: null,
+                    applicationPdfUrl: null,
+                    message: '🛡️ குடும்ப அட்டை முகவரி மாற்ற படிவம் 100% பூர்த்தி செய்யப்பட்டு ஆபரேட்டர் சரிபார்ப்பிற்காக பாதுகாப்பாக நிறுத்தப்பட்டது.'
+                };
             }
+            const officialDl = await downloadOfficialTnpdsApplicationPdf(page, humanRes.refNo, {
+                receiptsDir,
+                onProgress,
+                showBrowserHud,
+                serviceType: 'CHANGE_ADDRESS'
+            });
+            let applicationPdfUrl = officialDl.pdfUrl;
+            if (!applicationPdfUrl) {
+                const saveFilename = `Application_${humanRes.refNo}.pdf`;
+                const savePath = path.join(receiptsDir, saveFilename);
+                await generateAddressChangeReceiptPdf(savePath, {
+                    refNo: humanRes.refNo,
+                    date: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+                    rationCardNo,
+                    mobileNumber: userMobile,
+                    doorNo,
+                    streetEng,
+                    streetTam,
+                    district,
+                    taluk,
+                    village,
+                    pincode,
+                    proofType
+                });
+                applicationPdfUrl = `/receipts/${saveFilename}`;
+            }
+            return {
+                success: true,
+                applicationNumber: humanRes.refNo,
+                applicationPdfUrl,
+                receiptPdfUrl: applicationPdfUrl,
+                officialPortalPdfDownloaded: Boolean(officialDl.downloaded),
+                message: `🎉 **குடும்ப அட்டை முகவரி மாற்ற விண்ணப்பம் TNPDS அரசு போர்ட்டலில் வெற்றிகரமாகச் சமர்ப்பிக்கப்பட்டது!**\n\n` +
+                         `• 🏠 **புதிய முகவரி:** கதவு எண்: ${doorNo}, ${streetTam} (${streetEng}), ${village}, ${district} - ${pincode}\n` +
+                         `• 📄 **அரசு பதிவு குறிப்பு எண்:** 👉 **${humanRes.refNo}**\n` +
+                         `• 📱 **பதிவு செய்யப்பட்ட கைபேசி எண்:** +91 ${userMobile}\n\n` +
+                         `📥 **[அதிகாரப்பூர்வ விண்ணப்ப ஒப்புதல் சீட்டைப் பதிவிறக்க இங்கே கிளிக் செய்யவும் (PDF)](${applicationPdfUrl})**`
+            };
         } else {
             onProgress('[படி 12/12] 🚀 TNPDS அரசு போர்ட்டலில் இறுதி விண்ணப்பம் சமர்ப்பிக்கப்படுகிறது (Submitting to Portal)...');
             await showBrowserHud('[படி 12/12] இறுதி விண்ணப்பம் சமர்ப்பிக்கப்படுகிறது', 'TNPDS அரசு போர்ட்டல்');

@@ -2,7 +2,7 @@
  * TNPDS New Smart Card - Steps 14 to 20: Jurisdiction (District, Taluk, Village, Pin) & Mobile OTP
  */
 const { waitForNewCardMobileOtp } = require('./new_card_otp_config');
-const { waitForOtpModalOpened } = require('../../../common/strict_step_gate');
+const { waitForOtpModalOpened, waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
 const {
     installOtpModalCopilot,
     readOtpModalCopilotState,
@@ -197,8 +197,24 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
     }
     await page.waitForTimeout(1000);
 
+    const effOptsJur = options || sharedContext?.options || {};
+    const isMockModeJur = effOptsJur?.mockSandbox !== false && effOptsJur?.isMockSandboxMode !== false;
     const isDistVerified = await distSelect.evaluate(sel => sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'));
-    if (!isDistVerified) return { success: false, message: `படி 14 மாவட்டம் (${targetDist}) தேர்வு தோல்வி.` };
+    if (!isDistVerified) {
+        const recDist = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 14 (மாவட்டம் தேர்வு)',
+            errorMessage: `படி 14 மாவட்டம் (${targetDist}) தானாகத் தேர்வு ஆகவில்லை.`,
+            operatorHint: 'நீங்களே மாவட்டத்தைத் தேர்ந்தெடுத்தவுடன் ஆட்டோமேஷன் தானாகவே வட்டம்/கிராமத்தைத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || '',
+            isMockSandboxMode: isMockModeJur,
+            onProgress,
+            showBrowserHud: sharedContext.showBrowserHud,
+            checkCompletedFn: async () => distSelect.evaluate(sel => Boolean(sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'))).catch(() => false)
+        });
+        if (!recDist.recovered) return { success: false, message: `படி 14 மாவட்டம் (${targetDist}) தேர்வு தோல்வி.` };
+    }
     const verifiedDistName = await distSelect.evaluate(sel => sel.options[sel.selectedIndex]?.text || '');
     onProgress(`✅ [படி 14/51] மாவட்டம் (${verifiedDistName.trim() || targetDist}) வெற்றிகரமாகத் தேர்ந்தெடுக்கப்பட்டு பூட்டப்பட்டது!`);
 
@@ -249,7 +265,21 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
     await page.waitForTimeout(1000);
 
     const isTalukVerified = await talukSelect.evaluate(sel => sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'));
-    if (!isTalukVerified) return { success: false, message: `படி 15 வட்டம் (${targetTaluk}) தேர்வு தோல்வி.` };
+    if (!isTalukVerified) {
+        const recTaluk = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 15 (வட்டம் தேர்வு)',
+            errorMessage: `படி 15 வட்டம் (${targetTaluk}) தானாகத் தேர்வு ஆகவில்லை.`,
+            operatorHint: 'நீங்களே வட்டத்தைத் (Taluk) தேர்ந்தெடுத்தவுடன் ஆட்டோமேஷன் தானாகவே கிராமத்தைத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || '',
+            isMockSandboxMode: isMockModeJur,
+            onProgress,
+            showBrowserHud: sharedContext.showBrowserHud,
+            checkCompletedFn: async () => talukSelect.evaluate(sel => Boolean(sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'))).catch(() => false)
+        });
+        if (!recTaluk.recovered) return { success: false, message: `படி 15 வட்டம் (${targetTaluk}) தேர்வு தோல்வி.` };
+    }
     const verifiedTalukName = await talukSelect.evaluate(sel => sel.options[sel.selectedIndex]?.text || '');
     onProgress(`✅ [படி 15/51] வட்டம் (${verifiedTalukName.trim() || targetTaluk}) வெற்றிகரமாகத் தேர்ந்தெடுக்கப்பட்டு பூட்டப்பட்டது!`);
 
@@ -302,7 +332,21 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
     await page.waitForTimeout(1000);
 
     const isVillageVerified = await villageSelect.evaluate(sel => sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'));
-    if (!isVillageVerified) return { success: false, message: `படி 16 கிராமம் (${targetVillage}) தேர்வு தோல்வி.` };
+    if (!isVillageVerified) {
+        const recVil = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 16 (கிராமம் தேர்வு)',
+            errorMessage: `படி 16 கிராமம் (${targetVillage}) தானாகத் தேர்வு ஆகவில்லை.`,
+            operatorHint: 'நீங்களே வருவாய் கிராமத்தைத் (Village) தேர்ந்தெடுத்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || '',
+            isMockSandboxMode: isMockModeJur,
+            onProgress,
+            showBrowserHud: sharedContext.showBrowserHud,
+            checkCompletedFn: async () => villageSelect.evaluate(sel => Boolean(sel && sel.value && !sel.options[sel.selectedIndex]?.text.includes('தேர்ந்தெடுக்கவும்'))).catch(() => false)
+        });
+        if (!recVil.recovered) return { success: false, message: `படி 16 கிராமம் (${targetVillage}) தேர்வு தோல்வி.` };
+    }
     const verifiedVillageName = await villageSelect.evaluate(sel => sel.options[sel.selectedIndex]?.text || '');
     onProgress(`✅ [படி 16/51] கிராமம் (${verifiedVillageName.trim() || targetVillage}) வெற்றிகரமாகத் தேர்ந்தெடுக்கப்பட்டு பூட்டப்பட்டது!`);
 
@@ -386,12 +430,32 @@ async function executeJurisdictionSteps(page, citizenProfile, sanitizedProfile, 
         const effOpts = options || sharedContext?.options || {};
         const isMockMode = effOpts?.mockSandbox !== false && effOpts?.isMockSandboxMode !== false;
         if (!otpModalReady && !isMobileAlreadyVerified && !isMockMode) {
-            const step19Err = 'படி 19: "OTP ஐ உருவாக்கு" அழுத்திய பிறகும் OTP சாளரம் திறக்கவில்லை! அடுத்த படிக்குச் செல்லாமல் பாதுகாப்பாக நிறுத்தப்பட்டது.';
-            if (typeof sharedContext.showBrowserHud === 'function') {
-                await sharedContext.showBrowserHud('🔴 படி 19 OTP பிழை', step19Err, 'error', page).catch(() => {});
+            const step19Err = 'படி 19: "OTP ஐ உருவாக்கு" அழுத்திய பிறகும் OTP சாளரம் தானாகத் திறக்கவில்லை.';
+            const recOtpOpen = await waitForCopilotStepRecovery({
+                page,
+                stepLabel: 'படி 19 (மொபைல் OTP உருவாக்கம்)',
+                errorMessage: step19Err,
+                operatorHint: 'நீங்களே "OTP ஐ உருவாக்கு" அழுத்தி OTP சாளரம் திறந்தவுடன் (அல்லது மொபைல் சரிபார்ப்பு முடிந்தவுடன்) ஆட்டோமேஷன் தானாகவே தொடரும்!',
+                serviceName: 'TNPDS_NEW_CARD',
+                customerMobile: citizenProfile.mobileNumber || '',
+                isMockSandboxMode: isMockMode,
+                onProgress,
+                showBrowserHud: sharedContext.showBrowserHud,
+                checkCompletedFn: async () => {
+                    if (await waitForOtpModalOpened(page, 600)) return true;
+                    return await page.evaluate(() => {
+                        return Boolean(document.querySelector('#memberFormSection, input[formcontrolname="dateOfBirth"]')) ||
+                            Array.from(document.querySelectorAll('button')).some(b => (b.innerText || '').trim() === 'திருத்தம்');
+                    }).catch(() => false);
+                }
+            });
+            if (!recOtpOpen.recovered) {
+                if (typeof sharedContext.showBrowserHud === 'function') {
+                    await sharedContext.showBrowserHud('🔴 படி 19 OTP பிழை', step19Err, 'error', page).catch(() => {});
+                }
+                onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${step19Err}`);
+                return { success: false, message: step19Err };
             }
-            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${step19Err}`);
-            return { success: false, message: step19Err };
         }
     }
 

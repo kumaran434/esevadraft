@@ -1,13 +1,17 @@
 /**
- * TNPDS New Smart Card - Steps 47 to 51: Declaration, Operator Approval, and Final Submission
+ * TNPDS New Smart Card - Steps 47 to 51: Declaration, Strict Human-Only Final Submit Gate,
+ * and Official Post-Submit Application PDF Auto-Download (Golden Rule 25).
  */
-const fs = require('fs');
 const path = require('path');
 const { receiptsDir } = require('../../../../services/tnpds_receipt_generator');
+const { waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
+const {
+    waitForHumanFinalSubmitOnly,
+    downloadOfficialTnpdsApplicationPdf
+} = require('../../helpers/tnpds_post_submit_receipt');
 
 async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfile, options, onProgress, sharedContext, logDiag, takeStepSnapshot, scanAndBroadcastToasts) {
     const {
-        requestApprovalFromOperator = async () => true,
         showBrowserHud = async () => {},
         previewsDir = path.join(__dirname, '..', '..', '..', '..', 'data', 'previews'),
         videosDir = path.join(__dirname, '..', '..', '..', '..', 'data', 'videos')
@@ -15,7 +19,7 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
     const isMockSandboxMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
     const { tamName, userMobile, aadhaarRaw } = sanitizedProfile;
 
-    // படி 47: சுய அறிவிப்பு செக்பாக்ஸ் டிக் & கடுமையான சரிபார்ப்பு (Strict Step Gate)
+    // படி 47: சுய அறிவிப்பு செக்பாக்ஸ் டிக் & Co-Pilot Gate (Zero-Skip + Zero-Kill)
     onProgress('📍 [படி 47/51] சுய அறிவிப்பு உறுதிப்படுத்தல் செக்பாக்ஸ் டிக் செய்யப்படுகிறது...');
     const declarationCheckbox = page.locator('input[formcontrolname="declaration"], input[type="checkbox"][id*="declaration"]').first();
     const targetCb = (await declarationCheckbox.count() > 0) ? declarationCheckbox : page.getByRole('checkbox').last();
@@ -28,10 +32,24 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
     }
     const isDeclChecked = (await targetCb.count() > 0) ? await targetCb.isChecked().catch(() => false) : false;
     if (!isDeclChecked && !isMockSandboxMode) {
-        const declErr = 'படி 47: சுய அறிவிப்பு உறுதிமொழி (Declaration) கட்டம் டிக் செய்யப்படவில்லை! அடுத்த படிக்குச் செல்லாமல் நிறுத்தப்பட்டது.';
-        await showBrowserHud('🔴 படி 47 உறுதிமொழிப் பிழை', declErr, 'error', page).catch(() => {});
-        onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${declErr}`);
-        return { success: false, message: declErr };
+        const declErr = 'படி 47: சுய அறிவிப்பு உறுதிமொழி (Declaration) கட்டம் தானாக டிக் ஆகவில்லை.';
+        const recDecl = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: 'படி 47 (சுய அறிவிப்பு உறுதிமொழி)',
+            errorMessage: declErr,
+            operatorHint: 'நீங்களே சுய அறிவிப்பு செக்பாக்ஸை டிக் செய்தவுடன் ஆட்டோமேஷன் இறுதிச் சரிபார்ப்பு நிலைக்குத் தொடரும்!',
+            serviceName: 'TNPDS_NEW_CARD',
+            customerMobile: citizenProfile.mobileNumber || userMobile || '',
+            isMockSandboxMode,
+            onProgress,
+            showBrowserHud,
+            checkCompletedFn: async () => targetCb.isChecked().catch(() => false)
+        });
+        if (!recDecl.recovered) {
+            await showBrowserHud('🔴 படி 47 உறுதிமொழிப் பிழை', declErr, 'error', page).catch(() => {});
+            onProgress(`⚠️ **கடும் பூட்டு நிறுத்தம் (Strict Gate Halt):** ${declErr}`);
+            return { success: false, message: declErr };
+        }
     }
     onProgress('✅ [படி 47/51] சுய அறிவிப்பு உறுதிமொழி டிக் செய்யப்பட்டு பூட்டப்பட்டது!');
     await page.waitForTimeout(800);
@@ -41,24 +59,8 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
     const fullPath = path.join(previewsDir, 'latest_full.png');
     await page.screenshot({ fullPage: true, path: fullPath }).catch(() => {});
 
-    onProgress('🛡️ **[அரசு சமர்ப்பிப்பு முன்-சரிபார்ப்பு சாளரம் (Approval Station)]** அரசு இணையதளத்தில் படிவம் முழுமையாக நிரப்பப்பட்டுவிட்டது! உங்கள் திரையில் தோன்றும் அசல் அரசு ஸ்கிரீன்ஷாட்டைச் சரிபார்த்துவிட்டு "Approve & Submit" கொடுக்கவும்.');
-    await showBrowserHud('🛡️ இறுதிச் சமர்ப்பிப்பு முன்-சரிபார்ப்பு (Approval Required)', 'படிவம் 100% பூர்த்தி செய்யப்பட்டது! திரையில் உள்ள விவரங்களைச் சரிபார்த்து சாட் திரையில் சமர்ப்பிக்கவும்.', 'approval');
-
-    const approvalRes = await requestApprovalFromOperator(
-        '🛡️ **[இறுதி சமர்ப்பிப்பு ஒப்புதல் தேவை - Final Submit Approval Required]** TNPDS படிவம் 100% பூர்த்தி செய்யப்பட்டுவிட்டது!\n\nதயவுசெய்து உங்கள் குரோம் உலாவியில் உள்ள விவரங்களை முழுமையாக ஒருமுறை சரிபார்க்கவும்.\n\nவிவரங்கள் சரியாக இருந்தால் கீழே உள்ள **"TNPDS-ல் இப்போது சமர்ப்பி"** பொத்தானை அழுத்தவும்:',
-        onProgress,
-        isMockSandboxMode,
-        page
-    );
-    onProgress('✅ **ஆபரேட்டர் ஒப்புதல் வழங்கிவிட்டார்!** அதிகாரப்பூர்வ அரசு TNPDS இறுதிச் சமர்ப்பிப்பு தொடங்குகிறது...');
-    await showBrowserHud('🚀 இறுதிச் சமர்ப்பிப்பு தொடங்குகிறது...', 'அரசு போர்ட்டலில் பதிவு எண் பெறப்படுகிறது, காத்திருக்கவும்...', 'info');
-
-    const isExplicitSubmitRequested = approvalRes?.proceedSubmit === true || approvalRes?.action === 'submit' || approvalRes?.source === 'portal';
-    const isLiveProductionPublish = !isMockSandboxMode && (options.enableFinalSubmit === true || isExplicitSubmitRequested);
-    const shouldHaltSafely = isMockSandboxMode || (!isLiveProductionPublish && !isExplicitSubmitRequested) || approvalRes?.action === 'halt_dry_run';
-
-    if (shouldHaltSafely) {
-        onProgress('🎉 **[ஒத்திகை முறை நிறைவு (Dry-Run Guard)]** 5 உறுப்பினர்களும் (தலைவர் + 4 உறுப்பினர்கள்) TNPDS அரசு அட்டவணையில் 100% துல்லியமாகச் சேர்க்கப்பட்டுவிட்டனர்!');
+    if (isMockSandboxMode) {
+        onProgress('🎉 **[ஒத்திகை முறை நிறைவு (Dry-Run Guard)]** அனைத்து உறுப்பினர்களும் TNPDS அரசு அட்டவணையில் 100% துல்லியமாகச் சேர்க்கப்பட்டுவிட்டனர்!');
         onProgress('🛡️ பாதுகாப்புப் பூட்டு: இது ஒரு ஒத்திகை முறை (Dry-Run Mode) என்பதால், உங்கள் விண்ணப்பம் அரசு டேட்டாபேஸில் இறுதிச் சமர்ப்பிப்பு செய்யப்படாமல் பாதுகாக்கப்பட்டுள்ளது!');
         await takeStepSnapshot('step48_all_5_members_verified');
 
@@ -78,109 +80,64 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
 
         return {
             success: true,
-            isMockSandbox: isMockSandboxMode,
+            isMockSandbox: true,
             isDryRun: true,
             membersCount: 5,
             videoPath: savedVideoPath,
             videoUrl: savedVideoPath ? `/videos/${path.basename(savedVideoPath)}` : null,
-            message: '🎉 5 உறுப்பினர்களும் TNPDS அரசு அட்டவணையில் வெற்றிகரமாகச் சேர்க்கப்பட்டு பூட்டப்பட்டது!'
+            message: '🎉 அனைத்து உறுப்பினர்களும் TNPDS அரசு அட்டவணையில் வெற்றிகரமாகச் சேர்க்கப்பட்டு பூட்டப்பட்டது!'
         };
     }
 
-    if (approvalRes?.source === 'portal') {
-        onProgress('⚡ ஆபரேட்டர் நிஜ அரசு குரோம் பிரவுசரிலேயே நேரடியாக சமர்ப்பித்துவிட்டார்! நேரடியாகப் பதிவு எண் பெறப்படுகிறது...');
-    } else {
-        // படி 49: பதிவு செய் கிளிக்
-        onProgress('📍 [படி 49/51] பதிவு செய் (Submit) பொத்தான் அழுத்தப்படுகிறது...');
-        const submitBtn = page.getByRole('button', { name: /பதிவு செய்|Submit/i }).or(page.locator('button:has-text("பதிவு செய்"), button:has-text("Submit")')).first();
-        if (await submitBtn.count() > 0) await submitBtn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(2500);
-        await scanAndBroadcastToasts();
+    // படி 49-50: கட்டாய மனித-மட்டும் இறுதிச் சமர்ப்பிப்பு பூட்டு (Golden Rule 25)
+    // NEVER click Final Submit or Final Confirm automatically! Only the human operator clicks Submit in Chrome.
+    const humanSubmitRes = await waitForHumanFinalSubmitOnly(page, {
+        serviceLabel: 'புதிய மின்னணு குடும்ப அட்டை விண்ணப்பம்',
+        onProgress,
+        showBrowserHud,
+        isMockSandboxMode: false
+    });
 
-        // படி 50: உறுதி செய் கிளிக்
-        onProgress('📍 [படி 50/51] உறுதி செய் (Final Confirm) பொத்தான் அழுத்தப்படுகிறது...');
-        const confirmBtn = page.getByRole('button', { name: /உறுதி செய்|Confirm|Yes/i }).or(page.locator('button:has-text("உறுதி செய்"), button:has-text("Confirm")')).first();
-        if (await confirmBtn.count() > 0) {
-            await confirmBtn.click({ force: true }).catch(() => {});
-            await page.waitForTimeout(4000);
-            await scanAndBroadcastToasts();
-        }
+    if (humanSubmitRes.reason === 'duplicate_aadhaar') {
+        const dupMsg = `⚠️ **அரசு TNPDS போர்ட்டல் அதிகாரப்பூர்வ அறிவிப்பு (பதிவு பிழை):**\n\n📌 **"${humanSubmitRes.duplicateMessage || 'ஆதார் எண் ஏற்கனவே வேறொரு குடும்ப அட்டையுடன் இணைக்கப்பட்டுள்ளது'} (${aadhaarRaw})"**`;
+        onProgress(dupMsg);
+        return { success: false, isDuplicateAadhaar: true, message: dupMsg };
     }
 
-    // படி 51: அரசு பதிவு எண் / டேட்டாபேஸ் நிலை பெறுதல்
-    onProgress('📍 [படி 51/51] அதிகாரப்பூர்வ அரசு பதிவு எண் / முடிவு பெறப்படுகிறது...');
+    if (!humanSubmitRes.submitted || !humanSubmitRes.refNo) {
+        onProgress('🛡️ **[இறுதிச் சமர்ப்பிப்பு மனிதப் பூட்டு]** ஆபரேட்டர் சமர்ப்பிப்புக்கு முன் அமர்வு பாதுகாப்பாக நிறைவடைந்தது (ஆட்டோமேஷன் இறுதிச் சமர்ப்பிப்பை அழுத்தவில்லை).');
+        return {
+            success: true,
+            isPreSubmitGate: true,
+            status: 'PRE_SUBMIT_GATE',
+            message: '🛡️ புதிய குடும்ப அட்டை படிவம் 100% பூர்த்தி செய்யப்பட்டு ஆபரேட்டர் சரிபார்ப்பிற்காக பாதுகாப்பாக நிறுத்தப்பட்டது.'
+        };
+    }
+
+    // படி 51: ஆபரேட்டர் சமர்ப்பித்த பிறகு குறிப்பு எண்ணை எடுத்து அதிகாரப்பூர்வ TNPDS விண்ணப்ப PDF பதிவிறக்கம்
+    const appRefNo = humanSubmitRes.refNo;
+    onProgress(`📍 [படி 51/51] அரசு குறிப்பு எண் 👉 **${appRefNo}** பெறப்பட்டது — அதிகாரப்பூர்வ விண்ணப்ப PDF பதிவிறக்கப்படுகிறது...`);
     await takeStepSnapshot('step51_final_result');
 
-    const dupAadhaarModal = page.locator('div.modal, .modal-dialog, div:has-text("பதிவு பிழை")').first();
-    if (await dupAadhaarModal.count() > 0 && await dupAadhaarModal.isVisible()) {
-        const modalText = (await dupAadhaarModal.innerText()).trim();
-        if (modalText.includes('ஏற்கனவே வேறொரு குடும்ப அட்டையுடன் இணைக்கப்பட்டுள்ளது')) {
-            const dupMsg = `⚠️ **அரசு TNPDS போர்ட்டல் அதிகாரப்பூர்வ அறிவிப்பு (பதிவு பிழை):**\n\n📌 **"ஆதார் எண் ஏற்கனவே வேறொரு குடும்ப அட்டையுடன் இணைக்கப்பட்டுள்ளது (${aadhaarRaw})"**`;
-            onProgress(dupMsg);
-            return { success: false, isDuplicateAadhaar: true, message: dupMsg };
-        }
-    }
-
-    let appRefNo = '';
-    try {
-        const bodyText = await page.innerText('body');
-        const refMatch = bodyText.match(/(?:குறிப்பு\s*எண்|கோரிக்கை\s*எண்|விண்ணப்ப\s*எண்)\s*[:\-]?\s*([0-9A-Za-z]+)/i) || bodyText.match(/(\d{14})/);
-        if (refMatch) appRefNo = refMatch[1];
-        else {
-            const refEl = page.locator('span.ref-number, div:has-text("குறிப்பு எண்"), div:has-text("விண்ணப்ப எண்") strong, .app-no, b:has-text("352")').first();
-            if (await refEl.count() > 0) {
-                const m = (await refEl.innerText()).trim().match(/(\d{10,20})/);
-                if (m) appRefNo = m[1];
-            }
-        }
-    } catch (e) {
-        console.error('Error extracting reference number:', e);
-    }
-
-    let applicationPdfUrl = null;
-    if (appRefNo) {
-        onProgress(`🎉 **அரசு குறிப்பு எண் வெற்றிகரமாகப் பெறப்பட்டது:** 👉 **${appRefNo}**`);
-        onProgress('📥 அதிகாரப்பூர்வ அரசு TNPDS விண்ணப்ப படிவம் (Application PDF) தானாகவே பதிவிறக்கம் செய்யப்படுகிறது...');
-        try {
-            await page.goto('https://www.tnpds.gov.in/pages/home', { waitUntil: 'networkidle', timeout: 35000 });
-            const statusCard = page.locator('text=மின்னணு அட்டை விண்ணப்பத்தின் நிலை').first();
-            if (await statusCard.count() > 0) {
-                await statusCard.click();
-                await page.waitForTimeout(2500);
-                const refInput = page.locator('input[formcontrolname="ReferencNumber"]').first();
-                if (await refInput.count() > 0) {
-                    await refInput.fill(appRefNo);
-                    await page.waitForTimeout(500);
-                    const submitBtn = page.locator('button:has-text("பதிவு செய்ய")').first();
-                    if (await submitBtn.count() > 0) {
-                        await submitBtn.click();
-                        await page.waitForTimeout(4000);
-                        const dlBtn = page.locator('a:has-text("Download Application"), a:has-text("விண்ணப்ப பதிவிறக்கம்"), button:has-text("Download")').first();
-                        if (await dlBtn.count() > 0 && await dlBtn.isVisible()) {
-                            const [ download ] = await Promise.all([
-                                page.waitForEvent('download', { timeout: 15000 }).catch(() => null),
-                                dlBtn.click()
-                            ]);
-                            if (download) {
-                                const saveFilename = `Application_${appRefNo}.pdf`;
-                                await download.saveAs(path.join(receiptsDir, saveFilename));
-                                applicationPdfUrl = `/receipts/${saveFilename}`;
-                                onProgress('✅ **அதிகாரப்பூர்வ TNPDS விண்ணப்ப படிவம் (Application PDF) வெற்றிகரமாகப் பதிவிறக்கப்பட்டது!** 📄');
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (dlErr) {
-            console.error('Error auto-downloading application PDF:', dlErr.message);
-        }
-    }
+    const dlRes = await downloadOfficialTnpdsApplicationPdf(page, appRefNo, {
+        receiptsDir,
+        onProgress,
+        showBrowserHud,
+        serviceType: 'NEW_CARD'
+    });
+    const applicationPdfUrl = dlRes.pdfUrl || null;
 
     return {
         success: true,
         applicationNumber: appRefNo,
-        applicationPdfUrl: applicationPdfUrl,
-        message: `🎉 **அற்புதம்! புதிய ஸ்மார்ட் ரேஷன் கார்டு விண்ணப்பம் 51 படிகளையும் வெற்றிகரமாகக் கடந்து அதிகாரப்பூர்வமாகச் சமர்ப்பிக்கப்பட்டுவிட்டது!**\n\n• 👤 **விண்ணப்பதாரர்:** ${tamName}\n• 📄 **அரசு பதிவு எண்:** 👉 **${appRefNo || 'உங்களின் பதிவு செய்யப்பட்ட மொபைல் எண்ணிற்கு SMS வழியாக வந்து சேரும்'}**\n• 📱 **கைபேசி எண்:** +91 ${userMobile}`
+        applicationPdfUrl,
+        receiptPdfUrl: applicationPdfUrl,
+        officialPortalPdfDownloaded: Boolean(dlRes.downloaded),
+        message: `🎉 **அற்புதம்! புதிய ஸ்மார்ட் ரேஷன் கார்டு விண்ணப்பம் வெற்றிகரமாகச் சமர்ப்பிக்கப்பட்டு குறிப்பு எண் பெறப்பட்டது!**\n\n` +
+            `• 👤 **விண்ணப்பதாரர்:** ${tamName}\n` +
+            `• 📄 **அரசு குறிப்பு எண்:** 👉 **${appRefNo}**\n` +
+            `• 📱 **கைபேசி எண்:** +91 ${userMobile}` +
+            (applicationPdfUrl ? `\n\n📥 **[அதிகாரப்பூர்வ அரசு TNPDS விண்ணப்பப் படிவத்தைப் பதிவிறக்க இங்கே கிளிக் செய்யவும் (PDF)](${applicationPdfUrl})**` : '')
     };
 }
 

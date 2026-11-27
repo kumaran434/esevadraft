@@ -2,6 +2,7 @@
  * TNPDS Add Member - Step 9b: Aadhaar OTP Modal Handling & Table Verification
  */
 const { isValidAddMemberAadhaarOtp } = require('./add_member_otp_config');
+const { waitForCopilotStepRecovery } = require('../../../common/strict_step_gate');
 const {
     installOtpModalCopilot,
     readOtpModalCopilotState,
@@ -235,7 +236,35 @@ async function executeStep9TableVerify(page, memberContext, options, onProgress,
     }
 
     if (!memberAddedToTable) {
-        throw new Error(`TABLE_GATE_HALT: உறுப்பினர் "${memberNameTam}" அட்டவணையில் உறுதி செய்யப்படவில்லை.`);
+        const isMockMode9 = options?.isMockSandbox !== false;
+        const recTbl9 = await waitForCopilotStepRecovery({
+            page,
+            stepLabel: `உறுப்பினர் "${memberNameTam}" அட்டவணை சேர்க்கை`,
+            errorMessage: `உறுப்பினர் "${memberNameTam}" அட்டவணையில் தானாக உறுதி ஆகவில்லை.`,
+            operatorHint: 'நீங்களே "உறுப்பினரை சேர்க்க" & ஆதார் OTP முடித்து இந்த உறுப்பினர் அட்டவணையில் சேர்ந்தவுடன் ஆட்டோமேஷன் தானாகவே அடுத்த கட்டத்திற்குத் தொடரும்!',
+            serviceName: 'TNPDS_ADD_MEMBER',
+            customerMobile: memberContext.userMobile || '',
+            isMockSandboxMode: isMockMode9,
+            onProgress,
+            showBrowserHud,
+            checkCompletedFn: async () => page.evaluate(({ nameTam, nameEng }) => {
+                const tables = Array.from(document.querySelectorAll('table, mat-table, .table, .mat-table'));
+                if (tables.length === 0) return false;
+                const tbl = tables[tables.length - 1];
+                const rows = Array.from(tbl.querySelectorAll('tbody tr, tr, mat-row'));
+                const firstTamWord = (nameTam || '').split(' ')[0] || '';
+                const firstEngWord = (nameEng || '').split(' ')[0] || '';
+                return rows.some(r => {
+                    const txt = r.innerText || '';
+                    if (txt.includes('குடும்ப தலைவர்') || txt.includes('Head of')) return false;
+                    const hasName = (nameTam && txt.includes(nameTam)) || (nameEng && txt.includes(nameEng)) || (firstTamWord && firstTamWord.length > 2 && txt.includes(firstTamWord)) || (firstEngWord && firstEngWord.length > 2 && txt.includes(firstEngWord));
+                    return hasName && !txt.includes('ஆவணங்கள் காணப்படவில்லை');
+                });
+            }, { nameTam: memberNameTam, nameEng: memberNameEng }).catch(() => false)
+        });
+        if (!recTbl9.recovered) {
+            throw new Error(`TABLE_GATE_HALT: உறுப்பினர் "${memberNameTam}" அட்டவணையில் உறுதி செய்யப்படவில்லை.`);
+        }
     }
 
     return { success: true };
