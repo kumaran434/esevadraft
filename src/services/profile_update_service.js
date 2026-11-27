@@ -1,11 +1,23 @@
 const path = require('path');
 const fs = require('fs');
 const { syncFatherOrHusband, normalizeDobWithYearFallback } = require('./profile_helpers');
-const { resolveTnDistrict } = require('../../tn_district_mapper');
+const { resolveTnDistrict, isOfficialTnTaluk, lookupTnTaluk } = require('../../tn_district_mapper');
 const { ensureBilingualPair } = require('../utils/bilingual_helper');
 const { normalizeRelationshipPair } = require('../portal/tnpds/helpers/relationship_matcher');
+const { recordVerifiedVillageTaluk, recordFieldCorrection } = require('./ai_correction_memory');
 
 function applyProfileUpdates(sess, updated) {
+    const prevForLearning = (updated && updated.fromEditModal && sess && sess.citizenProfile)
+        ? {
+            fullNameTam: sess.citizenProfile.fullNameTam || '',
+            fatherNameTam: sess.citizenProfile.fatherNameTam || '',
+            streetTam: sess.citizenProfile.streetTam || '',
+            areaTam: sess.citizenProfile.areaTam || '',
+            village: sess.citizenProfile.village || '',
+            taluk: sess.citizenProfile.taluk || '',
+            district: sess.citizenProfile.district || ''
+        }
+        : null;
     if (updated && updated.fromEditModal) {
         sess.citizenProfile._editedInModalAt = new Date().toISOString();
         const prevEdited = Array.isArray(sess.citizenProfile._operatorEditedFields) ? sess.citizenProfile._operatorEditedFields : [];
@@ -414,6 +426,39 @@ function applyProfileUpdates(sess, updated) {
     }
 
     syncFatherOrHusband(sess.citizenProfile);
+
+    // Self-Learning AI Memory: Capture verified operator corrections from Edit Modal saves
+    if (prevForLearning && updated && updated.fromEditModal) {
+        try {
+            const mobLearn = sess.citizenProfile.mobileNumber || updated.mobileNumber || '';
+            const curProf = sess.citizenProfile;
+            if (curProf.village && curProf.taluk && isOfficialTnTaluk(curProf.taluk)) {
+                const tInfo = lookupTnTaluk(curProf.taluk, curProf.district || '', '');
+                if (tInfo) {
+                    recordVerifiedVillageTaluk({
+                        village: curProf.village,
+                        villageTam: curProf.villageTam || '',
+                        taluk: tInfo.taluk,
+                        talukTam: tInfo.talukTam,
+                        district: tInfo.district,
+                        districtTam: tInfo.districtTam,
+                        isHamlet: false,
+                        mobile: mobLearn
+                    });
+                }
+            }
+            for (const fk of ['fullNameTam', 'fatherNameTam', 'streetTam', 'areaTam', 'village']) {
+                if (prevForLearning[fk] && curProf[fk] && prevForLearning[fk] !== curProf[fk]) {
+                    recordFieldCorrection({
+                        fieldKey: fk,
+                        beforeVal: prevForLearning[fk],
+                        afterVal: curProf[fk],
+                        mobile: mobLearn
+                    });
+                }
+            }
+        } catch (_) {}
+    }
 }
 
 module.exports = {

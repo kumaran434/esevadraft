@@ -79,6 +79,12 @@ async function inspectAndExtractDocument(filePath, options = {}) {
 
         const base64Image = imageBuffer.toString('base64');
 
+        let learnedHintsBlock = '';
+        try {
+            const { buildDynamicAiPromptHints } = require('./src/services/ai_correction_memory');
+            learnedHintsBlock = buildDynamicAiPromptHints(14) || '';
+        } catch (_) {}
+
         const prompt = `You are an expert Government Document Quality Inspector and Multimodal OCR Specialist for Tamil Nadu (TNPDS) Civic applications.
 
 Analyze this uploaded citizen document (Aadhaar Card, Gas Book, or Passport Photo).
@@ -142,10 +148,15 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * Put ONLY the house/flat/plot/door number (e.g., "12", "4/56A", "No. 15B") into "doorNo".
   * NEVER put a Gas Consumer Number, LPG ID, EB Service Connection / Consumer Number, Meter No, Pincode, 5+ digit ID code (e.g., "622601"), or Person/Agency Name (e.g., "TNCS A/C DEVAGI") into "doorNo"! If no house/door number is printed or readable on the document, set "doorNo": null.
 - Street Name in English and pure Tamil (e.g. "மேட்டு தெரு", not "மெட்டு ஸ்ட்ரீட்"):
-  * Put ONLY the street/road/colony/nagar name into "streetEng" and accurate Tamil into "streetTam".
+  * Put ONLY the actual street/road/colony/nagar name into "streetEng" and accurate Tamil into "streetTam" (e.g. "Bajanai Kovil Street" / "பஜனை கோவில் தெரு").
+  * STRICT INDIAN AADHAAR NOISE CLEANER: Strip "C/O", "S/O", "W/O", "D/O", "Post", "P.O.", "Tk", "Taluk", "Dist", "District", "Tamil Nadu", trailing commas, and extra spaces.
+  * NEVER append a standalone Revenue Village name or Taluk name (e.g. "Soorai", "Arakkonam", "Sholinghur") onto "streetEng"/"streetTam"! Put ONLY the street name there.
   * NEVER put Customer Name, Father/Husband Name, "A/C ...", Consumer No, or Gas Distributor Office Address into "streetEng"/"streetTam"!
-- Area / Village / Hamlet in English and pure Tamil ("areaEng", "areaTam", "village").
-- District, Taluk, Pincode (6 digits — MUST come from the CUSTOMER residential address, NOT the distributor/agency office footer).
+- Area / Village / Hamlet & Taluk Separation Rule (CRITICAL FOR TAMIL NADU):
+  * Put the official Tamil Nadu Taluk name ONLY into "taluk" (NEVER mix Taluk into "streetEng" or "areaEng").
+  * Put the Revenue Village / Town name into "village" (e.g. "Soorai").
+  * Put a Hamlet / Sub-Village (குக்கிராமம்) into "areaEng"/"areaTam" ONLY if it is a separate smaller colony/hamlet distinct from the Revenue Village; do NOT copy "village, taluk" (like "Soorai, Arakonam") into "areaEng"!
+- District, Taluk, Pincode (6 digits — MUST come from the CUSTOMER residential address, NOT the distributor/agency office footer).${learnedHintsBlock}
 - If Gas Book / LPG Receipt / Subscription Voucher (SV) / Gas Passbook / Refill Cash Memo:
   * Set "documentType": "GAS_BOOK", "residenceProofCategory": "GAS_BOOK", and "gasDetails.hasGas": true ALWAYS when ANY Gas / LPG document is detected.
   * Extract LPG Consumer Number (look for Consumer No / Cons. No / Reg. No / Subscription Voucher No / BP No / 10-digit Consumer No / 17-digit LPG ID) into "gasDetails.consumerNumber" (do not confuse distributor phone number with Consumer No).
@@ -287,6 +298,7 @@ Respond strictly in JSON format (use null for fields not present in the image):
         }
         if (!result) throw (lastModelErr || new Error('All Gemini extractor models failed'));
         sanitizeUtilityAddressFields(result, options);
+        sanitizeAadhaarAddressFields(result);
         try {
             const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('./src/utils/bilingual_helper');
             if (result.fullNameEng && result.fullNameTam) {
@@ -424,7 +436,97 @@ function sanitizeUtilityAddressFields(result, options = {}) {
     return result;
 }
 
+/**
+ * Post-extraction sanitizer for Indian Aadhaar & Tamil Nadu civic addresses:
+ * 1. Collapses redundant multiple spaces in names & address lines.
+ * 2. Strips trailing commas and standalone Revenue Village / Taluk suffixes from streetEng/streetTam
+ *    (Hamlets are ONLY kept when explicitly resolved as a confirmed Hamlet!).
+ * 3. Separates "Village, Taluk" pairs cleanly using the 38-District / 315-Taluk Tamil Nadu Master Registry
+ *    without relying on error-prone PIN-code guessing.
+ */
+function sanitizeAadhaarAddressFields(result) {
+    if (!result || typeof result !== 'object') return result;
+
+    const collapseSpaces = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v);
+    const nameKeys = ['fullNameEng', 'fullNameTam', 'fatherNameEng', 'fatherNameTam', 'spouseNameEng', 'spouseNameTam', 'birthFatherNameEng', 'birthFatherNameTam'];
+    for (const k of nameKeys) {
+        if (typeof result[k] === 'string') result[k] = collapseSpaces(result[k]);
+    }
+    const addrKeys = ['doorNo', 'streetEng', 'streetTam', 'areaEng', 'areaTam', 'village', 'taluk', 'district'];
+    for (const k of addrKeys) {
+        if (typeof result[k] === 'string') {
+            result[k] = collapseSpaces(result[k])
+                .replace(/^(?:c\/o|s\/o|w\/o|d\/o)\s*[:.\-]?\s*/i, '')
+                .replace(/\b(?:post|p\.?o\.?|tk|taluk|taluka|dist|district|tamil\s*nadu)\b\.?/gi, '')
+                .replace(/\s*,\s*,\s*/g, ', ')
+                .replace(/^[\s,\-]+|[\s,\-]+$/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+    }
+
+    try {
+        const { resolveTnDistrict, isOfficialTnTaluk } = require('./tn_district_mapper');
+        const escapeRe = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // If areaEng contains "Village, Taluk" (e.g. "Soorai, Arakonam"), split out the trailing Taluk token cleanly
+        if (typeof result.areaEng === 'string' && result.areaEng.includes(',')) {
+            const parts = result.areaEng.split(',').map(p => p.trim()).filter(Boolean);
+            if (parts.length >= 2 && isOfficialTnTaluk(parts[parts.length - 1])) {
+                const talukToken = parts.pop();
+                if (!result.taluk) result.taluk = talukToken;
+                result.areaEng = parts.join(', ');
+                if (!result.village && parts.length === 1) result.village = parts[0];
+            }
+        }
+
+        const rawAddrCombined = [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk].filter(Boolean).join(' ');
+        const resolved = resolveTnDistrict(
+            result.district || '',
+            result.taluk || '',
+            result.village || result.areaEng || '',
+            result.pincode || '',
+            rawAddrCombined
+        );
+
+        if (resolved) {
+            if (resolved.district) result.district = resolved.district;
+            if (resolved.taluk) result.taluk = resolved.taluk;
+            if (resolved.village) result.village = resolved.village;
+            if (resolved.isHamlet) {
+                if (resolved.areaEng) result.areaEng = resolved.areaEng;
+                if (resolved.areaTam) result.areaTam = resolved.areaTam;
+            } else {
+                // Standalone Revenue Village (NOT a hamlet): strip redundant village/taluk suffix from streetEng/streetTam!
+                const stripTokens = [resolved.village, resolved.villageTam, result.village, resolved.taluk, resolved.talukTam, result.taluk]
+                    .map(t => String(t || '').trim())
+                    .filter(t => t.length >= 3);
+                const stripTrailingPlace = (st) => {
+                    if (!st || typeof st !== 'string') return st;
+                    let cleaned = st.replace(/[\s,]+$/g, '').trim();
+                    for (const tok of stripTokens) {
+                        const re = new RegExp(`(?:,\\s*|\\s+)${escapeRe(tok)}$`, 'i');
+                        const candidate = cleaned.replace(re, '').replace(/[\s,]+$/g, '').trim();
+                        if (candidate.length >= 3) cleaned = candidate;
+                    }
+                    return cleaned;
+                };
+                if (result.streetEng) result.streetEng = stripTrailingPlace(result.streetEng);
+                if (result.streetTam) result.streetTam = stripTrailingPlace(result.streetTam);
+
+                // Also remove trailing taluk from areaEng if areaEng equals village
+                if (result.areaEng && resolved.village && result.areaEng.toLowerCase() === resolved.village.toLowerCase()) {
+                    result.areaEng = resolved.village;
+                }
+            }
+        }
+    } catch (_) {}
+
+    return result;
+}
+
 module.exports = {
     inspectAndExtractDocument,
-    sanitizeUtilityAddressFields
+    sanitizeUtilityAddressFields,
+    sanitizeAadhaarAddressFields
 };

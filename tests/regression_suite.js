@@ -800,11 +800,11 @@ async function runTests() {
         assert(resSuman.wasAutoCorrected === true, 'Suman case: wasAutoCorrected flag set');
         assert(resSuman.reason && resSuman.reason.includes('இராணிப்பேட்டை'), 'Suman case: Explanatory Tamil reason generated');
 
-        // 2. Nemili 6-digit Pincode Resolution (even when village & taluk are blank)
-        const resPinNemili = resolveTnDistrict('Vellore', '', '', '631051');
-        assert(resPinNemili.district === 'Ranipet', 'Nemili pincode: Vellore auto-corrected to Ranipet');
-        assert(resPinNemili.taluk === 'Nemili', 'Nemili pincode: Taluk resolved to Nemili');
-        assert(resPinNemili.wasAutoCorrected === true, 'Nemili pincode: wasAutoCorrected true');
+        // 2. Nemili Taluk-First Resolution (replaces blind PIN-code guessing with official 38-District / 315-Taluk Master)
+        const resPinNemili = resolveTnDistrict('Vellore', 'Nemili', '', '631051');
+        assert(resPinNemili.district === 'Ranipet', 'Nemili taluk: Vellore auto-corrected to Ranipet');
+        assert(resPinNemili.taluk === 'Nemili', 'Nemili taluk: Taluk resolved to Nemili');
+        assert(resPinNemili.wasAutoCorrected === true, 'Nemili taluk: wasAutoCorrected true');
 
         // 3. Chengalpattu & Tambaram Resolution (carved from Kanchipuram)
         const resTambaram = resolveTnDistrict('Kanchipuram', '', 'Tambaram', '600045');
@@ -6898,6 +6898,71 @@ async function runTests() {
                     'TEST 92.xsdRetryAndDiag: Captures sanitized Save Member API payload/response and auto-retries once on Otp XSD Validation Failed'
                 );
                 passedCount += 3;
+            }
+
+            // [TEST 93] 🗺️ Complete 38-District / 315-Taluk Master-First Resolution (Zero Blind PIN Guess) + Aadhaar Cleaner + AI Self-Learning Memory
+            console.log('\n[TEST 93] 🗺️ Verifying 38-District/315-Taluk Master Resolution, Soorai/Hamlet Separation & AI Correction Memory...');
+            {
+                const { TN_ALL_TALUKS_MASTER, isOfficialTnTaluk, resolveTnDistrict } = require('../tn_district_mapper');
+                const { sanitizeAadhaarAddressFields } = require('../ai_document_extractor');
+                const aiMem93 = require('../src/services/ai_correction_memory');
+
+                const distCount = (TN_ALL_TALUKS_MASTER.districts || []).length;
+                const talukCount = (TN_ALL_TALUKS_MASTER.districts || []).reduce((a, d) => a + (d.taluks || []).length, 0);
+                assert(distCount === 38 && talukCount >= 310, `TEST 93.master38: All 38 districts & 310+ taluks loaded (districts=${distCount}, taluks=${talukCount})`);
+                assert(
+                    isOfficialTnTaluk('Sholinghur') && isOfficialTnTaluk('Arakkonam') && isOfficialTnTaluk('Cheyyar') && isOfficialTnTaluk('Vembakkam') && isOfficialTnTaluk('Tirukkoyilur'),
+                    'TEST 93.officialTaluks: Core official Tamil Nadu taluks recognized by master registry'
+                );
+
+                // Soorai is a standalone Revenue Village under Sholinghur Taluk — MUST NOT be overridden by Arakkonam PIN or appended to street!
+                const sooraiRes = resolveTnDistrict('Vellore', '', 'Soorai', '631001', 'Bajanai Kovil Street, Soorai, Arakonam');
+                assert(
+                    sooraiRes.district === 'Ranipet' && sooraiRes.taluk === 'Sholinghur' && sooraiRes.village === 'Soorai' && sooraiRes.isHamlet === false,
+                    `TEST 93.sooraiMaster: Soorai resolves cleanly to Ranipet / Sholinghur / Soorai (isHamlet=false) even with Arakkonam PIN (got ${sooraiRes.district}/${sooraiRes.taluk}/${sooraiRes.village})`
+                );
+
+                // Blind PIN-code MUST NOT fabricate a wrong Taluk/Village when taluk & village are unknown
+                const noPinGuess = resolveTnDistrict('Ranipet', '', 'UnknownRemoteVillageXYZ', '631001');
+                assert(
+                    noPinGuess.taluk === '' && noPinGuess.village === 'UnknownRemoteVillageXYZ',
+                    `TEST 93.noBlindPin: Unknown village is NOT overwritten by blind PIN-code guess (got taluk=${noPinGuess.taluk}, village=${noPinGuess.village})`
+                );
+
+                // Aadhaar post-extraction sanitizer strips standalone village from street and collapses multi-spaces
+                const dirtyAadhaar = {
+                    fullNameEng: 'S   Prasanth',
+                    fullNameTam: 'சு   பிரசாந்த்',
+                    streetEng: 'Bajanai Kovil Street, Soorai',
+                    streetTam: 'பஜனை கோவில் தெரு,',
+                    areaEng: 'Soorai, Arakonam',
+                    areaTam: 'சூரை',
+                    village: 'Soorai',
+                    taluk: '',
+                    district: 'Vellore',
+                    pincode: '631001'
+                };
+                sanitizeAadhaarAddressFields(dirtyAadhaar);
+                assert(
+                    dirtyAadhaar.fullNameTam === 'சு பிரசாந்த்' &&
+                    dirtyAadhaar.streetEng === 'Bajanai Kovil Street' &&
+                    dirtyAadhaar.streetTam === 'பஜனை கோவில் தெரு' &&
+                    dirtyAadhaar.district === 'Ranipet' &&
+                    dirtyAadhaar.taluk === 'Sholinghur' &&
+                    dirtyAadhaar.village === 'Soorai',
+                    `TEST 93.aadhaarSanitize: Cleans multi-spaces, strips standalone village from street, resolves Ranipet/Sholinghur (got street="${dirtyAadhaar.streetEng}", tam="${dirtyAadhaar.streetTam}", taluk="${dirtyAadhaar.taluk}")`
+                );
+
+                // AI Correction Memory exports & safe test-mode isolation
+                assert(
+                    typeof aiMem93.buildDynamicAiPromptHints === 'function' &&
+                    typeof aiMem93.recordVerifiedVillageTaluk === 'function' &&
+                    typeof aiMem93.recordFieldCorrection === 'function' &&
+                    aiMem93.recordFieldCorrection({ fieldKey: 'streetTam', beforeVal: 'testA', afterVal: 'testB', mobile: '9999900093' }) === false,
+                    'TEST 93.aiMemSafe: AI self-learning memory functions exist and strictly block test-mode pollution'
+                );
+
+                passedCount += 6;
             }
 
             passedCount += cartridgeDirs81.length + 25;
