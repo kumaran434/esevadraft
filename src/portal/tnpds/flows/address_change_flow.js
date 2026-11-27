@@ -33,18 +33,55 @@ async function startTnpdsAddressChangeFlow(citizenProfile = {}, onProgress = () 
     const isMock = options.isMockSandbox !== false;
     isMockSandboxMode = isMock;
 
-    const subData = options.subServiceData || citizenProfile.subServiceData || options.draftData?.subServiceData || {};
+    const subData = { ...(options.subServiceData || citizenProfile.subServiceData || options.draftData?.subServiceData || {}) };
     const userMobile = (citizenProfile.mobileNumber || options.draftData?.mobileNumber || options.mobileNumber || activeSessionMobile || '9842367866').trim();
 
-    const doorNo = subData.doorNo || citizenProfile.doorNo || '12/4A';
-    const streetEng = subData.streetEng || citizenProfile.streetEng || subData.newAddress || 'GANDHI ROAD';
-    const streetTam = subData.streetTam || citizenProfile.streetTam || 'காந்தி சாலை';
-    const district = subData.district || citizenProfile.district || 'வேலூர்';
-    const taluk = subData.taluk || citizenProfile.taluk || 'காட்பாடி';
-    const village = subData.village || citizenProfile.village || 'காட்பாடி';
-    const pincode = subData.pincode || citizenProfile.pincode || '632007';
+    const isTestSuiteEarly = Boolean(
+        options.fastTest === true ||
+        process.env.NODE_ENV === 'test' ||
+        process.env.REGRESSION_TEST === 'true' ||
+        options.draftData?.operatorUid === 'test_suite_operator_uid'
+    );
+    const allowDummyDefaults = isMock || isTestSuiteEarly;
+
+    const rawDoor = String(subData.doorNo || subData.newDoorNo || citizenProfile.doorNo || '').trim();
+    const rawStreetEng = String(subData.streetEng || subData.newStreet || subData.newAddress || citizenProfile.streetEng || '').trim();
+    const rawStreetTam = String(subData.streetTam || citizenProfile.streetTam || '').trim();
+    const rawAreaEng = String(subData.areaEng || citizenProfile.areaEng || '').trim();
+    const rawAreaTam = String(subData.areaTam || citizenProfile.areaTam || '').trim();
+
+    const { ensureBilingualPair } = require('../../../utils/bilingual_helper');
+    const stPair = ensureBilingualPair(
+        rawStreetEng || (allowDummyDefaults ? 'GANDHI ROAD' : ''),
+        rawStreetTam || (allowDummyDefaults ? 'காந்தி சாலை' : '')
+    );
+    const arPair = (rawAreaEng || rawAreaTam) ? ensureBilingualPair(rawAreaEng, rawAreaTam) : { eng: '', tam: '' };
+
+    const doorNo = rawDoor || (allowDummyDefaults ? '12/4A' : '');
+    const streetEng = stPair.eng || rawStreetEng || (allowDummyDefaults ? 'GANDHI ROAD' : '');
+    const streetTam = stPair.tam || rawStreetTam || (allowDummyDefaults ? 'காந்தி சாலை' : '');
+    const areaEng = arPair.eng || rawAreaEng;
+    const areaTam = arPair.tam || rawAreaTam;
+    const district = subData.district || subData.newDistrict || citizenProfile.district || (allowDummyDefaults ? 'வேலூர்' : '');
+    const taluk = subData.taluk || subData.newTaluk || citizenProfile.taluk || (allowDummyDefaults ? 'காட்பாடி' : '');
+    const village = subData.village || subData.newVillage || citizenProfile.village || (allowDummyDefaults ? 'காட்பாடி' : '');
+    const pincode = subData.pincode || subData.newPincode || citizenProfile.pincode || (allowDummyDefaults ? '632007' : '');
     const proofType = subData.proofType || 'மின் கட்டண ரசீது (EB Bill)';
-    const rationCardNo = subData.rationCardNo || citizenProfile.rationCardNo || options.draftData?.rationCardNo || '332145897210';
+    const rationCardNo = subData.rationCardNo || subData.smartCardNumber || citizenProfile.rationCardNo || citizenProfile.smartCardNumber || options.draftData?.rationCardNo || (allowDummyDefaults ? '332145897210' : '');
+
+    if (!allowDummyDefaults && (!doorNo || (!streetEng && !streetTam))) {
+        throw new Error('புதிய கதவு எண் அல்லது தெருப் பெயர் முழுமையாக இல்லை — தயவுசெய்து "திருத்து (Edit)" படிவத்தில் புதிய முகவரியைச் சரிபார்த்து சேமிக்கவும்.');
+    }
+
+    subData.doorNo = doorNo;
+    subData.streetEng = streetEng;
+    subData.streetTam = streetTam;
+    if (areaEng) subData.areaEng = areaEng;
+    if (areaTam) subData.areaTam = areaTam;
+    if (district) subData.district = district;
+    if (taluk) subData.taluk = taluk;
+    if (village) subData.village = village;
+    if (pincode) subData.pincode = pincode;
 
     console.log(`\n🚀 Starting Unified TNPDS Change Address Automation for ${userMobile}... ${isMock ? '[MOCK/DEMO MODE]' : '[LIVE PRODUCTION]'}`);
 
@@ -166,6 +203,7 @@ async function startTnpdsAddressChangeFlow(citizenProfile = {}, onProgress = () 
                     page,
                     subData,
                     citizenProfile,
+                    isMock,
                     options,
                     onProgress,
                     sharedContext

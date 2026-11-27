@@ -62,7 +62,10 @@ function renderSubserviceReadySummary(sess) {
     } else if (subService === 'CHANGE_ADDRESS') {
         svcNameTam = 'முகவரி மாற்றம்';
         const proof = sess.subServiceData?.proofType || 'மின் கட்டண ரசீது (EB Bill)';
+        const sData = sess.subServiceData || {};
+        const addrLine = [sData.doorNo, sData.streetTam || sData.streetEng, sData.village || sData.areaTam, sData.taluk, sData.district, sData.pincode].filter(Boolean).join(', ');
         detailsList = `• 🏠 **சேவை:** புதிய முகவரி மாற்றம்\n` +
+                      (addrLine ? `• 📍 **புதிய முகவரி:** ${addrLine}\n` : '') +
                       `• 📄 **முகவரிச் சான்று:** ${proof} ✅\n`;
     } else if (subService === 'CHANGE_CARD_TYPE') {
         svcNameTam = 'குடும்ப அட்டை வகை மாற்றம்';

@@ -138,16 +138,22 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
 - BIRTH CERTIFICATE SPECIAL RULE: If documentType is "BIRTH_CERTIFICATE", extract the CHILD'S name as fullNameEng/fullNameTam, the child's DOB as dob, child's gender as gender, father's name as fatherNameEng/fatherNameTam, registration number as certificateNumber, and set aadhaarNumber strictly to null unless a 12-digit Aadhaar number specifically for that child is printed (NEVER put parent's phone/Aadhaar into child's aadhaarNumber).
 - 12-Digit Aadhaar Number (without spaces, ONLY if an Aadhaar number is printed on the document; do not confuse LPG ID with Aadhaar).
 - Smart Ration Card Number ("smartCardNumber", e.g., 12-digit number starting with 33... or old format like 05/G/..., ONLY if visible on a Ration/Smart Card).
-- Door No / House No.
-- Street Name in English and pure Tamil (e.g. "மேட்டு தெரு", not "மெட்டு ஸ்ட்ரீட்").
-- Area / Village in English and pure Tamil.
-- District, Taluk, Pincode (6 digits).
+- Door No / House No (STRICT ADDRESS COLUMN RULE):
+  * Put ONLY the house/flat/plot/door number (e.g., "12", "4/56A", "No. 15B") into "doorNo".
+  * NEVER put a Gas Consumer Number, LPG ID, EB Service Connection / Consumer Number, Meter No, Pincode, 5+ digit ID code (e.g., "622601"), or Person/Agency Name (e.g., "TNCS A/C DEVAGI") into "doorNo"! If no house/door number is printed or readable on the document, set "doorNo": null.
+- Street Name in English and pure Tamil (e.g. "மேட்டு தெரு", not "மெட்டு ஸ்ட்ரீட்"):
+  * Put ONLY the street/road/colony/nagar name into "streetEng" and accurate Tamil into "streetTam".
+  * NEVER put Customer Name, Father/Husband Name, "A/C ...", Consumer No, or Gas Distributor Office Address into "streetEng"/"streetTam"!
+- Area / Village / Hamlet in English and pure Tamil ("areaEng", "areaTam", "village").
+- District, Taluk, Pincode (6 digits — MUST come from the CUSTOMER residential address, NOT the distributor/agency office footer).
 - If Gas Book / LPG Receipt / Subscription Voucher (SV) / Gas Passbook / Refill Cash Memo:
   * Set "documentType": "GAS_BOOK", "residenceProofCategory": "GAS_BOOK", and "gasDetails.hasGas": true ALWAYS when ANY Gas / LPG document is detected.
   * Extract LPG Consumer Number (look for Consumer No / Cons. No / Reg. No / Subscription Voucher No / BP No / 10-digit Consumer No / 17-digit LPG ID) into "gasDetails.consumerNumber" (do not confuse distributor phone number with Consumer No).
   * Normalize "gasDetails.oilCompany" strictly to "IOC" (Indane / IndianOil / IOCL), "HPC" (HP Gas / Hindustan Petroleum / HPCL), or "BPC" (Bharat Gas / Bharat Petroleum / BPCL), and set "gasDetails.oilCompanyDisplay" to "Indane Gas (IOCL)", "HP Gas (HPC)", or "Bharat Gas (BPCL)".
   * Extract Distributor / Gas Agency Name into "gasDetails.agencyName" (e.g. "RAJAM GAS AGENCY"), and cylinder count ("1" or "2") into "gasDetails.cylinders".
-  * Note: On Gas Books, the customer address is under NAME/ADDRESS and the distributor's office address is under DISTRIBUTOR'S NAME/ADDRESS—always extract the CUSTOMER'S address for street/area/pincode, and the DISTRIBUTOR'S name for agencyName!
+  * Note: On Gas Books, the customer address is under NAME/ADDRESS and the distributor's office address is under DISTRIBUTOR'S NAME/ADDRESS—always extract ONLY the CUSTOMER'S residential address (excluding customer name line / A/C label / consumer number) for doorNo/street/area/village/pincode, and the DISTRIBUTOR'S name for agencyName!
+- If EB Bill / Electricity Bill / Property Tax Receipt:
+  * Extract ONLY the residential service address (Door No, Street, Area/Village, Pincode) — NEVER put the 12-digit EB Service Connection No / Assessment No or Consumer Name into "doorNo" or "streetEng"!
 - Face / Passport Portrait Detection & Exact Document Boundary Detection:
   * "documentBoundingBox": [ymin, xmin, ymax, xmax] (normalized integers from 0 to 1000 tightly bounding the full physical document page/card edges, excluding only outer table/desk background. Never crop inside the document page!).
   * If this document contains a person's photo / face portrait (such as on an Aadhaar front card or e-Aadhaar):
@@ -225,6 +231,18 @@ Respond strictly in JSON format (use null for fields not present in the image):
         // Primary: gemini-flash-lite-latest with thinkingBudget: 0 (~4.3x cheaper than 3.8 Flash, zero hidden thinking tokens)
         // Fallback: gemini-2.5-flash with thinkingBudget: 0 ONLY if Flash Lite fails or returns empty/unparseable JSON
         const candidateModels = ['gemini-flash-lite-latest', 'gemini-2.5-flash'];
+        const isSuspiciousUtilityExtraction = (resObj) => {
+            if (!resObj || typeof resObj !== 'object') return false;
+            const dt = String(resObj.documentType || '').toUpperCase();
+            const isUtility = ['GAS_BOOK', 'EB_BILL', 'PROPERTY_TAX', 'WATER_TAX', 'RENT_AGREEMENT', 'BANK_PASSBOOK'].includes(dt) ||
+                options?.subService === 'CHANGE_ADDRESS';
+            if (!isUtility || dt.includes('AADHAAR')) return false;
+            const dNo = String(resObj.doorNo || '').trim();
+            const st = String(resObj.streetEng || resObj.streetTam || '').trim();
+            const badDoor = !dNo || /^\d{5,}$/.test(dNo) || /^(tncs|a\/c|c\/o|s\/o|w\/o|indane|bharat|hp)/i.test(dNo);
+            const badStreet = !st || /\b(tncs|a\/c|consumer|agency|distributor)\b/i.test(st);
+            return badDoor || badStreet;
+        };
         let result = null;
         let lastModelErr = null;
         for (const modelName of candidateModels) {
@@ -256,6 +274,10 @@ Respond strictly in JSON format (use null for fields not present in the image):
                 const parsed = JSON.parse(response.text);
                 if (parsed && typeof parsed === 'object') {
                     result = parsed;
+                    if (modelName === 'gemini-flash-lite-latest' && isSuspiciousUtilityExtraction(parsed)) {
+                        console.warn('⚠️ [AI Extractor] Utility/Gas Book address looks ambiguous with Flash Lite — escalating to gemini-2.5-flash for higher accuracy...');
+                        continue;
+                    }
                     break;
                 }
             } catch (mErr) {
@@ -264,6 +286,7 @@ Respond strictly in JSON format (use null for fields not present in the image):
             }
         }
         if (!result) throw (lastModelErr || new Error('All Gemini extractor models failed'));
+        sanitizeUtilityAddressFields(result, options);
         try {
             const { normalizeTamilInitialsFromEnglish, ensureBilingualPair } = require('./src/utils/bilingual_helper');
             if (result.fullNameEng && result.fullNameTam) {
@@ -354,6 +377,54 @@ Respond strictly in JSON format (use null for fields not present in the image):
     }
 }
 
+function sanitizeUtilityAddressFields(result, options = {}) {
+    if (!result || typeof result !== 'object') return result;
+    const dt = String(result.documentType || '').toUpperCase();
+    const isUtility = ['GAS_BOOK', 'EB_BILL', 'PROPERTY_TAX', 'WATER_TAX', 'RENT_AGREEMENT', 'BANK_PASSBOOK'].includes(dt) ||
+        options?.subService === 'CHANGE_ADDRESS';
+    if (!isUtility || dt.includes('AADHAAR')) return result;
+
+    const consumerDigits = String(result.gasDetails?.consumerNumber || '').replace(/\D/g, '');
+    const rawDoor = String(result.doorNo || '').trim();
+    const doorDigits = rawDoor.replace(/\D/g, '');
+    const isConsumerOrAccountDoor = !rawDoor ||
+        /^\d{5,}$/.test(rawDoor) ||
+        (consumerDigits.length >= 5 && doorDigits && (doorDigits === consumerDigits || consumerDigits.includes(doorDigits))) ||
+        /^(tncs|a\/c|ac\b|c\/o|s\/o|w\/o|indane|bharat|hp\s*gas|consumer)/i.test(rawDoor);
+    if (isConsumerOrAccountDoor) {
+        result.doorNo = null;
+    }
+
+    const cleanStreetNoise = (str) => {
+        if (!str || typeof str !== 'string') return str;
+        let s = str.trim();
+        if (consumerDigits.length >= 5) {
+            s = s.replace(new RegExp(`^\\s*${consumerDigits}\\s*[,\\-:\\/]*\\s*`, 'i'), '');
+        }
+        s = s.replace(/^\s*\d{5,}\s*[,\-:\/]+\s*/g, '');
+        if (/^(tncs\s+a\/c|a\/c\s+|டி\.?என்\.?சி\.?எஸ்\s+ஏ\/சி)\b/i.test(s) && !/(street|road|nagar|colony|salai|theru|cross|avenue|தெரு|சாலை|நகர்|காலனி)/i.test(s)) {
+            return null;
+        }
+        return s.trim() || null;
+    };
+
+    result.streetEng = cleanStreetNoise(result.streetEng);
+    result.streetTam = cleanStreetNoise(result.streetTam);
+    try {
+        const { ensureBilingualPair, containsEnglish } = require('./src/utils/bilingual_helper');
+        if (result.streetEng && (!result.streetTam || containsEnglish(result.streetTam))) {
+            const pair = ensureBilingualPair(result.streetEng, '');
+            if (pair.tam) result.streetTam = pair.tam;
+        }
+        if (result.areaEng && (!result.areaTam || containsEnglish(result.areaTam))) {
+            const pair = ensureBilingualPair(result.areaEng, '');
+            if (pair.tam) result.areaTam = pair.tam;
+        }
+    } catch (_) {}
+    return result;
+}
+
 module.exports = {
-    inspectAndExtractDocument
+    inspectAndExtractDocument,
+    sanitizeUtilityAddressFields
 };

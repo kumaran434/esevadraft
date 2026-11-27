@@ -6514,6 +6514,65 @@ async function runTests() {
                 passedCount += 5;
             }
 
+            // [TEST 86] 📍 Address Change Gas Book OCR Sanitizer, Confirm Gate & Box-by-Box Portal Form Integrity
+            console.log('\n[TEST 86] 📍 Address Change Gas Book Sanitizer, Confirm Gate & Cascade Village Matching...');
+            {
+                const { sanitizeUtilityAddressFields } = require('../ai_document_extractor');
+                const { findCascadeMatch } = require('../src/portal/tnpds/flows/address_change/address_form_steps');
+                const addrFlow = require('../src/cartridges/tnpds_change_address/flow');
+
+                // 1. Gas Book Consumer Code / TNCS A/C noise stripped cleanly from doorNo & street
+                const dirtyGas = {
+                    documentType: 'GAS_BOOK',
+                    gasDetails: { hasGas: true, consumerNumber: '622601' },
+                    doorNo: '622601',
+                    streetEng: '622601, TNCS A/C DEVAGI',
+                    streetTam: '622601, டி.என்.சி.எஸ் ஏ/சி தேவகி',
+                    areaEng: 'MINNAL',
+                    areaTam: '',
+                    pincode: '631151'
+                };
+                sanitizeUtilityAddressFields(dirtyGas, { subService: 'CHANGE_ADDRESS' });
+                assert(dirtyGas.doorNo === null, `TEST 86.gasDoor: 6-digit consumer no stripped from doorNo (got=${dirtyGas.doorNo})`);
+                assert(dirtyGas.streetEng === null, `TEST 86.gasAcStrip: Consumer TNCS A/C label stripped instead of polluting streetEng (got=${dirtyGas.streetEng})`);
+
+                const validGas = {
+                    documentType: 'GAS_BOOK',
+                    gasDetails: { hasGas: true, consumerNumber: '7000123456' },
+                    doorNo: '12/4A',
+                    streetEng: '7000123456, Mettu Street',
+                    streetTam: ''
+                };
+                sanitizeUtilityAddressFields(validGas, { subService: 'CHANGE_ADDRESS' });
+                assert(validGas.doorNo === '12/4A' && validGas.streetEng === 'Mettu Street' && validGas.streetTam.includes('மேட்டு'), `TEST 86.gasClean: Real house no preserved and consumer prefix stripped from bilingual street (${validGas.streetTam})`);
+
+                // 2. Bilingual token-aware village cascade matcher avoids wrong index:1 fallback
+                const villageOpts = ['Select Village தேர்ந்தெடுக்கவும்', 'Arakkonam அரக்கோணம்', 'Minnal மின்னல்', 'Polipakkam போளிப்பாக்கம்'];
+                const matchedVillage = findCascadeMatch(villageOpts, 'MINNAL NARAS ARAKKONAM', 'மின்னல்', ['Ranipet', 'Arakkonam']);
+                assert(matchedVillage === 'Minnal மின்னல்', `TEST 86.cascade: Multi-word locality matches Minnal cleanly (got=${matchedVillage})`);
+                const unmatchedVillage = findCascadeMatch(villageOpts, 'ZZZZUNKNOWNVILLAGE', '', ['Ranipet']);
+                assert(unmatchedVillage === null, 'TEST 86.noBlindIdx1: Unmatched village returns null instead of blindly returning wrong option');
+
+                // 3. Flow confirmation gate triggers for Gas Book upload & proceeds after explicit confirm
+                const sessGasConfirm = {
+                    subService: 'CHANGE_ADDRESS',
+                    intakeState: 'RATION_CHANGE_ADDRESS_UPLOAD',
+                    chatHistory: [],
+                    citizenProfile: {}
+                };
+                addrFlow.handleFlow(
+                    '',
+                    sessGasConfirm,
+                    { path: '/uploads/test_gas.jpg' },
+                    { documentType: 'GAS_BOOK', doorNo: '12A', streetEng: 'Mettu Street', streetTam: 'மேட்டு தெரு', village: 'Minnal', taluk: 'Arakkonam', district: 'Ranipet', pincode: '631052' }
+                );
+                assert(sessGasConfirm.intakeState === 'RATION_CHANGE_ADDRESS_CONFIRM', `TEST 86.gasGate: Gas Book proof pauses cleanly at RATION_CHANGE_ADDRESS_CONFIRM (got=${sessGasConfirm.intakeState})`);
+                addrFlow.handleFlow('ADDR_EXTRACT_CONFIRMED', sessGasConfirm, null, null);
+                assert(sessGasConfirm.intakeState === 'READY_TO_APPLY', 'TEST 86.gasConfirm: Clicking confirm moves cleanly to READY_TO_APPLY');
+
+                passedCount += 6;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 
