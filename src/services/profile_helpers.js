@@ -7,19 +7,51 @@ function syncFatherOrHusband(prof) {
     let eng = (prof.fatherNameEng || prof.fatherOrHusbandNameEng || prof.husbandNameEng || '').trim();
     let tam = (prof.fatherNameTam || prof.fatherOrHusbandNameTam || prof.husbandNameTam || '').trim();
 
-    if ((!eng || !tam) && Array.isArray(prof.members)) {
-        const husband = prof.members.find(m => m && (
+    const husband = Array.isArray(prof.members)
+        ? prof.members.find(m => m && (
             (m.relationship && m.relationship.toLowerCase() === 'husband') ||
+            (m.relationshipEng && m.relationshipEng.toLowerCase() === 'husband') ||
             (m.relationshipTam && m.relationshipTam.includes('கணவர்'))
-        ));
-        const father = prof.members.find(m => m && (
+        ))
+        : null;
+    const father = Array.isArray(prof.members)
+        ? prof.members.find(m => m && (
             (m.relationship && m.relationship.toLowerCase() === 'father') ||
+            (m.relationshipEng && m.relationshipEng.toLowerCase() === 'father') ||
             (m.relationshipTam && m.relationshipTam.includes('தந்தை'))
-        ));
+        ))
+        : null;
+
+    if ((!eng || !tam) && Array.isArray(prof.members)) {
         const rel = husband || father;
         if (rel) {
             if (!eng && (rel.nameEng || rel.fullNameEng)) eng = (rel.nameEng || rel.fullNameEng).trim();
             if (!tam && (rel.nameTam || rel.fullNameTam)) tam = (rel.nameTam || rel.fullNameTam).trim();
+        }
+    }
+
+    if (husband && !prof._relationshipEditedByOperator) {
+        const normStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+        const hEng = (husband.nameEng || husband.fullNameEng || husband.name || '').trim();
+        const hTam = (husband.nameTam || husband.fullNameTam || '').trim();
+        const isNameMatchingHusb = Boolean(
+            (eng && hEng && normStr(eng) === normStr(hEng)) ||
+            (tam && hTam && normStr(tam) === normStr(hTam))
+        );
+        const shouldPromoteToHusband = !prof.relationship ||
+            prof.relationship === 'Husband' ||
+            (prof.relationship === 'Father' && (isNameMatchingHusb || prof.headGender === 'Female'));
+        if (shouldPromoteToHusband) {
+            prof.relationship = 'Husband';
+            prof.headRelationship = 'Husband';
+            prof.maritalStatus = prof.maritalStatus || 'Married';
+            if (hEng || eng) {
+                prof.spouseNameEng = prof.spouseNameEng || hEng || eng;
+                prof.spouseName = prof.spouseNameEng;
+            }
+            if (hTam || tam) {
+                prof.spouseNameTam = prof.spouseNameTam || hTam || tam;
+            }
         }
     }
 
@@ -193,7 +225,11 @@ function applyExtractedAadhaarRelationsAndDob(targetProfile, extracted) {
     }
 
     const relHint = String(extracted.relationship || extracted.relationType || '').toLowerCase();
-    const hasSpouse = Boolean(extracted.spouseNameEng || extracted.spouseNameTam || relHint.includes('husband') || relHint.includes('spouse') || relHint.includes('கணவர்'));
+    const hasSpouse = Boolean(
+        extracted.spouseNameEng ||
+        extracted.spouseNameTam ||
+        /\bw\/o\b|wife|husband|spouse|க\/பெ|கணவர்|மனைவி/i.test(relHint)
+    );
 
     if (hasSpouse) {
         targetProfile.relationship = 'Husband';

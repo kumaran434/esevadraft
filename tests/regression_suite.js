@@ -6760,6 +6760,92 @@ async function runTests() {
                 passedCount += 8;
             }
 
+            // [TEST 90] 💍 Female Head + Husband Member -> Auto-Sync Head Relationship to Husband (Not Father)
+            console.log('\n[TEST 90] 💍 Verifying Head Husband vs Father Relationship Sync & Manual Override...');
+            {
+                const { handleMemberVerification } = require('../src/routes/chat/chat_member_verification');
+                const { applyExtractedAadhaarRelationsAndDob, syncFatherOrHusband } = require('../src/services/profile_helpers');
+
+                // 1. W/o or க/பெ hint on Aadhaar OCR must resolve to Husband
+                const woProf = {};
+                applyExtractedAadhaarRelationsAndDob(woProf, { relationship: 'W/o', fatherNameEng: 'Udayakumar V', fatherNameTam: 'உதயகுமார் வி' });
+                assert(woProf.relationship === 'Husband' && woProf.headRelationship === 'Husband' && woProf.spouseNameEng === 'Udayakumar V', 'TEST 90.woOcr: W/o relationship hint resolves cleanly to Husband');
+
+                // 2. Selecting Member 2 = கணவர் promotes Female Head relationship from Father -> Husband + sets spouseName
+                const sess90 = {
+                    intakeState: 'MEMBER_RELATIONSHIP',
+                    currentMemberIdx: 1,
+                    targetMemberCount: 2,
+                    chatHistory: [],
+                    tempMember: { nameEng: 'Udayakumar V', nameTam: 'உதயகுமார் வி', dob: '05/04/1990', aadhaarNumber: '748928664754' },
+                    citizenProfile: {
+                        mobileNumber: '9999900090',
+                        fullNameEng: 'Sandhiya P',
+                        fullNameTam: 'சந்தியா பி',
+                        headGender: 'Female',
+                        relationship: 'Father',
+                        headRelationship: 'Father',
+                        fatherNameEng: 'Palanisamy',
+                        fatherNameTam: 'பழனிசாமி',
+                        members: [
+                            { nameEng: 'Sandhiya P', nameTam: 'சந்தியா பி', relationship: 'Family Head' },
+                            { nameEng: 'Udayakumar V', nameTam: 'உதயகுமார் வி' }
+                        ]
+                    }
+                };
+                await handleMemberVerification({ text: 'கணவர்', sess: sess90, targetMobile: '' }, { headers: {} }, { json: () => {} });
+                assert(
+                    sess90.citizenProfile.relationship === 'Husband' &&
+                    sess90.citizenProfile.headRelationship === 'Husband' &&
+                    sess90.citizenProfile.spouseNameEng === 'Udayakumar V' &&
+                    sess90.citizenProfile.birthFatherNameEng === 'Palanisamy',
+                    `TEST 90.memberRelSync: Choosing Member 2 = கணவர் updates Head relationship to Husband cleanly (got=${sess90.citizenProfile.relationship})`
+                );
+
+                // 3. Legacy profile self-heals Father -> Husband when Husband member exists, unless operator explicitly locks Father
+                const legacyProf = {
+                    headGender: 'Female',
+                    relationship: 'Father',
+                    fatherNameEng: 'Udayakumar V',
+                    fatherNameTam: 'உதயகுமார் வி',
+                    members: [{ nameEng: 'Sandhiya P' }, { nameEng: 'Udayakumar V', relationshipTam: 'கணவர்', relationshipEng: 'Husband' }]
+                };
+                syncFatherOrHusband(legacyProf);
+                assert(legacyProf.relationship === 'Husband' && legacyProf.headRelationship === 'Husband', 'TEST 90.legacyHeal: syncFatherOrHusband auto-heals legacy Father -> Husband when Husband member matches');
+
+                const mob90 = '9999900090';
+                const draft90 = `${mob90}_1795700001090`;
+                const hdr90 = { 'x-operator-uid': 'test_suite_operator_uid', 'x-session-mobile': mob90, 'x-draft-id': draft90 };
+                await request('POST', '/api/drafts/save', {
+                    draftId: draft90,
+                    mobileNumber: mob90,
+                    operatorUid: 'test_suite_operator_uid',
+                    subService: 'NEW_CARD',
+                    citizenProfile: legacyProf
+                }, hdr90);
+                const overrideRes = await request('POST', '/api/profile/update', {
+                    draftId: draft90,
+                    mobileNumber: mob90,
+                    operatorUid: 'test_suite_operator_uid',
+                    fromEditModal: true,
+                    silent: true,
+                    relationship: 'Father',
+                    relationshipUserEdited: true,
+                    fatherNameEng: 'Palanisamy',
+                    fatherNameTam: 'பழனிசாமி',
+                    members: legacyProf.members
+                }, hdr90);
+                assert(
+                    overrideRes.status === 200 &&
+                    overrideRes.body?.citizenProfile?.relationship === 'Father' &&
+                    overrideRes.body?.citizenProfile?._relationshipEditedByOperator === true,
+                    'TEST 90.manualOverride: Explicit operator choice of Father in Edit Modal stays locked without auto-reverting to Husband'
+                );
+                await request('DELETE', `/api/drafts/${encodeURIComponent(draft90)}?permanent=true`, null, hdr90);
+
+                passedCount += 4;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

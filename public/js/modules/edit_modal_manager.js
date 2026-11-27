@@ -1222,7 +1222,7 @@
                                     </div>
                                     <div>
                                         <label style="font-size: 11px; font-weight: 700; color: #475569;">உறவுமுறை (Relationship):</label>
-                                        <select id="editMemberRel_${mIdx}" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                                        <select id="editMemberRel_${mIdx}" onchange="if(this.value==='கணவர்'){var hr=document.getElementById('editRelationship');if(hr&&hr.dataset.userEdited!=='1'){hr.value='Husband';var ft=document.getElementById('editFatherTam'),fe=document.getElementById('editFatherEng'),mt=document.getElementById('editMemberNameTam_${mIdx}'),me=document.getElementById('editMemberNameEng_${mIdx}');if(ft&&mt&&mt.value.trim()&&!ft.dataset.userEdited)ft.value=mt.value.trim();if(fe&&me&&me.value.trim()&&!fe.dataset.userEdited)fe.value=me.value.trim();}}" style="width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700;">
                                             <option value="மனைவி" ${mRel.includes('மனைவி') || /\bwife\b/i.test(mRel) ? 'selected' : ''}>மனைவி (Wife)</option>
                                             <option value="கணவர்" ${mRel.includes('கணவர்') || mRel.includes('கணவன்') || /\bhusband\b/i.test(mRel) ? 'selected' : ''}>கணவர் (Husband)</option>
                                             <option value="மகன்" ${(!mRel.includes('மருமகன்') && !/\bgrand\s*-?\s*son\b/i.test(mRel) && !/\bson[-\s]in[-\s]law\b/i.test(mRel) && (mRel.includes('மகன்') || /\bson\b/i.test(mRel))) ? 'selected' : ''}>மகன் (Son)</option>
@@ -1269,10 +1269,26 @@
 
                 safeSetVal('editNameTam', data.fullNameTam);
                 safeSetVal('editNameEng', data.fullNameEng);
-                const resolvedRel = data.relationship || data.headRelationship || ((data.spouseNameEng || data.spouseNameTam || data.spouseName) ? 'Husband' : 'Father');
+                const normRelCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+                const husbMember = Array.isArray(data.members)
+                    ? data.members.slice(1).find(m => m && (
+                        /\bhusband\b/i.test(String(m.relationshipEng || m.relationship || '')) ||
+                        String(m.relationshipTam || m.relationship || '').includes('கணவர்')
+                    ))
+                    : null;
+                const husbMatchesFather = Boolean(husbMember && (
+                    data.headGender === 'Female' ||
+                    (!data.fatherNameEng && !data.fatherNameTam) ||
+                    (data.fatherNameEng && normRelCmp(data.fatherNameEng) === normRelCmp(husbMember.nameEng || husbMember.name)) ||
+                    (data.fatherNameTam && normRelCmp(data.fatherNameTam) === normRelCmp(husbMember.nameTam || husbMember.name))
+                ));
+                const rawStoredRel = data.relationship || data.headRelationship || '';
+                const resolvedRel = (!data._relationshipEditedByOperator && husbMatchesFather)
+                    ? 'Husband'
+                    : (rawStoredRel || ((data.spouseNameEng || data.spouseNameTam || data.spouseName) ? 'Husband' : 'Father'));
                 safeSetVal('editRelationship', resolvedRel);
-                safeSetVal('editFatherTam', data.fatherNameTam || data.spouseNameTam);
-                safeSetVal('editFatherEng', data.fatherNameEng || data.spouseNameEng);
+                safeSetVal('editFatherTam', data.fatherNameTam || data.spouseNameTam || (resolvedRel === 'Husband' && husbMember ? husbMember.nameTam : ''));
+                safeSetVal('editFatherEng', data.fatherNameEng || data.spouseNameEng || (resolvedRel === 'Husband' && husbMember ? (husbMember.nameEng || husbMember.name) : ''));
                 safeSetVal('editMotherTam', data.motherNameTam || data.motherName);
                 safeSetVal('editMotherEng', data.motherNameEng || data.motherName);
                 const rawDobInit = String(data.headDob || data.dob || '').trim();
@@ -1642,7 +1658,9 @@
                     }
                 }
 
-                const relSelectVal = document.getElementById('editRelationship')?.value || currentCitizenData?.relationship || 'Father';
+                const relSelectEl = document.getElementById('editRelationship');
+                const relSelectVal = relSelectEl?.value || currentCitizenData?.relationship || 'Father';
+                const relUserEdited = relSelectEl?.dataset?.userEdited === '1';
                 const rawDobSave = (document.getElementById('editDob')?.value || '').trim();
                 const normDobSave = /^\d{4}$/.test(rawDobSave) ? `01/01/${rawDobSave}` : rawDobSave;
                 const fTamSave = document.getElementById('editFatherTam').value.trim();
@@ -1677,6 +1695,7 @@
                     fullNameEng: document.getElementById('editNameEng').value.trim(),
                     relationship: relSelectVal,
                     headRelationship: relSelectVal,
+                    relationshipUserEdited: relUserEdited || undefined,
                     maritalStatus: relSelectVal === 'Husband' ? 'Married' : (currentCitizenData?.maritalStatus || ''),
                     spouseNameTam: relSelectVal === 'Husband' ? fTamSave : (currentCitizenData?.spouseNameTam || ''),
                     spouseNameEng: relSelectVal === 'Husband' ? fEngSave : (currentCitizenData?.spouseNameEng || ''),

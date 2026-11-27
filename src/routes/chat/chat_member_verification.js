@@ -27,9 +27,31 @@ async function handleMemberVerification(ctx, req, res) {
             };
         }
 
-        if ((relInfo.eng === 'Husband' || relInfo.tam === 'கணவர்') && sess.citizenProfile?.headGender === 'Female') {
-            if (sess.tempMember.nameEng) sess.citizenProfile.fatherNameEng = sess.tempMember.nameEng;
-            if (sess.tempMember.nameTam) sess.citizenProfile.fatherNameTam = sess.tempMember.nameTam;
+        if (relInfo.eng === 'Husband' || relInfo.tam === 'கணவர்') {
+            if (!sess.citizenProfile._relationshipEditedByOperator) {
+                if (sess.citizenProfile.fatherNameEng && (!sess.citizenProfile.birthFatherNameEng) &&
+                    sess.citizenProfile.relationship === 'Father' &&
+                    sess.citizenProfile.fatherNameEng !== sess.tempMember.nameEng) {
+                    sess.citizenProfile.birthFatherNameEng = sess.citizenProfile.fatherNameEng;
+                    sess.citizenProfile.birthFatherNameTam = sess.citizenProfile.fatherNameTam || '';
+                }
+                sess.citizenProfile.relationship = 'Husband';
+                sess.citizenProfile.headRelationship = 'Husband';
+                sess.citizenProfile.maritalStatus = 'Married';
+            }
+            if (sess.tempMember.nameEng) {
+                sess.citizenProfile.spouseNameEng = sess.tempMember.nameEng;
+                sess.citizenProfile.spouseName = sess.tempMember.nameEng;
+                if (sess.citizenProfile?.headGender === 'Female' || !sess.citizenProfile.fatherNameEng || !sess.citizenProfile._relationshipEditedByOperator) {
+                    sess.citizenProfile.fatherNameEng = sess.tempMember.nameEng;
+                }
+            }
+            if (sess.tempMember.nameTam) {
+                sess.citizenProfile.spouseNameTam = sess.tempMember.nameTam;
+                if (sess.citizenProfile?.headGender === 'Female' || !sess.citizenProfile.fatherNameTam || !sess.citizenProfile._relationshipEditedByOperator) {
+                    sess.citizenProfile.fatherNameTam = sess.tempMember.nameTam;
+                }
+            }
             if (activeMobile) saveCitizenProfile(activeMobile, sess.citizenProfile);
         }
 

@@ -14,6 +14,9 @@ function applyProfileUpdates(sess, updated) {
     }
     if (updated.fullNameTam !== undefined) sess.citizenProfile.fullNameTam = updated.fullNameTam;
     if (updated.fullNameEng !== undefined) sess.citizenProfile.fullNameEng = updated.fullNameEng;
+    if (updated.relationshipUserEdited) {
+        sess.citizenProfile._relationshipEditedByOperator = true;
+    }
     if (updated.relationship !== undefined) {
         sess.citizenProfile.relationship = updated.relationship;
         sess.citizenProfile.headRelationship = updated.relationship;
@@ -35,6 +38,10 @@ function applyProfileUpdates(sess, updated) {
         sess.citizenProfile.spouseNameTam = sess.citizenProfile.fatherNameTam || sess.citizenProfile.spouseNameTam || '';
         sess.citizenProfile.spouseName = sess.citizenProfile.spouseNameEng || sess.citizenProfile.spouseNameTam;
         if (!sess.citizenProfile.maritalStatus) sess.citizenProfile.maritalStatus = 'Married';
+    } else if (updated.relationshipUserEdited && sess.citizenProfile.relationship === 'Father') {
+        delete sess.citizenProfile.spouseNameEng;
+        delete sess.citizenProfile.spouseNameTam;
+        delete sess.citizenProfile.spouseName;
     }
     if (updated.motherNameTam !== undefined) sess.citizenProfile.motherNameTam = updated.motherNameTam;
     if (updated.motherNameEng !== undefined) sess.citizenProfile.motherNameEng = updated.motherNameEng;
@@ -396,6 +403,7 @@ function applyProfileUpdates(sess, updated) {
         'rationCardNo', 'subService', 'subServiceData', 'gasDetails', 'residenceProof', 'documents', 'members',
         'headPhotoPath', 'profilePhoto', 'headPhoto', 'communityProof', 'communityCertificatePath', 'familyCommunityProofPath', 'smartCardDocPath',
         'step', 'mobileNumber', 'mobile', 'oldMobileNumber', 'oldMobile', 'draftId', 'fromEditModal', 'silent',
+        'relationship', 'headRelationship', 'relationshipUserEdited', 'maritalStatus', 'spouseNameTam', 'spouseNameEng', 'spouseName',
         'operatorUid', 'operatorName', 'operatorMobile', 'chatHistory', 'status', 'intakeState', 'isDeleted', 'isTrashed',
         'tempUploads', 'base64Docs', 'storageUrls', 'createdAt', 'updatedAt'
     ]);
