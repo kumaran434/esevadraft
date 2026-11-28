@@ -175,17 +175,6 @@ function applyProfileUpdates(sess, updated) {
     }
     if (resolvedLoc.areaEng && !sess.citizenProfile.areaEng) sess.citizenProfile.areaEng = resolvedLoc.areaEng;
     if (resolvedLoc.areaTam && !sess.citizenProfile.areaTam) sess.citizenProfile.areaTam = resolvedLoc.areaTam;
-    if (resolvedLoc.isHamlet && !preserveOperatorJurisdiction) {
-        const normCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
-        const hEng = resolvedLoc.areaEng || sess.citizenProfile.areaEng || '';
-        const hTam = resolvedLoc.areaTam || sess.citizenProfile.areaTam || '';
-        if (hEng && sess.citizenProfile.streetEng && !normCmp(sess.citizenProfile.streetEng).includes(normCmp(hEng))) {
-            sess.citizenProfile.streetEng = `${sess.citizenProfile.streetEng}, ${hEng}`;
-        }
-        if (hTam && sess.citizenProfile.streetTam && !normCmp(sess.citizenProfile.streetTam).includes(normCmp(hTam))) {
-            sess.citizenProfile.streetTam = `${sess.citizenProfile.streetTam}, ${hTam}`;
-        }
-    }
     if (resolvedLoc.wasAutoCorrected && !preserveOperatorJurisdiction) {
         sess.citizenProfile.districtAutoCorrected = true;
         sess.citizenProfile.districtCorrectionReason = resolvedLoc.reason;

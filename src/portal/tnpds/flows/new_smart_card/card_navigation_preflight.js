@@ -183,7 +183,7 @@ function sanitizeNewCardProfile(citizenProfile) {
     let tamName = (citizenProfile.fullNameTam || citizenProfile.name || '').trim();
     let tamFather = (citizenProfile.fatherNameTam || citizenProfile.fatherOrHusbandNameTam || citizenProfile.husbandNameTam || '').trim();
     const doorNo = (citizenProfile.doorNo || '').trim();
-    const tamStreet = (citizenProfile.streetTam || '').trim();
+    let tamStreet = (citizenProfile.streetTam || '').trim();
     let tamArea = (citizenProfile.areaTam || citizenProfile.village || '').trim();
 
     const engName = (citizenProfile.fullNameEng || citizenProfile.name || '').trim();
@@ -225,6 +225,34 @@ function sanitizeNewCardProfile(citizenProfile) {
         else if (engStreet.includes('காந்தி')) engStreet = 'GANDHI STREET';
         else engStreet = 'MAIN STREET';
     }
+
+    // TNPDS New Smart Card Separation Rule (Founder Mandate):
+    // TNPDS has a dedicated Address Line 3 (Area / Hamlet) right below Address Line 2 (Street).
+    // Therefore, NEVER duplicate the Hamlet/Village name with a comma inside Address Line 2 (Street)!
+    // (Hamlet-in-Street is ONLY for TNeGA CAN Registration which has no separate Address Line 3 box.)
+    const stripTrailingHamletFromStreet = (streetVal, areaCandidates = []) => {
+        if (!streetVal) return streetVal;
+        let cleaned = String(streetVal).trim();
+        const escapeRe = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        for (const cand of areaCandidates) {
+            const tok = String(cand || '').trim();
+            if (tok.length < 3) continue;
+            // Strip trailing ", <Hamlet>" (or space-separated if comma-less and street remains non-empty)
+            const commaRe = new RegExp(`\\s*,\\s*${escapeRe(tok)}\\s*$`, 'i');
+            if (commaRe.test(cleaned)) {
+                const without = cleaned.replace(commaRe, '').replace(/[\s,]+$/g, '').trim();
+                if (without.length >= 2) cleaned = without;
+            }
+        }
+        return cleaned;
+    };
+    if (engStreet && (engArea || citizenProfile.village)) {
+        engStreet = stripTrailingHamletFromStreet(engStreet, [engArea, citizenProfile.areaEng, citizenProfile.village]);
+    }
+    if (tamStreet && (tamArea || citizenProfile.villageTam)) {
+        tamStreet = stripTrailingHamletFromStreet(tamStreet, [tamArea, citizenProfile.areaTam, citizenProfile.villageTam]);
+    }
+
     const pincode = (citizenProfile.pincode || '').trim();
     const userMobile = (citizenProfile.mobileNumber || '').trim();
 

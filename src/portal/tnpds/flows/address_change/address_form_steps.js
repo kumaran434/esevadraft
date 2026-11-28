@@ -116,16 +116,29 @@ async function executeAddressFormSteps({
                 const hTam = geo.areaTam || areaTam;
                 if (hEng && !areaEng) areaEng = hEng;
                 if (hTam && !areaTam) areaTam = hTam;
-                const normCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
-                if (hEng && !normCmp(streetEng).includes(normCmp(hEng))) {
-                    streetEng = streetEng ? `${streetEng}, ${hEng}` : hEng;
-                }
-                if (hTam && !normCmp(streetTam).includes(normCmp(hTam))) {
-                    streetTam = streetTam ? `${streetTam}, ${hTam}` : hTam;
-                }
             }
         }
     } catch (_) {}
+
+    // TNPDS Address Change also has separate Address Line 2 (Street) and Address Line 3 (Area/Hamlet):
+    // Keep Street clean without duplicating trailing ", <Hamlet>" when Area Line 3 already holds it!
+    const stripTrailingArea = (st, toks) => {
+        if (!st) return st;
+        let out = String(st).trim();
+        const esc = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        for (const t of toks) {
+            const tok = String(t || '').trim();
+            if (tok.length < 3) continue;
+            const re = new RegExp(`\\s*,\\s*${esc(tok)}\\s*$`, 'i');
+            if (re.test(out)) {
+                const candidate = out.replace(re, '').replace(/[\s,]+$/g, '').trim();
+                if (candidate.length >= 2) out = candidate;
+            }
+        }
+        return out;
+    };
+    if (streetEng && (areaEng || village)) streetEng = stripTrailingArea(streetEng, [areaEng, village]);
+    if (streetTam && (areaTam || villageTam)) streetTam = stripTrailingArea(streetTam, [areaTam, villageTam]);
     let proofType = subData.proofType || citizenProfile.residenceProof?.typeTam || citizenProfile.residenceProof?.type || '';
     const rawDocRef = String(
         subData.addressProofDocPath || subData.docPath || citizenProfile.documents?.newAddressProof ||

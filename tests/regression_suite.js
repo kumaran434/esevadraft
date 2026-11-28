@@ -7294,13 +7294,19 @@ async function runTests() {
                     pincode: ''
                 };
                 sanitizeAadhaarAddressFields(founderAadhaar);
+                const { formatStreetWithHamlet: fmtHamlet98 } = require('../src/utils/bilingual_helper');
+                const tnegaCanStreet98 = fmtHamlet98(founderAadhaar, { village: founderAadhaar.village, areaEng: founderAadhaar.areaEng, areaTam: founderAadhaar.areaTam });
                 assert(
                     founderAadhaar.district === 'Ranipet' &&
                     founderAadhaar.taluk === 'Sholinghur' &&
                     founderAadhaar.village === 'Kunnathur' &&
-                    founderAadhaar.streetEng.toLowerCase().includes('kunnathur colony') &&
-                    founderAadhaar.streetTam.includes('குன்னத்தூர் காலனி'),
-                    `TEST 98.founderKunnathur: Missing taluk auto-resolved (Ranipet/Sholinghur/Kunnathur) & Hamlet paired with Street (${founderAadhaar.streetEng} / ${founderAadhaar.streetTam})`
+                    founderAadhaar.streetEng === 'Pillaiyar Koil Street' &&
+                    founderAadhaar.streetTam === 'பிள்ளையார் கோவில் தெரு' &&
+                    founderAadhaar.areaEng.toLowerCase().includes('kunnathur colony') &&
+                    founderAadhaar.areaTam.includes('குன்னத்தூர் காலனி') &&
+                    tnegaCanStreet98.fullStreetEng.toLowerCase().includes('kunnathur colony') &&
+                    tnegaCanStreet98.fullStreetTam.includes('குன்னத்தூர் காலனி'),
+                    `TEST 98.founderKunnathur: Missing taluk auto-resolved (Ranipet/Sholinghur/Kunnathur), Street & Hamlet kept cleanly separated for TNPDS while TNeGA CAN combines both (${founderAadhaar.streetTam} | ${founderAadhaar.areaTam})`
                 );
 
                 // 2. Cross-district duplicate safety: Tiruppur Kunnathur MUST resolve to Tiruppur -> Uthukuli (NEVER Ranipet!)
@@ -7320,9 +7326,10 @@ async function runTests() {
                     tiruppurKunnathur.district === 'Tiruppur' &&
                     tiruppurKunnathur.taluk === 'Uthukuli' &&
                     tiruppurKunnathur.village === 'Kunnathur' &&
-                    tiruppurKunnathur.streetEng.toLowerCase().includes('kunnathur colony') &&
-                    tiruppurKunnathur.streetTam.includes('குன்னத்தூர் காலனி'),
-                    `TEST 98.crossDistrictSafe: Tiruppur Kunnathur resolves to Tiruppur/Uthukuli (not Ranipet) & pairs Hamlet with Street (${tiruppurKunnathur.streetTam})`
+                    tiruppurKunnathur.streetEng === 'North Street' &&
+                    tiruppurKunnathur.areaEng.toLowerCase().includes('kunnathur colony') &&
+                    tiruppurKunnathur.areaTam.includes('குன்னத்தூர் காலனி'),
+                    `TEST 98.crossDistrictSafe: Tiruppur Kunnathur resolves to Tiruppur/Uthukuli (not Ranipet) & separates Hamlet cleanly (${tiruppurKunnathur.streetTam} | ${tiruppurKunnathur.areaTam})`
                 );
 
                 // 3. Unlisted TN village + colony (NOT in 76-entry manual lexicon) with Old Undivided District (Nagapattinam -> Mayiladuthurai)
@@ -7342,9 +7349,10 @@ async function runTests() {
                     mayilCase.district === 'Mayiladuthurai' &&
                     mayilCase.taluk === 'Sirkazhi' &&
                     mayilCase.village === 'Palayapalayam' &&
-                    mayilCase.streetEng.toLowerCase().includes('palayapalayam colony') &&
-                    mayilCase.streetTam.includes('பழையபாளையம் காலனி'),
-                    `TEST 98.unlistedAutoHamlet: Unlisted Palayapalayam Colony auto-resolves Mayiladuthurai/Sirkazhi/Palayapalayam & pairs Hamlet with Street (${mayilCase.streetEng} / ${mayilCase.streetTam})`
+                    mayilCase.streetEng === 'Gandhi Road' &&
+                    mayilCase.areaEng.toLowerCase().includes('palayapalayam colony') &&
+                    mayilCase.areaTam.includes('பழையபாளையம் காலனி'),
+                    `TEST 98.unlistedAutoHamlet: Unlisted Palayapalayam Colony auto-resolves Mayiladuthurai/Sirkazhi/Palayapalayam & puts Hamlet in area (${mayilCase.streetEng} | ${mayilCase.areaTam})`
                 );
 
                 // 4. Same-district duplicate tie-breaking via Pincode (Chengalpattu has Kunnathur in Tirukalukundram 603102 & Maduranthakam 603306)
@@ -7384,9 +7392,11 @@ async function runTests() {
                     wrongDistCase.district === 'Ranipet' &&
                     wrongDistCase.taluk === 'Sholinghur' &&
                     wrongDistCase.village === 'Kunnathur' &&
-                    (wrongDistCase.streetEng.match(/kunnathur colony/gi) || []).length === 1 &&
-                    (wrongDistCase.streetTam.match(/குன்னத்தூர் காலனி/g) || []).length === 1,
-                    `TEST 98.wrongDistAndDedupe: Recovers Ranipet/Sholinghur/Kunnathur even when Aadhaar misprints Perambalur & deduplicates doubled village/hamlet (${wrongDistCase.streetEng})`
+                    wrongDistCase.streetEng === 'Pillaiyar Koil Street' &&
+                    wrongDistCase.streetTam === 'பிள்ளையார் கோவில் தெரு' &&
+                    wrongDistCase.areaEng.toLowerCase().includes('kunnathur colony') &&
+                    wrongDistCase.areaTam.includes('குன்னத்தூர் காலனி'),
+                    `TEST 98.wrongDistAndDedupe: Recovers Ranipet/Sholinghur/Kunnathur even when Aadhaar misprints Perambalur, deduplicates doubled names & separates Street from Hamlet (${wrongDistCase.streetEng} | ${wrongDistCase.areaEng})`
                 );
 
                 // 7. Messy Aadhaar/Ration Card: Different Neighboring Post Office ("Banavaram Post" / "Kaveripakkam P.O.") MUST NOT override residential village!
@@ -7469,7 +7479,30 @@ async function runTests() {
                     'TEST 99.hudLeftAndCleanGateExit: Browser HUD anchors bottom-left away from right-side upload/chatbot widgets & Pre-Submit Gate never triggers false Radware restart'
                 );
 
-                passedCount += 4;
+                // TNPDS New Smart Card Address Line 2 (Street) MUST NOT duplicate Hamlet from Address Line 3!
+                const { sanitizeNewCardProfile: sanNewCard99 } = require('../src/portal/tnpds/flows/new_smart_card/card_navigation_preflight');
+                const sanRes99 = sanNewCard99({
+                    fullNameEng: 'Kumaran K',
+                    fullNameTam: 'குமரன் கி',
+                    fatherNameEng: 'Kirubakaran',
+                    fatherNameTam: 'கிருபாகரன்',
+                    doorNo: '216',
+                    streetEng: 'METTU STREET, NARASINGAPURAM',
+                    streetTam: 'மேட்டு தெரு, நரசிங்கபுரம்',
+                    areaEng: 'NARASINGAPURAM',
+                    areaTam: 'நரசிங்கபுரம்',
+                    village: 'Minnal',
+                    pincode: '632510'
+                });
+                assert(
+                    sanRes99.engStreet === 'METTU STREET' &&
+                    sanRes99.tamStreet === 'மேட்டு தெரு' &&
+                    sanRes99.engArea === 'NARASINGAPURAM' &&
+                    sanRes99.tamArea === 'நரசிங்கபுரம்',
+                    `TEST 99.tnpdsCleanLine2Street: TNPDS Line 2 Street strips trailing Hamlet so Line 3 holds Hamlet cleanly without duplication (Line2="${sanRes99.tamStreet}", Line3="${sanRes99.tamArea}")`
+                );
+
+                passedCount += 5;
             }
 
             passedCount += cartridgeDirs81.length + 25;

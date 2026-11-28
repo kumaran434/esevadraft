@@ -556,28 +556,23 @@ function sanitizeAadhaarAddressFields(result) {
                 if (hEng) result.areaEng = hEng;
                 if (hTam) result.areaTam = hTam;
 
-                // Clean trailing standalone main Revenue Village / Taluk from street before appending Hamlet
+                // Clean Separation Rule (Single Source of Truth):
+                // - streetEng / streetTam stays PURE STREET ONLY (never duplicate ", <Hamlet>" inside Street;
+                //   TNPDS fills Line 2 = Street & Line 3 = Hamlet separately, while TNeGA CAN Registration
+                //   automatically combines Street + Hamlet via formatStreetWithHamlet()!).
                 if (result.streetEng) result.streetEng = stripTrailingPlace(result.streetEng);
                 if (result.streetTam) result.streetTam = stripTrailingPlace(result.streetTam);
-
-                // Universal Hamlet-in-Street Rule: Always keep Hamlet/Colony paired with Street (without duplicating!)
-                const normCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
-                if (hEng) {
-                    const curEng = String(result.streetEng || '').trim();
-                    if (!curEng) {
-                        result.streetEng = hEng;
-                    } else if (!normCmp(curEng).includes(normCmp(hEng))) {
-                        result.streetEng = `${curEng}, ${hEng}`;
+                const stripTrailingHamlet = (st, hTok) => {
+                    if (!st || !hTok || String(hTok).trim().length < 3) return st;
+                    const re = new RegExp(`\\s*,\\s*${escapeRe(String(hTok).trim())}\\s*$`, 'i');
+                    if (re.test(st)) {
+                        const cleaned = st.replace(re, '').replace(/[\s,]+$/g, '').trim();
+                        if (cleaned.length >= 2) return cleaned;
                     }
-                }
-                if (hTam) {
-                    const curTam = String(result.streetTam || '').trim();
-                    if (!curTam) {
-                        result.streetTam = hTam;
-                    } else if (!normCmp(curTam).includes(normCmp(hTam))) {
-                        result.streetTam = `${curTam}, ${hTam}`;
-                    }
-                }
+                    return st;
+                };
+                if (result.streetEng && hEng) result.streetEng = stripTrailingHamlet(result.streetEng, hEng);
+                if (result.streetTam && hTam) result.streetTam = stripTrailingHamlet(result.streetTam, hTam);
             } else {
                 // Standalone Revenue Village (NOT a hamlet): strip redundant village/taluk suffix from streetEng/streetTam!
                 if (result.streetEng) result.streetEng = stripTrailingPlace(result.streetEng);
