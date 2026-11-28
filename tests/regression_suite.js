@@ -7367,7 +7367,58 @@ async function runTests() {
                     'TEST 98.officialVillageCheck: Distinguishes official Revenue Villages from unlisted Hamlets/Colonies'
                 );
 
-                passedCount += 7;
+                // 6. Messy Aadhaar: Misprinted/Wrong District ("Perambalur" instead of Ranipet) + No Taluk + Kunnathur Colony + 632510
+                const wrongDistCase = {
+                    doorNo: '14',
+                    streetEng: 'Pillaiyar Koil Street, Kunnathur Colony, Kunnathur Colony',
+                    streetTam: 'பிள்ளையார் கோவில் தெரு, குன்னத்தூர் காலனி, குன்னத்தூர் காலனி',
+                    areaEng: 'Kunnathur Colony',
+                    areaTam: 'குன்னத்தூர் காலனி',
+                    village: 'Kunnathur, Kunnathur',
+                    taluk: '',
+                    district: 'Perambalur',
+                    pincode: '632510'
+                };
+                sanitizeAadhaarAddressFields(wrongDistCase);
+                assert(
+                    wrongDistCase.district === 'Ranipet' &&
+                    wrongDistCase.taluk === 'Sholinghur' &&
+                    wrongDistCase.village === 'Kunnathur' &&
+                    (wrongDistCase.streetEng.match(/kunnathur colony/gi) || []).length === 1 &&
+                    (wrongDistCase.streetTam.match(/குன்னத்தூர் காலனி/g) || []).length === 1,
+                    `TEST 98.wrongDistAndDedupe: Recovers Ranipet/Sholinghur/Kunnathur even when Aadhaar misprints Perambalur & deduplicates doubled village/hamlet (${wrongDistCase.streetEng})`
+                );
+
+                // 7. Messy Aadhaar/Ration Card: Different Neighboring Post Office ("Banavaram Post" / "Kaveripakkam P.O.") MUST NOT override residential village!
+                const poMessyCase = {
+                    doorNo: '22',
+                    streetEng: 'Bajanai Kovil Street, Banavaram Post',
+                    streetTam: 'பஜனை கோவில் தெரு, பனாவரம் அஞ்சல்',
+                    areaEng: 'Soorai, Banavaram P.O.',
+                    areaTam: 'சூரை, பனாவரம் அஞ்சல்',
+                    village: 'Soorai, Banavaram Post',
+                    taluk: '',
+                    district: 'Vellore',
+                    pincode: ''
+                };
+                sanitizeAadhaarAddressFields(poMessyCase);
+                assert(
+                    poMessyCase.district === 'Ranipet' &&
+                    poMessyCase.taluk === 'Sholinghur' &&
+                    poMessyCase.village === 'Soorai' &&
+                    !poMessyCase.streetEng.toLowerCase().includes('banavaram') &&
+                    !poMessyCase.streetTam.includes('பனாவரம்'),
+                    `TEST 98.postOfficeQuarantine: Neighboring Post Office town ignored so residential village Soorai wins & street stays clean (${poMessyCase.district}/${poMessyCase.taluk}/${poMessyCase.village} | ${poMessyCase.streetEng})`
+                );
+
+                // 8. Wrong District ("Perambalur") + Explicit Taluk ("Sholinghur") -> recovers true district Ranipet
+                const wrongDistWithTaluk = resolveTnDistrict('Perambalur', 'Sholinghur', 'Kunnathur', '');
+                assert(
+                    wrongDistWithTaluk.district === 'Ranipet' && wrongDistWithTaluk.taluk === 'Sholinghur' && wrongDistWithTaluk.village === 'Kunnathur',
+                    `TEST 98.wrongDistWithTaluk: Explicit taluk recovers Ranipet when Aadhaar misprints Perambalur (got ${wrongDistWithTaluk.district}/${wrongDistWithTaluk.taluk})`
+                );
+
+                passedCount += 10;
             }
 
             passedCount += cartridgeDirs81.length + 25;

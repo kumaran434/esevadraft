@@ -153,9 +153,10 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * STRICT INDIAN AADHAAR NOISE CLEANER: Strip "C/O", "S/O", "W/O", "D/O", "Post", "P.O.", "Tk", "Taluk", "Dist", "District", "Tamil Nadu", trailing commas, and extra spaces.
   * NEVER append a standalone Revenue Village name or Taluk name (e.g. "Soorai", "Arakkonam", "Sholinghur") onto "streetEng"/"streetTam"! Put ONLY the street name there.
   * NEVER put Customer Name, Father/Husband Name, "A/C ...", Consumer No, or Gas Distributor Office Address into "streetEng"/"streetTam"!
-- Area / Village / Hamlet & Taluk Separation Rule (CRITICAL FOR TAMIL NADU):
+- Area / Village / Hamlet & Taluk Separation Rule (CRITICAL FOR TAMIL NADU — APPLIES TO AADHAAR, RATION CARD & ALL DOCUMENTS):
   * Put the official Tamil Nadu Taluk name ONLY into "taluk" (NEVER mix Taluk into "streetEng" or "areaEng"). If Taluk is NOT printed on the Aadhaar/document, set "taluk": null (do NOT guess a wrong Taluk — our 18,595 Tamil Nadu Revenue Village master resolves it deterministically!).
-  * Put the Revenue Village / Town name into "village" (e.g. "Kunnathur" or "Soorai").
+  * Put the residential Revenue Village / Town name into "village" (e.g. "Kunnathur" or "Soorai"). If the same village name is printed twice (e.g. "Kunnathur, Kunnathur"), write it ONLY ONCE.
+  * POST OFFICE RULE (CRITICAL): On Indian Aadhaar & Ration Cards, a token marked "Post" / "P.O." / "PO" / "S.O." / "B.O." / "அஞ்சல்" (e.g. "Banavaram Post", "Kaveripakkam P.O.") is ONLY the postal delivery office — it is often a DIFFERENT neighboring town! NEVER put that Post Office town into "village", "areaEng", or "streetEng" when the citizen's actual residential village/hamlet appears before it!
   * Put a Hamlet / Colony / Sub-Village (குக்கிராமம் / காலனி, e.g. "Kunnathur Colony" / "குன்னத்தூர் காலனி") into "areaEng"/"areaTam" ONLY if it is a separate smaller colony/hamlet distinct from the Revenue Village; do NOT copy "village, taluk" (like "Soorai, Arakonam") into "areaEng"!
 - District, Taluk, Pincode (6 digits — MUST come from the CUSTOMER residential address, NOT the distributor/agency office footer).${learnedHintsBlock}
 - If Gas Book / LPG Receipt / Subscription Voucher (SV) / Gas Passbook / Refill Cash Memo:
@@ -358,9 +359,9 @@ Respond strictly in JSON format (use null for fields not present in the image):
         // Profile/passport photo must ONLY exist when the user explicitly uploads a real passport photo.
         result.extractedFacePhotoPath = null;
 
-        // TN District Bifurcation Auto-Correction using dedicated mapper:
+        // TN District Bifurcation & Revenue Village Auto-Correction (keeps Hamlet-in-Street synced):
         const { resolveTnDistrict } = require('./tn_district_mapper');
-        const fullAddr = [result.streetEng, result.streetTam, result.areaEng, result.areaTam].filter(Boolean).join(' ');
+        const fullAddr = [result.streetEng, result.streetTam, result.areaEng, result.areaTam].filter(Boolean).join(', ');
         const resolved = resolveTnDistrict(result.district, result.taluk, result.village, result.pincode, fullAddr);
         result.district = resolved.district;
         result.districtTam = resolved.districtTam;
@@ -453,16 +454,45 @@ function sanitizeAadhaarAddressFields(result) {
     for (const k of nameKeys) {
         if (typeof result[k] === 'string') result[k] = collapseSpaces(result[k]);
     }
-    const addrKeys = ['doorNo', 'streetEng', 'streetTam', 'areaEng', 'areaTam', 'village', 'taluk', 'district'];
-    for (const k of addrKeys) {
-        if (typeof result[k] === 'string') {
-            result[k] = collapseSpaces(result[k])
+    const POST_OFFICE_SEG_RE = /\b(?:post\s*office|post|p\.?\s*o\.?|s\.?\s*o\.?|b\.?\s*o\.?)\b|அஞ்சல்/i;
+    const dedupeCommaParts = (str, dropPoWhenOtherExists = false) => {
+        if (!str || typeof str !== 'string') return str;
+        const rawParts = str.split(',').map(p => p.trim()).filter(Boolean);
+        if (rawParts.length === 0) return '';
+        let working = rawParts;
+        if (dropPoWhenOtherExists && rawParts.length > 1) {
+            const nonPo = rawParts.filter(p => !POST_OFFICE_SEG_RE.test(p));
+            if (nonPo.length > 0) working = nonPo;
+        }
+        const seen = new Set();
+        const out = [];
+        for (const p of working) {
+            const cleaned = collapseSpaces(p)
                 .replace(/^(?:c\/o|s\/o|w\/o|d\/o)\s*[:.\-]?\s*/i, '')
-                .replace(/\b(?:post|p\.?o\.?|tk|taluk|taluka|dist|district|tamil\s*nadu)\b\.?/gi, '')
-                .replace(/\s*,\s*,\s*/g, ', ')
+                .replace(/\b(?:post\s*office|post|p\.?\s*o\.?|s\.?\s*o\.?|b\.?\s*o\.?|tk|taluk|taluka|dist|district|tamil\s*nadu)\b\.?/gi, '')
+                .replace(/அஞ்சல்|வட்டம்|மாவட்டம்|தமிழ்நாடு/g, '')
                 .replace(/^[\s,\-]+|[\s,\-]+$/g, '')
                 .replace(/\s+/g, ' ')
                 .trim();
+            if (!cleaned) continue;
+            const key = cleaned.toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            out.push(cleaned);
+        }
+        return out.join(', ');
+    };
+
+    // Preserve raw pre-stripped address (with "Post"/"P.O." intact!) so resolveTnDistrict can quarantine Post Office segments accurately
+    const rawPreStrippedAddr = [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk]
+        .filter(Boolean)
+        .join(', ');
+
+    const addrKeys = ['doorNo', 'streetEng', 'streetTam', 'areaEng', 'areaTam', 'village', 'taluk', 'district'];
+    for (const k of addrKeys) {
+        if (typeof result[k] === 'string') {
+            const dropPo = (k === 'streetEng' || k === 'streetTam' || k === 'areaEng' || k === 'areaTam' || k === 'village');
+            result[k] = dedupeCommaParts(result[k], dropPo);
         }
     }
 
@@ -481,7 +511,7 @@ function sanitizeAadhaarAddressFields(result) {
             }
         }
 
-        const rawAddrCombined = [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk].filter(Boolean).join(', ');
+        const rawAddrCombined = rawPreStrippedAddr || [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk].filter(Boolean).join(', ');
         const resolved = resolveTnDistrict(
             result.district || '',
             result.taluk || '',

@@ -240,18 +240,36 @@ function lookupTnTaluk(talukText = '', districtHint = '', fullAddressText = '') 
 
 /**
  * Lookup Village in Curated Master Lexicon (District-Aware so Tiruppur/Chengalpattu Kunnathur
- * is NEVER hijacked by Ranipet's Kunnathur entry!)
+ * is NEVER hijacked by Ranipet's Kunnathur entry, while STILL recovering if Aadhaar printed
+ * a completely wrong District like "Perambalur" that has ZERO matching villages!)
  */
-function lookupTnVillage(villageName = '', fullAddress = '', districtHint = '') {
+function lookupTnVillage(villageName = '', fullAddress = '', districtHint = '', talukHint = '', pincode = '') {
     const vClean = cleanStr(villageName);
     const addrClean = cleanStr(fullAddress);
     const list = Array.isArray(TN_VILLAGE_LEXICON) ? TN_VILLAGE_LEXICON : (TN_VILLAGE_LEXICON.villages || []);
+    const tClean = cleanStr(String(talukHint || '').replace(/\b(taluk|taluka|tk|t\.k\.?|வட்டம்)\b/gi, ''));
+    const pin = String(pincode || '').trim().replace(/\D/g, '');
 
     const isItemCompatible = (item) => {
         if (!districtHint) return true;
         const distMeta = normalizeTnDistrictName(item.district);
         const parentDist = distMeta?.parentDistrict || TN_BIFURCATED_TALUKS[String(item.district || '').toLowerCase()]?.parentDistrict || '';
-        return isDistrictCompatible(item.district, parentDist, districtHint);
+        if (isDistrictCompatible(item.district, parentDist, districtHint)) return true;
+        // Wrong-District Auto-Recovery: If Aadhaar misprinted District (e.g. "Perambalur" instead of Ranipet),
+        // allow curated match if explicit Taluk matches OR if the misprinted district has ZERO official villages
+        // by this village name AND either it's a confirmed hamlet or Pincode belongs to this taluk!
+        if (tClean && cleanStr(item.taluk) === tClean) return true;
+        const parentExistsInHintDist = isOfficialTnRevenueVillage(item.village, districtHint);
+        if (!parentExistsInHintDist) {
+            if (item.isHamlet) {
+                if (!pin || pin.length !== 6) return true;
+                // Check if pincode matches this item's village/taluk in 18,595 master
+                const masterRecs = REVENUE_VILLAGES_BY_KEY.get(cleanStr(item.village)) || [];
+                const pinRec = masterRecs.find(r => r.pincode === pin);
+                if (!pinRec || cleanStr(pinRec.district) === cleanStr(item.district)) return true;
+            }
+        }
+        return false;
     };
 
     // 0. Check Confirmed Hamlet entries FIRST across BOTH villageName and fullAddress
@@ -391,13 +409,36 @@ function disambiguateRevenueVillage(candidates, { districtHint = '', talukHint =
     const dNorm = normalizeTnDistrictName(districtHint);
     const hasKnownDistrictHint = Boolean(dNorm || cleanStr(districtHint));
 
-    // 1. District / Old Parent District filter (strict: NEVER cross-match a different district!)
+    // 1. District / Old Parent District filter (with Wrong-District Auto-Recovery!)
     if (hasKnownDistrictHint) {
         const distFiltered = pool.filter(c => isDistrictCompatible(c.district, c.parentDistrict, districtHint));
-        if (distFiltered.length === 0) {
+        if (distFiltered.length > 0) {
+            pool = distFiltered;
+        } else {
+            // Misprinted/Wrong District on Aadhaar (e.g. "Perambalur" printed instead of "Ranipet")!
+            // Recover deterministically via: (a) Exact 6-digit Pincode, (b) Explicit Taluk, or (c) Statewide Unique Village!
+            if (pin.length === 6) {
+                const pinMatches = pool.filter(c => c.pincode && c.pincode === pin);
+                const pinJuris = new Set(pinMatches.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
+                if (pinMatches.length > 0 && pinJuris.size === 1) {
+                    return { match: pinMatches[0], ambiguousTaluks: [] };
+                }
+            }
+            if (tClean) {
+                const talukObj = lookupTnTaluk(talukHint, '', '');
+                const targetTalukClean = talukObj ? cleanStr(talukObj.taluk) : tClean;
+                const talukMatches = pool.filter(c => cleanStr(c.taluk) === targetTalukClean || cleanStr(c.talukTam) === targetTalukClean);
+                const tJuris = new Set(talukMatches.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
+                if (talukMatches.length > 0 && tJuris.size === 1) {
+                    return { match: talukMatches[0], ambiguousTaluks: [] };
+                }
+            }
+            const stateUniqueJuris = new Set(pool.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
+            if (stateUniqueJuris.size === 1) {
+                return { match: pool[0], ambiguousTaluks: [] };
+            }
             return { match: null, ambiguousTaluks: [] };
         }
-        pool = distFiltered;
     }
 
     // 2. Explicit Taluk filter
@@ -446,21 +487,47 @@ function lookupOfficialTnRevenueVillage(villageName = '', fullAddress = '', dist
     if (REVENUE_VILLAGES_BY_KEY.size === 0) return null;
 
     const opts = { districtHint, talukHint, pincode };
+    const POST_OFFICE_SEG_RE = /\b(?:post\s*office|post|p\.?\s*o\.?|s\.?\s*o\.?|b\.?\s*o\.?)\b|அஞ்சல்/i;
+
     const cleanToken = (tok) => String(tok || '')
         .replace(/^(?:c\/o|s\/o|w\/o|d\/o)\s*[:.\-]?\s*/i, '')
-        .replace(/\b(?:post|p\.?o\.?|tk|taluk|taluka|dist|district|tamil\s*nadu)\b\.?/gi, '')
+        .replace(/\b(?:post\s*office|post|p\.?\s*o\.?|s\.?\s*o\.?|b\.?\s*o\.?|tk|taluk|taluka|dist|district|tamil\s*nadu)\b\.?/gi, '')
+        .replace(/அஞ்சல்|வட்டம்|மாவட்டம்|தமிழ்நாடு/g, '')
         .replace(/\b\d{6}\b/g, '')
         .replace(/^[\s,\-:]+|[\s,\-:]+$/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
-    // Build ordered address segments (comma/pipe/newline split)
-    const rawSegments = String(fullAddress || '')
+    // Split address into segments while QUARANTINING Post Office segments ("Banavaram Post", "Kaveripakkam P.O.", "அஞ்சல்")
+    // so a neighboring Post Office town NEVER overrides the citizen's actual residential Revenue Village!
+    const rawSplitAll = String(fullAddress || '')
         .split(/[,|\n;]+/)
-        .map(cleanToken)
-        .filter(s => s.length >= 2);
+        .map(s => String(s || '').trim())
+        .filter(Boolean);
 
-    const directVillage = cleanToken(villageName);
+    const residentialSegments = [];
+    const postOfficeSegments = [];
+    const seenSegClean = new Set();
+
+    for (const seg of rawSplitAll) {
+        const isPo = POST_OFFICE_SEG_RE.test(seg);
+        const cleaned = cleanToken(seg);
+        if (cleaned.length < 2) continue;
+        const ck = cleanStr(cleaned);
+        if (isPo) {
+            postOfficeSegments.push(cleaned);
+        } else if (!seenSegClean.has(ck)) {
+            seenSegClean.add(ck);
+            residentialSegments.push(cleaned);
+        }
+    }
+
+    const rawSegments = residentialSegments;
+
+    // Deduplicate doubled village names like "Kunnathur, Kunnathur"
+    const directVillageParts = String(villageName || '').split(/[,|\n;]+/).map(s => s.trim()).filter(Boolean);
+    const nonPoDirect = directVillageParts.find(p => !POST_OFFICE_SEG_RE.test(p)) || directVillageParts[0] || '';
+    const directVillage = cleanToken(nonPoDirect);
 
     // Helper: try exact match on a single token
     const tryExactToken = (tok) => {
@@ -615,11 +682,30 @@ function lookupOfficialTnRevenueVillage(villageName = '', fullAddress = '', dist
         }
     }
 
-    // STEP 4: Scan address segments for Hamlet/Colony suffix pattern (e.g. "Gandhi Street, Palayapalayam Colony, Nagapattinam")
+    // STEP 4: Scan residential address segments for Hamlet/Colony suffix pattern (e.g. "Gandhi Street, Palayapalayam Colony, Nagapattinam")
     for (let i = rawSegments.length - 1; i >= 0; i--) {
         const seg = rawSegments[i];
         const suffixRes = tryHamletSuffixStrip(seg);
         if (suffixRes) return suffixRes;
+    }
+
+    // STEP 5 (Last-Resort Fallback ONLY): If NO residential village matched at all, check Post Office segments
+    // (handles cases where the citizen actually lives in the Post Office village itself, e.g. "12, Gandhi St, Kaveripakkam Post")
+    for (let i = postOfficeSegments.length - 1; i >= 0; i--) {
+        const seg = postOfficeSegments[i];
+        const sc = cleanStr(seg);
+        if (!sc || sc.length < 3 || DISTRICT_BY_KEY.has(sc)) continue;
+        const poRes = tryExactToken(seg);
+        if (poRes && poRes.match) {
+            const sib = findSiblingHamlet(poRes.match);
+            return {
+                record: poRes.match,
+                isHamlet: sib.isHamlet,
+                areaEng: sib.areaEng,
+                areaTam: sib.areaTam,
+                ambiguousTaluks: []
+            };
+        }
     }
 
     return null;
@@ -685,9 +771,9 @@ function resolveTnDistrict(district = '', taluk = '', village = '', pincode = ''
     }
 
     // -------------------------------------------------------------------------
-    // TIER 1B: Curated Revenue Village / Confirmed Hamlet Lexicon (District-Aware)
+    // TIER 1B: Curated Revenue Village / Confirmed Hamlet Lexicon (District-Aware + Wrong-District Recovery)
     // -------------------------------------------------------------------------
-    const villageLookup = lookupTnVillage(village, combinedAddr, district);
+    const villageLookup = lookupTnVillage(village, combinedAddr, district, taluk, pincode);
     const villageMatch = villageLookup ? (villageLookup.item || villageLookup) : null;
     const matchedDirect = villageLookup ? Boolean(villageLookup.matchedDirect) : false;
     if (villageMatch) {
