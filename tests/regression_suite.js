@@ -7132,6 +7132,92 @@ async function runTests() {
                 passedCount += 6;
             }
 
+            // [TEST 96] 📸 Golden Rule 26: Service-Wise HD Document & Photo Sizing (Zero Universal Crunch + Smart No-Downgrade)
+            console.log('\n[TEST 96] 📸 Verifying Golden Rule 26 Service-Wise HD Document & Photo Sizing Matrix...');
+            {
+                const policyMod96 = require('../src/services/govt_document_policy');
+                const studio96 = require('../photo_studio');
+                const sharp96 = require('sharp');
+
+                // 1. All 14 existing services have explicit per-service policies with proper portal ceilings
+                const all14Keys = Object.keys(policyMod96.SERVICE_DOCUMENT_POLICIES || {});
+                assert(all14Keys.length >= 14, `TEST 96.all14Policies: All 14 services registered in SERVICE_DOCUMENT_POLICIES (count=${all14Keys.length})`);
+
+                const tnpdsPol = policyMod96.resolveServiceDocumentPolicy({ service: 'TNPDS_NEW_CARD' });
+                const tnegaPol = policyMod96.resolveServiceDocumentPolicy({ service: 'TNEGA_INCOME' });
+                const futurePol = policyMod96.resolveServiceDocumentPolicy({
+                    service: 'FUTURE_PASSPORT',
+                    documentLimits: { photoMaxKB: 120, photoWidth: 350, photoHeight: 450, docMaxKB: 500 }
+                });
+                assert(
+                    tnpdsPol.maxSizeKB === 850 && tnpdsPol.photoMaxKB === 250 && tnpdsPol.photoWidth === 400 &&
+                    tnegaPol.maxSizeKB === 185 && tnegaPol.photoMaxKB === 46 && tnegaPol.photoWidth === 200 &&
+                    futurePol.maxSizeKB === 500 && futurePol.photoMaxKB === 120 && futurePol.photoWidth === 350,
+                    `TEST 96.policySplit: TNPDS uses HD 850KB/250KB(400px), TNeGA uses strict 185KB/46KB(200px), custom future manifest limits respected`
+                );
+
+                // 2. Passport Photo Studio produces HD 400x460 for TNPDS vs strict <=46KB 200x230 for TNeGA
+                const rawTestPhoto = path.join(__dirname, '..', 'compressed', 'test96_raw_portrait.jpg');
+                const photoBuf = Buffer.alloc(600 * 700 * 3);
+                for (let i = 0; i < photoBuf.length; i++) photoBuf[i] = (i * 37 + (i >> 3) * 19) & 255;
+                await sharp96(photoBuf, { raw: { width: 600, height: 700, channels: 3 } }).jpeg({ quality: 95 }).toFile(rawTestPhoto);
+
+                const tnpdsPhoto = await studio96.produceCompliantPassportPhoto(rawTestPhoto, { service: 'TNPDS_NEW_CARD', skipFaceExtraction: true });
+                const tnegaPhoto = await studio96.produceCompliantPassportPhoto(rawTestPhoto, { service: 'TNEGA_INCOME', skipFaceExtraction: true });
+                const tnpdsPhotoMeta = await sharp96(tnpdsPhoto).metadata();
+                const tnegaPhotoMeta = await sharp96(tnegaPhoto).metadata();
+                const tnpdsPhotoSz = fs.statSync(tnpdsPhoto).size;
+                const tnegaPhotoSz = fs.statSync(tnegaPhoto).size;
+                assert(
+                    tnpdsPhotoMeta.width === 400 && tnpdsPhotoMeta.height === 460 && tnpdsPhotoSz <= 250 * 1024 &&
+                    tnegaPhotoMeta.width <= 200 && tnegaPhotoSz <= 46 * 1024,
+                    `TEST 96.servicePhotoQuality: TNPDS portrait is HD ${tnpdsPhotoMeta.width}x${tnpdsPhotoMeta.height} (${(tnpdsPhotoSz/1024).toFixed(1)}KB <= 250KB); TNeGA portrait is ${tnegaPhotoMeta.width}x${tnegaPhotoMeta.height} (${(tnegaPhotoSz/1024).toFixed(1)}KB <= 46KB)`
+                );
+
+                // 3. Smart No-Downgrade Rule: A crisp 320KB PDF is kept untouched for TNPDS (<=850KB) without recompression!
+                const midPdf = path.join(__dirname, '..', 'compressed', 'test96_crisp_320kb.pdf');
+                fs.writeFileSync(midPdf, Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(320 * 1024, 65)]));
+                const tnpdsPdfOut = await studio96.produceCompliantDocument(midPdf, { service: 'TNPDS_NEW_CARD' });
+                assert(
+                    tnpdsPdfOut === midPdf,
+                    'TEST 96.noDowngradeTnpds: Crisp 320KB PDF stays untouched (zero unnecessary compression) for TNPDS 1MB portal'
+                );
+
+                // 4. Large noisy doc image compresses to HD <=850KB (higher clarity) for TNPDS vs strict <=185KB for TNeGA
+                const bigDocImg = path.join(__dirname, '..', 'compressed', 'test96_big_doc.jpg');
+                const docBuf = Buffer.alloc(1400 * 1000 * 3);
+                for (let i = 0; i < docBuf.length; i++) docBuf[i] = (i * 53 + (i >> 4) * 29) & 255;
+                await sharp96(docBuf, { raw: { width: 1400, height: 1000, channels: 3 } }).jpeg({ quality: 95 }).toFile(bigDocImg);
+
+                const tnpdsDocOut = await studio96.produceCompliantDocument(bigDocImg, { service: 'TNPDS_NEW_CARD' });
+                const tnegaDocOut = await studio96.produceCompliantDocument(bigDocImg, { service: 'TNEGA_COMMUNITY' });
+                const tnpdsDocSz = fs.statSync(tnpdsDocOut).size;
+                const tnegaDocSz = fs.statSync(tnegaDocOut).size;
+                assert(
+                    tnpdsDocSz <= 850 * 1024 && tnegaDocSz <= 185 * 1024 && tnpdsDocSz > tnegaDocSz,
+                    `TEST 96.serviceDocQuality: TNPDS doc preserves HD clarity (${(tnpdsDocSz/1024).toFixed(1)}KB <= 850KB) while TNeGA stays strictly <= 185KB (${(tnegaDocSz/1024).toFixed(1)}KB)`
+                );
+
+                // 5. Golden Rule 26 & Template manifest documentLimits persisted + legacy 3-arg frozen TNeGA calls stay strictly <= 185KB
+                const geminiSrc96 = fs.readFileSync(path.join(__dirname, '../GEMINI.md'), 'utf8');
+                const tplMan96 = require('../src/cartridges/_template/manifest');
+                const legacy3ArgOut = await studio96.produceCompliantDocument(bigDocImg, 'ignored_dest.jpg', 185);
+                const legacy3ArgSz = fs.statSync(legacy3ArgOut).size;
+                assert(
+                    geminiSrc96.includes('Golden Rule 26') &&
+                    tplMan96.documentLimits && tplMan96.documentLimits.docMaxKB === 185 &&
+                    legacy3ArgSz <= 185 * 1024,
+                    `TEST 96.ruleAndTemplate: Golden Rule 26 persisted in GEMINI.md, template manifest has documentLimits, and frozen TNeGA 3-arg calls stay strictly <=185KB (${(legacy3ArgSz/1024).toFixed(1)}KB)`
+                );
+
+                // Clean temp files
+                [rawTestPhoto, tnpdsPhoto, tnegaPhoto, midPdf, bigDocImg, tnpdsDocOut, tnegaDocOut, legacy3ArgOut].forEach(f => {
+                    try { if (f && fs.existsSync(f)) fs.unlinkSync(f); } catch (_) {}
+                });
+
+                passedCount += 6;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

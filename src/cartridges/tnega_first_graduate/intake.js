@@ -79,7 +79,7 @@ async function handleIntake(ctx, req, res) {
             return true;
         }
 
-        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_FIRST_GRADUATE', portal: 'TNEGA' });
         sess.citizenProfile.applicantEducationProof = compliantProof;
         sess.citizenProfile.studentTc = compliantProof;
         if (!sess.tempUploads) sess.tempUploads = {};
@@ -116,7 +116,7 @@ async function handleIntake(ctx, req, res) {
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
         }
-        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_FIRST_GRADUATE', portal: 'TNEGA' });
         sess.citizenProfile.fatherEducationProof = compliantProof;
         sess.citizenProfile.fatherTc = compliantProof;
         if (!sess.tempUploads) sess.tempUploads = {};
@@ -155,7 +155,7 @@ async function handleIntake(ctx, req, res) {
             res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
             return true;
         }
-        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_FIRST_GRADUATE', portal: 'TNEGA' });
         sess.citizenProfile.motherEducationProof = compliantProof;
         sess.citizenProfile.motherTc = compliantProof;
         if (!sess.tempUploads) sess.tempUploads = {};

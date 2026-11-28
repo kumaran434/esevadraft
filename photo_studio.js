@@ -8,16 +8,23 @@ function getSharp() {
 const fs = require('fs');
 const path = require('path');
 
-const { 
-    getSafeStudioDir, 
-    compressHeavyPdf, 
+const {
+    getSafeStudioDir,
+    compressHeavyPdf,
     cropDocumentToExactBoundary,
     produceDualSidedDocument: coreProduceDualSided,
     generatePreviewFromPdf
 } = require('./src/services/document_pdf_generator');
+const { resolveServiceDocumentPolicy } = require('./src/services/govt_document_policy');
 
 const studioDir = getSafeStudioDir();
 
+/**
+ * Service-Wise HD Passport Photo Studio (Golden Rule 26)
+ * - TNPDS Ration Card Services: Crisp HD 400x460 portrait up to 250 KB (Govt limit: 5 MB)
+ * - TNeGA Revenue Services: Crisp 200x230 portrait strictly <= 46 KB (Govt limit: 50 KB)
+ * - Future Services: Respects exact service/portal policy or manifest.documentLimits
+ */
 async function produceCompliantPassportPhoto(inputPath, options = {}) {
     if (!fs.existsSync(inputPath)) {
         console.warn(`File not found for photo studio: ${inputPath}`);
@@ -27,6 +34,13 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
     if (!sharp) {
         return inputPath;
     }
+
+    const policy = resolveServiceDocumentPolicy(options);
+    const targetMaxKb = Number(options.maxPhotoKb || options.maxKb || policy.photoMaxKB || 250);
+    const targetMaxBytes = targetMaxKb * 1024;
+    const baseW = Number(options.photoWidth || policy.photoWidth || (targetMaxKb >= 100 ? 400 : 200));
+    const baseH = Number(options.photoHeight || policy.photoHeight || (targetMaxKb >= 100 ? 460 : 230));
+    const baseQuality = Number(policy.photoQualityTarget || (targetMaxKb >= 100 ? 92 : 86));
 
     const outputPath = path.join(studioDir, `studio_passport_${Date.now()}.jpeg`);
 
@@ -38,7 +52,7 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
 
         // 2. Discover Face Bounding Box if not provided
         let faceBox = options.faceBoundingBox || options.boundingBox || null;
-        if (!faceBox) {
+        if (!faceBox && !options.skipFaceExtraction) {
             try {
                 const { inspectAndExtractDocument } = require('./ai_document_extractor');
                 const extracted = await inspectAndExtractDocument(inputPath);
@@ -66,22 +80,18 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
             const faceCenterY = faceTop + faceH / 2;
 
             if (faceW > 30 && faceH > 30) {
-                // Indian Passport Standard (200x230 ratio = 0.8696):
-                // Face height occupies ~65% of the frame height
+                // Indian Passport Standard aspect ratio (200:230 = 0.8696)
                 let targetH = faceH / 0.65;
-                let targetW = targetH * (200 / 230);
+                let targetW = targetH * (baseW / baseH);
 
-                // Side margin: ensure width fits ears and hair comfortably (at least 1.35x face width)
                 if (targetW < faceW * 1.35) {
                     targetW = faceW * 1.35;
-                    targetH = targetW * (230 / 200);
+                    targetH = targetW * (baseH / baseW);
                 }
 
-                // Vertical positioning: 42% above face center, 58% below (leaves ~12-15% above hair top, and includes shoulders)
                 let cropTop = faceCenterY - (targetH * 0.42);
                 let cropLeft = faceCenterX - (targetW / 2);
 
-                // Boundary clamping
                 if (cropTop < 0) cropTop = 0;
                 if (cropLeft < 0) cropLeft = 0;
                 if (cropTop + targetH > imgH) cropTop = Math.max(0, imgH - targetH);
@@ -95,7 +105,7 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
             }
         }
 
-        // 3. Build Sharp pipeline with proper rotation and crop
+        // 3. Build Sharp pipeline with proper rotation and face-centered crop
         let pipeline = sharp(inputPath).rotate();
 
         if (hasFaceCrop && extractW > 40 && extractH > 40 && (extractW < imgW || extractH < imgH)) {
@@ -111,7 +121,7 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
 
         await pipeline
             .flatten({ background: { r: 255, g: 255, b: 255 } })
-            .resize(200, 230, {
+            .resize(baseW, baseH, {
                 fit: 'cover',
                 position: resizeStrategy
             })
@@ -125,20 +135,29 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
                 m2: 0.5
             })
             .jpeg({
-                quality: 84,
-                chromaSubsampling: '4:2:0'
+                quality: baseQuality,
+                chromaSubsampling: targetMaxKb >= 100 ? '4:4:4' : '4:2:0'
             })
             .toFile(outputPath);
 
         let fileSizeBytes = fs.statSync(outputPath).size;
-        // Strict Universal Ceiling: Must be strictly < 45 KB to safely pass TNeGA (<50KB) and TNPDS (<100KB)
-        const photoSteps = [
-            { w: 200, h: 230, q: 72 },
-            { w: 200, h: 230, q: 58 },
-            { w: 180, h: 208, q: 46 }
-        ];
+        // Service-Wise Step-Down Ladder (ONLY steps down if output exceeds this specific service's limit!)
+        const photoSteps = targetMaxKb >= 100
+            ? [
+                { w: baseW, h: baseH, q: 84 },
+                { w: Math.round(baseW * 0.85), h: Math.round(baseH * 0.85), q: 78 },
+                { w: 300, h: 345, q: 72 },
+                { w: 240, h: 276, q: 64 }
+            ]
+            : [
+                { w: baseW, h: baseH, q: 74 },
+                { w: baseW, h: baseH, q: 60 },
+                { w: Math.round(baseW * 0.9), h: Math.round(baseH * 0.9), q: 48 },
+                { w: 160, h: 184, q: 38 }
+            ];
+
         for (const ps of photoSteps) {
-            if (fileSizeBytes <= 45 * 1024) break;
+            if (fileSizeBytes <= targetMaxBytes) break;
             let rePipeline = sharp(inputPath).rotate();
             if (hasFaceCrop && extractW > 40 && extractH > 40 && (extractW < imgW || extractH < imgH)) {
                 rePipeline = rePipeline.extract({
@@ -157,7 +176,7 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
         }
 
         const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
-        console.log(`✨ AI Passport Studio Photo generated: ${outputPath} (${fileSizeKB} KB - Universal <45KB compliant, faceCropped: ${hasFaceCrop})`);
+        console.log(`✨ AI Passport Studio Photo [${policy.serviceId || policy.portal} <= ${targetMaxKb} KB]: ${outputPath} (${fileSizeKB} KB, ${baseW}x${baseH}, faceCropped: ${hasFaceCrop})`);
         return outputPath;
     } catch (e) {
         console.error('Photo Studio notice:', e.message);
@@ -165,19 +184,32 @@ async function produceCompliantPassportPhoto(inputPath, options = {}) {
     }
 }
 
-async function produceCompliantDocument(inputPath, options = {}) {
+/**
+ * Service-Wise HD Document Compliance Processor (Golden Rule 26)
+ * - Smart No-Downgrade: PDFs already <= service's maxKb are NEVER degraded!
+ * - TNPDS Ration Card Services: Up to 850 KB HD (1600x2200, q=90) under 1 MB limit.
+ * - TNeGA Revenue Services: Strictly <= 185 KB under 200 KB limit.
+ * - Explicit options.maxKb always respected when provided.
+ */
+async function produceCompliantDocument(inputPath, options = {}, legacyMaxKb = null) {
     if (!fs.existsSync(inputPath)) return inputPath;
-    const maxKb = Number(options.maxKb || 180);
+
+    // Gracefully normalize legacy 3-arg callers (inputPath, destPathString, maxKbNumber)
+    const normalizedOpts = (options && typeof options === 'object')
+        ? { ...options }
+        : { ...(Number(legacyMaxKb) > 0 ? { maxKb: Number(legacyMaxKb) } : {}) };
+
+    const policy = resolveServiceDocumentPolicy(normalizedOpts);
+    const maxKb = Number(normalizedOpts.maxKb || policy.maxSizeKB || 850);
     const maxBytes = maxKb * 1024;
 
     if (inputPath.toLowerCase().endsWith('.pdf')) {
         const sz = fs.statSync(inputPath).size;
-        // Universal Document Ceiling: <180 KB passes TNeGA (<200KB) and TNPDS (<1MB)
         if (sz > maxBytes) {
-            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > ${maxKb} KB). Auto-compressing to Universal Government Standard (< ${maxKb} KB)...`);
+            console.log(`📄 Large PDF detected (${(sz / 1024).toFixed(1)} KB > ${maxKb} KB for ${policy.serviceId || policy.portal}). Compressing cleanly under ${maxKb} KB...`);
             return await compressHeavyPdf(inputPath, maxKb);
         }
-        console.log(`📄 Compliant PDF uploaded (${(sz / 1024).toFixed(1)} KB <= ${maxKb} KB). Ready directly for all portals!`);
+        console.log(`📄 Crisp PDF kept at original quality (${(sz / 1024).toFixed(1)} KB <= ${maxKb} KB for ${policy.serviceId || policy.portal}) — Zero unnecessary compression!`);
         return inputPath;
     }
 
@@ -187,14 +219,26 @@ async function produceCompliantDocument(inputPath, options = {}) {
     let croppedPath = inputPath;
 
     try {
-        croppedPath = await cropDocumentToExactBoundary(inputPath, options);
-        const passSpecs = [
-            { w: 1000, h: 1350, q: 82 },
-            { w: 860, h: 1160, q: 68 },
-            { w: 760, h: 1020, q: 56 },
-            { w: 660, h: 880, q: 44 },
-            { w: 560, h: 760, q: 34 }
-        ];
+        croppedPath = await cropDocumentToExactBoundary(inputPath, normalizedOpts);
+        const isHighResProfile = maxKb >= 400;
+        const passSpecs = isHighResProfile
+            ? [
+                { w: policy.docMaxWidth || 1600, h: policy.docMaxHeight || 2200, q: policy.jpegQualityTarget || 90 },
+                { w: 1400, h: 1900, q: 84 },
+                { w: 1200, h: 1600, q: 76 },
+                { w: 1000, h: 1350, q: 66 },
+                { w: 860, h: 1160, q: 54 },
+                { w: 720, h: 980, q: 42 }
+            ]
+            : [
+                { w: policy.docMaxWidth || 1100, h: policy.docMaxHeight || 1480, q: policy.jpegQualityTarget || 84 },
+                { w: 1000, h: 1350, q: 74 },
+                { w: 860, h: 1160, q: 64 },
+                { w: 760, h: 1020, q: 52 },
+                { w: 660, h: 880, q: 42 },
+                { w: 560, h: 760, q: 32 }
+            ];
+
         let fileSizeBytes = 0;
         for (const spec of passSpecs) {
             await sharp(croppedPath)
@@ -211,7 +255,7 @@ async function produceCompliantDocument(inputPath, options = {}) {
             if (fileSizeBytes <= maxBytes) break;
         }
         const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
-        console.log(`✨ AI Enhanced Compliant Document Generated: ${outputJpg} (${fileSizeKB} KB <= ${maxKb} KB)`);
+        console.log(`✨ AI Enhanced Compliant Document [${policy.serviceId || policy.portal} <= ${maxKb} KB]: ${outputJpg} (${fileSizeKB} KB)`);
         return outputJpg;
     } catch (e) {
         console.error('Doc optimizer error:', e.message);
@@ -222,10 +266,15 @@ async function produceCompliantDocument(inputPath, options = {}) {
 }
 
 async function produceDualSidedDocument(frontPath, backPath, produceCompliantDocFallback = produceCompliantDocument, options = {}) {
+    // Support convenience 3-arg signature: produceDualSidedDocument(front, back, optionsObj)
+    if (produceCompliantDocFallback && typeof produceCompliantDocFallback === 'object') {
+        options = produceCompliantDocFallback;
+        produceCompliantDocFallback = produceCompliantDocument;
+    }
     return coreProduceDualSided(frontPath, backPath, produceCompliantDocFallback || produceCompliantDocument, options);
 }
 
-async function extractFacePassportFromDocument(filePath, boundingBox = null) {
+async function extractFacePassportFromDocument(filePath, boundingBox = null, options = {}) {
     const sharp = getSharp();
     if (!fs.existsSync(filePath) || !sharp) return null;
     const ext = path.extname(filePath).toLowerCase();
@@ -261,7 +310,7 @@ async function extractFacePassportFromDocument(filePath, boundingBox = null) {
             .extract({ left, top, width: extractW, height: extractH })
             .toFile(tempRawCrop);
 
-        const passportFinal = await produceCompliantPassportPhoto(tempRawCrop);
+        const passportFinal = await produceCompliantPassportPhoto(tempRawCrop, { ...options, skipFaceExtraction: true });
         try { if (fs.existsSync(tempRawCrop) && tempRawCrop !== passportFinal) fs.unlinkSync(tempRawCrop); } catch (e) {}
 
         if (passportFinal && fs.existsSync(passportFinal)) {

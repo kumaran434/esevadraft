@@ -65,10 +65,16 @@ async function stitchDualSidedDocument(draft, docType) {
     const { front, back } = resolveDualSidedPaths(draft, docType);
     if (!front || !fs.existsSync(front)) return null;
 
+    const serviceCtx = {
+        service: draft?.pluginId || draft?.subService || draft?.service || draft?.citizenProfile?.subService,
+        intakeState: draft?.intakeState,
+        citizenProfile: draft?.citizenProfile
+    };
+
     // If back side exists and front is not already merged PDF:
     if (back && fs.existsSync(back) && !front.toLowerCase().endsWith('.pdf')) {
         console.log(`📑 [DocumentStitcher] Auto-cropping & Merging Front + Back for ${docType}...`);
-        const mergedPdf = await produceDualSidedDocument(front, back);
+        const mergedPdf = await produceDualSidedDocument(front, back, undefined, serviceCtx);
         if (mergedPdf && fs.existsSync(mergedPdf)) {
             const mB64 = fs.readFileSync(mergedPdf).toString('base64');
             const mName = path.basename(mergedPdf);
@@ -91,8 +97,8 @@ async function stitchDualSidedDocument(draft, docType) {
         }
     }
 
-    // Single-sided compliance fallback (also auto-crops to exact boundary)
-    return await produceCompliantDocument(front);
+    // Single-sided compliance fallback (also auto-crops to exact boundary using service-wise quality)
+    return await produceCompliantDocument(front, serviceCtx);
 }
 
 module.exports = {

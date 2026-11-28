@@ -67,7 +67,7 @@ async function handleIntake(ctx, req, res) {
             return true;
         }
 
-        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_OBC', portal: 'TNEGA' });
         sess.citizenProfile.communityProof = compliantProof;
         sess.citizenProfile.communityCertificate = compliantProof;
         sess.citizenProfile.communityCertificatePath = compliantProof;
@@ -105,7 +105,7 @@ async function handleIntake(ctx, req, res) {
             return true;
         }
 
-        const compliantProof = await produceCompliantDocument(uploadedFile.path);
+        const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_OBC', portal: 'TNEGA' });
         sess.citizenProfile.incomeTaxReturn = compliantProof;
         sess.citizenProfile.incomeProof = compliantProof;
         if (!sess.tempUploads) sess.tempUploads = {};

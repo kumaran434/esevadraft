@@ -88,7 +88,7 @@ async function handleIntake(ctx, req, res) {
                 return true;
             }
 
-            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_COMMUNITY', portal: 'TNEGA' });
             sess.citizenProfile.communityProof = compliantProof;
             sess.citizenProfile.communityCertificatePath = compliantProof;
             sess.citizenProfile.familyCommunityProofPath = compliantProof;

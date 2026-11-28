@@ -333,7 +333,7 @@ async function executeAddressFormSteps({
     if (rawDocPath && fs.existsSync(rawDocPath)) {
         let absDocPath = path.resolve(rawDocPath);
         if (typeof produceCompliantDocument === 'function') {
-            absDocPath = await produceCompliantDocument(absDocPath).catch(() => absDocPath);
+            absDocPath = await produceCompliantDocument(absDocPath, { service: 'TNPDS_CHANGE_ADDRESS', portal: 'TNPDS' }).catch(() => absDocPath);
         }
 
         let targetFileInput = page.locator('input#inputGroupFile02, input[formcontrolname="upload"], input[name="upload"], input#upload, input[type="file"]').last();

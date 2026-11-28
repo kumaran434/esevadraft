@@ -28,6 +28,8 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
 
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+                service: 'TNPDS_NEW_CARD',
+                portal: 'TNPDS',
                 boundingBox: extractedMember?.documentBoundingBox
             });
         } catch (_) {
@@ -67,7 +69,7 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
 
         if (!isBirthCertDoc && mFront && mBack && mFront !== mBack && fs.existsSync(mFront) && fs.existsSync(mBack)) {
             try {
-                const mergedPdf = await produceDualSidedDocument(mFront, mBack);
+                const mergedPdf = await produceDualSidedDocument(mFront, mBack, undefined, { service: 'TNPDS_NEW_CARD', portal: 'TNPDS' });
                 if (mergedPdf && fs.existsSync(mergedPdf)) optimizedPath = mergedPdf;
             } catch (_) {}
         }
@@ -145,6 +147,8 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
 
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+                service: 'TNPDS_NEW_CARD',
+                portal: 'TNPDS',
                 boundingBox: extracted?.documentBoundingBox
             });
         } catch (_) {
@@ -157,7 +161,7 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
         if (!sess.tempUploads[frontKey]) sess.tempUploads[frontKey] = optimizedPath;
         if (sess.tempUploads[frontKey] && sess.tempUploads[backKey]) {
             try {
-                const mergedPdf = await produceDualSidedDocument(sess.tempUploads[frontKey], sess.tempUploads[backKey]);
+                const mergedPdf = await produceDualSidedDocument(sess.tempUploads[frontKey], sess.tempUploads[backKey], undefined, { service: 'TNPDS_NEW_CARD', portal: 'TNPDS' });
                 if (mergedPdf && fs.existsSync(mergedPdf)) optimizedPath = mergedPdf;
             } catch (_) {}
         }

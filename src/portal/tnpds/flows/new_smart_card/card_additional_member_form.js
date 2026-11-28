@@ -352,7 +352,7 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
 
     let memPdf = rawMemDoc;
     if (rawMemDoc && fs.existsSync(rawMemDoc)) {
-        try { memPdf = await produceCompliantDocument(rawMemDoc); } catch (e) { memPdf = rawMemDoc; }
+        try { memPdf = await produceCompliantDocument(rawMemDoc, { service: 'TNPDS_NEW_CARD', portal: 'TNPDS' }); } catch (e) { memPdf = rawMemDoc; }
     }
     onProgress(`📍 [உறுப்பினர் ${memNum}] ${isBirthCertMember ? 'பிறப்புச் சான்றிதழ்' : 'ஆதார்'} PDF கோப்பு (${path.basename(memPdf)}) இணைக்கப்படுகிறது...`);
     await showBrowserHud(`📄 [உறுப்பினர் ${memNum}] ${isBirthCertMember ? 'பிறப்புச் சான்றிதழ்' : 'ஆதார்'} PDF இணைக்கப்படுகிறது...`, 'தயவுசெய்து காத்திருக்கவும் • நீங்கள் எதுவும் செய்ய வேண்டாம்!', 'warning');

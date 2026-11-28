@@ -40,7 +40,7 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
 
         if (fPath && bPath && typeof fPath === 'string' && typeof bPath === 'string' && fPath !== bPath && fs.existsSync(fPath) && fs.existsSync(bPath) && typeof produceDualSidedDocument === 'function') {
             try {
-                const merged = await produceDualSidedDocument(fPath, bPath);
+                const merged = await produceDualSidedDocument(fPath, bPath, undefined, { service: options?.subService || citizenProfile?.subService || 'TNPDS_NEW_CARD', portal: 'TNPDS' });
                 if (merged && fs.existsSync(merged)) {
                     return merged;
                 }
@@ -114,7 +114,7 @@ async function resolveDocFromOptions(candidateFilePath, options, citizenProfile,
                     const bRaw = backB64.includes('base64,') ? backB64.split('base64,')[1] : backB64;
                     fs.writeFileSync(fCache, Buffer.from(fRaw, 'base64'));
                     fs.writeFileSync(bCache, Buffer.from(bRaw, 'base64'));
-                    const merged = await produceDualSidedDocument(fCache, bCache);
+                    const merged = await produceDualSidedDocument(fCache, bCache, undefined, { service: options?.subService || citizenProfile?.subService || 'TNPDS_NEW_CARD', portal: 'TNPDS' });
                     if (merged && fs.existsSync(merged)) {
                         return merged;
                     }

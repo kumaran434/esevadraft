@@ -75,13 +75,13 @@ async function handleIntake(ctx, req, res) {
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             if (!sess.tempUploads) sess.tempUploads = {};
             if (sess.intakeState === 'WIDOW_PHOTO_WAIT') {
-                const compPhoto = await produceCompliantPassportPhoto(uploadedFile.path, { skipFaceExtraction: true }).catch(() => uploadedFile.path);
+                const compPhoto = await produceCompliantPassportPhoto(uploadedFile.path, { service: 'TNEGA_WIDOW', portal: 'TNEGA', skipFaceExtraction: true }).catch(() => uploadedFile.path);
                 sess.citizenProfile.profilePhoto = compPhoto;
                 sess.citizenProfile.headPhotoPath = compPhoto;
                 sess.citizenProfile.documents.profilePhoto = compPhoto;
                 sess.tempUploads.profilePhoto = compPhoto;
             } else {
-                const compFile = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+                const compFile = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_WIDOW', portal: 'TNEGA' }).catch(() => uploadedFile.path);
                 if (sess.intakeState === 'WIDOW_DEATH_CERT_WAIT') {
                     sess.citizenProfile.deathCertificate = compFile;
                     sess.citizenProfile.documents.deathCertificate = compFile;

@@ -28,6 +28,8 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
 
         try {
             optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+                service: 'TNPDS_ADD_MEMBER',
+                portal: 'TNPDS',
                 boundingBox: extractedMember?.documentBoundingBox
             });
         } catch (_) {
@@ -54,7 +56,7 @@ async function processEditModalUpload({ sess, docType, uploadedFile, memberIndex
         const mBack = sess.tempUploads.memberAadhaarBack || (isBackSide ? optimizedPath : null);
         if (!isBirthCertDoc && mFront && mBack && mFront !== mBack && fs.existsSync(mFront) && fs.existsSync(mBack)) {
             try {
-                const mergedPdf = await produceDualSidedDocument(mFront, mBack);
+                const mergedPdf = await produceDualSidedDocument(mFront, mBack, undefined, { service: 'TNPDS_ADD_MEMBER', portal: 'TNPDS' });
                 if (mergedPdf && fs.existsSync(mergedPdf)) optimizedPath = mergedPdf;
             } catch (_) {}
         }

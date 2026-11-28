@@ -145,7 +145,11 @@ async function resolveDraftDocument(cleanMob, docType, req, res) {
             const resolvedBack = await resolveOrRestoreFile(bCand, bB64, `${cleanMob}_back`, bStorage);
             if (resolvedFront && resolvedBack && resolvedFront !== resolvedBack) {
                 console.log(`✨ [Dual-Side Merger] Dynamically cropping & merging Front + Back into 2-in-1 Government PDF for ${cleanMob} (${docType})...`);
-                const mergedPdf = await produceDualSidedDocument(resolvedFront, resolvedBack);
+                const mergedPdf = await produceDualSidedDocument(resolvedFront, resolvedBack, undefined, {
+                    sess,
+                    service: draft?.pluginId || draft?.subService || draft?.service || sess?.subService || sess?.service,
+                    intakeState: draft?.intakeState || sess?.intakeState
+                });
                 if (mergedPdf && fs.existsSync(mergedPdf)) {
                     docPath = mergedPdf;
                     const mB64 = fs.readFileSync(mergedPdf).toString('base64');

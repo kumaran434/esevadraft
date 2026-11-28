@@ -236,7 +236,7 @@ async function handleIntake(ctx, req, res) {
                 res.json({ chatHistory: sess.chatHistory, citizenProfile: sess.citizenProfile, step: sess.intakeState, intakeState: sess.intakeState });
                 return true;
             }
-            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_INCOME', portal: 'TNEGA' });
             p.incomeProof = compliantProof;
             p.salaryCertificatePath = compliantProof;
             p.salaryCertificate = compliantProof;
@@ -399,7 +399,7 @@ async function handleIntake(ctx, req, res) {
                 return true;
             }
 
-            const compliantProof = await produceCompliantDocument(uploadedFile.path);
+            const compliantProof = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_INCOME', portal: 'TNEGA' });
             sess.citizenProfile.incomeProof = compliantProof;
             sess.citizenProfile.salaryCertificatePath = compliantProof;
             if (!sess.tempUploads) sess.tempUploads = {};

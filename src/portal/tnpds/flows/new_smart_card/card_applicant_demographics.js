@@ -107,7 +107,7 @@ async function executeApplicantDemographics(page, citizenProfile, sanitizedProfi
     if (!activePhoto && typeof requestReplacementFileFromUser === 'function') {
         const prompt = '📸 குடும்பத் தலைவரின் பாஸ்போர்ட் புகைப்படம் பதிவேற்றவும்.';
         const newRaw = await requestReplacementFileFromUser(prompt, onProgress, 'HEAD_PHOTO');
-        if (newRaw && fs.existsSync(newRaw)) activePhoto = await produceCompliantPassportPhoto(newRaw);
+        if (newRaw && fs.existsSync(newRaw)) activePhoto = await produceCompliantPassportPhoto(newRaw, { service: 'TNPDS_NEW_CARD', portal: 'TNPDS' });
     }
 
     if (activePhoto && fs.existsSync(activePhoto)) {

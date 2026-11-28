@@ -15,6 +15,7 @@ function getPDFDocument() {
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { resolveServiceDocumentPolicy } = require('./govt_document_policy');
 
 let _cachedStudioDir = null;
 function getSafeStudioDir() {
@@ -52,14 +53,15 @@ function findSystemChromePath() {
     return candidates.find(p => p && fs.existsSync(p)) || null;
 }
 
-async function compressHeavyPdf(inputPdfPath, maxKb = 180) {
+async function compressHeavyPdf(inputPdfPath, maxKb = 185) {
     let browser = null;
     try {
         let chromium;
         try { chromium = require('playwright').chromium; } catch(e) { chromium = require('playwright-core').chromium; }
         const pdfBuf = fs.readFileSync(inputPdfPath);
         const pdfBase64 = pdfBuf.toString('base64');
-        const targetBytes = Number(maxKb || 180) * 1024;
+        const resolvedMaxKb = Number(maxKb || 185);
+        const targetBytes = resolvedMaxKb * 1024;
         const outputPdfPath = path.join(studioDir, `compressed_${Date.now()}_${path.basename(inputPdfPath)}`);
 
         const chromeExe = findSystemChromePath();
@@ -101,12 +103,22 @@ async function compressHeavyPdf(inputPdfPath, maxKb = 180) {
         `);
 
         await page.waitForFunction(() => typeof window.renderPdfPage === 'function', { timeout: 15000 });
-        const attempts = [
-            { scale: 1.4, quality: 72 },
-            { scale: 1.15, quality: 58 },
-            { scale: 0.95, quality: 44 },
-            { scale: 0.80, quality: 32 }
-        ];
+        // Service-Wise HD Quality Ladder: Generous portals (e.g. TNPDS 1MB -> 850KB) start at crystal-clear 2.0x HD;
+        // tight portals (e.g. TNeGA 200KB -> 185KB) step cleanly to stay strictly under portal ceiling.
+        const attempts = resolvedMaxKb >= 400
+            ? [
+                { scale: 2.0, quality: 88 },
+                { scale: 1.7, quality: 80 },
+                { scale: 1.4, quality: 72 },
+                { scale: 1.15, quality: 58 },
+                { scale: 0.95, quality: 44 }
+            ]
+            : [
+                { scale: 1.4, quality: 72 },
+                { scale: 1.15, quality: 58 },
+                { scale: 0.95, quality: 44 },
+                { scale: 0.80, quality: 32 }
+            ];
 
         for (const step of attempts) {
             const pageImages = [];
@@ -399,9 +411,16 @@ async function cropDocumentToExactBoundary(inputPath, options = {}) {
 async function produceDualSidedDocument(frontPath, backPath, produceCompliantDocFallback, options = {}) {
     if (!fs.existsSync(frontPath)) return null;
     if (!backPath || !fs.existsSync(backPath)) {
-        if (produceCompliantDocFallback) return produceCompliantDocFallback(frontPath);
+        if (produceCompliantDocFallback) return produceCompliantDocFallback(frontPath, options);
         return frontPath;
     }
+
+    const policy = resolveServiceDocumentPolicy(options);
+    const targetMaxKb = Number(options?.maxKb || policy.maxSizeKB || 850);
+    const sideMaxW = Number(policy.dualSideWidth || (targetMaxKb >= 400 ? 1400 : 1000));
+    const sideMaxH = Number(policy.dualSideHeight || (targetMaxKb >= 400 ? 950 : 680));
+    const initialQuality = Number(policy.jpegQualityTarget || (targetMaxKb >= 400 ? 90 : 82));
+    const retryQualities = targetMaxKb >= 400 ? [82, 72, 60, 48] : [68, 54, 42];
 
     let frontBox = options?.frontBoundingBox || options?.boundingBox || null;
     let backBox = options?.backBoundingBox || null;
@@ -435,7 +454,7 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
         try {
             await sharp(croppedFrontPath)
                 .rotate()
-                .resize({ width: 1000, height: 680, fit: 'inside', withoutEnlargement: true })
+                .resize({ width: sideMaxW, height: sideMaxH, fit: 'inside', withoutEnlargement: true })
                 .flatten({ background: { r: 255, g: 255, b: 255 } })
                 .normalize()
                 .gamma(1.1)
@@ -446,7 +465,7 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
 
             await sharp(croppedBackPath)
                 .rotate()
-                .resize({ width: 1000, height: 680, fit: 'inside', withoutEnlargement: true })
+                .resize({ width: sideMaxW, height: sideMaxH, fit: 'inside', withoutEnlargement: true })
                 .flatten({ background: { r: 255, g: 255, b: 255 } })
                 .normalize()
                 .gamma(1.1)
@@ -508,13 +527,13 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
     }
 
     try {
-        let finalPdf = await generatePdfAtQuality(80);
+        let finalPdf = await generatePdfAtQuality(initialQuality);
         if (finalPdf && fs.existsSync(finalPdf)) {
             let fileSizeKB = fs.statSync(finalPdf).size / 1024;
-            // Universal Document Ceiling: Strictly < 185 KB to pass TNeGA (<200KB) and TNPDS (<1MB)
-            for (const qRetry of [66, 52, 40]) {
-                if (!(fileSizeKB > 185)) break;
-                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > 185 KB). Re-encoding at quality ${qRetry} for strict universal compliance...`);
+            // Service-Wise Document Ceiling (Golden Rule 26: TNPDS <= 850 KB HD, TNeGA <= 185 KB, NVSP <= 1800 KB)
+            for (const qRetry of retryQualities) {
+                if (!(fileSizeKB > targetMaxKb)) break;
+                console.log(`⚠️ Merged PDF (${fileSizeKB.toFixed(1)} KB > ${targetMaxKb} KB for ${policy.serviceId || policy.portal}). Re-encoding at quality ${qRetry}...`);
                 const retryPdf = await generatePdfAtQuality(qRetry);
                 if (retryPdf && fs.existsSync(retryPdf) && fs.statSync(retryPdf).size > 500) {
                     const prevPdf = finalPdf;
@@ -527,7 +546,7 @@ async function produceDualSidedDocument(frontPath, backPath, produceCompliantDoc
                     break;
                 }
             }
-            console.log(`✨ AI Merged 2-in-1 Government PDF Generated: ${finalPdf} (${fileSizeKB ? fileSizeKB.toFixed(1) : '?'} KB)`);
+            console.log(`✨ AI Merged 2-in-1 Government PDF Generated [${policy.serviceId || policy.portal} <= ${targetMaxKb} KB]: ${finalPdf} (${fileSizeKB ? fileSizeKB.toFixed(1) : '?'} KB)`);
             return finalPdf;
         }
         return frontPath;

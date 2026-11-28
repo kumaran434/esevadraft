@@ -145,6 +145,8 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
                         sess.tempUploads.headAadhaarBack,
                         produceCompliantDocument,
                         {
+                            portal: 'TNEGA',
+                            sess,
                             frontBoundingBox: sess.tempUploads.headAadhaarFrontBoundingBox,
                             backBoundingBox: sess.tempUploads.headAadhaarBackBoundingBox
                         }
@@ -156,7 +158,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
             if (!mergedPdf || !fs.existsSync(mergedPdf) || fs.statSync(mergedPdf).size < 100) {
                 const fallbackSrc = (frontPath && fs.existsSync(frontPath)) ? frontPath : uploadedFile.path;
                 try {
-                    mergedPdf = await produceCompliantDocument(fallbackSrc);
+                    mergedPdf = await produceCompliantDocument(fallbackSrc, { portal: 'TNEGA', sess });
                 } catch (_) {
                     mergedPdf = fallbackSrc;
                 }
@@ -211,7 +213,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
 
         if (text === 'AADHAAR_SKIP_BACK' || (text && /பின்பக்கம் தேவையில்லை|skip/i.test(text))) {
             const frontSrc = sess.tempUploads?.headAadhaarFront || sess.citizenProfile?.headAadhaarDocPath;
-            const compliantFront = frontSrc ? await produceCompliantDocument(frontSrc).catch(() => frontSrc) : frontSrc;
+            const compliantFront = frontSrc ? await produceCompliantDocument(frontSrc, { portal: 'TNEGA', sess }).catch(() => frontSrc) : frontSrc;
             if (compliantFront) {
                 sess.tempUploads.headAadhaar = compliantFront;
                 sess.citizenProfile.headAadhaarDocPath = compliantFront;
@@ -279,7 +281,7 @@ async function handleTnegaAadhaarUploadHelper({ ctx, req, res, backWaitState, ad
         const isFullAadhaar = isDoubleSidedCardComplete(extracted, uploadedFile.originalname || uploadedFile.path, 'aadhaar');
 
         if (isFullAadhaar) {
-            let fullPdf = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+            let fullPdf = await produceCompliantDocument(uploadedFile.path, { portal: 'TNEGA', sess }).catch(() => uploadedFile.path);
             if (!fullPdf || !fs.existsSync(fullPdf)) fullPdf = uploadedFile.path;
             sess.tempUploads.headAadhaar = fullPdf;
             sess.tempUploads.headAadhaarFront = uploadedFile.path;
@@ -397,7 +399,7 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         }
         if (text === 'SMARTCARD_SKIP_BACK') {
             const frontPath = sess.tempUploads.smartCardFront || sess.citizenProfile.smartCard;
-            const compliantFront = frontPath ? await produceCompliantDocument(frontPath).catch(() => frontPath) : frontPath;
+            const compliantFront = frontPath ? await produceCompliantDocument(frontPath, { portal: 'TNEGA', sess }).catch(() => frontPath) : frontPath;
             if (compliantFront) await syncSmartCardToProfile(compliantFront, null);
             const flowStep = advanceFlowFn(sess, `✅ **குடும்ப ஸ்மார்ட் ரேஷன் கார்டு சேமிக்கப்பட்டது!** 🛡️`);
             sess.chatHistory.push({ sender: 'bot', text: flowStep.text, options: flowStep.options });
@@ -431,6 +433,8 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
                     sess.tempUploads.smartCardBack,
                     produceCompliantDocument,
                     {
+                        portal: 'TNEGA',
+                        sess,
                         frontBoundingBox: sess.tempUploads.smartCardFrontBoundingBox,
                         backBoundingBox: sess.tempUploads.smartCardBackBoundingBox
                     }
@@ -438,7 +442,7 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
             }
             if (!mergedPdf || !fs.existsSync(mergedPdf)) {
                 const fb = (scFront && fs.existsSync(scFront)) ? scFront : uploadedFile.path;
-                mergedPdf = await produceCompliantDocument(fb).catch(() => fb);
+                mergedPdf = await produceCompliantDocument(fb, { portal: 'TNEGA', sess }).catch(() => fb);
             }
             if (scFront) sess.citizenProfile.documents.smartCardFront = scFront;
             sess.citizenProfile.documents.smartCardBack = sess.tempUploads.smartCardBack;
@@ -495,7 +499,7 @@ async function handleTnegaSmartCardUploadHelper({ ctx, req, res, backWaitState, 
         const isFullCard = isDoubleSidedCardComplete(extracted, uploadedFile.originalname || uploadedFile.path, 'smartCard');
 
         if (isFullCard) {
-            let fullPdf = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+            let fullPdf = await produceCompliantDocument(uploadedFile.path, { portal: 'TNEGA', sess }).catch(() => uploadedFile.path);
             if (!fullPdf || !fs.existsSync(fullPdf)) fullPdf = uploadedFile.path;
             sess.tempUploads.smartCardFront = uploadedFile.path;
             delete sess.tempUploads.smartCardBack;
@@ -593,6 +597,8 @@ async function handleTnegaPassportPhotoUpload({ ctx, req, res, photoWaitState, a
         }
 
         const studioPhoto = await produceCompliantPassportPhoto(uploadedFile.path, {
+            portal: 'TNEGA',
+            sess,
             faceBoundingBox: extracted?.faceBoundingBox
         });
         sess.citizenProfile.headPhotoPath = studioPhoto;

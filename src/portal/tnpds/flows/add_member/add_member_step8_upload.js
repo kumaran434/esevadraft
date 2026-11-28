@@ -164,7 +164,7 @@ async function executeStep8Upload(page, memberContext, options, onProgress, shar
 
     if (rawDocPath && fs.existsSync(rawDocPath)) {
         let absDocPath = path.resolve(rawDocPath);
-        try { absDocPath = await produceCompliantDocument(absDocPath); } catch (_) {}
+        try { absDocPath = await produceCompliantDocument(absDocPath, { service: 'TNPDS_ADD_MEMBER', portal: 'TNPDS' }); } catch (_) {}
         // TNPDS portal strictly checks for png, gif, jpeg, pdf extensions (can reject .jpg)
         if (path.extname(absDocPath).toLowerCase() === '.jpg') {
             try {

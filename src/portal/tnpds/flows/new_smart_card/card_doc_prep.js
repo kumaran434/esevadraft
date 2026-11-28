@@ -131,9 +131,10 @@ async function prepareNewCardDocuments(citizenProfile, options = {}, isMockSandb
         'gas'
     );
 
-    const optimizedHeadPhoto = rawHeadPhoto ? await produceCompliantPassportPhoto(rawHeadPhoto) : null;
-    const optimizedHeadAadhaar = rawHeadAadhaar ? await produceCompliantDocument(rawHeadAadhaar) : null;
-    const optimizedGasBook = rawGasBook ? await produceCompliantDocument(rawGasBook) : null;
+    const tnpdsPolicyOpts = { service: 'TNPDS_NEW_CARD', portal: 'TNPDS' };
+    const optimizedHeadPhoto = rawHeadPhoto ? await produceCompliantPassportPhoto(rawHeadPhoto, tnpdsPolicyOpts) : null;
+    const optimizedHeadAadhaar = rawHeadAadhaar ? await produceCompliantDocument(rawHeadAadhaar, tnpdsPolicyOpts) : null;
+    const optimizedGasBook = rawGasBook ? await produceCompliantDocument(rawGasBook, tnpdsPolicyOpts) : null;
 
     return {
         cacheDir,

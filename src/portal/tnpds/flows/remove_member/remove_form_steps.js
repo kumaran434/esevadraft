@@ -252,7 +252,7 @@ async function executeRemoveMemberFormSteps({
 
         if (localDocPath && fs.existsSync(localDocPath)) {
             try {
-                const compliantDoc = await produceCompliantDocument(localDocPath);
+                const compliantDoc = await produceCompliantDocument(localDocPath, { service: 'TNPDS_REMOVE_MEMBER', portal: 'TNPDS' });
                 const fileInput = modalDialog.locator('input[type="file"]').first();
                 if (await fileInput.count() > 0) {
                     await fileInput.setInputFiles(compliantDoc).catch(() => {});

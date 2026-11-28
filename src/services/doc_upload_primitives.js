@@ -23,6 +23,7 @@ async function extractAndNormalizePhoto(sess, uploadedFile) {
     let optimizedPath = uploadedFile.path;
     try {
         optimizedPath = await produceCompliantPassportPhoto(uploadedFile.path, {
+            sess,
             faceBoundingBox: extractedPhoto?.faceBoundingBox
         });
     } catch (_) {
@@ -56,6 +57,7 @@ async function extractAndNormalizeHeadAadhaar(sess, docType, uploadedFile, { upd
     let optimizedPath = uploadedFile.path;
     try {
         optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+            sess,
             boundingBox: extractedAadhaar?.documentBoundingBox
         });
     } catch (_) {
@@ -79,7 +81,7 @@ async function extractAndNormalizeHeadAadhaar(sess, docType, uploadedFile, { upd
 
     if (frontCandidate && backCandidate && frontCandidate !== backCandidate && fs.existsSync(frontCandidate) && fs.existsSync(backCandidate)) {
         try {
-            const mergedPdf = await produceDualSidedDocument(frontCandidate, backCandidate);
+            const mergedPdf = await produceDualSidedDocument(frontCandidate, backCandidate, undefined, { sess });
             if (mergedPdf && fs.existsSync(mergedPdf)) {
                 optimizedPath = mergedPdf;
                 sess.tempUploads.headAadhaar = mergedPdf;
@@ -140,6 +142,7 @@ async function extractAndNormalizeSmartCard(sess, docType, uploadedFile) {
     let optimizedPath = uploadedFile.path;
     try {
         optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+            sess,
             boundingBox: extractedOther?.documentBoundingBox
         });
     } catch (_) {
@@ -163,7 +166,7 @@ async function extractAndNormalizeSmartCard(sess, docType, uploadedFile) {
     const scBack = sess.tempUploads.smartCardBack || sess.citizenProfile.documents.smartCardBack || (docType.endsWith('Back') ? optimizedPath : null);
     if (scFront && scBack && scFront !== scBack && fs.existsSync(scFront) && fs.existsSync(scBack)) {
         try {
-            const mergedSc = await produceDualSidedDocument(scFront, scBack);
+            const mergedSc = await produceDualSidedDocument(scFront, scBack, undefined, { sess });
             if (mergedSc && fs.existsSync(mergedSc)) optimizedPath = mergedSc;
         } catch (_) {}
     }
@@ -206,6 +209,7 @@ async function extractAndNormalizeGenericDoc(sess, docType, uploadedFile, { vali
     let optimizedPath = uploadedFile.path;
     try {
         optimizedPath = await produceCompliantDocument(uploadedFile.path, {
+            sess,
             boundingBox: extractedOther?.documentBoundingBox
         });
     } catch (_) {
@@ -227,7 +231,7 @@ async function extractAndNormalizeGenericDoc(sess, docType, uploadedFile, { vali
     const bPath = sess.tempUploads[bKey] || sess.citizenProfile.documents[bKey];
     if (fPath && bPath && fPath !== bPath) {
         try {
-            const mergedPdf = await produceDualSidedDocument(fPath, bPath);
+            const mergedPdf = await produceDualSidedDocument(fPath, bPath, undefined, { sess });
             if (mergedPdf && fs.existsSync(mergedPdf)) {
                 optimizedPath = mergedPdf;
                 sess.tempUploads[baseDocType] = mergedPdf;

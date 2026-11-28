@@ -71,7 +71,7 @@ async function handleIntake(ctx, req, res) {
             }
         }
         if (uploadedFile) {
-            const compFile = await produceCompliantDocument(uploadedFile.path).catch(() => uploadedFile.path);
+            const compFile = await produceCompliantDocument(uploadedFile.path, { service: 'TNEGA_LEGAL_HEIR', portal: 'TNEGA' }).catch(() => uploadedFile.path);
             if (!sess.citizenProfile.documents) sess.citizenProfile.documents = {};
             if (!sess.tempUploads) sess.tempUploads = {};
             if (sess.intakeState === 'LEGAL_HEIR_DEATH_CERT_WAIT') {
