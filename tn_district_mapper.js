@@ -9,10 +9,27 @@
  *   TIER 3 : Official 38-District Normalization Passthrough (Zero Blind PIN Overwrite)
  */
 
-const TN_ALL_TALUKS_MASTER = require('./data/tn_all_taluks_master.json');
-const TN_BIFURCATED_TALUKS = require('./data/tn_bifurcated_taluks');
-const TN_PINCODE_TALUK_MAP = require('./data/tn_pincode_taluk_map');
-const TN_VILLAGE_LEXICON = require('./data/tn_village_lexicon.json');
+function safeRequireStaticData(relPath, fallbackVal) {
+    const pathMod = require('path');
+    const candidates = [
+        relPath,
+        pathMod.join(__dirname, relPath),
+        process.resourcesPath ? pathMod.join(process.resourcesPath, relPath) : '',
+        pathMod.join(process.cwd(), relPath)
+    ].filter(Boolean);
+    for (const c of candidates) {
+        try {
+            return require(c);
+        } catch (_) {}
+    }
+    console.warn(`⚠️ [tn_district_mapper] Optional static dataset not found: ${relPath}`);
+    return fallbackVal;
+}
+
+const TN_ALL_TALUKS_MASTER = safeRequireStaticData('./data/tn_all_taluks_master.json', { districts: [] });
+const TN_BIFURCATED_TALUKS = safeRequireStaticData('./data/tn_bifurcated_taluks', {});
+const TN_PINCODE_TALUK_MAP = safeRequireStaticData('./data/tn_pincode_taluk_map', {});
+const TN_VILLAGE_LEXICON = safeRequireStaticData('./data/tn_village_lexicon.json', { villages: [] });
 
 let aiCorrectionMemory = null;
 try {

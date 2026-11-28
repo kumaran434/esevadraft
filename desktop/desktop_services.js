@@ -361,30 +361,72 @@ function setupAutoUpdater(getMainWindow) {
 
     if (autoUpdater) {
         autoUpdater.autoDownload = true;
-        autoUpdater.autoInstallOnAppQuit = true;
+        autoUpdater.autoInstallOnAppQuit = false;
         autoUpdater.disableWebInstaller = true;
+        // Disable differential .blockmap range downloads that frequently stall mid-way on unstable broadband/4G
+        autoUpdater.disableDifferentialDownload = true;
+
+        let lastProgressAt = 0;
+        let lastBytesTransferred = 0;
+        let stallTimer = null;
+        const baseTitle = 'eSevaDraft — தமிழ்நாடு அரசு சேவைகள் ஏஐ';
+
+        const clearDownloadWatchdog = () => {
+            if (stallTimer) {
+                clearInterval(stallTimer);
+                stallTimer = null;
+            }
+            try {
+                const mainWindow = getMainWindow ? getMainWindow() : null;
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.setProgressBar(-1);
+                    mainWindow.setTitle(baseTitle);
+                }
+            } catch (_) {}
+        };
 
         autoUpdater.on('update-available', (info) => {
             updateDownloading = true;
-            console.log('[AutoUpdater] New update found on GitHub, downloading silently:', info?.version);
+            lastProgressAt = Date.now();
+            lastBytesTransferred = 0;
+            console.log('[AutoUpdater] New update found on GitHub, downloading full installer:', info?.version);
+            if (stallTimer) clearInterval(stallTimer);
+            stallTimer = setInterval(() => {
+                if (!updateDownloading) {
+                    clearInterval(stallTimer);
+                    stallTimer = null;
+                    return;
+                }
+                if (Date.now() - lastProgressAt > 45000) {
+                    console.warn('[AutoUpdater] Download stalled for >45s — switching to reliable browser download fallback.');
+                    updateDownloading = false;
+                    clearDownloadWatchdog();
+                    if (!promptShown) {
+                        checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
+                    }
+                }
+            }, 10000);
         });
 
         autoUpdater.on('download-progress', (progressObj) => {
             const pct = typeof progressObj?.percent === 'number' ? Math.max(0, Math.min(100, progressObj.percent)) : 0;
+            const transferred = Number(progressObj?.transferred || 0);
+            if (transferred > lastBytesTransferred || pct > 0) {
+                lastBytesTransferred = transferred;
+                lastProgressAt = Date.now();
+            }
             try {
                 const mainWindow = getMainWindow ? getMainWindow() : null;
                 if (mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.setProgressBar(pct / 100);
+                    mainWindow.setTitle(`${baseTitle} • அப்டேட் பதிவிறக்கம்: ${Math.round(pct)}%`);
                 }
             } catch (_) {}
         });
 
         autoUpdater.on('error', (err) => {
             updateDownloading = false;
-            try {
-                const mainWindow = getMainWindow ? getMainWindow() : null;
-                if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1);
-            } catch (_) {}
+            clearDownloadWatchdog();
             console.warn('[AutoUpdater] Updater error:', err?.message || err);
             if (!promptShown) {
                 checkRemoteVersionFallback(getMainWindow, () => promptShown, (v) => { promptShown = v; });
@@ -394,16 +436,16 @@ function setupAutoUpdater(getMainWindow) {
         autoUpdater.on('update-downloaded', (info) => {
             console.log('[AutoUpdater] New update downloaded:', info.version);
             updateDownloading = false;
+            clearDownloadWatchdog();
             promptShown = true;
             const mainWindow = getMainWindow ? getMainWindow() : null;
             if (mainWindow && !mainWindow.isDestroyed()) {
-                try { mainWindow.setProgressBar(-1); } catch (_) {}
                 dialog.showMessageBox(mainWindow, {
                     type: 'info',
                     title: 'புதிய பதிப்பு தயார் (Update Ready)',
                     message: `eSevaDraft புதிய பதிப்பு (v${info.version}) பதிவிறக்கம் செய்யப்பட்டு தயார் நிலையில் உள்ளது.`,
-                    detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பிற்கு மாறவா?',
-                    buttons: ['இப்போதே Restart செய் (Restart Now)', 'பின்னர் (Later)'],
+                    detail: 'செயலியை இப்போது மறுதொடக்கம் (Restart) செய்து புதிய பதிப்பை நிறுவவா? (நிறுவல் முடிந்ததும் ஆப் தானாகவே மீண்டும் திறக்கும்.)',
+                    buttons: ['இப்போதே Update & Restart செய்', 'பின்னர் (Later)'],
                     defaultId: 0,
                     cancelId: 1
                 }).then((result) => {
@@ -414,7 +456,9 @@ function setupAutoUpdater(getMainWindow) {
                             if (typeof stopLocalServer === 'function') stopLocalServer();
                         } catch (_) {}
                         setImmediate(() => {
-                            autoUpdater.quitAndInstall(true, true);
+                            // Visible NSIS upgrade (isSilent=false, isForceRunAfter=true) for assisted oneClick=false installer
+                            // so Windows SmartScreen never swallows it silently and the updated app always reopens cleanly!
+                            autoUpdater.quitAndInstall(false, true);
                         });
                     }
                 });

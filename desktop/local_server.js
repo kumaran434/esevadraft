@@ -1365,10 +1365,6 @@ function startLocalServer(getActiveAutomationModule, setActiveAutomationModule) 
 
             // 3.5 Cloud API Proxy Fallback (only if local Express is unavailable)
             if (urlPath.startsWith('/api/')) {
-                if (urlPath.startsWith('/api/tools/')) {
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'டூல்ஸ் சேவை இயங்கவில்லை. சர்வரை மறுதொடக்கம் செய்யவும்.' }));
-                }
                 return proxyToCloud(req, res);
             }
 

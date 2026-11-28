@@ -4713,7 +4713,7 @@ async function runTests() {
             assert(desktopPkg69.build?.nsis?.include === 'build/installer.nsh' && desktopPkg69.build?.nsis?.runAfterFinish === true, 'desktop/package.json wires build/installer.nsh and runAfterFinish');
             assert(installerNsh69.includes('!macro customCheckAppRunning') && installerNsh69.includes('taskkill.exe') && installerNsh69.includes('${APP_EXECUTABLE_FILENAME}'), 'installer.nsh cleanly closes running eSevaDraft Desktop instances before file replacement');
             assert(localSrvSrc69.includes('function stopLocalServer()') && localSrvSrc69.includes('closeAllConnections') && localSrvSrc69.includes('stopLocalServer,'), 'desktop/local_server.js exports stopLocalServer closing keep-alive HTTP connections');
-            assert(deskSvcSrc69.includes('disableWebInstaller = true') && deskSvcSrc69.includes("autoUpdater.on('download-progress'") && deskSvcSrc69.includes('global.__esevaUpdating = true') && deskSvcSrc69.includes('autoUpdater.quitAndInstall(true, true)'), 'desktop_services.js enforces full installer download, progress bar, stopLocalServer, and silent quitAndInstall(true, true)');
+            assert(deskSvcSrc69.includes('disableWebInstaller = true') && deskSvcSrc69.includes('disableDifferentialDownload = true') && deskSvcSrc69.includes("autoUpdater.on('download-progress'") && deskSvcSrc69.includes('global.__esevaUpdating = true') && deskSvcSrc69.includes('autoUpdater.quitAndInstall(false, true)'), 'desktop_services.js enforces full non-differential installer download, progress bar, stall watchdog, stopLocalServer, and visible quitAndInstall(false, true)');
             assert(deskMainSrc69.includes('!global.__esevaUpdating') && deskMainSrc69.includes('stopLocalServer()'), 'desktop/main.js stops local server and skips 1200ms hard process.exit during active updater handoff');
             assert(firebaseCfg69.includes(`eSevaDraft-Desktop-Setup-${rootPkg69.version}.exe`), 'firebase.json redirect points to current hyphenated installer release');
 
@@ -6633,14 +6633,14 @@ async function runTests() {
             }
 
             // [TEST 88] 🔄 Auto-Updater, Direct Download Links & latest.yml Release Pipeline Integrity
-            console.log('\n[TEST 88] 🔄 Auto-Updater Silent Install, Zero-Rate-Limit Version Check & Release Manifest Check...');
+            console.log('\n[TEST 88] 🔄 Auto-Updater Visible Install, Zero-Rate-Limit Version Check & Release Manifest Check...');
             {
                 const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'desktop_services.js'), 'utf8');
                 const pubRelSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'publish_release.js'), 'utf8');
                 const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
 
                 assert(svcSrc.includes('/api/download/version'), 'TEST 88.verEndpoint: Auto-updater fallback uses esevadraft.in/api/download/version without GitHub 403 rate limit');
-                assert(svcSrc.includes('quitAndInstall(true, true)'), 'TEST 88.silentQuitInstall: Auto-updater uses silent quitAndInstall(true, true) for effortless background upgrade');
+                assert(svcSrc.includes('quitAndInstall(false, true)'), 'TEST 88.visibleQuitInstall: Auto-updater uses visible quitAndInstall(false, true) so assisted NSIS completes and relaunches cleanly');
                 assert(pubRelSrc.includes('latest.yml') && pubRelSrc.includes('.blockmap'), 'TEST 88.releaseAssets: publish_release.js uploads latest.yml and .blockmap alongside .exe');
                 assert(!htmlSrc.includes('href="/api/download/desktop-app" target="_blank"'), 'TEST 88.directDl: Web download links avoid popup-blocked target=_blank');
 
@@ -7216,6 +7216,47 @@ async function runTests() {
                 });
 
                 passedCount += 6;
+            }
+
+            // [TEST 97] 🧰 Packaged Desktop Local Express Boot, Tools Engine Availability & Auto-Updater Stall Guard
+            console.log('\n[TEST 97] 🧰 Verifying Packaged Desktop Data Packaging (tn_all_taluks_master.json), Tools Routes & Stall-Free Auto-Updater...');
+            {
+                const deskPkg97 = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/package.json'), 'utf8'));
+                const dataRes97 = (deskPkg97.build?.extraResources || []).find(r => r.to === 'data');
+                const filterList97 = Array.isArray(dataRes97?.filter) ? dataRes97.filter : [];
+                const syncSrc97 = fs.readFileSync(path.join(__dirname, '../scripts/sync_to_desktop.js'), 'utf8');
+                const mapperSrc97 = fs.readFileSync(path.join(__dirname, '../tn_district_mapper.js'), 'utf8');
+                const localSrvSrc97 = fs.readFileSync(path.join(__dirname, '../desktop/local_server.js'), 'utf8');
+                const deskSvcSrc97 = fs.readFileSync(path.join(__dirname, '../desktop/desktop_services.js'), 'utf8');
+
+                assert(
+                    filterList97.some(f => f.includes('tn_all_taluks_master')) &&
+                    syncSrc97.includes("'tn_all_taluks_master.json'"),
+                    'TEST 97.packagedMasterData: tn_all_taluks_master.json is included in desktop/package.json extraResources AND sync_to_desktop.js'
+                );
+                assert(
+                    mapperSrc97.includes('function safeRequireStaticData'),
+                    'TEST 97.safeStaticRequire: tn_district_mapper.js loads static datasets via crash-proof safeRequireStaticData'
+                );
+                assert(
+                    !localSrvSrc97.includes('டூல்ஸ் சேவை இயங்கவில்லை') && localSrvSrc97.includes('return proxyToCloud(req, res);'),
+                    'TEST 97.toolsCloudFallback: local_server.js never dead-ends /api/tools/* with 500 when Express is cold — falls back cleanly to Cloud'
+                );
+                assert(
+                    deskSvcSrc97.includes('disableDifferentialDownload = true') &&
+                    deskSvcSrc97.includes('Download stalled for >45s') &&
+                    deskSvcSrc97.includes('autoUpdater.quitAndInstall(false, true)'),
+                    'TEST 97.updaterResilience: Auto-updater disables stalled blockmap diff downloads, has 45s stall watchdog, and uses visible NSIS relaunch'
+                );
+
+                // Verify live Tools JPG->PDF endpoint responds cleanly on Express server
+                const toolsTestRes = await request('POST', '/api/tools/pdf-compress', {});
+                assert(
+                    toolsTestRes.status === 400 || toolsTestRes.status === 200,
+                    `TEST 97.toolsEndpointAlive: /api/tools/pdf-compress route is mounted and responsive (status=${toolsTestRes.status})`
+                );
+
+                passedCount += 5;
             }
 
             passedCount += cartridgeDirs81.length + 25;

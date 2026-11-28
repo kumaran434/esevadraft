@@ -1,6 +1,6 @@
 {
   "name": "esevadraft-desktop",
-  "version": "1.1.57",
+  "version": "1.1.58",
   "description": "eSevaDraft Tamil Nadu Government e-Seva AI Desktop Automation Suite",
   "main": "main.js",
   "scripts": {
@@ -73,6 +73,7 @@
         "from": "../data",
         "to": "data",
         "filter": [
+          "**/tn_all_taluks_master.*",
           "**/tn_bifurcated_taluks.*",
           "**/tn_pincode_taluk_map.*",
           "**/tn_village_lexicon*",

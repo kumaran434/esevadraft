@@ -89,6 +89,7 @@ async function syncAllToDesktop() {
                     if (folder === 'data') {
                         // Strictly copy static lexicon/reference datasets only. NEVER copy customer/test drafts, citizens, sessions, applications, or chrome profile!
                         const ALLOWED_STATIC_DATA_FILES = new Set([
+                            'tn_all_taluks_master.json',
                             'tn_bifurcated_taluks.js',
                             'tn_bifurcated_taluks.json',
                             'tn_pincode_taluk_map.js',
@@ -186,6 +187,23 @@ async function syncAllToDesktop() {
             const srcDir = path.join(ROOT_DIR, 'src');
             if (fs.existsSync(srcDir)) {
                 try { syncMirrorDir(srcDir, path.join(tempDir, 'src')); } catch (_) {}
+            }
+            const asarDataDir = path.join(tempDir, 'data');
+            if (!fs.existsSync(asarDataDir)) fs.mkdirSync(asarDataDir, { recursive: true });
+            for (const staticDataName of [
+                'tn_all_taluks_master.json',
+                'tn_bifurcated_taluks.js',
+                'tn_bifurcated_taluks.json',
+                'tn_pincode_taluk_map.js',
+                'tn_pincode_taluk_map.json',
+                'tn_village_lexicon.js',
+                'tn_village_lexicon.json',
+                'services_registry_data.json'
+            ]) {
+                const sdSrc = path.join(ROOT_DIR, 'data', staticDataName);
+                if (fs.existsSync(sdSrc)) {
+                    try { fs.copyFileSync(sdSrc, path.join(asarDataDir, staticDataName)); } catch (_) {}
+                }
             }
 
             // Universal loaders that execute latest main.js / preload.js directly with bytecode fallback
