@@ -101,20 +101,20 @@ async function fillAdditionalMemberForm(page, mem, memNum, citizenProfile, sanit
         });
     }
 
-    // Ironclad Safeguard: Verify Section 1 Family Head was NOT modified!
-    const curHeadEng = await page.locator('input[formcontrolname="NameOfFamilyHead"]').first().inputValue().catch(() => '');
-    const curHeadTam = await page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').first().inputValue().catch(() => '');
-    if (curHeadEng !== engName || curHeadTam !== tamName) {
-        console.warn(`[Safeguard] Restoring Section 1 Head name: ${engName} / ${tamName}`);
-        await page.locator('input[formcontrolname="NameOfFamilyHead"]').first().fill(engName);
-        await page.evaluate(({ tamName }) => {
-            const el = document.querySelector('input[formcontrolname="குடும்பதலைவர்பெயர்"]');
-            if (el) {
-                el.value = tamName;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }, { tamName });
+    // Ironclad Safeguard (Golden Rule 7): Verify Section 1 Family Head was NOT modified!
+    // CRITICAL: NEVER re-fill English NameOfFamilyHead when it already matches engName, because
+    // touching English triggers TNPDS's async transliterator which overwrites "குமரன் கி" back to "குமரன் கே"!
+    const curHeadEng = (await page.locator('input[formcontrolname="NameOfFamilyHead"]').first().inputValue().catch(() => '')).trim();
+    const curHeadTam = (await page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').first().inputValue().catch(() => '')).trim();
+    if (engName && curHeadEng !== engName.trim()) {
+        console.warn(`[Safeguard] Restoring Section 1 Head English name: ${engName}`);
+        await fillAndVerifyInput(page, page.locator('input[formcontrolname="NameOfFamilyHead"]').first(), engName, 'பகுதி 1 (தலைவர் பெயர் - ஆங்கிலம் மீட்பு)', { required: false });
+        await page.waitForTimeout(600);
+    }
+    const curHeadTamAfter = (await page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').first().inputValue().catch(() => '')).trim();
+    if (tamName && curHeadTamAfter !== tamName.trim()) {
+        console.warn(`[Safeguard] Restoring Section 1 Head Tamil name ONLY: ${curHeadTamAfter} -> ${tamName}`);
+        await fillAndVerifyInput(page, page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').first(), tamName, 'பகுதி 1 (தலைவர் பெயர் - தமிழ் மீட்பு)', { required: false });
     }
 
     // 4. பிறந்த தேதி உள்ளீடு + ஆண்டு துல்லிய சரிபார்ப்பு (Strict Year Lock — prevents <5 years TNPDS popup!)

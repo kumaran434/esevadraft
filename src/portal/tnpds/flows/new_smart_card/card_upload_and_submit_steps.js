@@ -17,7 +17,33 @@ async function executeUploadAndSubmitSteps(page, citizenProfile, sanitizedProfil
         videosDir = path.join(__dirname, '..', '..', '..', '..', 'data', 'videos')
     } = sharedContext;
     const isMockSandboxMode = options?.mockSandbox !== false && options?.isMockSandboxMode !== false;
-    const { tamName, userMobile, aadhaarRaw } = sanitizedProfile;
+    const { tamName, tamFather, tamStreet, tamArea, userMobile, aadhaarRaw } = sanitizedProfile;
+
+    // Golden Rule 7 Final Section 1 Bilingual Integrity Lock (right before Pre-Submit Gate!):
+    // Guarantees TNPDS's async transliterator NEVER left "குமரன் கே" or phonetic garbage in Section 1 Tamil fields!
+    if (!isMockSandboxMode) {
+        const finalTamChecks = [
+            { sel: 'input[formcontrolname="குடும்பதலைவர்பெயர்"]', expected: tamName },
+            { sel: 'input[formcontrolname="தந்தைகணவர்பெயர்"]', expected: tamFather },
+            { sel: 'input[formcontrolname="முகவரிவரி2"]', expected: tamStreet },
+            { sel: 'input[formcontrolname="முகவரிவரி3"]', expected: tamArea }
+        ];
+        for (const chk of finalTamChecks) {
+            if (!chk.expected || !String(chk.expected).trim()) continue;
+            const loc = page.locator(chk.sel).first();
+            if (await loc.count().catch(() => 0) > 0) {
+                const actual = (await loc.inputValue().catch(() => '')).trim();
+                const target = String(chk.expected).trim();
+                if (actual !== target) {
+                    await loc.evaluate((el, val) => {
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }, target).catch(() => {});
+                }
+            }
+        }
+    }
 
     // படி 47: சுய அறிவிப்பு செக்பாக்ஸ் டிக் & Co-Pilot Gate (Zero-Skip + Zero-Kill)
     onProgress('📍 [படி 47/51] சுய அறிவிப்பு உறுதிப்படுத்தல் செக்பாக்ஸ் டிக் செய்யப்படுகிறது...');

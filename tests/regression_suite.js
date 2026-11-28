@@ -5358,7 +5358,7 @@ async function runTests() {
             assert(famLoopSrc.includes('formAudit.btnDisabled') && !famLoopSrc.includes('|Save/i'), 'card_family_members_loop avoids generic |Save match and audits disabled Angular controls before clicking Save Member');
 
             const tnpdsHudSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'portal', 'tnpds', 'helpers', 'browser_hud.js'), 'utf8');
-            assert(tnpdsHudSrc.includes('bottom: 14px; right: 14px;') && !tnpdsHudSrc.includes('top: 10px; right: 12px;'), 'TNPDS browser_hud is positioned bottom-right so top-right portal error toasts are never hidden');
+            assert(tnpdsHudSrc.includes('bottom: 12px; left: 12px;') && !tnpdsHudSrc.includes('top: 10px; right: 12px;'), 'TNPDS browser_hud is positioned bottom-left so top-right error toasts and bottom-right Upload/AI-Assistant buttons are never hidden');
 
             const newCardExtSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'cartridges', 'tnpds_new_card', 'extractor.js'), 'utf8');
             assert(newCardExtSrc.includes('intendedProofType') && newCardExtSrc.includes('delete targetMem.birthCertificatePath'), 'tnpds_new_card extractor respects intendedProofType and clears stale birthCertificatePath on Aadhaar upload');
@@ -7433,6 +7433,43 @@ async function runTests() {
                 );
 
                 passedCount += 12;
+            }
+
+            // [TEST 99] 🛡️ TNPDS Tamil Initial Preservation (No Async Transliterator Overwrite) & Overlap-Proof Upload Button Click
+            console.log('\n[TEST 99] 🛡️ Verifying TNPDS Tamil Initial Preservation (குமரன் கி != குமரன் கே) & Overlap-Proof Upload Click...');
+            {
+                const demoSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_applicant_demographics.js'), 'utf8');
+                const headSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_head_member_steps.js'), 'utf8');
+                const addMemSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_additional_member_form.js'), 'utf8');
+                const gasSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_commodities_gas_steps.js'), 'utf8');
+                const subSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/flows/new_smart_card/card_upload_and_submit_steps.js'), 'utf8');
+                const hudSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/tnpds/helpers/browser_hud.js'), 'utf8');
+                const radSrc99 = fs.readFileSync(path.join(__dirname, '../src/portal/common/universal_radware_resumption.js'), 'utf8');
+
+                assert(
+                    demoSrc99.includes('tamReVerifyPairs') &&
+                    headSrc99.includes('onlyLast: true, skipBlur: true, skipIfUnchanged: true') &&
+                    !addMemSrc99.includes('if (curHeadEng !== engName || curHeadTam !== tamName)'),
+                    'TEST 99.noTranslitOverwrite: Steps 9-13, 22, 34 & Member 2 safeguard NEVER re-trigger TNPDS async transliterator on Section 1 English Name'
+                );
+                assert(
+                    subSrc99.includes('finalTamChecks') && subSrc99.includes('குடும்பதலைவர்பெயர்'),
+                    'TEST 99.finalPreSubmitTamLock: Final Section 1 Tamil integrity lock runs right before Pre-Submit Human Gate'
+                );
+                assert(
+                    gasSrc99.includes("scrollIntoView({ block: 'center'") &&
+                    gasSrc99.includes('document.elementFromPoint') &&
+                    gasSrc99.includes('btn.click()') &&
+                    !gasSrc99.includes('await uploadBtn.click({ force: true })'),
+                    'TEST 99.overlapProofUpload: Step 40 Residence Proof Upload uses center-scroll + direct DOM click so floating AI Assistant widget NEVER intercepts it'
+                );
+                assert(
+                    hudSrc99.includes('left: 12px; right: auto;') &&
+                    radSrc99.includes('res.isPreSubmitGate || res.isDryRun'),
+                    'TEST 99.hudLeftAndCleanGateExit: Browser HUD anchors bottom-left away from right-side upload/chatbot widgets & Pre-Submit Gate never triggers false Radware restart'
+                );
+
+                passedCount += 4;
             }
 
             passedCount += cartridgeDirs81.length + 25;

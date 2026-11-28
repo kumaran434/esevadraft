@@ -376,6 +376,13 @@ async function executePageBlockWithRadwareRestart(page, blockConfig = {}, legacy
             const res = await runPageStepsFromStart(cycle);
             stopMonitor();
 
+            // Clean terminal outcomes (Pre-Submit Human Gate / Dry Run / Operator closed browser cleanly after review):
+            // NEVER misinterpret a closed browser or completed Pre-Submit Gate as a Radware page wipe!
+            if ((res && (res.isPreSubmitGate || res.isDryRun || res.status === 'PRE_SUBMIT_GATE')) ||
+                (page && typeof page.isClosed === 'function' && page.isClosed())) {
+                return res;
+            }
+
             const radwareAfter = await isRadwareChallenge(page);
             const wipedAfter = !radwareAfter && (
                 midCyclePageWiped ||

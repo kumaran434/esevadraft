@@ -62,18 +62,26 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     const isStrictLive = !(options?.mockSandbox !== false && options?.isMockSandboxMode !== false);
 
     // படி 22.1: குடும்பத் தலைவர் பெயர் - ஆங்கிலம் (உறுப்பினர் சேர்க்கைப் படிவத்தில் தட்டச்சு)
-    const engName = citizenProfile.fullNameEng || citizenProfile.name || 'Kumaran K';
+    const engName = (sanitizedProfile?.engName || citizenProfile.fullNameEng || citizenProfile.name || 'Kumaran K').trim();
     onProgress(`📍 [படி 22.1/51] உறுப்பினர் படிவத்தில் பெயர் ஆங்கிலம் (${engName}) தட்டச்சு செய்யப்படுகிறது...`);
     const memEngLocator = page.locator('input[formcontrolname="NameOfFamilyHead"]').last();
     await fillAndVerifyInput(page, memEngLocator, engName, 'படி 22.1 (தலைவர் பெயர் - ஆங்கிலம்)', { required: isStrictLive });
+    // Wait for TNPDS async Google Transliterate callback to settle BEFORE locking verified Tamil name!
+    await page.waitForTimeout(650);
 
     // படி 22.2: குடும்பத் தலைவர் பெயர் - தமிழ் (உறுப்பினர் சேர்க்கைப் படிவத்தில் தட்டச்சு)
-    const tamName = citizenProfile.fullNameTam || 'குமரன் கி';
+    const tamName = (sanitizedProfile?.tamName || citizenProfile.fullNameTam || 'குமரன் கி').trim();
     onProgress(`📍 [படி 22.2/51] உறுப்பினர் படிவத்தில் பெயர் தமிழ் (${tamName}) தட்டச்சு செய்யப்படுகிறது...`);
     const memTamLocator = page.locator('input[formcontrolname="குடும்பதலைவர்பெயர்"]').last();
     await fillAndVerifyInput(page, memTamLocator, tamName, 'படி 22.2 (தலைவர் பெயர் - தமிழ்)', { required: isStrictLive });
+    await page.waitForTimeout(450);
+    const memTamVerify = (await memTamLocator.inputValue().catch(() => '')).trim();
+    if (tamName && memTamVerify !== tamName) {
+        await fillAndVerifyInput(page, memTamLocator, tamName, 'படி 22.2 (தலைவர் பெயர் - தமிழ் மறு-பூட்டு)', { required: false });
+        await page.waitForTimeout(200);
+    }
     onProgress('✅ [படி 22/51] குடும்பத் தலைவர் பெயர் (ஆங்கிலம் & தமிழ்) உறுதி செய்யப்பட்டது!');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(300);
 
     // படி 23: பிறந்த தேதி + கடுமையான சரிபார்ப்பு (Strict Step Gate)
     await assertNoRadwareOrPageRefresh(page, isHeadStepPageIntact, 'படி 23 (பிறந்த தேதி காலண்டர்)');
@@ -203,9 +211,13 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
     let headUploadClicked = false;
     const docUploadLoc = page.locator('div.form-group:has(input[formcontrolname="supportingDocumentProof"]) button.btn-secondary, div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("பதிவேற்றம்"), div:has(input[formcontrolname="supportingDocumentProof"]) button:has-text("Upload"), input[formcontrolname="supportingDocumentProof"] ~ button').last();
     if (await docUploadLoc.count() > 0) {
-        await docUploadLoc.scrollIntoViewIfNeeded().catch(() => {});
-        await docUploadLoc.evaluate(b => { b.disabled = false; b.removeAttribute('disabled'); }).catch(() => {});
-        await docUploadLoc.click({ force: true }).then(() => { headUploadClicked = true; }).catch(() => {});
+        // Overlap-proof center-scroll + direct DOM click so floating TNPDS AI Assistant widget can NEVER intercept Upload!
+        await docUploadLoc.evaluate(b => {
+            try { b.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (_) {}
+            b.disabled = false;
+            b.removeAttribute('disabled');
+            b.click();
+        }).then(() => { headUploadClicked = true; }).catch(() => {});
     }
     if (!headUploadClicked) {
         await page.evaluate(() => {
@@ -300,21 +312,27 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
             comp.locationService.getBrowserLocation = async () => ({ latitude: 12.9716, longitude: 79.1585 });
         }
 
-        const setVal = (sel, val) => {
-            const els = document.querySelectorAll(sel);
+        const setVal = (sel, val, { onlyLast = false, skipBlur = false, skipIfUnchanged = false } = {}) => {
+            const allEls = Array.from(document.querySelectorAll(sel));
+            const els = onlyLast && allEls.length > 0 ? [allEls[allEls.length - 1]] : allEls;
             for (const el of els) {
                 el.disabled = false;
                 el.removeAttribute('disabled');
                 el.removeAttribute('readonly');
+                if (skipIfUnchanged && String(el.value || '').trim() === String(val || '').trim()) continue;
                 el.value = val;
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
-                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                if (!skipBlur) el.dispatchEvent(new Event('blur', { bubbles: true }));
             }
         };
 
-        setVal('input[formcontrolname="NameOfFamilyHead"]', eng);
-        setVal('input[formcontrolname="குடும்பதலைவர்பெயர்"]', tam);
+        // CRITICAL (Golden Rule 7): NEVER fire blur on Section 1 NameOfFamilyHead from Step 34!
+        // Firing blur on NameOfFamilyHead triggers TNPDS's async Google Transliterator which overwrites
+        // "குமரன் கி" back to "குமரன் கே" 400ms later! Only touch the modal input if actually empty/changed,
+        // and enforce verified Tamil on BOTH modal and Section 1 cleanly without touching English.
+        setVal('input[formcontrolname="NameOfFamilyHead"]', eng, { onlyLast: true, skipBlur: true, skipIfUnchanged: true });
+        setVal('input[formcontrolname="குடும்பதலைவர்பெயர்"]', tam, { skipBlur: true });
         setVal('input[formcontrolname="monthlyIncome"]', String(income || '3000'));
         
         const rel = document.querySelector('select[formcontrolname="relationship"]');
@@ -401,8 +419,8 @@ async function executeHeadMemberSteps(page, citizenProfile, sanitizedProfile, do
             window.__tnpdsComp = comp;
         }
     }, {
-        eng: citizenProfile.fullNameEng || citizenProfile.name || '',
-        tam: citizenProfile.fullNameTam || '',
+        eng: (sanitizedProfile?.engName || citizenProfile.fullNameEng || citizenProfile.name || '').trim(),
+        tam: (sanitizedProfile?.tamName || citizenProfile.fullNameTam || '').trim(),
         dob: citizenProfile.headDob || citizenProfile.dob || '',
         income: '3000',
         aadhaar: citizenProfile.headAadhaar || '',

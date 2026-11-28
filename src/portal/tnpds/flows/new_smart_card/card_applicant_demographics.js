@@ -186,7 +186,22 @@ async function executeApplicantDemographics(page, citizenProfile, sanitizedProfi
     await fillAndVerifyInput(page, streetTamInput, tamStreet, 'படி 12 (தெருப் பெயர் - தமிழ்)', { required: Boolean(tamStreet), domSelector: 'input[formcontrolname="முகவரிவரி2"]' });
     await fillAndVerifyInput(page, areaTamInput, tamArea, 'படி 13 (பகுதி/கிராமம் - தமிழ்)', { required: Boolean(tamArea), domSelector: 'input[formcontrolname="முகவரிவரி3"]' });
 
-    await page.waitForTimeout(400);
+    // Golden Rule 7 Async Transliterator Re-Lock: Wait for any delayed TNPDS Google Transliterate callback
+    // (which turns "குமரன் கி" back into "குமரன் கே") and re-lock ONLY the Tamil fields if overwritten!
+    await page.waitForTimeout(600);
+    const tamReVerifyPairs = [
+        { loc: headTamInput, val: tamName, label: 'படி 9 (தலைவர் பெயர் - தமிழ் மறு-பூட்டு)' },
+        { loc: fatherTamInput, val: tamFather, label: 'படி 10 (தந்தை/கணவர் பெயர் - தமிழ் மறு-பூட்டு)' },
+        { loc: streetTamInput, val: tamStreet, label: 'படி 12 (தெருப் பெயர் - தமிழ் மறு-பூட்டு)' },
+        { loc: areaTamInput, val: tamArea, label: 'படி 13 (பகுதி/கிராமம் - தமிழ் மறு-பூட்டு)' }
+    ];
+    for (const pair of tamReVerifyPairs) {
+        if (!pair.val) continue;
+        const curVal = (await pair.loc.inputValue().catch(() => '')).trim();
+        if (curVal !== pair.val.trim()) {
+            await fillAndVerifyInput(page, pair.loc, pair.val, pair.label, { required: false });
+        }
+    }
     logDiag(10, 'PASS', `Step 10 verified: ${checkTamFather}`);
     onProgress(`✅ [படிகள் 9-13/51] தமிழ் பெயர் & முகவரி விவரங்கள் அனைத்தும் 100% உறுதி செய்யப்பட்டன!`);
     await takeStepSnapshot('step13_address_locked');

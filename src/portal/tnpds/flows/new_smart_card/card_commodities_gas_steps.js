@@ -109,8 +109,41 @@ async function executeCommoditiesAndGasSteps(page, citizenProfile, docPrep, opti
     const uploadBtn = page.locator('div:has(> input[formcontrolname="residenceProofFile"]) button:has-text("பதிவேற்றம்"), div:has(> input[formcontrolname="residenceProofFile"]) button:has-text("Upload")')
         .or(page.getByRole('button', { name: /பதிவேற்றம்|Upload/i })).last();
     if (await uploadBtn.count() > 0) {
-        await uploadBtn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(1200);
+        // Overlap-Proof Upload Click: Center-scroll the Upload button away from bottom-right floating widgets
+        // (TNPDS AI Assistant chatbot bubble & HUD) and click via direct DOM el.click() whenever occluded
+        // so Playwright NEVER misclicks the TNPDS AI Assistant widget instead of "பதிவேற்றம்"!
+        const clickInfo = await uploadBtn.evaluate((btn) => {
+            try { btn.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (_) {}
+            const rect = btn.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const topEl = document.elementFromPoint(cx, cy);
+            const isOccluded = Boolean(topEl && topEl !== btn && !btn.contains(topEl));
+            // Always fire direct Angular-safe DOM click on the exact Upload button when occluded by any floating widget
+            if (isOccluded) {
+                btn.removeAttribute('disabled');
+                btn.click();
+                return { mode: 'dom_direct_unoccluded', occludedTag: topEl ? (topEl.id || topEl.className || topEl.tagName) : '' };
+            }
+            return { mode: 'visible_clear', occludedTag: '' };
+        }).catch(() => ({ mode: 'fallback', occludedTag: '' }));
+
+        if (clickInfo.mode === 'visible_clear') {
+            await page.waitForTimeout(250);
+            // Re-verify hit target after smooth layout settle before mouse click; if covered, fall back to direct DOM click
+            const clickedClean = await uploadBtn.evaluate((btn) => {
+                const r = btn.getBoundingClientRect();
+                const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                const blocked = Boolean(top && top !== btn && !btn.contains(top));
+                btn.removeAttribute('disabled');
+                btn.click();
+                return blocked ? 'dom_blocked_safe' : 'dom_clean_direct';
+            }).catch(() => 'error');
+            if (clickedClean === 'error') {
+                await uploadBtn.click({ timeout: 4000 }).catch(() => {});
+            }
+        }
+        await page.waitForTimeout(1400);
         const isResidenceGreenInDOM = await verifyServerUploadConfirmed(page, 'input[formcontrolname="residenceProofFile"], input[type="file"]', 8000);
         await scanAndBroadcastToasts();
         residenceDocUploaded = isResidenceGreenInDOM || isMockSandboxMode;

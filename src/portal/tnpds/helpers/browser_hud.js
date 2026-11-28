@@ -37,7 +37,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
                 hud = document.createElement('div');
                 hud.id = 'esevadraft-browser-hud';
                 hud.style.cssText = `
-                    position: fixed; bottom: 14px; right: 14px; z-index: 2147483647;
+                    position: fixed; bottom: 12px; left: 12px; right: auto; z-index: 2147483647;
                     width: 295px; max-width: 88vw; box-sizing: border-box;
                     background: ${bgColor}; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
                     border: ${isErr ? '2px' : '1.5px'} solid ${borderColor};
@@ -82,7 +82,7 @@ async function showBrowserHud(title, subtitle = '', type = 'info', targetPage = 
             if (!drawer) {
                 drawer = document.createElement('div');
                 drawer.id = 'esevaHudReportBox';
-                drawer.style.cssText = 'display:none; position:fixed; bottom:138px; right:14px; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.97); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.5); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.48); pointer-events:auto;';
+                drawer.style.cssText = 'display:none; position:fixed; bottom:136px; left:12px; right:auto; z-index:2147483647; width:295px; max-width:88vw; box-sizing:border-box; background:rgba(15,23,42,0.97); backdrop-filter:blur(10px); border:1px solid rgba(248,113,113,0.5); border-radius:10px; padding:10px; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; box-shadow:0 10px 28px rgba(0,0,0,0.48); pointer-events:auto;';
                 drawer.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11.5px;font-weight:700;color:#fecaca;">
                         <span>🚨 பிழை / தாமதம் தெரிவிக்க</span>
