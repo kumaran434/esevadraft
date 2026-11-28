@@ -251,6 +251,16 @@ function lookupTnVillage(villageName = '', fullAddress = '', districtHint = '', 
     const pin = String(pincode || '').trim().replace(/\D/g, '');
 
     const isItemCompatible = (item) => {
+        // If 6-digit pincode explicitly proves a DIFFERENT district for this village in the 18,595 master, never hijack!
+        if (pin.length === 6) {
+            const masterRecs = REVENUE_VILLAGES_BY_KEY.get(cleanStr(item.village)) || [];
+            const pinExact = masterRecs.filter(r => r.pincode === pin);
+            if (pinExact.length > 0) {
+                const pinMatchesItem = pinExact.some(r => cleanStr(r.district) === cleanStr(item.district));
+                if (!pinMatchesItem) return false;
+                if (pinMatchesItem) return true;
+            }
+        }
         if (!districtHint) return true;
         const distMeta = normalizeTnDistrictName(item.district);
         const parentDist = distMeta?.parentDistrict || TN_BIFURCATED_TALUKS[String(item.district || '').toLowerCase()]?.parentDistrict || '';
@@ -263,7 +273,6 @@ function lookupTnVillage(villageName = '', fullAddress = '', districtHint = '', 
         if (!parentExistsInHintDist) {
             if (item.isHamlet) {
                 if (!pin || pin.length !== 6) return true;
-                // Check if pincode matches this item's village/taluk in 18,595 master
                 const masterRecs = REVENUE_VILLAGES_BY_KEY.get(cleanStr(item.village)) || [];
                 const pinRec = masterRecs.find(r => r.pincode === pin);
                 if (!pinRec || cleanStr(pinRec.district) === cleanStr(item.district)) return true;
@@ -409,6 +418,18 @@ function disambiguateRevenueVillage(candidates, { districtHint = '', talukHint =
     const dNorm = normalizeTnDistrictName(districtHint);
     const hasKnownDistrictHint = Boolean(dNorm || cleanStr(districtHint));
 
+    // 0. Exact (Village + 6-Digit Pincode) Cross-Check Override:
+    //    Handles the rare 5% edge case where Aadhaar misprinted ANOTHER district that ALSO has a village
+    //    with the same name (e.g. Aadhaar wrongly prints "Tiruppur" for Ranipet's "Kunnathur" with PIN 632510,
+    //    while Tiruppur's Kunnathur is 638103!). Exact (Village + 6-digit Pincode) breaks the wrong district cleanly!
+    if (pin.length === 6) {
+        const exactPinPool = pool.filter(c => c.pincode && c.pincode === pin);
+        const exactPinJuris = new Set(exactPinPool.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
+        if (exactPinPool.length > 0 && exactPinJuris.size === 1) {
+            return { match: exactPinPool[0], ambiguousTaluks: [] };
+        }
+    }
+
     // 1. District / Old Parent District filter (with Wrong-District Auto-Recovery!)
     if (hasKnownDistrictHint) {
         const distFiltered = pool.filter(c => isDistrictCompatible(c.district, c.parentDistrict, districtHint));
@@ -416,12 +437,22 @@ function disambiguateRevenueVillage(candidates, { districtHint = '', talukHint =
             pool = distFiltered;
         } else {
             // Misprinted/Wrong District on Aadhaar (e.g. "Perambalur" printed instead of "Ranipet")!
-            // Recover deterministically via: (a) Exact 6-digit Pincode, (b) Explicit Taluk, or (c) Statewide Unique Village!
+            // Recover deterministically via: (a) Exact 6-digit Pincode, (b) 3-digit Postal Zone Prefix (handles
+            // Sub-Office vs Branch-Office last-digit PIN variance!), (c) Explicit Taluk, or (d) Statewide Unique Village!
             if (pin.length === 6) {
                 const pinMatches = pool.filter(c => c.pincode && c.pincode === pin);
                 const pinJuris = new Set(pinMatches.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
                 if (pinMatches.length > 0 && pinJuris.size === 1) {
                     return { match: pinMatches[0], ambiguousTaluks: [] };
+                }
+                // 4-digit Sub-Office prefix first (e.g. 6325xx = Sholinghur/Ranipet vs 6323xx = Arani/TVM), then 3-digit Postal Zone
+                for (const prefixLen of [4, 3]) {
+                    const pinZone = pin.slice(0, prefixLen);
+                    const zoneMatches = pool.filter(c => c.pincode && c.pincode.startsWith(pinZone));
+                    const zoneJuris = new Set(zoneMatches.map(c => `${cleanStr(c.district)}|${cleanStr(c.taluk)}`));
+                    if (zoneMatches.length > 0 && zoneJuris.size === 1) {
+                        return { match: zoneMatches[0], ambiguousTaluks: [] };
+                    }
                 }
             }
             if (tClean) {

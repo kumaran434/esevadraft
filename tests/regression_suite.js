@@ -7418,7 +7418,21 @@ async function runTests() {
                     `TEST 98.wrongDistWithTaluk: Explicit taluk recovers Ranipet when Aadhaar misprints Perambalur (got ${wrongDistWithTaluk.district}/${wrongDistWithTaluk.taluk})`
                 );
 
-                passedCount += 10;
+                // 9. Exact 6-digit Pincode Override even when misprinted district ("Tiruppur") ALSO has a same-named village ("Kunnathur")!
+                const pinBeatsWrongDupDist = resolveTnDistrict('Tiruppur', '', 'Kunnathur', '632510');
+                assert(
+                    pinBeatsWrongDupDist.district === 'Ranipet' && pinBeatsWrongDupDist.taluk === 'Sholinghur' && pinBeatsWrongDupDist.village === 'Kunnathur',
+                    `TEST 98.pinBeatsWrongDupDist: Exact PIN 632510 overrides misprinted Tiruppur -> Ranipet/Sholinghur (got ${pinBeatsWrongDupDist.district}/${pinBeatsWrongDupDist.taluk})`
+                );
+
+                // 10. 3-digit Postal Zone fallback when misprinted district ("Perambalur") has 0 matches & last-digit PIN differs (632599 vs 632510)
+                const zoneFallbackCase = resolveTnDistrict('Perambalur', '', 'Kunnathur', '632599');
+                assert(
+                    zoneFallbackCase.district === 'Ranipet' && zoneFallbackCase.taluk === 'Sholinghur' && zoneFallbackCase.village === 'Kunnathur',
+                    `TEST 98.postalZoneFallback: 3-digit postal zone (632xxx) recovers Ranipet/Sholinghur even when sub-office last digits differ (got ${zoneFallbackCase.district}/${zoneFallbackCase.taluk})`
+                );
+
+                passedCount += 12;
             }
 
             passedCount += cartridgeDirs81.length + 25;
