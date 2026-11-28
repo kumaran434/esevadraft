@@ -154,9 +154,9 @@ Extract ONLY the fields actually visible on the uploaded image and classify the 
   * NEVER append a standalone Revenue Village name or Taluk name (e.g. "Soorai", "Arakkonam", "Sholinghur") onto "streetEng"/"streetTam"! Put ONLY the street name there.
   * NEVER put Customer Name, Father/Husband Name, "A/C ...", Consumer No, or Gas Distributor Office Address into "streetEng"/"streetTam"!
 - Area / Village / Hamlet & Taluk Separation Rule (CRITICAL FOR TAMIL NADU):
-  * Put the official Tamil Nadu Taluk name ONLY into "taluk" (NEVER mix Taluk into "streetEng" or "areaEng").
-  * Put the Revenue Village / Town name into "village" (e.g. "Soorai").
-  * Put a Hamlet / Sub-Village (குக்கிராமம்) into "areaEng"/"areaTam" ONLY if it is a separate smaller colony/hamlet distinct from the Revenue Village; do NOT copy "village, taluk" (like "Soorai, Arakonam") into "areaEng"!
+  * Put the official Tamil Nadu Taluk name ONLY into "taluk" (NEVER mix Taluk into "streetEng" or "areaEng"). If Taluk is NOT printed on the Aadhaar/document, set "taluk": null (do NOT guess a wrong Taluk — our 18,595 Tamil Nadu Revenue Village master resolves it deterministically!).
+  * Put the Revenue Village / Town name into "village" (e.g. "Kunnathur" or "Soorai").
+  * Put a Hamlet / Colony / Sub-Village (குக்கிராமம் / காலனி, e.g. "Kunnathur Colony" / "குன்னத்தூர் காலனி") into "areaEng"/"areaTam" ONLY if it is a separate smaller colony/hamlet distinct from the Revenue Village; do NOT copy "village, taluk" (like "Soorai, Arakonam") into "areaEng"!
 - District, Taluk, Pincode (6 digits — MUST come from the CUSTOMER residential address, NOT the distributor/agency office footer).${learnedHintsBlock}
 - If Gas Book / LPG Receipt / Subscription Voucher (SV) / Gas Passbook / Refill Cash Memo:
   * Set "documentType": "GAS_BOOK", "residenceProofCategory": "GAS_BOOK", and "gasDetails.hasGas": true ALWAYS when ANY Gas / LPG document is detected.
@@ -481,7 +481,7 @@ function sanitizeAadhaarAddressFields(result) {
             }
         }
 
-        const rawAddrCombined = [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk].filter(Boolean).join(' ');
+        const rawAddrCombined = [result.streetEng, result.streetTam, result.areaEng, result.areaTam, result.village, result.taluk].filter(Boolean).join(', ');
         const resolved = resolveTnDistrict(
             result.district || '',
             result.taluk || '',
@@ -492,26 +492,64 @@ function sanitizeAadhaarAddressFields(result) {
 
         if (resolved) {
             if (resolved.district) result.district = resolved.district;
+            if (resolved.districtTam) result.districtTam = resolved.districtTam;
             if (resolved.taluk) result.taluk = resolved.taluk;
+            if (resolved.talukTam) result.talukTam = resolved.talukTam;
             if (resolved.village) result.village = resolved.village;
+            if (resolved.villageTam) result.villageTam = resolved.villageTam;
+
+            const stripTokens = [resolved.village, resolved.villageTam, result.village, resolved.taluk, resolved.talukTam, result.taluk]
+                .map(t => String(t || '').trim())
+                .filter(t => t.length >= 3);
+            const stripTrailingPlace = (st) => {
+                if (!st || typeof st !== 'string') return st;
+                let cleaned = st.replace(/[\s,]+$/g, '').trim();
+                for (const tok of stripTokens) {
+                    const re = new RegExp(`(?:,\\s*|\\s+)${escapeRe(tok)}$`, 'i');
+                    const candidate = cleaned.replace(re, '').replace(/[\s,]+$/g, '').trim();
+                    if (candidate.length >= 3) cleaned = candidate;
+                }
+                return cleaned;
+            };
+
             if (resolved.isHamlet) {
-                if (resolved.areaEng) result.areaEng = resolved.areaEng;
-                if (resolved.areaTam) result.areaTam = resolved.areaTam;
+                let hEng = resolved.areaEng || result.areaEng || '';
+                let hTam = resolved.areaTam || result.areaTam || '';
+                try {
+                    const { ensureBilingualPair } = require('./src/utils/bilingual_helper');
+                    if (hEng || hTam) {
+                        const hp = ensureBilingualPair(hEng, hTam);
+                        if (!hEng && hp.eng) hEng = hp.eng;
+                        if (!hTam && hp.tam) hTam = hp.tam;
+                    }
+                } catch (_) {}
+                if (hEng) result.areaEng = hEng;
+                if (hTam) result.areaTam = hTam;
+
+                // Clean trailing standalone main Revenue Village / Taluk from street before appending Hamlet
+                if (result.streetEng) result.streetEng = stripTrailingPlace(result.streetEng);
+                if (result.streetTam) result.streetTam = stripTrailingPlace(result.streetTam);
+
+                // Universal Hamlet-in-Street Rule: Always keep Hamlet/Colony paired with Street (without duplicating!)
+                const normCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+                if (hEng) {
+                    const curEng = String(result.streetEng || '').trim();
+                    if (!curEng) {
+                        result.streetEng = hEng;
+                    } else if (!normCmp(curEng).includes(normCmp(hEng))) {
+                        result.streetEng = `${curEng}, ${hEng}`;
+                    }
+                }
+                if (hTam) {
+                    const curTam = String(result.streetTam || '').trim();
+                    if (!curTam) {
+                        result.streetTam = hTam;
+                    } else if (!normCmp(curTam).includes(normCmp(hTam))) {
+                        result.streetTam = `${curTam}, ${hTam}`;
+                    }
+                }
             } else {
                 // Standalone Revenue Village (NOT a hamlet): strip redundant village/taluk suffix from streetEng/streetTam!
-                const stripTokens = [resolved.village, resolved.villageTam, result.village, resolved.taluk, resolved.talukTam, result.taluk]
-                    .map(t => String(t || '').trim())
-                    .filter(t => t.length >= 3);
-                const stripTrailingPlace = (st) => {
-                    if (!st || typeof st !== 'string') return st;
-                    let cleaned = st.replace(/[\s,]+$/g, '').trim();
-                    for (const tok of stripTokens) {
-                        const re = new RegExp(`(?:,\\s*|\\s+)${escapeRe(tok)}$`, 'i');
-                        const candidate = cleaned.replace(re, '').replace(/[\s,]+$/g, '').trim();
-                        if (candidate.length >= 3) cleaned = candidate;
-                    }
-                    return cleaned;
-                };
                 if (result.streetEng) result.streetEng = stripTrailingPlace(result.streetEng);
                 if (result.streetTam) result.streetTam = stripTrailingPlace(result.streetTam);
 

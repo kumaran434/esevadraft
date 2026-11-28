@@ -7259,6 +7259,117 @@ async function runTests() {
                 passedCount += 5;
             }
 
+            // [TEST 98] 🗺️ Tamil Nadu 18,595 Official Revenue Villages Master + Universal Auto-Hamlet-to-Street Engine
+            console.log('\n[TEST 98] 🗺️ Verifying 18,595 Official TN Revenue Villages Master, Missing-Taluk Auto-Resolution & Auto-Hamlet-to-Street...');
+            {
+                const {
+                    TN_ALL_VILLAGES_MASTER,
+                    isOfficialTnRevenueVillage,
+                    resolveTnDistrict
+                } = require('../tn_district_mapper');
+                const { sanitizeAadhaarAddressFields } = require('../ai_document_extractor');
+                const deskPkg98 = JSON.parse(fs.readFileSync(path.join(__dirname, '../desktop/package.json'), 'utf8'));
+                const dataRes98 = (deskPkg98.build?.extraResources || []).find(r => r.to === 'data');
+                const filterList98 = Array.isArray(dataRes98?.filter) ? dataRes98.filter : [];
+                const syncSrc98 = fs.readFileSync(path.join(__dirname, '../scripts/sync_to_desktop.js'), 'utf8');
+
+                assert(
+                    Array.isArray(TN_ALL_VILLAGES_MASTER.villages) && TN_ALL_VILLAGES_MASTER.villages.length >= 18000 &&
+                    TN_ALL_VILLAGES_MASTER.districts.length === 38 &&
+                    filterList98.some(f => f.includes('tn_all_villages_master')) &&
+                    syncSrc98.includes("'tn_all_villages_master.json'"),
+                    `TEST 98.masterCoverage: Loaded ${TN_ALL_VILLAGES_MASTER.villages?.length || 0} official TN revenue villages across 38 districts & wired into Desktop packaging`
+                );
+
+                // 1. Founder's exact Aadhaar case: "Kunnathur Colony, Kunnathur, Vellore" with NO Taluk printed
+                const founderAadhaar = {
+                    doorNo: '12',
+                    streetEng: 'Pillaiyar Koil Street',
+                    streetTam: 'பிள்ளையார் கோவில் தெரு',
+                    areaEng: 'Kunnathur Colony',
+                    areaTam: 'குன்னத்தூர் காலனி',
+                    village: 'Kunnathur',
+                    taluk: '',
+                    district: 'Vellore',
+                    pincode: ''
+                };
+                sanitizeAadhaarAddressFields(founderAadhaar);
+                assert(
+                    founderAadhaar.district === 'Ranipet' &&
+                    founderAadhaar.taluk === 'Sholinghur' &&
+                    founderAadhaar.village === 'Kunnathur' &&
+                    founderAadhaar.streetEng.toLowerCase().includes('kunnathur colony') &&
+                    founderAadhaar.streetTam.includes('குன்னத்தூர் காலனி'),
+                    `TEST 98.founderKunnathur: Missing taluk auto-resolved (Ranipet/Sholinghur/Kunnathur) & Hamlet paired with Street (${founderAadhaar.streetEng} / ${founderAadhaar.streetTam})`
+                );
+
+                // 2. Cross-district duplicate safety: Tiruppur Kunnathur MUST resolve to Tiruppur -> Uthukuli (NEVER Ranipet!)
+                const tiruppurKunnathur = {
+                    doorNo: '8',
+                    streetEng: 'North Street',
+                    streetTam: 'வடக்கு தெரு',
+                    areaEng: 'Kunnathur Colony',
+                    areaTam: '',
+                    village: 'Kunnathur',
+                    taluk: '',
+                    district: 'Tiruppur',
+                    pincode: ''
+                };
+                sanitizeAadhaarAddressFields(tiruppurKunnathur);
+                assert(
+                    tiruppurKunnathur.district === 'Tiruppur' &&
+                    tiruppurKunnathur.taluk === 'Uthukuli' &&
+                    tiruppurKunnathur.village === 'Kunnathur' &&
+                    tiruppurKunnathur.streetEng.toLowerCase().includes('kunnathur colony') &&
+                    tiruppurKunnathur.streetTam.includes('குன்னத்தூர் காலனி'),
+                    `TEST 98.crossDistrictSafe: Tiruppur Kunnathur resolves to Tiruppur/Uthukuli (not Ranipet) & pairs Hamlet with Street (${tiruppurKunnathur.streetTam})`
+                );
+
+                // 3. Unlisted TN village + colony (NOT in 76-entry manual lexicon) with Old Undivided District (Nagapattinam -> Mayiladuthurai)
+                const mayilCase = {
+                    doorNo: '45',
+                    streetEng: 'Gandhi Road',
+                    streetTam: 'காந்தி சாலை',
+                    areaEng: '',
+                    areaTam: '',
+                    village: 'Palayapalayam Colony',
+                    taluk: '',
+                    district: 'Nagapattinam',
+                    pincode: ''
+                };
+                sanitizeAadhaarAddressFields(mayilCase);
+                assert(
+                    mayilCase.district === 'Mayiladuthurai' &&
+                    mayilCase.taluk === 'Sirkazhi' &&
+                    mayilCase.village === 'Palayapalayam' &&
+                    mayilCase.streetEng.toLowerCase().includes('palayapalayam colony') &&
+                    mayilCase.streetTam.includes('பழையபாளையம் காலனி'),
+                    `TEST 98.unlistedAutoHamlet: Unlisted Palayapalayam Colony auto-resolves Mayiladuthurai/Sirkazhi/Palayapalayam & pairs Hamlet with Street (${mayilCase.streetEng} / ${mayilCase.streetTam})`
+                );
+
+                // 4. Same-district duplicate tie-breaking via Pincode (Chengalpattu has Kunnathur in Tirukalukundram 603102 & Maduranthakam 603306)
+                const chengalPin = resolveTnDistrict('Kanchipuram', '', 'Kunnathur', '603306');
+                assert(
+                    chengalPin.district === 'Chengalpattu' && chengalPin.taluk === 'Maduranthakam' && chengalPin.village === 'Kunnathur',
+                    `TEST 98.sameDistrictPinTieBreak: Kanchipuram + Kunnathur + 603306 resolves deterministically to Chengalpattu/Maduranthakam (got ${chengalPin.district}/${chengalPin.taluk})`
+                );
+
+                // 5. Anti-guessing guard when 2 taluks in same district tie with NO pincode
+                const chengalAmbig = resolveTnDistrict('Kanchipuram', '', 'Kunnathur', '');
+                assert(
+                    chengalAmbig.taluk === '' && Array.isArray(chengalAmbig.ambiguousTaluks) && chengalAmbig.ambiguousTaluks.length === 2,
+                    `TEST 98.antiGuessAmbiguous: Never blindly guesses when 2 taluks tie without pincode (taluk="${chengalAmbig.taluk}", ambiguous=${JSON.stringify(chengalAmbig.ambiguousTaluks)})`
+                );
+
+                assert(
+                    isOfficialTnRevenueVillage('Kunnathur', 'Tiruppur') === true &&
+                    isOfficialTnRevenueVillage('Kunnathur Colony', 'Ranipet') === false,
+                    'TEST 98.officialVillageCheck: Distinguishes official Revenue Villages from unlisted Hamlets/Colonies'
+                );
+
+                passedCount += 7;
+            }
+
             passedCount += cartridgeDirs81.length + 25;
         }
 

@@ -78,18 +78,54 @@ async function executeAddressFormSteps({
     const rawStreetEng = String(subData.streetEng || subData.newStreet || citizenProfile.streetEng || '').trim();
     const rawStreetTam = String(subData.streetTam || citizenProfile.streetTam || '').trim();
     const streetPair = ensureBilingualPair(rawStreetEng, rawStreetTam);
-    const streetEng = streetPair.eng || rawStreetEng;
-    const streetTam = streetPair.tam || rawStreetTam;
-    const areaPair = ensureBilingualPair(subData.areaEng || '', subData.areaTam || '');
-    const areaEng = areaPair.eng || String(subData.areaEng || '').trim();
-    const areaTam = areaPair.tam || String(subData.areaTam || '').trim();
-    const district = String(subData.district || subData.newDistrict || citizenProfile.district || '').trim();
-    const districtTam = String(subData.districtTam || citizenProfile.districtTam || '').trim();
-    const taluk = String(subData.taluk || subData.newTaluk || citizenProfile.taluk || '').trim();
-    const talukTam = String(subData.talukTam || citizenProfile.talukTam || '').trim();
-    const village = String(subData.village || subData.newVillage || citizenProfile.village || '').trim();
-    const villageTam = String(subData.villageTam || citizenProfile.villageTam || '').trim();
+    let streetEng = streetPair.eng || rawStreetEng;
+    let streetTam = streetPair.tam || rawStreetTam;
+    const areaPair = ensureBilingualPair(subData.areaEng || citizenProfile.areaEng || '', subData.areaTam || citizenProfile.areaTam || '');
+    let areaEng = areaPair.eng || String(subData.areaEng || citizenProfile.areaEng || '').trim();
+    let areaTam = areaPair.tam || String(subData.areaTam || citizenProfile.areaTam || '').trim();
+    let district = String(subData.district || subData.newDistrict || citizenProfile.district || '').trim();
+    let districtTam = String(subData.districtTam || citizenProfile.districtTam || '').trim();
+    let taluk = String(subData.taluk || subData.newTaluk || citizenProfile.taluk || '').trim();
+    let talukTam = String(subData.talukTam || citizenProfile.talukTam || '').trim();
+    let village = String(subData.village || subData.newVillage || citizenProfile.village || '').trim();
+    let villageTam = String(subData.villageTam || citizenProfile.villageTam || '').trim();
     const pincode = String(subData.pincode || subData.newPincode || citizenProfile.pincode || '').trim();
+
+    // Auto-resolve missing Taluk/Modern District/Hamlet from 18,595 Official TN Revenue Villages Master
+    try {
+        const { resolveTnDistrict } = require('../../../../../tn_district_mapper');
+        const combinedAddr = [streetEng, streetTam, areaEng, areaTam, village].filter(Boolean).join(', ');
+        const geo = resolveTnDistrict(district, taluk, village, pincode, combinedAddr);
+        if (geo) {
+            if (!district && geo.district) district = geo.district;
+            if (!districtTam && geo.districtTam) districtTam = geo.districtTam;
+            if (geo.wasAutoCorrected && geo.district && !subData._operatorEditedDistrict) {
+                district = geo.district;
+                districtTam = geo.districtTam || districtTam;
+            }
+            if (!taluk && geo.taluk) {
+                taluk = geo.taluk;
+                talukTam = geo.talukTam || talukTam;
+            }
+            if ((!village || geo.isHamlet) && geo.village) {
+                village = geo.village;
+                villageTam = geo.villageTam || villageTam;
+            }
+            if (geo.isHamlet) {
+                const hEng = geo.areaEng || areaEng;
+                const hTam = geo.areaTam || areaTam;
+                if (hEng && !areaEng) areaEng = hEng;
+                if (hTam && !areaTam) areaTam = hTam;
+                const normCmp = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0B80-\u0BFF]/g, '');
+                if (hEng && !normCmp(streetEng).includes(normCmp(hEng))) {
+                    streetEng = streetEng ? `${streetEng}, ${hEng}` : hEng;
+                }
+                if (hTam && !normCmp(streetTam).includes(normCmp(hTam))) {
+                    streetTam = streetTam ? `${streetTam}, ${hTam}` : hTam;
+                }
+            }
+        }
+    } catch (_) {}
     let proofType = subData.proofType || citizenProfile.residenceProof?.typeTam || citizenProfile.residenceProof?.type || '';
     const rawDocRef = String(
         subData.addressProofDocPath || subData.docPath || citizenProfile.documents?.newAddressProof ||

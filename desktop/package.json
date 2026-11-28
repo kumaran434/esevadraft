@@ -74,6 +74,7 @@
         "to": "data",
         "filter": [
           "**/tn_all_taluks_master.*",
+          "**/tn_all_villages_master.*",
           "**/tn_bifurcated_taluks.*",
           "**/tn_pincode_taluk_map.*",
           "**/tn_village_lexicon*",

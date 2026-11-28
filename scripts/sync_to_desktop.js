@@ -90,6 +90,7 @@ async function syncAllToDesktop() {
                         // Strictly copy static lexicon/reference datasets only. NEVER copy customer/test drafts, citizens, sessions, applications, or chrome profile!
                         const ALLOWED_STATIC_DATA_FILES = new Set([
                             'tn_all_taluks_master.json',
+                            'tn_all_villages_master.json',
                             'tn_bifurcated_taluks.js',
                             'tn_bifurcated_taluks.json',
                             'tn_pincode_taluk_map.js',
@@ -192,6 +193,7 @@ async function syncAllToDesktop() {
             if (!fs.existsSync(asarDataDir)) fs.mkdirSync(asarDataDir, { recursive: true });
             for (const staticDataName of [
                 'tn_all_taluks_master.json',
+                'tn_all_villages_master.json',
                 'tn_bifurcated_taluks.js',
                 'tn_bifurcated_taluks.json',
                 'tn_pincode_taluk_map.js',
